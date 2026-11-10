@@ -5,7 +5,7 @@
  * were put in, what the fees added) and the total row. Only up/down is coloured (mint / coral); labels stay on one line.
  * `StockTile`, `StockTotalRow` and `Sparkline` are shared with the all-stocks overview.
  */
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import type { StockPerformance } from "@/lib/position-performance-report";
 import { changeTone, formatChangePct, formatShares, formatShortDate, formatUsd } from "@/lib/stock-performance-format";
@@ -33,7 +33,7 @@ export function StockTile({ label, value, sparkline, change, changeTone: tone = 
   /** Grey text at the right of the change line. */
   aside?: ReactNode;
   /** Shown under the tile when the value is missing. */
-  note?: string | null;
+  note?: ReactNode;
   testId?: string;
 }) {
   return <div className="min-w-0 rounded-xl border border-white/10 bg-white/[0.03] px-5 pb-[18px] pt-5" data-testid={testId}>
@@ -68,6 +68,7 @@ export function StockPerformanceTiles({ stock, pairLabel, showHeader = true, sho
   showHeader?: boolean;
   showFootnote?: boolean;
 }) {
+  const unavailableReasonId = useId();
   const since = formatShortDate(stock.firstDepositAtIso);
   const sharesLabel = stock.sharesIn !== null && since ? `${formatShares(stock.sharesIn)} shares since ${since}` : "Price change since deposit";
   return <section aria-label={`${stock.symbol} performance`} className="space-y-3" data-testid="stock-performance">
@@ -84,10 +85,13 @@ export function StockPerformanceTiles({ stock, pairLabel, showHeader = true, sho
       <StockTile testId="stock-tile-shares" label={sharesLabel} value={formatUsd(stock.priceChangeUsd, { signed: true })} sparkline={stock.sparklineSinceEntry}
         change={stock.priceChangePct !== null ? formatChangePct(stock.priceChangePct) : undefined} changeTone={changeTone(stock.priceChangePct)}
         aside={stock.entryPriceUsd !== null ? `from ${formatUsd(stock.entryPriceUsd)}` : undefined}
-        note={stock.priceChangeUsd === null ? stock.entryUnavailableReason : null} />
+        note={stock.priceChangeUsd === null ? <>
+          <span aria-describedby={unavailableReasonId}>{stock.entryPriceUsd === null ? "Entry price unavailable" : "Price change unavailable"}</span>
+          <span id={unavailableReasonId} className="sr-only">{stock.entryUnavailableReason ?? (stock.entryPriceUsd === null
+            ? "Entry price is unavailable for this position." : "Price change since deposit is unavailable for this position.")}</span>
+        </> : null} />
       <StockTile testId="stock-tile-fees" label="Earned from fees" value={formatUsd(stock.feeUsd)}
-        change={`${stock.feeShares > 0 ? "↑ " : ""}${formatShares(stock.feeShares)} ${stock.symbol}`} changeTone={stock.feeShares > 0 ? "up" : "flat"}
-        note="Collected plus unclaimed fees, valued at current prices." />
+        change={`${stock.feeShares > 0 ? "↑ " : ""}${formatShares(stock.feeShares)} ${stock.symbol}`} changeTone={stock.feeShares > 0 ? "up" : "flat"} />
     </div>
     <StockTotalRow priceUsd={stock.priceChangeUsd} feeUsd={stock.feeUsd} totalUsd={stock.totalUsd} />
     {showFootnote && <StockFootnote />}
@@ -96,9 +100,7 @@ export function StockPerformanceTiles({ stock, pairLabel, showHeader = true, sho
 
 export function StockFootnote() {
   return <p className="text-[11px] leading-relaxed text-smoke" data-testid="stock-footnote">
-    24h is the rolling token-price change, not your realized return or one US market session.
-    Position value and fees reuse the existing report at current prices. Position value includes unclaimed fees;
-    do not add cumulative fees to it. Price change since deposit and its total remain unavailable when entry prices were not recorded.
-    Charts are shown only when recorded time-series data is available.
+    24h is rolling token-price change, not a US market session. USD at current prices.
+    Collected plus unclaimed fees; do not add them to position value. Missing entry prices and dependent totals show —.
   </p>;
 }

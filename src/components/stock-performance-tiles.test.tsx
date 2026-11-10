@@ -25,3 +25,13 @@ it("shows existing value and fees with explicit unknown entry and total, without
   expect(html).not.toContain("daily close");
   expect(html).not.toContain("<polyline");
 });
+
+it("keeps the reference layout compact without a second fee explanation inside the card", () => {
+  const html = renderToStaticMarkup(<StockPerformanceTiles stock={stock} />);
+  const fees = html.split('data-testid="stock-tile-fees"')[1]?.split('data-testid="stock-total"')[0];
+  expect(fees).not.toContain("<p");
+  expect(html).toContain(">Entry price unavailable</span>");
+  expect(html).toContain('class="sr-only">Entry price was not recorded for this position.</span>');
+  expect(html).toContain("aria-describedby=");
+  expect(html).not.toContain("Charts are shown only");
+});

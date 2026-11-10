@@ -38,7 +38,7 @@ describe("StockPerformanceTiles", () => {
     expect(text("stock-tile-fees")).not.toContain("at $");
     expect(text("stock-total")).toContain("−$21.62");
     expect(container.querySelectorAll('[data-testid="stock-sparkline"]')).toHaveLength(2);
-    expect(text("stock-footnote")).toContain("reuse the existing report");
+    expect(text("stock-footnote")).toContain("USD at current prices");
     expect(text("stock-footnote")).not.toContain("CoinGecko");
   });
 
@@ -54,9 +54,31 @@ describe("StockPerformanceTiles", () => {
     act(() => root.render(createElement(StockPerformanceTiles, { stock: { ...nvda, entryPriceUsd: null, priceChangeUsd: null, priceChangePct: null,
       totalUsd: null, entryUnavailableReason: "Past prices for this stock are unavailable right now." } })));
     expect(text("stock-tile-shares")).toContain("—");
-    expect(text("stock-tile-shares")).toContain("Past prices for this stock are unavailable right now.");
+    const note = container.querySelector('[data-testid="stock-tile-shares"] [aria-describedby]')!;
+    expect(note).not.toBeNull();
+    expect(note.textContent).toBe("Entry price unavailable");
+    const reason = document.getElementById(note.getAttribute("aria-describedby")!);
+    expect(reason?.textContent).toBe("Past prices for this stock are unavailable right now.");
+    expect(reason?.classList.contains("sr-only")).toBe(true);
+    expect(note.hasAttribute("title")).toBe(false);
+    expect(note.hasAttribute("aria-label")).toBe(false);
     expect(text("stock-total")).toContain("Entry price unavailable");
     expect(text("stock-total")).toContain("—");
+  });
+});
+
+describe("missing price explanations", () => {
+  it.each([
+    [null, "Entry price unavailable", "Entry price is unavailable for this position."],
+    [187.2, "Price change unavailable", "Price change since deposit is unavailable for this position."],
+  ] as const)("provides a full fallback reason when entry price is %s and reason is null", (entryPriceUsd, label, fallback) => {
+    act(() => root.render(createElement(StockPerformanceTiles, { stock: { ...nvda, entryPriceUsd,
+      priceChangeUsd: null, priceChangePct: null, totalUsd: null, entryUnavailableReason: null } })));
+    const note = container.querySelector('[data-testid="stock-tile-shares"] [aria-describedby]')!;
+    expect(note.textContent).toBe(label);
+    const reason = document.getElementById(note.getAttribute("aria-describedby")!);
+    expect(reason?.textContent).toBe(fallback);
+    expect(reason?.classList.contains("sr-only")).toBe(true);
   });
 });
 
