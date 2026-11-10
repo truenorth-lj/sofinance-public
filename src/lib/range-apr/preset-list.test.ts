@@ -152,19 +152,19 @@ describe("size-aware Best", () => {
     expect(list.tooLarge).toBeUndefined();
   });
 
-  it("hides every unfit range, leaving only Best's Wide fallback when cross-band alone rules Wide out (SNDK $1000)", () => {
+  it("hides every unfit range, including a cross-band-only Wide", () => {
     const list = buildPresetList(OPEN_RANGE_UI_PRESETS, allUnfit("cross-band"));
-    expect(list.best).toMatchObject({ id: "wide", fallback: true });
+    expect(list.best).toBeNull();
     expect(ids(list)).toEqual([]);
-    expect(list.tooLarge).toBeUndefined();
+    expect(list.tooLarge).toBe(true);
   });
 
-  it("falls back to Wide, then Standard, when no candidate fits", () => {
+  it("does not fall back to excluded Wide or Standard when none fits", () => {
     const all = withFits({ micro: "cross-band", tight: "cross-band", standard: "cross-band", wide: "cross-band" });
-    expect(buildPresetList(OPEN_RANGE_UI_PRESETS, all).best).toMatchObject({ id: "wide", fallback: true });
+    expect(buildPresetList(OPEN_RANGE_UI_PRESETS, all)).toEqual({ best: null, buttons: [], tooLarge: true });
     const noWide = { ...all, presets: all.presets.map((preset) => preset.id === "wide"
       ? { ...preset, estimate: { status: "unavailable" as const, reason: "range-outside-window" as const } } : preset) };
-    expect(buildPresetList(OPEN_RANGE_UI_PRESETS, noWide).best).toMatchObject({ id: "standard", fallback: true });
+    expect(buildPresetList(OPEN_RANGE_UI_PRESETS, noWide)).toEqual({ best: null, buttons: [], tooLarge: true });
   });
 
   it("offers no range and flags tooLarge when even the widest range is crowded or near its edge", () => {

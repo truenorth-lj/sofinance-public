@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OPEN_RANGE_UI_PRESETS, type OpenRangePreset } from "@sofinance/engine/open-range-presets";
 import { LOWER_AMOUNT_TO_OPEN } from "@/lib/range-apr/copy";
 import { formatEstimate } from "@/lib/range-apr/format";
-import { degradedPayloadFixture, payloadFixture, payloadWithAprs } from "@/lib/range-apr/payload.fixture";
+import { cardPayloadWithAprs, degradedPayloadFixture, payloadFixture, payloadWithAprs } from "@/lib/range-apr/payload.fixture";
+import { rangeAprPayload } from "@/lib/range-apr/display-policy";
 import { payloadForCapital } from "@/lib/range-apr/size-aware";
 import { uiPriceFromTick } from "@sofinance/engine/range-apr/tick-math";
 import { RangePresetPicker } from "./range-preset-picker";
@@ -41,7 +42,8 @@ const ready = (): PoolRangeAprState => ({ status: "ready", data: payloadFixture(
 
 const buttons = () => [...container.querySelectorAll("[aria-label='Price range presets'] button")];
 const labels = () => buttons().map((button) => button.querySelector("span")?.textContent);
-const readyWith = (aprs: Parameters<typeof payloadWithAprs>[0]): PoolRangeAprState => ({ status: "ready", data: payloadWithAprs(aprs) });
+// Hand-set APR layout fixtures use the shared $1,000 preview and non-binding fees; do not reprice their $100 values.
+const readyWith = (aprs: Parameters<typeof payloadWithAprs>[0]): PoolRangeAprState => ({ status: "ready", data: cardPayloadWithAprs(aprs) });
 
 describe("RangePresetPicker", () => {
   it("puts Best first, resolved to the highest-APR candidate, then the rest narrow to wide, then Custom", () => {
@@ -55,7 +57,11 @@ describe("RangePresetPicker", () => {
   it("shows Micro's width as a percent of this pool's price, and in steps only until the pool is known", () => {
     render(ready());
     expect(text("[data-testid='preset-best']")).toBe("BestMicro±0.02%");
-    render({ status: "ready", data: { ...payloadFixture(), pool: { ...payloadFixture().pool, tickSpacing: 10 } } });
+    const base = payloadFixture();
+    render({ status: "ready", data: { ...base, pool: { ...base.pool, tickSpacing: 10 },
+      model: { ...base.model, bins: base.model.bins.map((bin) => ({ ...bin, tick: bin.tick * 10 })) },
+      presets: base.presets.map((preset) => ({ ...preset, tickLower: preset.tickLower * 10, tickUpper: preset.tickUpper * 10 })),
+    } });
     expect(text("[data-testid='preset-best']")).toBe("BestMicro±0.2%");
     render({ status: "loading" });
     expect(text("[data-testid='preset-micro']")).toBe("Micro±2 steps");
@@ -114,17 +120,17 @@ describe("RangePresetPicker", () => {
   it("headlines the selected preset's estimate with its in-range share and the estimate caveat", () => {
     const data = payloadFixture();
     render({ status: "ready", data }, { selected: "tight" });
-    const tight = data.presets.find((preset) => preset.id === "tight")!.estimate;
+    const tight = rangeAprPayload(data).presets.find((preset) => preset.id === "tight")!.estimate;
     expect(tight.status).toBe("ok");
     expect(text("[data-testid='range-apr-headline']")).toBe(formatEstimate(tight));
     expect(container.textContent).toContain("Est. fee APR");
     expect(container.textContent).toMatch(/of recent volume traded inside this range/);
-    expect(container.textContent).toContain("~$100 deposit");
+    expect(container.textContent).toContain("Preview assumes a ~$1,000 deposit");
   });
 
   it("tells the truth about Best (automatic highest estimated APR, not a model) in the tooltip and the note", () => {
     render(readyWith({ micro: 1, tight: 38, standard: 2, wide: 3 }), { selected: "tight" });
-    expect(container.textContent).toMatch(/Best for this pool is Tight: the highest estimated fee APR of the candidate ranges over the last 7 days\. Not a prediction/);
+    expect(container.textContent).toMatch(/Best for this pool is Tight: the highest estimated fee APR of the candidate ranges over the last 7 days for a ~\$1,000 deposit\. Not a prediction/);
     const info = container.querySelector<HTMLButtonElement>("button[aria-label='About Best']")!;
     vi.spyOn(info, "getBoundingClientRect").mockReturnValue({ left: 10, right: 20, top: 10, bottom: 20, width: 10, height: 10, x: 10, y: 10, toJSON: () => ({}) });
     act(() => { info.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })); });
@@ -209,7 +215,7 @@ describe("RangePresetPicker", () => {
 
   type Fit = "ok" | "crowded" | "near-edge" | "cross-band";
   const sizedWith = (fits: Record<string, Fit>) => {
-    const data = payloadWithAprs({ micro: 40, tight: 35, standard: 32, wide: 29 });
+    const data = cardPayloadWithAprs({ micro: 40, tight: 35, standard: 32, wide: 29 });
     data.presets = data.presets.map((preset) => {
       const status = fits[preset.id] ?? "ok";
       return {
@@ -238,10 +244,11 @@ describe("RangePresetPicker", () => {
     noSizeCopy();
   });
 
-  it("offers only Best's Wide when every other range is ruled out (SNDK $1000), with a plain note", () => {
+  it("shows Lower amount instead of an excluded cross-band Wide fallback", () => {
     render(sizedWith({ micro: "cross-band", tight: "near-edge", standard: "cross-band", wide: "cross-band" }), { selected: "wide" });
-    expect(labels()).toEqual(["Best", "Custom"]);
-    expect(text("[data-testid='best-resolved']")).toBe("Wide");
+    expect(labels()).toEqual(["Custom"]);
+    expect(text("[data-testid='best-resolved']")).toBeNull();
+    expect(text("[data-testid='lower-amount']")).toBe(LOWER_AMOUNT_TO_OPEN);
     expect(container.textContent).not.toContain("Other ranges");
     noSizeCopy();
   });

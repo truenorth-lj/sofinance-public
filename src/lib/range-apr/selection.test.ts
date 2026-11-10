@@ -2,9 +2,16 @@ import { describe, expect, it } from "vitest";
 import { estimateRangeApr } from "./range-apr";
 import { degradedPayloadFixture, payloadFixture as payload } from "./payload.fixture";
 import { customTicks, estimateForSelection, toRangeAprInputs } from "./selection";
+import { cardPayloadWithAprs } from "./payload.fixture";
 import { uiPriceFromTick } from "@sofinance/engine/range-apr/tick-math";
 
 describe("estimateForSelection", () => {
+  it("keeps the reference-capital estimate when quote ticks match the selected preset", () => {
+    const data = cardPayloadWithAprs({ micro: 40 });
+    const preset = data.presets[0]!;
+    expect(estimateForSelection(data, { preset: "micro", minPrice: "", maxPrice: "" }, preset))
+      .toMatchObject({ status: "ready", estimate: preset.estimate });
+  });
   it("returns the server-priced estimate for a preset", () => {
     const data = payload();
     const result = estimateForSelection(data, { preset: "micro", minPrice: "", maxPrice: "" });

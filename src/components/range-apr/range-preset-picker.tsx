@@ -10,7 +10,7 @@ import { DOCS_ROUTES } from "@/lib/public-urls";
 import { formatEstimate, unavailableReasonText } from "@/lib/range-apr/format";
 import { MICRO_PRESET_ID, microBandLabel } from "@sofinance/engine/range-apr/micro-range";
 import { buildPresetList, type BestButton } from "@/lib/range-apr/preset-list";
-import { payloadForCapital } from "@/lib/range-apr/size-aware";
+import { rangeAprPayload } from "@/lib/range-apr/display-policy";
 import type { PoolRangeAprPayload } from "@/lib/range-apr/types";
 import { estimateForSelection, type SelectionEstimate, type TickRange } from "@/lib/range-apr/selection";
 import { BrandMark } from "../brand-mark";
@@ -33,8 +33,8 @@ export function formatDepositUsd(value: number): string {
   return `$${value.toLocaleString("en-US", { maximumFractionDigits: value < 10 ? 2 : 0 })}`;
 }
 
-function Headline({ apr, sized, selection, best, others }: {
-  apr: PoolRangeAprState; sized: PoolRangeAprPayload | null; selection: SelectionEstimate | null; best: BestButton | null; others: readonly OtherRange[];
+function Headline({ apr, sized, preview, selection, best, others }: {
+  apr: PoolRangeAprState; sized: PoolRangeAprPayload | null; preview: boolean; selection: SelectionEstimate | null; best: BestButton | null; others: readonly OtherRange[];
 }) {
   let value = "—";
   let estimated = false;
@@ -50,7 +50,7 @@ function Headline({ apr, sized, selection, best, others }: {
     else {
       value = formatEstimate(selection.estimate);
       estimated = true;
-      detail = `About ${selection.estimate.inRangeVolumePct.toFixed(0)}% of recent volume traded inside this range. For a ~${formatDepositUsd(sized?.referenceCapitalUsd ?? apr.data.referenceCapitalUsd)} deposit; assumes price stays in range.`;
+      detail = `About ${selection.estimate.inRangeVolumePct.toFixed(0)}% of recent volume traded inside this range. ${preview ? "Preview assumes a" : "For a"} ~${formatDepositUsd(sized?.referenceCapitalUsd ?? apr.data.referenceCapitalUsd)} deposit; assumes price stays in range.`;
     }
   }
   return (
@@ -112,13 +112,14 @@ export function RangePresetPicker({
   apr: PoolRangeAprState;
   /** Aligned ticks of the live quote for the current selection, when one exists. */
   quotedRange: TickRange | null;
-  /** USD value of the typed deposit (debounced); null keeps the server's reference capital. */
+  /** USD value of the typed deposit (debounced); missing/invalid uses the common $1,000 preview. */
   capitalUsd?: number | null;
 }) {
   const served = apr.status === "ready" ? apr.data : null;
   // Re-priced locally for the typed amount; ranges the deposit does not fit drop out of Best.
-  const data = useMemo(() => (served ? payloadForCapital(served, capitalUsd) : null), [served, capitalUsd]);
-  const sized = data && data !== served ? data : null;
+  const data = useMemo(() => (served ? rangeAprPayload(served, capitalUsd) : null), [served, capitalUsd]);
+  const sized = data;
+  const preview = !(typeof capitalUsd === "number" && Number.isFinite(capitalUsd) && capitalUsd > 0);
   const selection = data ? estimateForSelection(data, { preset: selected, minPrice, maxPrice }, quotedRange) : null;
   // While loading / on error `data` is null, so this is the plain row without "Best" (and no highlight on it).
   const list = buildPresetList(presets, data);
@@ -230,11 +231,14 @@ export function RangePresetPicker({
         </div>
       )}
       {list.tooLarge ? (
-        <p className="mt-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-xs leading-5 text-cream/90" role="status" data-testid="lower-amount">
-          {LOWER_AMOUNT_TO_OPEN}
-        </p>
+        <>
+          {preview && data && <p className="mt-3 text-[11px] leading-5 text-smoke">Preview assumes a ~{formatDepositUsd(data.referenceCapitalUsd)} deposit.</p>}
+          <p className="mt-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-xs leading-5 text-cream/90" role="status" data-testid="lower-amount">
+            {LOWER_AMOUNT_TO_OPEN}
+          </p>
+        </>
       ) : (
-        <Headline apr={apr} sized={sized} selection={selection} best={bestActive ? best : null} others={others} />
+        <Headline apr={apr} sized={sized} preview={preview} selection={selection} best={bestActive ? best : null} others={others} />
       )}
     </>
   );
