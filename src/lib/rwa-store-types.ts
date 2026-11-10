@@ -57,6 +57,8 @@ export type ProfileFetchState = {
   failures: number;
   /** Trades are known up to here: the last good fetch, or a later check that found no trades in the last 24 h. */
   coveredUntil?: string;
+  /** When hourly OHLCV was last actually fetched — not a quiet-roll freshness stamp on `profile.observedAt.hourly`. */
+  ohlcvFetchedAt?: string;
 };
 export type ActivePool = {
   pair: RwaPairRow;
@@ -190,7 +192,7 @@ const aprSchema = z.object({
         .passthrough(),
       windowEndUtc: timestamp,
       observedAt: timestamp,
-      fetchState: z.object({ lastAttemptAt: timestamp, failures: z.number().int().min(0), coveredUntil: timestamp.optional() }).optional(),
+      fetchState: z.object({ lastAttemptAt: timestamp, failures: z.number().int().min(0), coveredUntil: timestamp.optional(), ohlcvFetchedAt: timestamp.optional() }).optional(),
     })
     .nullable(),
   chainObservedAt: timestamp.nullable(),

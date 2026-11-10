@@ -25,9 +25,15 @@ import { ALGORITHM_VERSION, type Lease, type ProfileFetchState, type RwaStore, t
  * 2. per pool: the tick window (two multicalls) and price history (7 complete UTC days). A pool whose saved history
  *    is not from today's window gets
  *    - rolled forward with no call when GeckoTerminal reports no trades in the last 24 h and the saved history
- *      already covers the time before that (the new day is a zero-volume day), or
+ *      already covers the time before that (the new day is a zero-volume day). A quiet roll stamps the hourly
+ *      and economics observation times only when that same run's market batch (`/pools/multi` or the DexScreener
+ *      fill) confirmed zero volume and zero trades; a missing, failed, or unused batch does not stamp, so the
+ *      card stays "Data delayed", or
  *    - ONE GeckoTerminal hourly-candle call (daily USD volume from the same candles: both tokens are the same
  *      stock; two calls without a token price), unless an earlier fetch failed and its backoff is still running.
+ *      A current (already-today) history is reused even when this run's batch shows volume or trades, unless
+ *      that history was rolled forward from a quiet period (its last real OHLCV fetch is older than 6 h or
+ *      earlier than coveredUntil) — then it fetches OHLCV (volume came back).
  *    A pool whose fetch hit a 429 is not saved (`throttled`): the queue ends the run and it goes first next run.
  */
 export const RHC_PROFILE_MAX_AGE_MS = 6 * 3_600_000;
@@ -121,9 +127,33 @@ function coveredUntil(cached: StoredProfile): number {
   return at ? Date.parse(at) : Number.NEGATIVE_INFINITY;
 }
 
+/** This run's market batch (`/pools/multi` or the DexScreener fill) confirmed zero 24h volume and zero trades. */
+function marketConfirmedQuiet(market: Univ4MarketData | undefined): boolean {
+  return !!market && market.txns24h === 0 && market.volume24hUsd === 0;
+}
+
+/** This run's market batch shows trades or volume in the last 24 h (volume coming back). */
+function marketShowsActivity(market: Univ4MarketData | undefined): boolean {
+  return !!market && ((typeof market.txns24h === "number" && market.txns24h > 0)
+    || (typeof market.volume24hUsd === "number" && market.volume24hUsd > 0));
+}
+
+/** Last real hourly OHLCV fetch. Ignores the quiet-roll freshness stamp on `profile.observedAt.hourly`. */
+function lastRealOhlcvFetchMs(cached: StoredProfile): number {
+  const stamp = cached.fetchState?.ohlcvFetchedAt ?? cached.profile.observedAt?.hourly;
+  return stamp ? Date.parse(stamp) : Number.NaN;
+}
+
+/** History was rolled forward while quiet: last real OHLCV fetch is older than 6 h, or earlier than coveredUntil. */
+function historyCameFromQuietRoll(cached: StoredProfile, nowMs: number): boolean {
+  const fetched = lastRealOhlcvFetchMs(cached);
+  if (!Number.isFinite(fetched)) return false;
+  return nowMs - fetched >= RHC_PROFILE_MAX_AGE_MS || fetched < coveredUntil(cached);
+}
+
 /** No trades in GeckoTerminal's last 24 h and the saved history reaches back to that window. */
 function isQuietSinceSaved(cached: StoredProfile, market: Univ4MarketData | undefined, nowMs: number): boolean {
-  return !!market && market.txns24h === 0 && market.volume24hUsd === 0 && !cached.profile.stale
+  return marketConfirmedQuiet(market) && !cached.profile.stale
     && coveredUntil(cached) >= nowMs - 86_400_000 - RHC_QUIET_COVERAGE_SLACK_MS;
 }
 
@@ -140,7 +170,12 @@ export function planRhcProfileFetches(
     const id = spec.poolId.toLowerCase();
     const cached = usableProfile(spec, profiles[id]);
     const priority = rhcProfilePriority(cached, nowMs);
-    if (priority === 3) { plan.set(id, { action: "reuse", cached }); continue; }
+    if (priority === 3) {
+      // Already today's window and recent: reuse, unless volume came back after a quiet roll.
+      const refetch = !!cached && marketShowsActivity(market.get(id)) && historyCameFromQuietRoll(cached, nowMs);
+      plan.set(id, { action: refetch ? "fetch" : "reuse", cached });
+      continue;
+    }
     if (cached && priority > 0 && isQuietSinceSaved(cached, market.get(id), nowMs)) { plan.set(id, { action: "roll", cached }); continue; }
     const state = cached?.fetchState ?? profiles[id]?.fetchState;
     const failures = state?.failures ?? 0;
@@ -172,17 +207,33 @@ export function rhcPoolCreatedAtSeconds(spec: Univ4AllowlistedPool): number {
   return Math.floor(RHC_BLOCK_ANCHOR.timestamp + Number(spec.initBlock - RHC_BLOCK_ANCHOR.number) / RHC_BLOCKS_PER_SECOND);
 }
 
-/** Saved history moved to today's window: the days since it was fetched had no trades. */
-export function rollRhcProfileForward(cached: StoredProfile, spec: Univ4AllowlistedPool, nowMs: number, priceUsd: number | null): StoredProfile {
+/**
+ * Saved history moved to today's window: the days since it was fetched had no trades.
+ * Stamps `profile.observedAt.hourly` and `.economics` only when this same run's market batch confirmed zero
+ * volume and zero trades. A missing, failed, or unused batch does not stamp (the card stays "Data delayed").
+ */
+export function rollRhcProfileForward(
+  cached: StoredProfile, spec: Univ4AllowlistedPool, nowMs: number, priceUsd: number | null,
+  market?: Univ4MarketData,
+): StoredProfile {
   const nowSeconds = Math.floor(nowMs / 1000);
+  const nowIso = new Date(nowMs).toISOString();
   const candles = cached.profile.candles ?? [];
   const daily = priceUsd
     ? averageDailyVolume(dailyVolumesFromHourly(candles, priceUsd), nowSeconds, undefined, rhcPoolCreatedAtSeconds(spec)) ?? cached.profile.daily
     : cached.profile.daily;
+  const observedAt = marketConfirmedQuiet(market)
+    ? { economics: nowIso, daily: cached.profile.observedAt?.daily ?? null, hourly: nowIso }
+    : cached.profile.observedAt;
+  // Keep (or backfill from hourly) the last real OHLCV fetch; do not use the freshness stamp written above.
+  const ohlcvFetchedAt = cached.fetchState?.ohlcvFetchedAt ?? cached.profile.observedAt?.hourly;
   return {
-    ...cached, windowEndUtc: volumeWindowEnd(nowMs), observedAt: new Date(nowMs).toISOString(),
-    profile: { ...cached.profile, daily },
-    fetchState: { lastAttemptAt: cached.fetchState?.lastAttemptAt ?? cached.observedAt, failures: 0, coveredUntil: new Date(nowMs).toISOString() },
+    ...cached, windowEndUtc: volumeWindowEnd(nowMs), observedAt: nowIso,
+    profile: { ...cached.profile, daily, ...(observedAt ? { observedAt } : {}) },
+    fetchState: {
+      lastAttemptAt: cached.fetchState?.lastAttemptAt ?? cached.observedAt, failures: 0, coveredUntil: nowIso,
+      ...(ohlcvFetchedAt ? { ohlcvFetchedAt } : {}),
+    },
   };
 }
 
@@ -257,7 +308,7 @@ export async function prepareRhcRun(input: {
         feePips: summary.dynamicFeePips!, sqrtPriceX96: BigInt(summary.sqrtPriceX96!), protocolFee: summary.protocolFee,
       }, summary.estimatedApr!.tvlUsd, market.get(poolId)?.priceUsd);
       const withEconomics = (profile: StoredProfile): StoredProfile => ({ ...profile, profile: { ...profile.profile, economics } });
-      if (action === "roll" && cached) { stored = withEconomics(rollRhcProfileForward(cached, spec, nowMs, priceUsd)); stats.rolledForward += 1; }
+      if (action === "roll" && cached) { stored = withEconomics(rollRhcProfileForward(cached, spec, nowMs, priceUsd, market.get(poolId))); stats.rolledForward += 1; }
       else if (cached) {
         // Saved history from an earlier UTC window (reused while a failed fetch backs off, or before a fetch that
         // then fails): an estimate from saved price history, so `priceHistoryStale` ("Data delayed", "—" once the
@@ -283,11 +334,13 @@ export async function prepareRhcRun(input: {
         const attemptAt = new Date(clock()).toISOString();
         const previous = (cached ?? roster.profiles[poolId])?.fetchState;
         if (hasPriceHistory(fresh)) {
-          stored = storedFrom(fresh, nowMs, { lastAttemptAt: attemptAt, failures: 0, coveredUntil: fresh.observedAt?.hourly ?? attemptAt });
+          const fetchedAt = fresh.observedAt?.hourly ?? attemptAt;
+          stored = storedFrom(fresh, nowMs, { lastAttemptAt: attemptAt, failures: 0, coveredUntil: fetchedAt, ohlcvFetchedAt: fetchedAt });
           stats.fetched += 1;
         } else {
           const fetchState: ProfileFetchState = { lastAttemptAt: attemptAt, failures: (previous?.failures ?? 0) + 1,
-            ...(previous?.coveredUntil ? { coveredUntil: previous.coveredUntil } : {}) };
+            ...(previous?.coveredUntil ? { coveredUntil: previous.coveredUntil } : {}),
+            ...(previous?.ohlcvFetchedAt ? { ohlcvFetchedAt: previous.ohlcvFetchedAt } : {}) };
           stored = stored
             ? { ...stored, fetchState, profile: { ...stored.profile, stale: true, issues: [...fresh.issues, "Using previously saved price history"] } }
             : storedFrom(fresh, nowMs, fetchState);
