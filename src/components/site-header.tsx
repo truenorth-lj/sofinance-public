@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BrandMark } from "@/components/brand-mark";
+import { HomepageConnectButton } from "@/components/homepage-wallet-island";
 import { APP_ROUTES, BLOG_ROUTES } from "@/lib/public-urls";
 
 const navPill =
@@ -7,7 +8,9 @@ const navPill =
 
 /**
  * Marketing-site header (homepage, blog, docs, FAQ, terms). On the homepage Pools is an in-page anchor; elsewhere it
- * points back to the homepage's pools list. AI agents opens the app's agent page. In-app pages use InkNav instead.
+ * points back to the homepage's pools list. Positions opens the app's positions page; AI agents its agent page. There
+ * is no "Open app": on the homepage the right-hand button connects a wallet in place (the page stays, Sophie
+ * 2026-11-10); the other pages have no wallet. In-app pages use InkNav instead.
  */
 export function SiteHeader({ onHomepage = false }: { onHomepage?: boolean }) {
   const section = (id: string) => (onHomepage ? `#${id}` : `/#${id}`);
@@ -27,6 +30,9 @@ export function SiteHeader({ onHomepage = false }: { onHomepage?: boolean }) {
         <a href={section("pools")} className={`${navPill} flex-1`}>
           Pools
         </a>
+        <Link href={APP_ROUTES.home} className={`${navPill} flex-1`}>
+          Positions
+        </Link>
         <Link href={APP_ROUTES.ai} className={`${navPill} hidden flex-1 sm:flex`}>
           AI agents
         </Link>
@@ -34,12 +40,7 @@ export function SiteHeader({ onHomepage = false }: { onHomepage?: boolean }) {
           Blog
         </Link>
       </nav>
-      <Link
-        href={APP_ROUTES.home}
-        className="flex h-10 items-center justify-center rounded-full bg-cream px-5 text-[13px] font-semibold text-ink outline-none transition-colors hover:bg-white focus-visible:shadow-[0_0_0_2px_var(--color-lemon)]"
-      >
-        Open app
-      </Link>
+      {onHomepage ? <HomepageConnectButton /> : null}
     </header>
   );
 }

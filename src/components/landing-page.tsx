@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { HomepageMarket, HomepageMarketView } from "@/components/homepage-market";
+import { HomepageWalletIsland } from "@/components/homepage-wallet-island";
 import type { HomepagePoolsSnapshot } from "@/lib/homepage-pools";
 import type { HomepageStocks } from "@/lib/stock-market/public";
 import { APP_ROUTES, BLOG_ROUTES, DOCS_ROUTES, FAQ_ROUTE, LEGAL_ROUTES, LLMS_TXT_ROUTE } from "@/lib/public-urls";
@@ -26,6 +27,8 @@ export function LandingPage({ initialPools = null, initialStocks = null }: { ini
           <HomepageMarket initialPools={initialPools} initialStocks={initialStocks} />
         </Suspense>
       </main>
+      {/* The page's one wallet (header Connect wallet + Buy), outside the Suspense boundary so it is mounted once. */}
+      <HomepageWalletIsland />
 
       <div className="mx-auto max-w-[1280px] px-3 pb-10 sm:px-5">
         <footer className="mt-10 flex flex-col gap-4 border-t border-white/10 px-1 py-6 font-data text-[11px] uppercase tracking-[0.12em] text-smoke sm:flex-row sm:items-center sm:justify-between">

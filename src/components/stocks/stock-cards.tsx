@@ -6,17 +6,16 @@
  * `/api/stock-market` (`useHomepageStocks`). The server lists only stocks the eligibility check selected an issuer
  * token for (`buy[underlying]`), and a stock we do not support is skipped for the next one in the ranking. There is no
  * Buy button: the whole row is the button and opens the Buy modal (Sophie, 2026-11-10). When the check itself failed,
- * the rows come without Buy and are plain rows. The Buy modal (wallet + providers) loads on first click.
+ * the rows come without Buy and are plain rows. The Buy modal opens in the homepage's one wallet root
+ * (`homepage-wallet`), so a wallet connected in the header is the one Buy uses.
  */
-import dynamic from "next/dynamic";
 import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { TokenIcon } from "@/components/token-icon";
+import { homepageWallet } from "@/components/homepage-wallet";
 import { utcMinuteLabel } from "@/lib/snapshot-updated";
 import { formatChangePct, formatCompactUsd, formatStockPrice, STOCK_NOTICE_TEXT } from "@/lib/stock-market/format";
 import type { HomepageStocks, StockBuyOption, StockGainerRow, StockMcapRow } from "@/lib/stock-market/public";
-
-const SpotSwapRoot = dynamic(() => import("./spot-swap-root").then((module) => module.SpotSwapRoot), { ssr: false });
 
 const labelPill = "inline-flex min-h-6 shrink-0 items-center whitespace-nowrap rounded-full border border-white/25 px-3 py-1 font-data text-[10px] uppercase leading-4 tracking-[0.12em] text-cream/75";
 
@@ -140,13 +139,7 @@ export function useHomepageStocks(initial: HomepageStocks | null): HomepageStock
   return stocks;
 }
 
+/** The cards; a row's Buy opens in the homepage's wallet root (mounted on first use, shared with Connect wallet). */
 export function StockCards({ stocks, children }: { stocks: HomepageStocks | null; children?: ReactNode }) {
-  const [selected, setSelected] = useState<StockBuyOption | null>(null);
-  // Mounted after the first Buy and kept mounted, so the purchase notice (toast) outlives the modal.
-  const [rootOpened, setRootOpened] = useState(false);
-  const onBuy = (option: StockBuyOption) => { setRootOpened(true); setSelected(option); };
-  return <>
-    <StockCardsView stocks={stocks} onBuy={onBuy}>{children}</StockCardsView>
-    {rootOpened ? <SpotSwapRoot option={selected} onClose={() => setSelected(null)} /> : null}
-  </>;
+  return <StockCardsView stocks={stocks} onBuy={homepageWallet.openBuy}>{children}</StockCardsView>;
 }
