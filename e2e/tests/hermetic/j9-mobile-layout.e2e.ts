@@ -9,6 +9,7 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 import { installFakeWallet } from "../../fake-wallet/install";
 import { FakeWallet } from "../../fake-wallet/node-signer";
 import { ConnectModal } from "../../pages/connect-modal";
+import { selectPosition } from "../../pages/all-positions";
 import { expectFitsScreen } from "../../support/layout-check";
 import { installLayoutMocks } from "../../support/layout-mocks";
 
@@ -86,12 +87,21 @@ for (const width of widths) {
         }
       };
       const views = () => page.locator("#position-action option").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
-      const positions = await page.locator("#position option").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value).filter(Boolean));
+      await show("deposit");
+      const positionRows = page.getByRole("region", { name: "All positions", exact: true }).getByTestId("position-fallback-select");
+      await expect(positionRows).toHaveCount(2);
+      const positions = await positionRows.evaluateAll((rows) => rows.map((row) => row.getAttribute("data-position-key") ?? ""));
+      expect(positions, "layout coverage must visit both fixture positions, not silently skip an empty selector").toHaveLength(2);
+      expect(positions.map((key) => key.split(":")[0]).sort()).toEqual(["meteora-dlmm", "raydium-clmm"]);
       for (const position of positions) {
-        await page.locator("#position").selectOption(position);
+        // Non-Performance tools expose every position as a lightweight All positions row.
+        await show("deposit");
+        await selectPosition(page, position);
         await page.getByText(/^(Price within range|In range)$/).first().waitFor();
         const source = position.startsWith("meteora") ? "meteora" : "raydium";
-        for (const view of await views()) {
+        const positionViews = await views();
+        expect(positionViews).toContain("performance");
+        for (const view of positionViews) {
           await show(view);
           await check(`app-${source}-${view}`);
           if (view === "deposit" && source === "raydium") {

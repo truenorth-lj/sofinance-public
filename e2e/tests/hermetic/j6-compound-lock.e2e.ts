@@ -3,6 +3,7 @@ import { VersionedTransaction } from "@solana/web3.js";
 import type { Page } from "@playwright/test";
 import { expect, test } from "../fixtures";
 import { ConnectModal } from "../../pages/connect-modal";
+import { selectPosition } from "../../pages/all-positions";
 import { randomAddress, buildSingleSignerTx } from "../../support/tx";
 import type { FakeWallet } from "../../fake-wallet/node-signer";
 
@@ -87,7 +88,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     await page.setViewportSize(viewport);
     guards.allowConsole(/^Failed to load resource: the server responded with a status of 400/);
     const flow = await setup(page, wallet, { status: "success", chainStatus: "success" });
-    await page.getByRole("combobox", { name: "Select position", exact: true }).selectOption(`raydium-clmm:${flow.oldMint}`);
+    await selectPosition(page, `raydium-clmm:${flow.oldMint}`);
     const freshState = { ...flow.attempt.summary.state, fees: { a: "0", b: "2" } };
     let compounded = false;
     await page.route("**/api/compound-state", route => route.fulfill({ json: compounded ? freshState : flow.attempt.summary.state }));
@@ -166,7 +167,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     await expect(success).toBeVisible();
     await page.locator("summary").filter({ hasText: "Other positions (1 records)" }).click();
     await expect(page.getByRole("button", { name: "Retrieve this balance" })).toBeVisible();
-    await page.getByRole("combobox", { name: "Select position", exact: true }).selectOption(`raydium-clmm:${flow.oldMint}`);
+    await selectPosition(page, `raydium-clmm:${flow.oldMint}`);
     await expect(management).toContainText("1 records for this position");
     await expect(compoundPanel.getByRole("alert")).toBeHidden();
     await expect(success).toBeVisible();
@@ -209,7 +210,7 @@ test("unknown compound history stays a warning across 30 seconds and NFT changes
   await page.clock.fastForward(31000);
   await expect(page.getByText(/previous compound transaction is unresolved/i)).toBeVisible();
   flow.setReply({ status: "manual-review", chainStatus: "unknown" });
-  await page.getByRole("combobox", { name: "Select position", exact: true }).selectOption(`raydium-clmm:${flow.oldMint}`);
+  await selectPosition(page, `raydium-clmm:${flow.oldMint}`);
   // Selecting another NFT intentionally clears its amount and preview.
   await expect(page.getByRole("textbox", { name: "Input limit" })).toHaveValue("");
   await page.getByRole("textbox", { name: "Input limit" }).fill("1");

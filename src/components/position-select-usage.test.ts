@@ -3,10 +3,13 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("shared PositionSelect usage", () => {
-  it("replaces both LP pickers (My positions: the grouped unified select) and keeps manual mint paste on performance", () => {
+  it("uses the unified All positions entry while preserving manual public performance lookup", () => {
     const app = readFileSync(resolve("src/components/selected-app.tsx"), "utf8");
     const perf = readFileSync(resolve("src/components/position-performance-panel.tsx"), "utf8");
-    expect(app).toContain("<GroupedPositionSelect");
+    expect(app).not.toContain("<GroupedPositionSelect");
+    expect(app).toContain("all-positions-heading");
+    expect(app).toContain("<StocksOverview embedded");
+    expect(app).toContain("position-fallback-select");
     expect(perf).toContain("<PositionSelect");
     expect(perf).toContain("Position NFT mint (base58)");
     expect(app).not.toContain("ticks {item.tickLower}");

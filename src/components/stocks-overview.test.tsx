@@ -95,6 +95,49 @@ const expandStock = async (symbol = "NVDA") => {
 };
 
 describe("StocksOverview", () => {
+  it("embeds a single stock drilldown without a second All positions heading", async () => {
+    const selected: string[] = [];
+    await act(async () => root.render(createElement(StocksOverview, {
+      embedded: true, positions: [drilldownPosition("embedded-solo", "solo-pool")],
+      onSelectPosition: (key: string) => selected.push(key),
+    })));
+    expect(container.querySelector('[data-testid="stocks-overview"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("All positions");
+    const expanded = await expandStock();
+    await act(async () => expanded.querySelector<HTMLButtonElement>('[data-testid="stock-position-select"]')!.click());
+    expect(selected).toEqual(["embedded-solo"]);
+  });
+  it("keeps embedded fallback reachable for loading, failed, null and non-stock reports, covering only stock drilldowns", async () => {
+    const positions: OverviewPosition[] = [
+      { key: "waiting", load: async () => null, fromPanel: "loading" },
+      { key: "failed", load: async () => null, fromPanel: { report: null, error: true } },
+      { key: "null", load: async () => null, fromPanel: { report: null, error: false } },
+      { key: "nonstock", load: async () => report(null), fromPanel: { report: report(null), error: false } },
+    ];
+    const renderRemainingPositions = (covered: ReadonlySet<string>) => createElement("div", { "data-testid": "remaining" }, positions.filter((p) => !covered.has(p.key)).map((p) => p.key).join(","));
+    await act(async () => root.render(createElement(StocksOverview, { embedded: true, positions, renderRemainingPositions })));
+    expect(text("remaining")).toBe("waiting,failed,null,nonstock");
+    positions[0] = { ...positions[0]!, fromPanel: { report: null, error: true } };
+    await act(async () => root.render(createElement(StocksOverview, { embedded: true, positions, renderRemainingPositions })));
+    expect(text("remaining")).toBe("waiting,failed,null,nonstock");
+    expect(container.textContent).toContain("2 positions could not be read");
+    positions[0] = { ...positions[0]!, fromPanel: { report: report(nvda), error: false } };
+    await act(async () => root.render(createElement(StocksOverview, { embedded: true, positions, renderRemainingPositions })));
+    expect(text("remaining")).toBe("failed,null,nonstock");
+    expect(container.querySelectorAll('[data-testid="stock-row"]')).toHaveLength(1);
+  });
+
+  it("shows only fallback rows, not a zero-valued stock portfolio, when no stock reports exist", async () => {
+    await act(async () => root.render(createElement(StocksOverview, {
+      embedded: true, positions: [{ key: "nonstock-only", load: async () => report(null) }],
+      renderRemainingPositions: () => createElement("button", null, "Select nonstock-only"),
+    })));
+    expect(container.textContent).toContain("Select nonstock-only");
+    expect(container.querySelector('[data-testid="overview-tile-fees"]')).toBeNull();
+    expect(container.textContent).not.toContain("Portfolio value");
+    expect(container.querySelector('[data-testid="stock-footnote"]')).toBeNull();
+  });
+
   it("drills into two pools for one stock without duplicating stock aggregates", async () => {
     const positions = [drilldownPosition("pool-a-position", "pool-aaaaaaaaaaaa"),
       drilldownPosition("pool-b-position", "pool-bbbbbbbbbbbb", { ...nvda, valueUsd: 100, feeUsd: 2 }, "Orca")];

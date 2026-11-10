@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Performance tab, two or more positions: the totals across every stock held, then one row per stock (same-stock
+ * Performance tab (standalone: two or more positions; embedded: any count): the totals across every stock held, then one row per stock (same-stock
  * positions merged) that opens in place into that stock's three tiles. Reports load one position at a time (each
  * reads that position's chain history), and rows appear as they arrive; totals wait for every position so a sum is
  * never partial. Positions in pools that are not same-stock pairs have no stock view and are left out.
@@ -9,7 +9,7 @@
  * reading the same chain history a second time, and reads it itself only when Retry is pressed after a failure.
  */
 import { ChevronDown, LoaderCircle } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import type { PositionPerformanceReport } from "@/lib/position-performance-report";
 import { changeTone, formatChangePct, formatShares, formatShortDate, formatUsd } from "@/lib/stock-performance-format";
@@ -39,7 +39,7 @@ type PositionSelection = {
   selectionDisabled?: boolean;
 };
 
-export function StocksOverview({ positions, selectedPositionKey, onSelectPosition, selectionDisabled }: { positions: OverviewPosition[] } & PositionSelection) {
+export function StocksOverview({ positions, selectedPositionKey, onSelectPosition, selectionDisabled, embedded = false, renderRemainingPositions }: { positions: OverviewPosition[]; embedded?: boolean; renderRemainingPositions?: (coveredKeys: ReadonlySet<string>) => ReactNode } & PositionSelection) {
   const [loaded, setLoaded] = useState<Record<string, Loaded>>({});
   const [attempt, setAttempt] = useState(0);
   /** Panel-read positions whose read failed and the user pressed Retry: the overview reads them itself. */
@@ -76,7 +76,7 @@ export function StocksOverview({ positions, selectedPositionKey, onSelectPositio
     return () => controller.abort();
   }, [keys, attempt]);
 
-  if (positions.length < 2) return null;
+  if (!embedded && positions.length < 2) return null;
   const current = positions.map((item) => ({ key: item.key, position: item,
     state: ownRead(item) ? loaded[item.key] : item.fromPanel === "loading" ? undefined : item.fromPanel }));
   const pending = current.filter((item) => !item.state).length;
@@ -85,18 +85,20 @@ export function StocksOverview({ positions, selectedPositionKey, onSelectPositio
   const complete = pending === 0 && failed === 0;
   const totals = portfolioTotals(rows);
   const shown = (value: number | null) => complete ? value : null;
-  if (!pending && !rows.length) return null;
+  if (!embedded && !pending && !rows.length) return null;
+  const remaining = renderRemainingPositions?.(new Set(rows.flatMap((row) => row.positionKeys)));
+  if (embedded && !positions.length) return <>{remaining}</>;
 
-  return <section aria-labelledby="stocks-overview-heading" data-testid="stocks-overview"
-    className="rounded-[28px] border border-white/12 bg-char p-5 sm:p-7">
-    <div className="mb-5 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
-      <h3 id="stocks-overview-heading" className="text-base font-semibold text-cream">All positions</h3>
+  return <section aria-labelledby={embedded ? undefined : "stocks-overview-heading"} data-testid="stocks-overview"
+    className={embedded ? undefined : "rounded-[28px] border border-white/12 bg-char p-5 sm:p-7"}>
+    {(pending > 0 || rows.length > 0) && <div className="mb-5 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+      {!embedded && <h3 id="stocks-overview-heading" className="text-base font-semibold text-cream">All positions</h3>}
       <div className="whitespace-nowrap text-[13px] tabular-nums tracking-[0.02em] text-smoke">Portfolio value
         <span className="ml-1.5 font-medium text-cream">{formatUsd(shown(totals.valueUsd))}</span>
         <span className="ml-1.5">· {rows.length} {rows.length === 1 ? "stock" : "stocks"}</span></div>
-    </div>
+    </div>}
     <div className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-3">
+      {(pending > 0 || rows.length > 0) && <div className="grid gap-3 sm:grid-cols-3">
         <StockTile testId="overview-tile-24h" label="Your stocks, 24h" value={formatUsd(shown(totals.change24hUsd), { signed: true })}
           change={complete ? formatChangePct(totals.change24hPct) : undefined} changeTone={changeTone(shown(totals.change24hPct))} aside="24h" />
         <StockTile testId="overview-tile-price" label="Price change since deposit" value={formatUsd(shown(totals.priceChangeUsd), { signed: true })}
@@ -104,10 +106,10 @@ export function StocksOverview({ positions, selectedPositionKey, onSelectPositio
           aside={complete && totals.costUsd !== null ? `on ${formatUsd(totals.costUsd)}` : undefined} />
         <StockTile testId="overview-tile-fees" label="Earned from fees" value={formatUsd(shown(totals.feeUsd))}
           aside={`across ${rows.length} ${rows.length === 1 ? "stock" : "stocks"}`} />
-      </div>
+      </div>}
       {/* One slot for loading → total (or the failure line), so the stock list below does not jump when totals arrive. */}
       <div className="flex min-h-[58px] flex-col justify-center" data-testid="overview-total-slot">
-      {complete && <StockTotalRow priceUsd={totals.priceChangeUsd} feeUsd={totals.feeUsd} totalUsd={totals.totalUsd} />}
+      {complete && rows.length > 0 && <StockTotalRow priceUsd={totals.priceChangeUsd} feeUsd={totals.feeUsd} totalUsd={totals.totalUsd} />}
       {pending > 0 && <p role="status" className="flex items-center gap-2 text-[13px] text-smoke">
         <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" />
         Loading {positions.length - pending} of {positions.length} positions… Totals appear when every position is read.
@@ -135,7 +137,8 @@ export function StocksOverview({ positions, selectedPositionKey, onSelectPositio
             onToggle={() => setOpen((value) => value === row.symbol ? null : row.symbol)} />)}
         </div>
       </div>}
-      <StockFootnote />
+      {(!embedded || rows.length > 0) && <StockFootnote />}
+      {remaining}
     </div>
   </section>;
 }
