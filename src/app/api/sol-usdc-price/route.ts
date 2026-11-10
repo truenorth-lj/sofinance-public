@@ -1,17 +1,20 @@
 import "@/lib/engine-host";
 import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
-import { fetchJupiterPricesUsd } from "@sofinance/engine/token-prices";
+import { fetchTokenPricesUsd, type TokenPriceSource } from "@sofinance/engine/token-prices";
 
 export async function GET() {
-  const prices = await fetchJupiterPricesUsd([NATIVE_SOL_MINT, USDC_MINT], fetch, getJupiterApiKey());
-  const sol = prices.get(NATIVE_SOL_MINT);
-  const usdc = prices.get(USDC_MINT);
-  const rate = sol !== undefined && usdc !== undefined && sol > 0 && usdc > 0 ? sol / usdc : null;
+  const quotes = await fetchTokenPricesUsd([NATIVE_SOL_MINT, USDC_MINT], fetch, getJupiterApiKey());
+  const sol = quotes.get(NATIVE_SOL_MINT);
+  const usdc = quotes.get(USDC_MINT);
+  const solUsd = sol?.price;
+  const usdcUsd = usdc?.price;
+  const rate = solUsd !== undefined && usdcUsd !== undefined && solUsd > 0 && usdcUsd > 0 ? solUsd / usdcUsd : null;
+  const sources = [...new Set([sol?.source, usdc?.source].filter((item): item is TokenPriceSource => Boolean(item)))].sort();
   return Response.json({
     rate: rate !== null && Number.isFinite(rate) && rate > 0 ? rate : null,
-    usdcUsd: usdc !== undefined && Number.isFinite(usdc) && usdc > 0 ? usdc : null,
+    usdcUsd: usdcUsd !== undefined && Number.isFinite(usdcUsd) && usdcUsd > 0 ? usdcUsd : null,
     fetchedAt: Date.now(),
-    source: "Jupiter",
+    source: sources.length ? sources.join("+") : "unavailable",
   }, { headers: { "Cache-Control": "no-store" } });
 }

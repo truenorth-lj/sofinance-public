@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resetJupiterRuntime } from "./jupiter";
 import {
+  DEXSCREENER_MIN_LIQUIDITY_USD,
   DEXSCREENER_SOLANA_TOKENS_URL,
   fetchJupiterPricesUsd,
+  fetchTokenPricesUsd,
   pickDexScreenerUsdPrice,
   resetTokenPriceRuntime,
 } from "./token-prices";
@@ -20,11 +22,14 @@ function pair(input: {
   side?: "base" | "quote";
   priceUsd: number | string;
   priceNative?: number | string;
-  liquidityUsd?: number;
+  liquidityUsd?: number | null;
   quote?: string;
 }) {
   const mint = input.mint ?? TSLAX;
   const side = input.side ?? "base";
+  const liquidity = input.liquidityUsd === null
+    ? undefined
+    : { usd: input.liquidityUsd ?? 50_000 };
   return {
     chainId: "solana",
     dexId: "raydium",
@@ -32,12 +37,12 @@ function pair(input: {
     quoteToken: { address: side === "quote" ? mint : input.quote ?? USDC, symbol: side === "quote" ? "TSLAx" : "USDC" },
     priceUsd: input.priceUsd,
     priceNative: input.priceNative ?? "1",
-    liquidity: { usd: input.liquidityUsd ?? 1_000 },
+    ...(liquidity ? { liquidity } : {}),
   };
 }
 
 function mockFetch(handler: (url: string) => Response | Promise<Response>) {
-  return vi.fn(async (input: RequestInfo | URL) => handler(String(input)));
+  return vi.fn(async (...args: [input: RequestInfo | URL, init?: RequestInit]) => handler(String(args[0])));
 }
 
 beforeEach(() => {
@@ -49,20 +54,35 @@ beforeEach(() => {
 describe("pickDexScreenerUsdPrice", () => {
   it("picks the highest-liquidity pair where the mint is the base token", () => {
     const payload = [
-      pair({ priceUsd: "100", liquidityUsd: 10 }),
+      pair({ priceUsd: "100", liquidityUsd: 12_000 }),
       pair({ priceUsd: "377.36", liquidityUsd: 2_255_035 }),
-      pair({ priceUsd: "50", liquidityUsd: 5 }),
+      pair({ priceUsd: "50", liquidityUsd: 11_000 }),
     ];
     expect(pickDexScreenerUsdPrice(payload, TSLAX)).toBe(377.36);
   });
 
-  it("derives a quote-token price as priceUsd / priceNative", () => {
+  it("prefers a base-token pair over a higher-liquidity quote-token pair", () => {
     expect(pickDexScreenerUsdPrice([
-      pair({ side: "quote", priceUsd: "377.36", priceNative: "0.0026503", liquidityUsd: 9_000 }),
-    ], TSLAX)).toBeCloseTo(377.36 / 0.0026503, 6);
+      pair({ side: "base", priceUsd: "377.36", liquidityUsd: 20_000 }),
+      pair({ side: "quote", priceUsd: 1, priceNative: 1 / 500, liquidityUsd: 5_000_000 }),
+    ], TSLAX)).toBe(377.36);
   });
 
-  it("returns null when no pair yields a price", () => {
+  it("derives a quote-token price as priceUsd / priceNative with realistic numbers", () => {
+    // USDC as base (~$1), TSLAx as quote: priceNative is how many TSLAx one USDC buys.
+    const tslaxUsd = 377.36;
+    expect(pickDexScreenerUsdPrice([
+      pair({ side: "quote", priceUsd: 1, priceNative: 1 / tslaxUsd, liquidityUsd: 50_000 }),
+    ], TSLAX)).toBeCloseTo(tslaxUsd, 6);
+  });
+
+  it("rejects thin, missing, or zero-liquidity pairs and absurd quote-side math", () => {
+    expect(pickDexScreenerUsdPrice([pair({ priceUsd: "377", liquidityUsd: DEXSCREENER_MIN_LIQUIDITY_USD - 1 })], TSLAX)).toBeNull();
+    expect(pickDexScreenerUsdPrice([pair({ priceUsd: "377", liquidityUsd: 0 })], TSLAX)).toBeNull();
+    expect(pickDexScreenerUsdPrice([pair({ priceUsd: "377", liquidityUsd: null })], TSLAX)).toBeNull();
+    expect(pickDexScreenerUsdPrice([
+      pair({ side: "quote", priceUsd: 1, priceNative: 1e-12, liquidityUsd: 50_000 }),
+    ], TSLAX)).toBeNull();
     expect(pickDexScreenerUsdPrice([], TSLAX)).toBeNull();
     expect(pickDexScreenerUsdPrice([pair({ mint: USDC, priceUsd: "1" })], TSLAX)).toBeNull();
     expect(pickDexScreenerUsdPrice("nope", TSLAX)).toBeNull();
@@ -77,6 +97,7 @@ describe("fetchJupiterPricesUsd", () => {
     });
     const prices = await fetchJupiterPricesUsd([TSLAX], fetcher);
     expect(prices.get(TSLAX)).toBe(376.79702919622997);
+    expect((await fetchTokenPricesUsd([TSLAX], fetcher)).get(TSLAX)).toEqual({ price: 376.79702919622997, source: "jupiter" });
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(String(fetcher.mock.calls[0]?.[0])).toContain("/price/v3");
     expect(String(fetcher.mock.calls[0]?.[0])).toContain(TSLAX);
@@ -88,31 +109,37 @@ describe("fetchJupiterPricesUsd", () => {
       if (url.startsWith(DEXSCREENER_SOLANA_TOKENS_URL)) return json(200, [pair({ priceUsd: "377.36", liquidityUsd: 2_255_035 })]);
       throw new Error(`unexpected fetch ${url}`);
     });
-    const prices = await fetchJupiterPricesUsd([TSLAX], fetcher);
-    expect(prices.get(TSLAX)).toBe(377.36);
+    const quotes = await fetchTokenPricesUsd([TSLAX], fetcher);
+    expect(quotes.get(TSLAX)).toEqual({ price: 377.36, source: "dexscreener" });
     expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
       expect.stringContaining("/price/v3"),
       `${DEXSCREENER_SOLANA_TOKENS_URL}/${TSLAX}`,
     ]);
   });
 
-  it("falls back to DexScreener for a mint Jupiter omits", async () => {
+  it("leaves a mint missing when Jupiter succeeds but omits it (no DexScreener fill)", async () => {
     const fetcher = mockFetch((url) => {
       if (url.includes("/price/v3")) return json(200, { [USDC]: { usdPrice: 0.9998 } });
-      if (url.startsWith(DEXSCREENER_SOLANA_TOKENS_URL)) {
-        expect(url).toBe(`${DEXSCREENER_SOLANA_TOKENS_URL}/${TSLAX}`);
-        return json(200, [pair({ priceUsd: "377.36" })]);
-      }
       throw new Error(`unexpected fetch ${url}`);
     });
     const prices = await fetchJupiterPricesUsd([USDC, TSLAX], fetcher);
     expect(prices.get(USDC)).toBe(0.9998);
-    expect(prices.get(TSLAX)).toBe(377.36);
+    expect(prices.has(TSLAX)).toBe(false);
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
-  it("returns an empty map and does not throw when both sources omit the mint", async () => {
+  it("returns an empty map and does not throw when Jupiter omits the mint", async () => {
     const fetcher = mockFetch((url) => {
       if (url.includes("/price/v3")) return json(200, {});
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    await expect(fetchJupiterPricesUsd([UNKNOWN], fetcher)).resolves.toEqual(new Map());
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns an empty map when Jupiter fails and DexScreener has no usable pair", async () => {
+    const fetcher = mockFetch((url) => {
+      if (url.includes("/price/v3")) return json(503, { error: "unavailable" });
       if (url.startsWith(DEXSCREENER_SOLANA_TOKENS_URL)) return json(200, []);
       throw new Error(`unexpected fetch ${url}`);
     });
@@ -125,14 +152,14 @@ describe("fetchJupiterPricesUsd", () => {
       throw new Error(`unexpected fetch ${url}`);
     });
     await fetchJupiterPricesUsd([TSLAX], fetcher);
-    const keylessHeaders = (fetcher.mock.calls[0]?.[1] as RequestInit | undefined)?.headers as Record<string, string>;
+    const keylessHeaders = (fetcher.mock.calls[0]?.[1]?.headers ?? {}) as Record<string, string>;
     expect(keylessHeaders["x-api-key"]).toBeUndefined();
     expect(Object.keys(keylessHeaders).some((name) => name.toLowerCase().includes("next_public"))).toBe(false);
 
     resetJupiterRuntime();
     resetTokenPriceRuntime({ jupiterSpacingMs: 0, dexScreenerSpacingMs: 0 });
     await fetchJupiterPricesUsd([TSLAX], fetcher, "unit-test-jupiter-key");
-    const keyedHeaders = (fetcher.mock.calls[1]?.[1] as RequestInit | undefined)?.headers as Record<string, string>;
+    const keyedHeaders = (fetcher.mock.calls[1]?.[1]?.headers ?? {}) as Record<string, string>;
     expect(keyedHeaders["x-api-key"]).toBe("unit-test-jupiter-key");
   });
 
@@ -153,5 +180,20 @@ describe("fetchJupiterPricesUsd", () => {
     expect(a.get(TSLAX)).toBe(376.8);
     expect(b.get(TSLAX)).toBe(376.8);
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not cache a failed lookup, so the next call retries Jupiter", async () => {
+    let jupiterCalls = 0;
+    const fetcher = mockFetch((url) => {
+      if (url.includes("/price/v3")) {
+        jupiterCalls += 1;
+        return json(429, { error: "rate limited" });
+      }
+      if (url.startsWith(DEXSCREENER_SOLANA_TOKENS_URL)) return json(200, []);
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    await fetchJupiterPricesUsd([TSLAX], fetcher);
+    await fetchJupiterPricesUsd([TSLAX], fetcher);
+    expect(jupiterCalls).toBe(2);
   });
 });

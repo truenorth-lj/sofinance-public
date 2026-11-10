@@ -10,9 +10,17 @@ const STABLE_USD_MINTS = new Set([
 export const JUPITER_PRICE_BATCH = 50;
 /** DexScreener `GET /tokens/v1/{chain}/{mints}` accepts at most 30 addresses per request. */
 export const DEXSCREENER_PRICE_BATCH = 30;
-/** Shared 10s TTL (inside the 5–15s window) for Jupiter hits, DexScreener fallbacks, and known misses. */
+/** Successful prices (and successful Jupiter omissions) cache for 10s, inside the 5–15s window. */
 export const TOKEN_PRICE_TTL_MS = JUPITER_PRICE_TTL_MS;
+/** Failed lookups are not cached, so the next call retries Jupiter instead of serving a stale miss. */
+export const TOKEN_PRICE_FAILURE_TTL_MS = 0;
 export const DEXSCREENER_SOLANA_TOKENS_URL = "https://api.dexscreener.com/tokens/v1/solana";
+/** Ignore DexScreener pairs with missing, zero, or thin liquidity (below this USD floor). */
+export const DEXSCREENER_MIN_LIQUIDITY_USD = 10_000;
+/** Quote-side `priceNative` below this would explode `priceUsd / priceNative`. */
+export const DEXSCREENER_MIN_PRICE_NATIVE = 1e-8;
+export const DEXSCREENER_MIN_USD = 1e-8;
+export const DEXSCREENER_MAX_USD = 1e9;
 
 /** Keyless Jupiter Price API: 0.5 rps. Free-key plan: 1 rps. Both share one org bucket with other Jupiter calls. */
 export const JUPITER_PRICE_KEYLESS_SPACING_MS = 2_000;
@@ -22,10 +30,13 @@ export const DEXSCREENER_PRICE_SPACING_MS = 220;
 
 const PRICE_FETCH_TIMEOUT_MS = 5_000;
 
-type CachedMintPrice = { value: number | undefined; expiresAt: number };
+export type TokenPriceSource = "jupiter" | "dexscreener" | "raydium";
+export type TokenPriceQuote = { price: number; source: TokenPriceSource };
+
+type CachedMintPrice = { quote: TokenPriceQuote | undefined; expiresAt: number };
 
 const mintCache = new Map<string, CachedMintPrice>();
-const inflight = new Map<string, Promise<Map<string, number>>>();
+const inflight = new Map<string, Promise<Map<string, TokenPriceQuote>>>();
 
 type Pacer = { pace: <T>(run: () => Promise<T>) => Promise<T>; reset: () => void };
 
@@ -89,37 +100,51 @@ function tokenAddress(value: unknown): string | null {
   return isRecord(value) && typeof value.address === "string" ? value.address : null;
 }
 
-function cacheSet(mint: string, value: number | undefined, now = Date.now()): void {
-  mintCache.set(mint, { value, expiresAt: now + TOKEN_PRICE_TTL_MS });
+function cacheSet(mint: string, quote: TokenPriceQuote | undefined, ttlMs: number, now = Date.now()): void {
+  if (ttlMs <= 0) return;
+  mintCache.set(mint, { quote, expiresAt: now + ttlMs });
+}
+
+function deriveQuoteUsd(priceUsd: number, priceNativeRaw: unknown): number | null {
+  const native = parseUsd(priceNativeRaw);
+  if (native === null || native < DEXSCREENER_MIN_PRICE_NATIVE) return null;
+  const derived = priceUsd / native;
+  if (!Number.isFinite(derived) || derived < DEXSCREENER_MIN_USD || derived > DEXSCREENER_MAX_USD) return null;
+  return derived;
 }
 
 /**
  * Pick a USD price for `mint` from a DexScreener `/tokens/v1/solana/{mints}` payload.
  *
- * Among pairs that include the mint and yield a positive finite USD price, choose the highest
- * `liquidity.usd` (missing liquidity counts as 0). If the mint is the pair's `baseToken`, use
- * `priceUsd` directly. If it is the `quoteToken`, derive `priceUsd / priceNative` (base USD
- * divided by base-priced-in-quote). Solana addresses are compared as returned (base58, case-sensitive).
+ * Pairs with missing, zero, or sub-$10k `liquidity.usd` are ignored. Among the rest, pairs where
+ * the mint is `baseToken` (use `priceUsd` directly) are preferred over quote-side pairs. Quote-side
+ * prices are `priceUsd / priceNative` only when `priceNative` is at least `DEXSCREENER_MIN_PRICE_NATIVE`
+ * and the result stays inside `[DEXSCREENER_MIN_USD, DEXSCREENER_MAX_USD]`. Same-class ties go to the
+ * higher-liquidity pair. Solana addresses are compared as returned (base58, case-sensitive).
  */
 export function pickDexScreenerUsdPrice(payload: unknown, mint: string): number | null {
   const pairs = Array.isArray(payload) ? payload : [];
-  let best: { usd: number; liq: number } | null = null;
+  let best: { usd: number; liq: number; base: boolean } | null = null;
   for (const pair of pairs) {
     if (!isRecord(pair)) continue;
+    const liqRaw = isRecord(pair.liquidity) ? Number(pair.liquidity.usd) : NaN;
+    if (!Number.isFinite(liqRaw) || liqRaw < DEXSCREENER_MIN_LIQUIDITY_USD) continue;
     const priceUsd = parseUsd(pair.priceUsd);
     if (priceUsd === null) continue;
     const base = tokenAddress(pair.baseToken);
     const quote = tokenAddress(pair.quoteToken);
     let usd: number | null = null;
-    if (base === mint) usd = priceUsd;
-    else if (quote === mint) {
-      const native = parseUsd(pair.priceNative);
-      if (native !== null) usd = priceUsd / native;
+    let isBase = false;
+    if (base === mint) {
+      usd = priceUsd;
+      isBase = true;
+    } else if (quote === mint) {
+      usd = deriveQuoteUsd(priceUsd, pair.priceNative);
     }
-    if (usd === null || !Number.isFinite(usd) || usd <= 0) continue;
-    const liqRaw = isRecord(pair.liquidity) ? Number(pair.liquidity.usd) : NaN;
-    const liq = Number.isFinite(liqRaw) && liqRaw > 0 ? liqRaw : 0;
-    if (!best || liq > best.liq) best = { usd, liq };
+    if (usd === null) continue;
+    if (!best || (isBase && !best.base) || (isBase === best.base && liqRaw > best.liq)) {
+      best = { usd, liq: liqRaw, base: isBase };
+    }
   }
   return best?.usd ?? null;
 }
@@ -171,68 +196,75 @@ async function loadTokenPricesUsd(
   unique: string[],
   fetcher: typeof fetch,
   apiKey?: string,
-): Promise<Map<string, number>> {
+): Promise<Map<string, TokenPriceQuote>> {
   const now = Date.now();
-  const out = new Map<string, number>();
+  const out = new Map<string, TokenPriceQuote>();
   const need: string[] = [];
   for (const mint of unique) {
     const hit = mintCache.get(mint);
     if (hit && hit.expiresAt > now) {
-      if (hit.value !== undefined) out.set(mint, hit.value);
+      if (hit.quote !== undefined) out.set(mint, hit.quote);
     } else {
       need.push(mint);
     }
   }
   if (!need.length) return out;
 
-  const missing: string[] = [];
+  const failedMints: string[] = [];
   for (const batch of chunks(need, JUPITER_PRICE_BATCH)) {
     const { prices, failed } = await fetchJupiterPriceBatch(batch, fetcher, apiKey);
+    if (failed) {
+      failedMints.push(...batch);
+      continue;
+    }
     for (const mint of batch) {
       const value = prices.get(mint);
       if (value !== undefined) {
-        out.set(mint, value);
-        cacheSet(mint, value);
-      } else if (failed || !prices.has(mint)) {
-        missing.push(mint);
+        const quote = { price: value, source: "jupiter" as const };
+        out.set(mint, quote);
+        cacheSet(mint, quote, TOKEN_PRICE_TTL_MS);
+      } else {
+        // Jupiter answered but omitted this mint: leave it missing so Raydium pool-ratio fallbacks can run.
+        cacheSet(mint, undefined, TOKEN_PRICE_TTL_MS);
       }
     }
   }
 
-  for (const batch of chunks(missing, DEXSCREENER_PRICE_BATCH)) {
+  for (const batch of chunks(failedMints, DEXSCREENER_PRICE_BATCH)) {
     const payload = await fetchDexScreenerPriceBatch(batch, fetcher);
     for (const mint of batch) {
       const value = pickDexScreenerUsdPrice(payload, mint);
       if (value !== null) {
-        out.set(mint, value);
-        cacheSet(mint, value);
-      } else {
-        cacheSet(mint, undefined);
+        const quote = { price: value, source: "dexscreener" as const };
+        out.set(mint, quote);
+        cacheSet(mint, quote, TOKEN_PRICE_TTL_MS);
       }
+      // Miss after a Jupiter request failure: do not cache (TOKEN_PRICE_FAILURE_TTL_MS = 0).
     }
   }
   return out;
 }
 
 /**
- * USD prices for Solana mints.
+ * USD prices for Solana mints, with the source of each value.
  *
  * Primary: Jupiter Price API v3 (`GET /price/v3`, up to 50 ids). The optional key is exactly
  * `JUPITER_API_KEY` (or the `apiKey` argument, which server callers pass from `getJupiterApiKey()`).
  * It is sent as `x-api-key` and is server-side only: never `NEXT_PUBLIC_JUPITER_API_KEY`, and never
  * read in a client bundle. If the variable is unset or empty, the request is keyless (0.5 rps);
- * a free key raises the spacing to 1 rps. This module does not write Vercel env. On a Jupiter 429
- * or other error, or when a mint is omitted (no reliable trade in 7 days), each missing mint falls
- * back to DexScreener `GET /tokens/v1/solana/{mints}` (up to 30 ids) and the highest-liquidity pair
- * that yields a USD price (see `pickDexScreenerUsdPrice`). Prices and known misses cache for 10s;
- * identical in-flight requests share one promise. Callers that already treat a missing mint as
- * "unknown price" keep that behavior when both sources omit it. Never throws.
+ * a free key raises the spacing to 1 rps. This module does not write Vercel env.
+ *
+ * DexScreener (`GET /tokens/v1/solana/{mints}`, up to 30 ids) is used only when the Jupiter request
+ * itself fails (429, 5xx, timeout, network). A successful Jupiter response that omits a mint leaves
+ * that mint missing — it is not filled from DexScreener. Pair pick: see `pickDexScreenerUsdPrice`.
+ * Successful prices cache for 10s; failed lookups are not cached. Identical in-flight requests share
+ * one promise. Never throws.
  */
-export async function fetchJupiterPricesUsd(
+export async function fetchTokenPricesUsd(
   mints: string[],
   fetcher: typeof fetch = fetch,
   apiKey?: string,
-): Promise<Map<string, number>> {
+): Promise<Map<string, TokenPriceQuote>> {
   const unique = [...new Set(mints.filter(Boolean))];
   if (!unique.length) return new Map();
   const key = [...unique].sort().join(",");
@@ -241,6 +273,18 @@ export async function fetchJupiterPricesUsd(
   const pending = loadTokenPricesUsd(unique, fetcher, apiKey).finally(() => inflight.delete(key));
   inflight.set(key, pending);
   return pending;
+}
+
+/** Same as `fetchTokenPricesUsd`, but returns only the numeric prices so existing callers stay unchanged. */
+export async function fetchJupiterPricesUsd(
+  mints: string[],
+  fetcher: typeof fetch = fetch,
+  apiKey?: string,
+): Promise<Map<string, number>> {
+  const quotes = await fetchTokenPricesUsd(mints, fetcher, apiKey);
+  const prices = new Map<string, number>();
+  for (const [mint, quote] of quotes) prices.set(mint, quote.price);
+  return prices;
 }
 
 export async function fetchRaydiumPoolUsdPrices(
