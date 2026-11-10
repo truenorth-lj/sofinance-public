@@ -34,7 +34,7 @@ Raydium's look; adapt each exchange underneath; modular and loosely coupled.
 
 ## 1. Root cause: TSLAx/TSLA Raydium "No 7-day estimate right now."
 
-The 7-day estimate **exists and is healthy**. The card hides it.
+The 7-day estimate **exists and is healthy**. Before this PR the card hid it.
 
 Live `GET /api/pool-range-apr?poolId=4bMbJzxWyiokwyQC4ndST5sJv6Qnb4viyACzhyFUgRbd`
 (2026-11-10 ~11:20 UTC / ~19:20 Asia/Taipei):
@@ -55,12 +55,12 @@ Live `GET /api/pool-range-apr?poolId=4bMbJzxWyiokwyQC4ndST5sJv6Qnb4viyACzhyFUgRb
 | Fee cap at a $1,000 preview | 0.50 × 365 / 1000 × 100 ≈ **18.1%** |
 | Pairs-list 24h fee/TVL (not shown on the card) | ~22.5% (`estimatedFeeAprPct`) |
 
-`summarizeApr7d` (`src/lib/unified-pools/apr7d.ts`) only publishes a number when
-`highestRangeSummary` finds a candidate that **fits a $1,000 preview deposit**.
-For Raydium, `enforcesRangeAprSizeFit("raydium-clmm")` is true, so
-`rangeAprPayload` runs `sizeFitFor` at `CARD_APR_DEPOSIT_USD = 1_000`.
+`summarizeApr7d` (`src/lib/unified-pools/apr7d.ts`) used to publish a number only when
+`highestRangeSummary` found a candidate that **fit a $1,000 preview deposit**.
+For Raydium, `enforcesRangeAprSizeFit("raydium-clmm")` was true, so
+`rangeAprPayload` ran `sizeFitFor` at `CARD_APR_DEPOSIT_USD = 1_000`.
 
-`sizeFitFor` (`src/lib/range-apr/size-aware.ts`) excludes a range when:
+`sizeFitFor` (removed from `src/lib/range-apr/size-aware.ts`) excluded a range when:
 
 1. **crowded** — the deposit would be more than 50% of (active + own) liquidity;
 2. **near-edge** — the nearer range edge is closer than 3× the estimated swap impact;
@@ -78,23 +78,23 @@ impact. The checks at $1,000:
 | Standard | 42.6% | 29 bps | **near-edge** (29 < 3 × 22) |
 | Wide | 18.2% | 99 bps | **cross-band** (0.04 < 22) |
 
-Every candidate is excluded → `highestRangeSummary` is null → status `"missing"`
+Every candidate was excluded → `highestRangeSummary` was null → status `"missing"`
 with reason **"No 7-day estimate right now."** (the non-degraded missing copy).
-The pill and Highest range both render "—".
+The pill and Highest range both rendered "—".
 
-This is the same path the unit tests document for a SKHYx-like $126 pool ("no APR
-when all preview ranges are excluded"). It was intentional: the card must not
-name an *actionable* $1,000 Best that Raydium prepare would reject. On a
+This was the same path the unit tests documented for a SKHYx-like $126 pool ("no APR
+when all preview ranges are excluded"). It was intentional at the time: the card
+must not name an *actionable* $1,000 Best that Raydium prepare would reject. On a
 **tickSpacing = 1** pool the cross-band rule is pathological: the band is ~1 bp,
-so *any* meaningful deposit (even $100, impact ~2 bps) still fails cross-band.
-Falling back to a smaller preview capital therefore still shows nothing.
+so *any* meaningful deposit (even $100, impact ~2 bps) still failed cross-band.
+Falling back to a smaller preview capital therefore still showed nothing.
 
-The copy is also misleading: the sample is not missing. The UI is refusing to
+The copy was also misleading: the sample was not missing. The UI was refusing to
 name a range that a fixed $1,000 preview would not fit.
 
-Meteora / Orca / RHC do **not** apply size-fit on the card
-(`enforcesRangeAprSizeFit` is Raydium-only), which is why a Meteora TSLAx/TSLA
-card can show a number while the sibling Raydium card shows "—".
+Meteora / Orca / RHC did **not** apply size-fit on the card
+(`enforcesRangeAprSizeFit` was Raydium-only), which is why a Meteora TSLAx/TSLA
+card could show a number while the sibling Raydium card showed "—".
 
 The saved snapshot was not expired, not degraded, and had enough data days
 (`MIN_DATA_DAYS = 7`; this pool has 17). rwa-refresh was **not** triggered
@@ -110,8 +110,10 @@ near-edge / cross-band preview fit, and the form no longer blocks with
 `summarizeApr7d` (pure; cards, table, homepage snapshot all call it) now:
 
 1. Rank the sample's presets by 7-day fee APR (ties go wider), still fee-capped
-   at the shared $1,000 preview basis. For this pool that is **Micro ~16%**
-   (under the ~18.1% whole-pool fee cap). Highest range becomes "Micro" again.
+   at the shared $1,000 preview basis (own-liquidity dilution applies). For this
+   pool on the 2026-11-10 snapshot used in screenshots that is **Standard ~4.35%**.
+   The $100 server reference listed Micro ~16%; repricing at the $1,000 card
+   preview changes the ranking. Highest range becomes "Standard".
 2. **True data gap** (degraded / no preset estimates / expired snapshot) — do
    **not** invent a range APR. Keep today's copy ("Not enough recent trading
    data…" / "No 7-day estimate right now." / "APR data is temporarily
@@ -337,7 +339,7 @@ Each hook returns `OpenVenueSession` and **calls the existing builder**:
   `estimateLivePresetApr`. 70-bin cap and rent copy stay in the descriptor
   (`meta.maxRangeUnitsPerPosition`, `meta.rent`, `meta.feePolicy.open`).
 - `useRhcOpenSession(pool)` — today's `useEvmWalletConnection` + the open
-  panel's prepare / simulate / `eth_sendTransaction`. Size-fit off. Custom
+  panel's prepare / simulate / `eth_sendTransaction`. Custom
   range follows whatever the panel already offers (Min ±10 ticks stays the
   RHC label). Fee disclosure unchanged (RHC 10 bps).
 
@@ -387,8 +389,8 @@ changes, no DB migrations.
 1. **Size-fit (LJ t865u, 2026-11-10):** removed entirely — card and form no
    longer filter presets by a $1,000 preview fit, and the form no longer shows
    "Lower the amount to open a position." The card shows the best 7-day range
-   APR (Micro ~16% on today's snapshot), fee-capped. Genuine prepare / balance
-   / 70-bin errors stay.
+   APR (Standard ~4.35% on the 2026-11-10 snapshot after the $1,000 preview
+   reprice and fee cap). Genuine prepare / balance / 70-bin errors stay.
 2. **Degraded / no sample:** keep "—" and today's plain-language reason, so we
    do not introduce a second, non-7-day APR. Change only if LJ wants a
    fee/TVL stand-in labelled "Estimated" (never "7-day").
@@ -397,9 +399,9 @@ changes, no DB migrations.
    subtitle carries the venue name.
 4. **Meteora Custom range:** off in v1 (bin cap + missing bin-array rules).
    The picker still shows Micro / Tight / Standard / Wide (+ Best).
-5. **Ranking side-effect:** this Raydium pool will start ranking by ~16% APR
-   instead of falling into the no-APR group. That matches LJ's "highest 7-day
-   APR wins" rule and is a visible list-order change.
+5. **Ranking side-effect:** this Raydium pool will start ranking by its ~4.35%
+   7-day APR (Standard) instead of falling into the no-APR group. That matches
+   LJ's "highest 7-day APR wins" rule and is a visible list-order change.
 
 ---
 

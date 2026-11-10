@@ -14,7 +14,8 @@ export function rangeAprPayload(
   // Keep server estimates when already priced at this capital.
   const priced = payload.referenceCapitalUsd === capital ? payload : payloadForCapital(payload, capital);
   return { ...priced, presets: priced.presets.map((preset, index) => {
-    const { sizeFit: _ignored, ...rest } = preset as RangeAprPresetEstimate & { sizeFit?: unknown };
+    const rest: RangeAprPresetEstimate & { sizeFit?: unknown } = { ...preset };
+    delete rest.sizeFit;
     return {
       ...rest,
       // Changing capital cannot supply data that the server said was unavailable.
