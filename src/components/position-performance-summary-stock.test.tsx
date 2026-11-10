@@ -31,11 +31,17 @@ it("omits stock summary cards already shown in the overview while keeping positi
   expect(html).not.toContain('data-testid="stock-performance"');
   expect(html).not.toContain("Total since deposit");
   expect(html).toContain('data-testid="position-detail-identity"');
-  expect(html).toContain("In range");
+  // Embedded in My positions the range badge above the tabs says it: no second Range card here.
+  expect(html).not.toContain("In range");
   expect(html).toContain("4.00%");
   expect(html).toContain("Time since the earliest recorded position event.");
 });
 it("keeps the standalone single-position stock summary by default", () => {
   const html = renderToStaticMarkup(<PerformanceSummary data={report} embedded metadata={{}} />);
   expect(html).toContain('data-testid="stock-performance"');
+});
+
+it("keeps the Range card when the summary is not embedded under the My positions badge", () => {
+  const html = renderToStaticMarkup(<PerformanceSummary data={report} embedded={false} metadata={{}} />);
+  expect(html).toContain("In range");
 });

@@ -39,6 +39,7 @@ import { useStoredTokenIcons } from "./use-stored-token-icons";
 import { tokenSymbol } from "@/lib/position-label";
 import { UnavailableTool } from "./unified-positions/unavailable-tool";
 import { StocksOverview, type OverviewPosition } from "./stocks-overview";
+import { Collapsible } from "./collapsible";
 import { fetchDexPerformance } from "@/lib/dex/client";
 import type { PositionPerformanceReport } from "@/lib/position-performance-report";
 
@@ -200,7 +201,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   const otherSelected = otherPositions.find((item) => item.key === otherKey)
     ?? (!otherKey && solanaEmpty && !initialMint ? otherPositions[0] ?? null : null);
   const otherBinding = otherSelected && registry.owns(otherSelected)
-    ? { header: (item: UnifiedPosition) => <RegistryPositionHeader position={item} metadata={metadata} icons={storedIcons} />, details: (item: UnifiedPosition) => <RegistryPositionDetails position={item} />,
+    ? { header: (item: UnifiedPosition) => <RegistryPositionHeader position={item} metadata={metadata} icons={storedIcons} showAssets={activeView !== "performance"} />, details: (item: UnifiedPosition) => <RegistryPositionDetails position={item} />,
       // Keyed by the position only: the cross-op lock is per position and must not depend on the open tab (PM review of #289).
       tool: (item: UnifiedPosition, view: ToolId) => <RegistryPositionTool key={item.key} position={item} descriptor={registry.descriptor(item)!}
         capabilities={registry.capabilities(item)!} view={view} balances={walletBalances} symbolOf={(token) => tokenSymbol(token.id, metadata, token.symbol)}
@@ -310,12 +311,15 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
           <span className={`rounded-full border px-2.5 py-1 ${state.inRange ? "border-white/40 bg-white/[0.07] text-cream/80" : "border-white/20 bg-white/[0.05] text-smoke"}`}>{state.rangeSide === "above" ? "Above range · single-sided" : state.rangeSide === "below" ? "Below range · single-sided" : "Price within range"}</span>
 
         </div>}
-        {assets && <div aria-label="Position assets" className="mt-5 divide-y divide-white/10">
+        {/* Performance already shows the position's value and fees below: the per-token rows fold away there. */}
+        {assets && <Collapsible open={activeView !== "performance"} testId="position-assets-collapse">
+          <div aria-label="Position assets" className="mt-5 divide-y divide-white/10">
           <PositionAssetRow symbol={poolLabel(assets.mintA)} icon={metadata[assets.mintA]?.icon ?? null} decimals={assets.decimalsA}
             liquidityRaw={assets.currentAmounts.a} unclaimedFeesRaw={feeState?.fees.a ?? null} priceUsd={assets.pricing?.priceUsdA ?? null} />
           <PositionAssetRow symbol={poolLabel(assets.mintB)} icon={metadata[assets.mintB]?.icon ?? null} decimals={assets.decimalsB}
             liquidityRaw={assets.currentAmounts.b} unclaimedFeesRaw={feeState?.fees.b ?? null} priceUsd={assets.pricing?.priceUsdB ?? null} />
-        </div>}
+          </div>
+        </Collapsible>}
         </>}
         {registry.loadingNames.length ? <p role="status" className="mt-2 text-xs text-smoke" data-testid="registry-positions-loading">Loading {registry.loadingNames.join(", ")} positions…</p> : null}
         {registry.errors.map((message) => <p key={message} role="alert" className="mt-2 text-xs text-cream/80" data-testid="registry-positions-error">{message}</p>)}

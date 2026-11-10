@@ -69,7 +69,8 @@ export function PerformanceSummary({ data, embedded, metadata, showStockPerforma
           {te && <p className="text-xs leading-5 text-smoke">Amounts shown in {te.baseSymbol} equivalent.</p>}
           <div className="grid gap-3 sm:grid-cols-2">
             <Stat label={holdingTime.label} value={holdingTime.value} description="Time since the earliest recorded position event." />
-            <Stat label="Range" value={data.rangeSide === "inside" ? "In range" : data.rangeSide === "above" ? "Above range" : data.rangeSide === "below" ? "Below range" : data.rangeSide} />
+            {/* Embedded in My positions, the range badge above the tabs already says this. */}
+            {!embedded && <Stat label="Range" value={data.rangeSide === "inside" ? "In range" : data.rangeSide === "above" ? "Above range" : data.rangeSide === "below" ? "Below range" : data.rangeSide} />}
             {preferTe ? (
               <>
                 <Stat
@@ -78,7 +79,7 @@ export function PerformanceSummary({ data, embedded, metadata, showStockPerforma
                   description="Estimate: fees accrued so far, annualized. Not a forecast or a promised return."
                   unavailableReason={missingReturn(true)}
                   emphasize
-                  wide
+                  wide={!embedded}
                 />
                 {!stock && <Stat
                   label={`Fees accrued`}
@@ -93,7 +94,7 @@ export function PerformanceSummary({ data, embedded, metadata, showStockPerforma
               </>
             ) : (
               <>
-                <Stat label="Est. fee-only APR (USD) · not a prediction" value={pct(data.metrics.feeOnlyAprPct)} description="Estimate: fees accrued so far, annualized. Not a forecast or a promised return." unavailableReason={missingReturn(true)} emphasize wide />
+                <Stat label="Est. fee-only APR (USD) · not a prediction" value={pct(data.metrics.feeOnlyAprPct)} description="Estimate: fees accrued so far, annualized. Not a forecast or a promised return." unavailableReason={missingReturn(true)} emphasize wide={!embedded} />
                 <Stat label="Current equity (USD)" value={money(data.metrics.currentEquityUsd)}
                   description={data.metrics.liquidityUsd !== null && data.metrics.uncollectedFeesUsd !== null ? `Liquidity ${money(data.metrics.liquidityUsd)} + unclaimed fees ${money(data.metrics.uncollectedFeesUsd)}.` : "Liquidity plus unclaimed fees."} />
                 <Stat label="Fees accrued (USD)" value={money(data.metrics.feesEarnedUsd)} description="Collected plus unclaimed fees." />

@@ -1,5 +1,6 @@
 "use client";
 
+import { Collapsible } from "../collapsible";
 import { useEffect, useMemo, useState } from "react";
 import { dexDescriptors, dexPositionLabel, dexPositionRangeText, dexRangeStatusText, fetchDexPositions, positionDescriptorsFor,
   type DexCapabilities, type DexDescriptor, type DexSigner } from "@/lib/dex/client";
@@ -83,7 +84,11 @@ const ICON_CHAIN: Record<ChainId, IconChain> = { solana: "solana", "robinhood-ch
  * until the DEX reports a price). Token icons come from the stored icon map first (same source as the pairs list), then
  * token metadata.
  */
-export function RegistryPositionHeader({ position, metadata = {}, icons }: { position: UnifiedPosition; metadata?: AssetMetadata; icons?: Partial<TokenIconMap> }) {
+export function RegistryPositionHeader({ position, metadata = {}, icons, showAssets = true }: {
+  position: UnifiedPosition; metadata?: AssetMetadata; icons?: Partial<TokenIconMap>;
+  /** False on the Performance tab, which already shows the position's value and fees: the rows fold away. */
+  showAssets?: boolean;
+}) {
   const status = dexRangeStatusText(position);
   const tokens = [position.tokenA, position.tokenB] as const;
   const sides = ["a", "b"] as const;
@@ -92,11 +97,13 @@ export function RegistryPositionHeader({ position, metadata = {}, icons }: { pos
       {status ? <span className={`rounded-full border px-2.5 py-1 ${position.rangeStatus === "in" ? "border-white/40 bg-white/[0.07] text-cream/80" : "border-white/20 bg-white/[0.05] text-smoke"}`}>{status}</span> : null}
       <span className="rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-cream/80">{dexPositionRangeText(position).replace(/^range/, "Range").replace(/^ticks/, "Ticks")}</span>
     </div>
-    <div aria-label="Position assets" className="mt-5 divide-y divide-white/10" data-testid="registry-position-assets">
-      {tokens.map((token, i) => <PositionAssetRow key={token.id} symbol={tokenSymbol(token.id, metadata, token.symbol)} icon={iconFor(icons, ICON_CHAIN[position.chain], token.id) ?? metadata[token.id]?.icon ?? null}
-        decimals={token.decimals} liquidityRaw={position.holdings?.liquidityRaw?.[sides[i]!] ?? null}
-        unclaimedFeesRaw={position.holdings?.unclaimedFeesRaw?.[sides[i]!] ?? null} priceUsd={null} />)}
-    </div>
+    <Collapsible open={showAssets} testId="registry-position-assets-collapse">
+      <div aria-label="Position assets" className="mt-5 divide-y divide-white/10" data-testid="registry-position-assets">
+        {tokens.map((token, i) => <PositionAssetRow key={token.id} symbol={tokenSymbol(token.id, metadata, token.symbol)} icon={iconFor(icons, ICON_CHAIN[position.chain], token.id) ?? metadata[token.id]?.icon ?? null}
+          decimals={token.decimals} liquidityRaw={position.holdings?.liquidityRaw?.[sides[i]!] ?? null}
+          unclaimedFeesRaw={position.holdings?.unclaimedFeesRaw?.[sides[i]!] ?? null} priceUsd={null} />)}
+      </div>
+    </Collapsible>
   </>;
 }
 
