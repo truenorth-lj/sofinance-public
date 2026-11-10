@@ -38,7 +38,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Suspense fallback={null}>
           <AnalyticsRoot />
         </Suspense>
-        <RegionNotice />
+        <Suspense fallback={null}>
+          <RegionNotice />
+        </Suspense>
         {children}
       </body>
     </html>

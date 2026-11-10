@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { FLAG_OFF_NOT_FOUND_PATH, isFlaggedOffPage } from "@/lib/flagged-pages";
 import { appSubdomainRewritePath, isAppSubdomainHost, trailingSlashRedirectPath } from "@/lib/app-host";
 import { unifiedAppRedirect } from "@/lib/unified-pools/deep-link";
-import { REGION_NOTICE_COOKIE, REGION_NOTICE_COOKIE_MAX_AGE, regionNoticeForCountry } from "@/lib/region-notice";
+import { REGION_NOTICE_COOKIE, REGION_NOTICE_COOKIE_MAX_AGE, regionNoticeForCountry, resolveNoticeCountry } from "@/lib/region-notice";
 
 /**
  * Next.js 16 Proxy (formerly middleware). Host-based App rewrite, plus the region-notice flag cookie
@@ -47,7 +47,11 @@ export function proxy(request: NextRequest) {
 
 /** Sets (or clears) the readable notice flag from Vercel's geo header. Never changes status or path. */
 function withRegionNotice(request: NextRequest, response: NextResponse) {
-  const show = regionNoticeForCountry(request.headers.get("x-vercel-ip-country"));
+  const show = regionNoticeForCountry(resolveNoticeCountry(
+    request.headers.get("x-vercel-ip-country"),
+    request.nextUrl.searchParams,
+    process.env.VERCEL_ENV,
+  ));
   const hasFlag = request.cookies.get(REGION_NOTICE_COOKIE)?.value === "1";
   if (show && !hasFlag) {
     response.cookies.set(REGION_NOTICE_COOKIE, "1", {
