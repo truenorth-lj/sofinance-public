@@ -47,11 +47,18 @@ export function cardDataDays(payload: PoolRangeAprPayload): number {
  * deposit can never earn more than all of them), so a thin $126 pool cannot show a range APR its fees never paid. It is
  * not held to the pool's average fee rate: a concentrated range earns above that average by design, so that cap
  * replaced the range's number on most cards (15 of 20 live pools on 2026-11-10).
+ *
+ * Size-fit (Raydium only) answers whether a $1,000 preview would fit a range; it does not decide whether a 7-day
+ * sample exists. When every preview range is excluded (thin tickSpacing=1 pools such as TSLA/TSLAx `4bMb…gRbd`),
+ * rank again without size-fit so the card still shows the estimate. The Create position form keeps size-fit for Best.
  */
 export function summarizeApr7d(payload: PoolRangeAprPayload, protocol: UnifiedProtocol, nowMs: number): Exclude<Apr7dState, { status: "loading" }> {
   const expired = aprSnapshotExpired(payload, nowMs);
-  const summary = !expired ? highestRangeSummary(OPEN_RANGE_UI_PRESETS,
-    rangeAprPayload(payload, undefined, { enforceSizeFit: enforcesRangeAprSizeFit(protocol) })) : null;
+  const sized = !expired ? rangeAprPayload(payload, undefined, { enforceSizeFit: enforcesRangeAprSizeFit(protocol) }) : null;
+  let summary = sized ? highestRangeSummary(OPEN_RANGE_UI_PRESETS, sized) : null;
+  if (!summary && sized && !payload.sample.degraded) {
+    summary = highestRangeSummary(OPEN_RANGE_UI_PRESETS, rangeAprPayload(payload, undefined, { enforceSizeFit: false }));
+  }
   // Product rule: the number stays, labelled "Data delayed", while the snapshot is under 48h old; past 48h it is
   // "—" (`aprSnapshotExpired`). "Data delayed": server `stale` (older than 26h, or computed from saved price history,
   // see `aprSnapshotDelayed`), a failed last refresh, or a snapshot this browser already sees as late (cached response).

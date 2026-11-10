@@ -51,12 +51,16 @@ describe("summarizeApr7d: the best range's APR at a $1,000 deposit, held only to
   /** Yearly % of a $1,000 deposit that took every fee the pool's LPs earned. */
   const allFeesPct = (feesPerDay: number) => feesPerDay * 365 / CARD_APR_DEPOSIT_USD * 100;
 
-  it("SKHYx-like $126 pool: no APR when all preview ranges are excluded; the pool fee cap still holds", () => {
+  it("SKHYx-like $126 pool: still shows the fee-capped 7-day APR when every $1,000 preview range is excluded", () => {
     const payload = thin(126);
     const fees = 1000 * 0.0005 * 0.84; // 7d avg volume × fee × LP share = $0.42 a day
     expect(poolLpFeesPerDayUsd(payload)).toBeCloseTo(fees, 12);
+    expect(payloadForCapital(payload, CARD_APR_DEPOSIT_USD).presets.every((preset) => preset.sizeFit?.status === "excluded")).toBe(true);
     const state = summarizeApr7d(payload, "raydium-clmm", NOW);
-    expect(state.status).toBe("missing"); // all ranges fail the common $1,000 size-fit check
+    expect(state.status).toBe("ready");
+    expect(state.status === "ready" && state.aprPct).toBeGreaterThan(0);
+    expect(state.status === "ready" && state.aprPct).toBeLessThanOrEqual(allFeesPct(fees) + 1e-9);
+    expect(state).toMatchObject({ status: "ready", rangeLabel: expect.any(String) });
     expect(capAprAtPoolFees(1e6, { poolLpFeesPerDayUsd: fees, poolTvlUsd: 0 })).toBeCloseTo(allFeesPct(fees), 9);
   });
   it("a range that earns above the pool's average fee rate keeps its own number (no pool-average cap)", () => {
@@ -80,11 +84,11 @@ describe("summarizeApr7d: the best range's APR at a $1,000 deposit, held only to
     expect(capAprAtPoolFees(5, { poolLpFeesPerDayUsd: 1_000, poolTvlUsd: 10_000 })).toBe(5);
     expect(capAprAtPoolFees(500, { poolLpFeesPerDayUsd: null, poolTvlUsd: 126 })).toBe(500);
   });
-  it("does not name an actionable range when all $1,000 candidates are size-excluded", () => {
+  it("names the unconstrained best range on the card when all $1,000 candidates are size-excluded", () => {
     const payload = thin(126);
-    // The card must preserve the same exclusions as the Create position form.
+    // The Create position form still excludes those ranges for a $1,000 deposit; the card does not hide the estimate.
     expect(payloadForCapital(payload, CARD_APR_DEPOSIT_USD).presets.some((preset) => preset.sizeFit?.status === "excluded")).toBe(true);
-    expect(summarizeApr7d(payload, "raydium-clmm", NOW)).toMatchObject({ status: "missing" });
+    expect(summarizeApr7d(payload, "raydium-clmm", NOW)).toMatchObject({ status: "ready", rangeLabel: expect.any(String) });
   });
 });
 
@@ -97,9 +101,10 @@ describe("summarizeApr7d: protocol-specific size-fit eligibility", () => {
       status: "excluded", reason: "cross-band", ownSharePct: 1, edgeBps: 100, impactBps: 2, bandBps: 1,
     } }));
     const state = summarizeApr7d(payload, protocol, NOW);
-    expect(state).toMatchObject(protocol === "raydium-clmm"
-      ? { status: "missing" }
-      : { status: "ready", aprPct: 40, rangeLabel: protocol === "uniswap-v4-rhc" ? "Min (±10 ticks)" : "Micro" });
+    // Size-fit is a form ranking rule, not a reason to blank the card: every protocol shows the 7-day number.
+    expect(state).toMatchObject({
+      status: "ready", aprPct: 40, rangeLabel: protocol === "uniswap-v4-rhc" ? "Min (±10 ticks)" : "Micro",
+    });
   });
 
   it.each(protocols)("%s retains the shared preview, fee cap and missing-data gates", (protocol) => {
@@ -140,7 +145,9 @@ describe("summarizeApr7d: protocol-specific size-fit eligibility", () => {
     const state = summarizeApr7d(payload, "uniswap-v4-rhc", NOW);
     expect(state).toMatchObject({ status: "ready", rangeLabel: "Min (±10 ticks)" });
     expect(state.status === "ready" && state.aprPct).toBeCloseTo(1.3940008194, 9);
-    expect(summarizeApr7d(payload, "raydium-clmm", NOW)).toMatchObject({ status: "missing" });
+    const raydium = summarizeApr7d(payload, "raydium-clmm", NOW);
+    expect(raydium).toMatchObject({ status: "ready", rangeLabel: "Micro" });
+    expect(raydium.status === "ready" && raydium.aprPct).toBeCloseTo(1.3940008194, 9);
   });
 });
 

@@ -37,11 +37,15 @@ describe("presetOptions / openInputs", () => {
     expect(options[2]!.reason).toBe("Not available to open yet: this range spans 200 bins, and one position holds at most 70.");
     expect(options.map((item) => item.apr)).toEqual([APR_UNAVAILABLE, "Est. APR ~12%", APR_UNAVAILABLE]);
   });
-  it("APR reads exactly \"APR unavailable\" when the feed failed, is degraded, or covers other bounds; never 0% or a guess", () => {
-    for (const feed of [null, new Error("Pool volume unavailable"), { ...apr, sample: { degraded: true } } as unknown as PoolRangeAprPayload,
-      { ...apr, pool: { tickSpacing: 1 } } as unknown as PoolRangeAprPayload]) {
+  it("APR reads exactly \"APR unavailable\" when the feed failed or is degraded; never 0% or a guess", () => {
+    for (const feed of [null, new Error("Pool volume unavailable"), { ...apr, sample: { degraded: true } } as unknown as PoolRangeAprPayload]) {
       expect(presetOptions(ranges.presets, descriptor, feed).map((item) => item.apr)).toEqual([APR_UNAVAILABLE, APR_UNAVAILABLE, APR_UNAVAILABLE]);
     }
+  });
+  it("uses the same preset id when live bounds have drifted from the snapshot (price moved)", () => {
+    // tickSpacing 1 makes the exact-bound join fail (snapshot was priced on spacing 10); "standard" still has an ok estimate.
+    const drifted = { ...apr, pool: { tickSpacing: 1 } } as unknown as PoolRangeAprPayload;
+    expect(presetOptions(ranges.presets, descriptor, drifted).map((item) => item.apr)).toEqual([APR_UNAVAILABLE, "Est. APR ~12%", APR_UNAVAILABLE]);
   });
   it("never offers native SOL as an input", () => {
     const tokens = openInputs({ ...pool, mintB: NATIVE_SOL_MINT, symbolB: "SOL" }, descriptor, { a: 8, b: 9 });
@@ -73,12 +77,12 @@ const type = async (value: string) => {
   await act(async () => { setter.call(input, value); input.dispatchEvent(new Event("input", { bubbles: true })); });
   await act(async () => { await vi.advanceTimersByTimeAsync(500); });
 };
-const openButton = () => [...container.querySelectorAll("button")].find((b) => b.textContent?.includes("Open position"))!;
+const openButton = () => container.querySelector<HTMLButtonElement>("[data-testid=registry-open-submit]")!;
 
 describe("RegistryOpenModal", () => {
   it("quotes the default preset through the registry route and shows rent, the 0.1% fee, the wallet fee and SOL reserve notes", async () => {
     await render();
-    expect(container.querySelector<HTMLButtonElement>("[data-testid=registry-open-preset-wide]")!.disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>("[data-testid=preset-wide]")!.disabled).toBe(true);
     expect(container.textContent).toContain("Not available to open yet");
     const select = container.querySelector<HTMLSelectElement>("#registry-open-token")!;
     await act(async () => { select.value = USDC_MINT; select.dispatchEvent(new Event("change", { bubbles: true })); });
@@ -103,7 +107,8 @@ describe("RegistryOpenModal", () => {
 
   it("APR feed down with the server's ranges present: every APR reads \"APR unavailable\" and the position can still be opened", async () => {
     await render({ apr: new Error("Pool volume unavailable") });
-    for (const id of ["micro", "standard", "wide"]) expect(container.querySelector(`[data-testid=registry-open-apr-${id}]`)!.textContent).toBe(APR_UNAVAILABLE);
+    expect(container.querySelector("[data-testid=range-apr-headline]")!.textContent).toMatch(/—|Estimating|unavailable/i);
+    expect(container.textContent).toContain("Estimate unavailable right now.");
     expect(container.textContent).not.toMatch(/\b0(\.0)?%/);
     const select = container.querySelector<HTMLSelectElement>("#registry-open-token")!;
     await act(async () => { select.value = USDC_MINT; select.dispatchEvent(new Event("change", { bubbles: true })); });
