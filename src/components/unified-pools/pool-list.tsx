@@ -42,7 +42,7 @@ export function ChainBadge({ chain, tone = "light", wrapBelowMd }: { chain: Pool
 
 /**
  * The 7d APR value. In the table (`sm`) a delayed snapshot that still shows its number (under 48h old) gets a small
- * "Data delayed" line under it; the cards (`lg`) already say it in their "Updated … · Data delayed" line.
+ * "Data delayed" line under it; the cards (`lg`) already say it in their own "Data delayed" line.
  */
 /** Shown instead of an APR for a pool with fewer than `MIN_DATA_DAYS` days of data. */
 export const NEW_POOL_LABEL = "New pool";

@@ -28,8 +28,7 @@ export default function DocsFeeAprPage() {
         <li>
           <strong className="font-medium text-cream">Range APR · 7d</strong> on the pool cards — estimated
           from recent trading volume and fees, for a $1,000 deposit in the best candidate range (Micro / Tight /
-          Standard / Wide). When the pool&apos;s own average fee rate is lower, the card shows that instead and says
-          <strong className="font-medium text-cream"> Pool avg APR · 7d</strong>. Not a prediction.
+          Standard / Wide). Not a prediction.
         </li>
         <li>
           <strong className="font-medium text-cream">Est. fee APR</strong> on the Solana

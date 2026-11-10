@@ -60,7 +60,7 @@ describe("7d APR column freshness (homepage top 5 and /app/rwa-pairs share PoolT
     // ...and expires 48h after the saved candles, not after the new chain read.
     expect(cell(at(48.5), snapshot)).toMatchObject({ status: "missing", text: "—" });
   });
-  it("the cards (lg) keep their own 'Updated … · Data delayed' line and add no second label", () => {
+  it("the cards (lg) keep their own 'Data delayed' line and add no second label", () => {
     const html = renderToString(createElement(Apr7dValue, { state: summarizeApr7d(payload(), "raydium-clmm", at(30)) }));
     expect(html).not.toContain("apr7d-delayed");
   });
