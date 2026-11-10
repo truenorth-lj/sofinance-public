@@ -1,0 +1,150 @@
+import "@/lib/engine-host";
+import "server-only";
+/**
+ * Server-side data for the homepage stock cards and the spot swap (cached; never per visitor).
+ *
+ * Jupiter budget (free tier, 1 request/s per org): a full refresh is ONE pass over the fixed universe through the
+ * Jupiter Tokens V2 search endpoint with up to 100 comma-separated mints per call: 218 mints = 3 calls, spaced at
+ * least 1.1 s apart. Buy eligibility adds one RPC `getMultipleAccounts` for the ranked candidates, then one Jupiter
+ * quote probe (1 USDC) per checked stock whose cached probe result is older than 30 minutes: stocks are checked in rank
+ * order until each card has its rows to buy (usually the shown stocks plus one per skipped stock).
+ * Both results sit in the Next data cache for 10 minutes; a failed read throws and is never cached.
+ * CoinGecko is not called here (cross-check only, offline).
+ */
+import { unstable_cache } from "next/cache";
+import { rpcConnection, RpcUnavailableError } from "@sofinance/engine/rpc";
+import { jupiterRequest } from "@sofinance/engine/jupiter";
+import { JUPITER_TOKENS_SEARCH_PATH } from "@sofinance/engine/jupiter/urls";
+import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
+import { trustedIcon } from "@sofinance/engine/token-metadata";
+import { spotSwapRouteCheck, type SpotSwapRouteCheck } from "@sofinance/engine/spot-swap";
+import { PublicKey } from "@solana/web3.js";
+import { upstreamUnavailable } from "@/lib/upstream-errors";
+import { buildStockMarket, cardRankings, parseJupiterStockRow, STOCK_CARD_ROWS, type JupiterStockRow, type StockMarket } from "./build";
+import { computeStockBuyEligibility, spotSwapAllowlistFor, type SpotSwapStockContext, type StockBuyEligibility } from "./buy";
+import { STOCK_UNIVERSE } from "./universe";
+
+export const STOCK_MARKET_REVALIDATE_SECONDS = 600;
+export const STOCK_SEARCH_BATCH = 100;
+/** Minimum spacing between this module's Jupiter calls (free tier: 1 request/s per org). */
+export const STOCK_JUPITER_SPACING_MS = 1_100;
+export const STOCK_ROUTE_PROBE_TTL_MS = 30 * 60_000;
+const SEARCH_TIMEOUT_MS = 15_000;
+
+let lastJupiterCallAt = 0;
+/** Tail of the call queue: each call waits for the one before it to finish (a failure does not stop the queue). */
+let jupiterQueue: Promise<unknown> = Promise.resolve();
+/**
+ * One Jupiter call at a time, each started at least STOCK_JUPITER_SPACING_MS after the previous one ended. A shared
+ * timestamp alone is not enough: calls that wait at the same time would all start together.
+ */
+function paced<T>(call: () => Promise<T>): Promise<T> {
+  const run = jupiterQueue.then(async () => {
+    const wait = lastJupiterCallAt + STOCK_JUPITER_SPACING_MS - Date.now();
+    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+    try { return await call(); } finally { lastJupiterCallAt = Date.now(); }
+  });
+  jupiterQueue = run.catch(() => undefined);
+  return run;
+}
+
+/** Concurrent callers of the same read share one in-flight promise (cleared when it settles, so a failure is not kept). */
+function sharedInFlight<K, T>(read: (key: K) => Promise<T>): (key: K) => Promise<T> {
+  const inFlight = new Map<K, Promise<T>>();
+  return (key) => {
+    const pending = inFlight.get(key);
+    if (pending) return pending;
+    const started = read(key).finally(() => inFlight.delete(key));
+    inFlight.set(key, started);
+    return started;
+  };
+}
+
+/** The universe's Jupiter rows: ceil(218 / 100) = 3 search calls, one at a time. */
+export async function fetchJupiterStockRows(options: { fetcher?: typeof fetch } = {}): Promise<JupiterStockRow[]> {
+  const mints = STOCK_UNIVERSE.map(([mint]) => mint);
+  const rows: JupiterStockRow[] = [];
+  for (let i = 0; i < mints.length; i += STOCK_SEARCH_BATCH) {
+    const batch = mints.slice(i, i + STOCK_SEARCH_BATCH);
+    const body: unknown = await paced(() => jupiterRequest({
+      path: JUPITER_TOKENS_SEARCH_PATH, query: { query: batch.join(",") }, fetcher: options.fetcher, apiKey: getJupiterApiKey(),
+      headers: { "User-Agent": "SoFinance/0.1 (stock cards; +https://sofinancelab.xyz)" },
+      cacheKey: null, signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+    }));
+    if (!Array.isArray(body)) throw new Error("Jupiter tokens search returned an unexpected payload");
+    const requested = new Set(batch);
+    for (const raw of body) {
+      const row = parseJupiterStockRow(raw);
+      if (row && requested.has(row.id)) rows.push(row);
+    }
+  }
+  return rows;
+}
+
+/** One full refresh at a time: a second cache miss during a refresh waits for it instead of starting 3 more calls. */
+const readStockMarket = sharedInFlight(async (): Promise<StockMarket> => {
+  const market = buildStockMarket(await fetchJupiterStockRows(), { icon: trustedIcon });
+  if (!market.gainers.length && !market.stocks.length) throw new Error("No stock passed the filters"); // never cache an empty read
+  return market;
+});
+
+export const loadStockMarket = unstable_cache(() => readStockMarket("market"), ["stock-market-v1"], {
+  revalidate: STOCK_MARKET_REVALIDATE_SECONDS, tags: ["stock-market"],
+});
+
+const probes = new Map<string, { result: SpotSwapRouteCheck; expiresAt: number }>();
+const probeRoute = sharedInFlight(async (key: string): Promise<SpotSwapRouteCheck> => {
+  const [mint, usdcRaw] = key.split(":") as [string, string];
+  const result = await paced(() => spotSwapRouteCheck(mint, BigInt(usdcRaw)));
+  probes.set(key, { result, expiresAt: Date.now() + STOCK_ROUTE_PROBE_TTL_MS });
+  return result;
+});
+export async function cachedRouteCheck(mint: string, usdcRaw: bigint): Promise<SpotSwapRouteCheck> {
+  const key = `${mint}:${usdcRaw}`;
+  const hit = probes.get(key);
+  if (hit && hit.expiresAt > Date.now()) return hit.result;
+  return probeRoute(key);
+}
+
+/** An outage (Jupiter 429/5xx/timeout, RPC down): rethrown so it is never cached as "not buyable". */
+export function isStockSourceUnavailable(error: unknown): boolean {
+  if (upstreamUnavailable(error)) return true;
+  if (error instanceof RpcUnavailableError) return true;
+  return error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+}
+
+/** `cards`: each card's ranked underlyings. Route probes stop once every card has STOCK_CARD_ROWS stocks to buy. */
+async function readStockBuyEligibility(cards: string[][]): Promise<StockBuyEligibility> {
+  const market = await loadStockMarket();
+  const connection = rpcConnection();
+  return computeStockBuyEligibility(market, cards, {
+    readMints: (mints) => connection.getMultipleAccountsInfo(mints.map((mint) => new PublicKey(mint)), "confirmed"),
+    checkRoute: cachedRouteCheck,
+    isUnavailable: isStockSourceUnavailable,
+  }, STOCK_CARD_ROWS);
+}
+
+const cachedEligibility = unstable_cache(readStockBuyEligibility, ["stock-buy-eligibility-v1"], {
+  revalidate: STOCK_MARKET_REVALIDATE_SECONDS, tags: ["stock-market"],
+});
+
+/** Buy eligibility for the cards' rankings (same key as the homepage, so routes reuse its cache). */
+export async function loadStockBuyEligibility(market: StockMarket): Promise<StockBuyEligibility> {
+  return cachedEligibility(cardRankings(market));
+}
+
+
+/**
+ * Server-side allowlist for one stock row, rebuilt from the cached market + eligibility (client metadata is never
+ * trusted). Null when the row has no Buy. Call this OUTSIDE `withJupiterRelay`: a cache miss calls Jupiter search.
+ */
+export async function loadSpotSwapStockContext(underlying: string): Promise<SpotSwapStockContext | null> {
+  const market = await loadStockMarket();
+  const eligibility = await loadStockBuyEligibility(market);
+  if (!eligibility.options[underlying]) return null;
+  const candidates = eligibility.candidates[underlying] ?? [];
+  return candidates.length ? { underlying, candidates } : null;
+}
+
+export { spotSwapAllowlistFor };
+export type { SpotSwapStockContext };

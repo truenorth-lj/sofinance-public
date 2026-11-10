@@ -8,7 +8,7 @@ const PUBLIC_PAGES = new Set([
   "/app/sign/AAAA.BBBB", "/app/sign/justonepart",
 ]);
 const PUBLIC_READS = new Set([
-  "/api/rwa-pairs", "/api/sol-usdc-price", "/api/pool-range-apr", "/api/pool-daily-apr",
+  "/api/rwa-pairs", "/api/sol-usdc-price", "/api/pool-range-apr", "/api/pool-daily-apr", "/api/stock-market",
 ]);
 type Scope = "external" | "telemetry" | "wallet-stub" | "public-read" | "forbidden";
 type Event = { action: "blocked" | "forwarded" | "stubbed" | "response" | "cancelled"; scope: Scope | "websocket" | "redirect"; host: string; method: string; resource: string };

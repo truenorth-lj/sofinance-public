@@ -25,6 +25,10 @@ export default function DocsFeesPage() {
           example USDC into a USDC pool), is not charged.
         </li>
         <li>
+          Buying a stock token with USDC in the app (spot swap): 10 bps of the part that is swapped,
+          in USDC, the same as opening or adding to a position.
+        </li>
+        <li>
           Compounding: 10 bps of the harvested tokens that are swapped to rebalance the position, in
           that token. If no swap is needed, there is no fee.
         </li>

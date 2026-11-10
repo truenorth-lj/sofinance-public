@@ -22,4 +22,9 @@ describe("public docs copy", () => {
     expect(fees).toContain("On Solana");
     expect(fees).toContain("On Robinhood Chain");
   });
+
+  it("fees page charges the in-app spot swap 10 bps of the swapped part, like opening or adding", () => {
+    const fees = readFileSync(resolve("src/app/docs/fees/page.tsx"), "utf8").replace(/\s+/g, " ");
+    expect(fees).toContain("Buying a stock token with USDC in the app (spot swap): 10 bps of the part that is swapped, in USDC, the same as opening or adding to a position.");
+  });
 });

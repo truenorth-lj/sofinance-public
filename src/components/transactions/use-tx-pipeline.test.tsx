@@ -9,7 +9,7 @@ vi.mock("@/lib/sentry/client-tx", () => ({ captureTxClientFailure: vi.fn(), capt
 vi.mock("@/lib/position-history-refresh", () => ({ notifyPositionHistoryChange: vi.fn() }));
 
 import { VersionedTransaction } from "@solana/web3.js";
-import { CANCEL_CHECK_PENDING_COPY, resetCancelChecks, dismissTxNotice, findTxNotice, getTxNotices, noticeIdFor, resetTxNotices, settleTxNotice, TxNotSentError, type TxAdapter, type TxWallet } from "@/lib/tx-pipeline";
+import { CANCEL_CHECK_PENDING_COPY, resetCancelChecks, dismissTxNotice, findTxNotice, getTxNotices, noticeIdFor, resetTxNotices, settleTxNotice, TxNotSentError, TxTermsChangedError, type TxAdapter, type TxWallet } from "@/lib/tx-pipeline";
 import { TxNoticeHost } from "./tx-notice-host";
 import { openStatusFromNotice } from "@/components/use-open-attempt";
 import { logStepTiming, useTxPipeline } from "./use-tx-pipeline";
@@ -102,6 +102,13 @@ describe("useTxPipeline", () => {
     await render(adapter(async () => prepared()), w);
     await act(async () => { await box.current.run(1); });
     expect(box.current.status).toBe("idle"); expect(getTxNotices()).toEqual([]);
+  });
+  it("returns to idle with no error when prepare hands back new terms to accept", async () => {
+    const w = wallet();
+    await render(adapter(async () => { throw new TxTermsChangedError(); }), w);
+    await act(async () => { await box.current.run(1); });
+    expect(box.current).toMatchObject({ status: "idle", locked: false }); expect(box.current.error).toBeUndefined();
+    expect(getTxNotices()).toEqual([]); expect(w.signAndSendTransaction).not.toHaveBeenCalled();
   });
   it("locks submit (and re-quote) while checking Solana after a wallet error and while confirming", async () => {
     // The real lookup client (waitForLanded → /api/tx-landed), held open until the test answers.

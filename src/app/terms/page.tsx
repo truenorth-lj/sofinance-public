@@ -64,6 +64,7 @@ export default function TermsPage() {
       <Section id="fees" title="6. Fees">
         <ul>
           <li>SoFinance charges a protocol fee of <strong>10 basis points (0.10%)</strong> in the token you deposit when opening a position, adding to a position, when withdrawing or converting to another token, and when compounding (the harvested tokens being reinvested — not a performance fee on LP fees). Withdraw-to-USDC is collected as a conversion fee in USDC; other deposit flows take 10 bps of the input token. The fee is included in the transaction you sign and is shown in the preview.</li>
+          <li>Buying a stock token with USDC in the app (spot swap) is also charged <strong>10 basis points (0.10%)</strong>, in USDC and only on the part that is swapped, the same as opening or adding to a position. The fee is included in the transaction you sign and is shown before you sign.</li>
           <li>Withdrawing as the two original pool tokens involves no swap and no SoFinance fee.</li>
           <li><strong>You pay Solana network fees</strong> and any account rent deposits required by the network, as well as third-party costs such as pool trading fees and swap-route costs.</li>
           <li>We may change the fee. Any change will be announced in advance and shown in the transaction preview.</li>

@@ -20,7 +20,7 @@ function valid(value: unknown, wallet: string): value is TxAttempt {
   return !!item && item.version === 1 && item.wallet === wallet && typeof item.signature === "string" &&
     /^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(item.signature) && Number.isSafeInteger(item.lastValidBlockHeight) &&
     typeof item.createdAt === "number" && typeof item.successTitle === "string" &&
-    ["add", "open", "compound", "withdraw", "swap"].includes(item.flow as string);
+    ["add", "open", "compound", "withdraw", "swap", "buy"].includes(item.flow as string);
 }
 
 export function loadTxAttempts(storage: Storage, wallet: string, now = Date.now()): TxAttempt[] {

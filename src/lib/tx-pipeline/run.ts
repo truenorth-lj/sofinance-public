@@ -3,7 +3,7 @@ import { loadTxAttempts, saveTxAttempt } from "./attempts";
 import { cancelCheckKey, CANCEL_CHECK_PENDING_COPY, holdCancelCheck, isCancelCheckPending } from "./cancel-guard";
 import { captureTxPreflightEvent, captureTxWalletErrorLanded, type TxReportContext } from "@/lib/sentry/client-tx";
 import { watchCancelledSend } from "./cancelled";
-import { isWalletRejection, walletErrorCategory, TxLandedUnknownError, TxNotLandedError, TxNotSentError, TxPreflightError, TxPromptExpiredError, TxSendUnknownError, TxVoidUnconfirmedError, TxWalletCancelledError, walletErrorInfo, type TxFlow } from "./errors";
+import { isWalletRejection, walletErrorCategory, TxLandedUnknownError, TxNotLandedError, TxNotSentError, TxPreflightError, TxPromptExpiredError, TxSendUnknownError, TxTermsChangedError, TxVoidUnconfirmedError, TxWalletCancelledError, walletErrorInfo, type TxFlow } from "./errors";
 import { simulatePreparedOnServer, waitForVoidedExpiry, type SimulatePrepared, type TxPreflightPolicy, type WaitVoided } from "./preflight";
 import type { FindLanded } from "./landed";
 import { dismissTxNotice, noticeIdFor, reportTxFailure, showTxCheckingNotice, trackTxSignature } from "./notices";
@@ -230,6 +230,8 @@ export async function runTx<Input, Prepared extends PreparedTx>(
     options.onStage?.("confirming", { signature });
     return { signature, prepared, noticeId, ...(uncertain ? { uncertain } : {}), ...(landedAfterWalletError ? { landedAfterWalletError } : {}), ...(via ? { via } : {}) };
   } catch (error) {
+    // New terms for the user to accept: nothing to report, the form shows them.
+    if (error instanceof TxTermsChangedError) throw new TxRunError("not-sent", error.message, false, error);
     if (error instanceof TxNotLandedError) context.landedCheck = "not-landed";
     else if (error instanceof TxLandedUnknownError) context.landedCheck = "unknown";
     if (error instanceof TxWalletCancelledError) context.walletErrorCode = walletErrorInfo(error.cause).code;

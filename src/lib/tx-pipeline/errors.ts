@@ -11,10 +11,10 @@ import type { LandedOutcome } from "./landed";
  * - unknown:  anything else; check the explorer before retrying.
  */
 export type TxFailureKind = "rejected" | "expired" | "not-sent" | "failed" | "unknown";
-export type TxFlow = "add" | "open" | "compound" | "withdraw" | "claim" | "swap";
+export type TxFlow = "add" | "open" | "compound" | "withdraw" | "claim" | "swap" | "buy";
 
 export const FLOW_LABEL: Record<TxFlow, string> = {
-  add: "Add liquidity", open: "Create position", compound: "Compound", withdraw: "Withdraw", claim: "Claim fees", swap: "Swap to tokens",
+  add: "Add liquidity", open: "Create position", compound: "Compound", withdraw: "Withdraw", claim: "Claim fees", swap: "Swap to tokens", buy: "Buy stock token",
 };
 
 /**
@@ -38,6 +38,18 @@ export class TxNotSentError extends Error {
   constructor(message: string, readonly cause?: unknown) {
     super(message);
     this.name = "TxNotSentError";
+  }
+}
+
+/**
+ * Prepare stopped before the wallet because the terms the user confirmed no longer hold (a swap's minimum moved). Not a
+ * failure: the adapter has already handed the new terms to the form, which shows them for the user to accept. runTx
+ * reports nothing (no toast, no failure event) and the pipeline returns to idle.
+ */
+export class TxTermsChangedError extends TxNotSentError {
+  constructor(message = "The terms changed, so nothing was prepared.") {
+    super(message);
+    this.name = "TxTermsChangedError";
   }
 }
 
