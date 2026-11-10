@@ -6,8 +6,8 @@ const navPill =
   "flex h-10 items-center justify-center rounded-full border border-white/25 px-4 text-[13px] font-medium text-cream/85 outline-none transition-colors hover:border-white/70 focus-visible:border-lemon";
 
 /**
- * Marketing-site header (homepage, blog, docs, FAQ, terms). On the homepage the section links are in-page anchors;
- * elsewhere they point back to the homepage sections. In-app pages use InkNav instead.
+ * Marketing-site header (homepage, blog, docs, FAQ, terms). On the homepage Pools is an in-page anchor; elsewhere it
+ * points back to the homepage's pools list. AI agents opens the app's agent page. In-app pages use InkNav instead.
  */
 export function SiteHeader({ onHomepage = false }: { onHomepage?: boolean }) {
   const section = (id: string) => (onHomepage ? `#${id}` : `/#${id}`);
@@ -27,9 +27,9 @@ export function SiteHeader({ onHomepage = false }: { onHomepage?: boolean }) {
         <a href={section("pools")} className={`${navPill} flex-1`}>
           Pools
         </a>
-        <a href={section("agents")} className={`${navPill} hidden flex-1 sm:flex`}>
+        <Link href={APP_ROUTES.ai} className={`${navPill} hidden flex-1 sm:flex`}>
           AI agents
-        </a>
+        </Link>
         <Link href={BLOG_ROUTES.home} className={`${navPill} flex-1`}>
           Blog
         </Link>

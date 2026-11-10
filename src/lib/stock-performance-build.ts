@@ -4,7 +4,7 @@ import "server-only";
  * base-side share quote and reuses the existing report's token-equivalent and USD metrics. No extra price reads.
  * Same-stock pools only (a token-equivalent exists); null otherwise. Never throws.
  */
-import type { JupiterPriceQuote } from "@sofinance/engine/token-prices";
+import type { TokenPriceQuote } from "@sofinance/engine/token-prices";
 import type { TokenNativeMetrics } from "@sofinance/engine/position-performance-math";
 import type { PositionCashflowEvent } from "./position-performance-events";
 import type { StockPerformance } from "./position-performance-report";
@@ -21,7 +21,7 @@ export async function buildStockPerformance(input: {
   tokenNative: TokenNativeMetrics;
   metrics: { currentEquityUsd: number | null; feesEarnedUsd: number | null };
   incomplete: boolean;
-  quotes: ReadonlyMap<string, JupiterPriceQuote>;
+  quotes: ReadonlyMap<string, TokenPriceQuote>;
   nowSeconds: number;
   fetcher?: typeof fetch;
   signal?: AbortSignal;
@@ -42,7 +42,7 @@ export async function buildStockPerformance(input: {
       decimalsB: input.decimalsB,
       tokenEquivalent: te,
       incomplete: input.incomplete,
-      quote: quote && priceMint ? { mint: priceMint, usdPrice: quote.usdPrice, priceChange24hPct: quote.priceChange24hPct } : null,
+      quote: quote && priceMint ? { mint: priceMint, usdPrice: quote.price, priceChange24hPct: quote.priceChange24hPct ?? null } : null,
       daily: null,
       hourly: null,
       historySource: null,

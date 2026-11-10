@@ -211,6 +211,17 @@ describe("SpotSwapModal", () => {
     await waitRefresh();
     expect(fetchSpotSwapQuote).toHaveBeenCalledTimes(3);
   });
+
+  it("nests its corners from the dialog in: 28px with 20px padding → quote box (and the shared field) 8px → summary row 4px", async () => {
+    const dialog = host.querySelector<HTMLElement>("[role=dialog]")!;
+    expect(dialog.className).toMatch(/\bcontinuous-corners\b/);
+    expect(dialog.className).toMatch(/\brounded-t-surface\b.*\bp-5\b.*\[--radius-inset:0\.5rem\].*\bsm:rounded-surface\b/);
+    expect(dialog.className).not.toMatch(/\bsm:p-/);
+    expect(host.querySelector('[data-testid="spot-swap-quote"]')!.className).toMatch(/\brounded-inset\b/);
+    fetchSpotSwapQuote.mockImplementation(async () => quote);
+    await typeAmount("2");
+    expect(host.querySelector('[data-testid="spot-swap-summary"]')!.className).toMatch(/\brounded-sm\b/);
+  });
 });
 
 describe("amountProblem", () => {

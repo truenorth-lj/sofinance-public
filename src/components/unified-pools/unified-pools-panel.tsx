@@ -3,7 +3,7 @@ import "@/lib/engine-host";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ArrowDownUp, ChevronDown, LayoutGrid, List, LoaderCircle, RefreshCw, Search } from "lucide-react";
-import { CARD_POOL_AVG_APR_7D_HELP, CARD_RANGE_APR_7D_HELP, POOL_AVG_APR_7D_LABEL } from "@/lib/apr-labels/copy";
+import { CARD_RANGE_APR_7D_HELP } from "@/lib/apr-labels/copy";
 import { cn } from "@/lib/cn";
 import { dexDescriptors, fetchOpenRanges, type OpenRanges } from "@/lib/dex/client";
 import { SUPPORTED } from "@/lib/unified-positions/model";
@@ -67,7 +67,7 @@ async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
 
 const raydiumPoolUrl = (poolId: string) => `https://raydium.io/clmm/create-position/?pool_id=${poolId}`;
 /**
- * The card's APR label split at its last " · " ("Pool avg APR" + "· 7d"): each part never wraps inside, and the tip
+ * The card's APR label split at its last " · " ("Standard-range APR" + "· 7d"): each part never wraps inside, and the tip
  * sits in the tail's no-wrap span, so a narrow card breaks cleanly into two lines.
  */
 function AprLabelWithTip({ label, children }: { label: string; children?: ReactNode }) {
@@ -129,9 +129,9 @@ function PoolCard({ pool, apr, action, icons, onCalculate }: {
         <Apr7dValue state={apr} />
         {/* Breaks only before the " · 7d" tail, and the ⓘ stays on the tail's line (never "7D" alone under it). */}
         <p className={cn("mt-1.5 text-right", cardEyebrow)}>
-          <AprLabelWithTip label={ready ? ready.capped ? POOL_AVG_APR_7D_LABEL : rangeApr7dLabel(ready.rangeLabel) : apr?.status === "new" ? dataDaysLabel(apr.days) : APR7D_SHORT}>
-            {ready && <InfoTip label={ready.capped ? "About Pool avg APR" : "About Est. highest range APR"} tone="light">
-              {withVolumeNote(ready.capped ? CARD_POOL_AVG_APR_7D_HELP : CARD_RANGE_APR_7D_HELP)}{ready.lowConfidence ? " Low confidence for this pool: thin or patchy recent trading." : ""}
+          <AprLabelWithTip label={ready ? rangeApr7dLabel(ready.rangeLabel) : apr?.status === "new" ? dataDaysLabel(apr.days) : APR7D_SHORT}>
+            {ready && <InfoTip label="About Est. highest range APR" tone="light">
+              {withVolumeNote(CARD_RANGE_APR_7D_HELP)}{ready.lowConfidence ? " Low confidence for this pool: thin or patchy recent trading." : ""}
             </InfoTip>}
             {apr?.status === "missing" && apr.degraded && <InfoTip label="About Est. highest range APR" tone="light">{unavailableReasonText("degraded-data")}.</InfoTip>}
           </AprLabelWithTip>
@@ -141,10 +141,10 @@ function PoolCard({ pool, apr, action, icons, onCalculate }: {
     {apr?.status === "missing" && <p className="mt-2 text-xs text-ink/60">{apr.reason}</p>}
     {apr?.status === "new" && <p className="mt-2 text-xs text-ink/60" data-testid="apr7d-new-note">
       Too new for an APR: it shows once the pool has {MIN_DATA_DAYS} days of data.</p>}
-    {freshness && <p className="mt-2 text-xs text-ink/60" data-testid="apr-freshness">
-      Updated {new Date(freshness.snapshotAt).toLocaleString()}{freshness.delayed && " · Data delayed"}
-    </p>}
-    {pool.chain === "solana" && !ready?.capped && <div className="mt-4">
+    {/* No "Updated …" time on the card; only a late snapshot says so (its time in the title, like the table). */}
+    {freshness?.delayed && <p className="mt-2 text-xs text-ink/60" data-testid="apr-delayed"
+      title={`Snapshot from ${new Date(freshness.snapshotAt).toLocaleString()}`}>Data delayed</p>}
+    {pool.chain === "solana" && <div className="mt-4">
       <p className={cn("flex items-center gap-1", cardEyebrow)}>
         {HIGHEST_RANGE_COLUMN_LABEL}
         {ready && <InfoTip label="About Highest range" placement="above" tone="light">{HIGHEST_RANGE_HELP}</InfoTip>}

@@ -48,7 +48,7 @@
   "branches": {
     "src/app/api/protocol-pools/range-apr/route.ts": 3,
     "src/app/api/protocol-pools/route.ts": 1,
-    "src/components/homepage-pools-table.tsx": 2,
+    "src/components/homepage-pools-table.tsx": 1,
     "src/components/pair-token-icons.tsx": 1,
     "src/components/range-apr/pool-range-apr-client.ts": 3,
     "src/components/unified-pools/pool-list.tsx": 1,

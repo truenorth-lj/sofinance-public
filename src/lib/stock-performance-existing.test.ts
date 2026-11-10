@@ -12,8 +12,8 @@ it("reuses report amounts and USD valuations without making historical-price req
     tokenNative: { tokenEquivalent: { baseSymbol: "SNDK", baseSide: "A", uiPriceBPerA: 2,
       metrics: { equity: 0.401697, feesEarned: 0.0189176 } } } as TokenNativeMetrics,
     quotes: new Map([
-      ["plain", { mint: "plain", usdPrice: 900, priceChange24hPct: 2, liquidityUsd: 10 }],
-      ["wrapped", { mint: "wrapped", usdPrice: 450, priceChange24hPct: -3, liquidityUsd: 1000 }],
+      ["plain", { source: "jupiter" as const, price: 900, priceChange24hPct: 2, liquidityUsd: 10 }],
+      ["wrapped", { source: "jupiter" as const, price: 450, priceChange24hPct: -3, liquidityUsd: 1000 }],
     ]),
     fetcher,
     metrics: { currentEquityUsd: 355.3745, feesEarnedUsd: 16.7067 },
@@ -57,8 +57,8 @@ it.each([
   const valueUsd = unknownUsd ? null : 355.3745;
   const feeUsd = unknownUsd ? null : 16.7067;
   const quotes = new Map([
-    ["plain", { mint: "plain", usdPrice: 900, priceChange24hPct: 2, liquidityUsd: 1000 }],
-    ["wrapped", { mint: "wrapped", usdPrice: 450, priceChange24hPct: -3, liquidityUsd: 10 }],
+    ["plain", { source: "jupiter" as const, price: 900, priceChange24hPct: 2, liquidityUsd: 1000 }],
+    ["wrapped", { source: "jupiter" as const, price: 450, priceChange24hPct: -3, liquidityUsd: 10 }],
   ]);
   if (onlyOtherQuote) quotes.delete("plain");
   const stock = await buildStockPerformance({
@@ -69,7 +69,7 @@ it.each([
     metrics: { currentEquityUsd: valueUsd, feesEarnedUsd: feeUsd }, quotes, fetcher,
   });
   expect(stock?.priceMint).toBe(expectedMint);
-  expect(stock?.priceUsd).toBe(expectedMint === null ? null : quotes.get(expectedMint)!.usdPrice);
+  expect(stock?.priceUsd).toBe(expectedMint === null ? null : quotes.get(expectedMint)!.price);
   expect(stock?.valueUsd).toBe(valueUsd);
   expect(stock?.feeUsd).toBe(feeUsd);
   expect(stock?.priceChangeUsd).toBeNull();

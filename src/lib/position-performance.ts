@@ -38,7 +38,7 @@ import {
 } from "@sofinance/engine/position-performance-math";
 import { matchWrapPairShape } from "./rwa-pairing";
 import { JUPITER_PRICE_V3 } from "@sofinance/engine/jupiter/urls";
-import { fetchJupiterPriceQuotes, type JupiterPriceQuote } from "@sofinance/engine/token-prices";
+import { fetchTokenPricesUsd, type TokenPriceQuote, type TokenPriceSource } from "@sofinance/engine/token-prices";
 import { buildStockPerformance } from "./stock-performance-build";
 import type { StockPerformance } from "./position-performance-report";
 import { getTokenMetadata } from "@sofinance/engine/token-metadata";
@@ -116,7 +116,7 @@ export type PositionPerformanceResult = {
   /** Same-stock pools: the stock view (share price, 24h, entry price, fees in shares); null otherwise or when pricing is skipped. */
   stock: StockPerformance | null;
   pricing: {
-    source: "jupiter-price-v3" | "raydium-pool-stable" | "none";
+    source: PositionPricingSource;
     label: string;
     priceUsdA: number | null;
     priceUsdB: number | null;
@@ -129,6 +129,44 @@ export type PositionPerformanceResult = {
   historyFetch: HistoryFetchMetric;
   timings?: { totalMs: number; accountsMs: number; historyMs: number; pricingMs: number; metadataMs: number };
 };
+
+const PRICE_SOURCE_ID: Record<TokenPriceSource, Exclude<PositionPricingSource, "none" | "dexscreener+jupiter" | "dexscreener+raydium" | "jupiter+raydium" | "dexscreener+jupiter+raydium">> = {
+  jupiter: "jupiter-price-v3",
+  dexscreener: "dexscreener",
+  raydium: "raydium-pool-stable",
+};
+
+export type PositionPricingSource =
+  | "jupiter-price-v3"
+  | "dexscreener"
+  | "raydium-pool-stable"
+  | "dexscreener+jupiter"
+  | "dexscreener+raydium"
+  | "jupiter+raydium"
+  | "dexscreener+jupiter+raydium"
+  | "none";
+
+const PRICE_SOURCE_LABEL: Record<string, string> = {
+  "jupiter-price-v3": "USD uses Jupiter Price API v3 at evaluation time (current), NOT historical tx-time prices.",
+  dexscreener: "USD uses DexScreener at evaluation time (current), NOT historical tx-time prices. Jupiter Price API v3 was unavailable.",
+  "raydium-pool-stable": "USD from Raydium pool mid price with USDC/USDT ≈ $1 fallback (current), NOT historical tx-time prices.",
+};
+
+/** Label the actual sources used; never reports Jupiter alone when a fallback filled a mint. */
+export function describePositionPricing(
+  quoteA: TokenPriceQuote | undefined,
+  quoteB: TokenPriceQuote | undefined,
+): { source: PositionPricingSource; label: string; priceUsdA: number | null; priceUsdB: number | null } {
+  const priceUsdA = quoteA?.price ?? null;
+  const priceUsdB = quoteB?.price ?? null;
+  if (!quoteA || !quoteB) {
+    return { source: "none", label: "USD pricing did not return both mint prices; USD metrics null.", priceUsdA, priceUsdB };
+  }
+  const unique = [...new Set([quoteA.source, quoteB.source])].sort();
+  const source = (unique.length === 1 ? PRICE_SOURCE_ID[unique[0]!] : unique.join("+")) as PositionPricingSource;
+  const label = PRICE_SOURCE_LABEL[source] ?? `USD from ${unique.join(" and ")} at evaluation time (current), NOT historical tx-time prices.`;
+  return { source, label, priceUsdA, priceUsdB };
+}
 
 export type GetPositionPerformanceOptions = {
   wallet?: string;
@@ -348,35 +386,33 @@ export async function getPositionPerformance(
 
   let priceUsdA: number | null = null;
   let priceUsdB: number | null = null;
-  let pricingSource: "jupiter-price-v3" | "raydium-pool-stable" | "none" = "none";
+  let pricingSource: PositionPricingSource = "none";
   let pricingLabel = "USD pricing skipped; token-raw / token-native metrics only.";
   const pricingStarted = Date.now();
-  let quotes = new Map<string, JupiterPriceQuote>();
+  let quotes = new Map<string, TokenPriceQuote>();
   if (!options.skipPricing) {
     try {
-      quotes = await fetchJupiterPriceQuotes(
+      quotes = await fetchTokenPricesUsd(
         [mintA, mintB],
         fetcher,
         options.jupiterApiKey ?? getJupiterApiKey(),
       );
-      priceUsdA = quotes.get(mintA)?.usdPrice ?? null;
-      priceUsdB = quotes.get(mintB)?.usdPrice ?? null;
-      if (priceUsdA !== null && priceUsdB !== null) {
-        pricingSource = "jupiter-price-v3";
-        pricingLabel =
-          "USD uses Jupiter Price API v3 at evaluation time (current), NOT historical tx-time prices.";
-      } else {
+      let quoteA = quotes.get(mintA);
+      let quoteB = quotes.get(mintB);
+      if (!quoteA || !quoteB) {
         const fallback = await fetchRaydiumPoolUsdPrices(poolId.toBase58(), mintA, mintB, fetcher);
-        priceUsdA = fallback.get(mintA) ?? priceUsdA;
-        priceUsdB = fallback.get(mintB) ?? priceUsdB;
-        if (priceUsdA !== null && priceUsdB !== null) {
-          pricingSource = "raydium-pool-stable";
-          pricingLabel =
-            "USD from Raydium pool mid price with USDC/USDT ≈ $1 fallback (current), NOT historical tx-time prices. Jupiter Price v3 did not return both mints.";
-        } else {
-          pricingLabel = "Neither Jupiter Price v3 nor Raydium stable-leg fallback returned both mint prices; USD metrics null.";
-        }
+        const raydium = (mint: string): TokenPriceQuote | undefined => {
+          const price = fallback.get(mint);
+          return price !== undefined ? { price, source: "raydium" } : undefined;
+        };
+        quoteA = quoteA ?? raydium(mintA);
+        quoteB = quoteB ?? raydium(mintB);
       }
+      const described = describePositionPricing(quoteA, quoteB);
+      priceUsdA = described.priceUsdA;
+      priceUsdB = described.priceUsdB;
+      pricingSource = described.source;
+      pricingLabel = described.label;
     } catch {
       pricingLabel = "USD pricing request failed; USD metrics null.";
     }

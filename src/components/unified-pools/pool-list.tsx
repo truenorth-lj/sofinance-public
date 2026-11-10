@@ -42,7 +42,7 @@ export function ChainBadge({ chain, tone = "light", wrapBelowMd }: { chain: Pool
 
 /**
  * The 7d APR value. In the table (`sm`) a delayed snapshot that still shows its number (under 48h old) gets a small
- * "Data delayed" line under it; the cards (`lg`) already say it in their "Updated … · Data delayed" line.
+ * "Data delayed" line under it; the cards (`lg`) already say it in their own "Data delayed" line.
  */
 /** Shown instead of an APR for a pool with fewer than `MIN_DATA_DAYS` days of data. */
 export const NEW_POOL_LABEL = "New pool";
@@ -70,7 +70,8 @@ export function Apr7dValue({ state, size = "lg", lowTvl = false }: {
     : state?.status === "missing" ? "—" : "…";
   const value = <Apr7dPill state={state} size={size} text={text} />;
   if (size !== "sm") return value;
-  const line = "whitespace-nowrap font-data text-[10px] uppercase tracking-[0.08em] text-cream/60 max-md:text-[9px]";
+  // Below 768px a note may wrap ("Data / delayed") so the APR column stays narrow enough for a 360 px screen.
+  const line = "whitespace-nowrap font-data text-[10px] uppercase tracking-[0.08em] text-cream/60 max-md:whitespace-normal max-md:text-right max-md:text-[9px] max-md:leading-tight";
   // Table rows have no label line under the value, so a new pool's day count, "Data delayed" and "Low TVL" go here.
   const notes = [
     state?.status === "new" && <span key="new" data-testid="apr7d-new-days" className={line}>{dataDaysLabel(state.days)}</span>,
@@ -107,16 +108,31 @@ export function OpenButton({ action, label, compact, iconOnlyBelowMd }: {
     <ArrowUpRight className="h-4 w-4" aria-hidden="true" /></span>;
   if (action.kind === "open") return <button type="button" className={cls} onClick={action.onOpen} aria-label={`Open position in ${label}`}>{text(compact ? "Open" : "Open position")}{icon}</button>;
   if (action.kind === "link") return <Link href={action.href} className={cls} aria-label={`Open position in ${label}`}>{text(compact ? "Open" : "Open position")}{icon}</Link>;
-  if (action.kind === "disabled") return <span className={cn("inline-flex gap-1.5", compact ? "flex-col items-end" : "flex-wrap items-center gap-x-3")} data-testid="open-disabled">
+  // Below 768px an icon-only Open that cannot be used is a greyed arrow plus an ⓘ with the reason (as the homepage stock
+  // cards do), so the four narrow columns still fit a 360 px screen; from 768px up the reason / pill shows as before.
+  const narrowInfo = (tip: string) => iconOnlyBelowMd && <span className="md:hidden">
+    <InfoTip label={tip} tone="dark" placement="below">{action.kind === "disabled" || action.kind === "unsupported" ? action.reason : ""}</InfoTip></span>;
+  if (action.kind === "disabled") return <span className={cn("inline-flex gap-1.5", compact ? "flex-col items-end" : "flex-wrap items-center gap-x-3",
+    iconOnlyBelowMd && "max-md:items-center max-md:gap-0.5")} data-testid="open-disabled">
     <button type="button" disabled aria-disabled="true" title={action.reason} aria-label={`Open position in ${label}: ${action.reason}`}
       className={cn(cls, "cursor-not-allowed opacity-45 hover:translate-y-0")}>{text(compact ? "Open" : "Open position")}{icon}</button>
-    <span className={cn("text-xs", compact ? "max-w-[11rem] text-right text-[11px] leading-tight text-smoke max-md:max-w-[6.5rem] max-md:text-[10px]" : "text-ink/65")}>{action.reason}</span>
+    <span className={cn("text-xs", compact ? "max-w-[11rem] text-right text-[11px] leading-tight text-smoke max-md:max-w-[6.5rem] max-md:text-[10px]" : "text-ink/65",
+      iconOnlyBelowMd && "max-md:hidden")}>{action.reason}</span>
+    {narrowInfo(`Why ${label} cannot be opened here`)}
   </span>;
-  if (action.kind === "unsupported") return <span data-testid="open-unsupported" aria-disabled="true" title={action.reason}
-    className={cn("inline-flex shrink-0 cursor-not-allowed items-center gap-1.5 rounded-full border text-sm font-semibold",
-      compact ? "min-h-9 whitespace-nowrap border-white/20 px-3 text-cream/60 max-md:px-2 max-md:text-[11px] max-md:leading-tight" : "h-11 border-ink/20 px-4 text-ink/45")}>
-    <span>{NOT_SUPPORTED_LABEL}</span>
-    <InfoTip label={`Why ${label} is not supported yet`} tone={compact ? "dark" : "light"} placement={compact ? "below" : "above"}>{action.reason}</InfoTip>
+  if (action.kind === "unsupported") return <span data-testid="open-unsupported" aria-disabled="true" title={action.reason} className="inline-flex shrink-0 items-center">
+    {iconOnlyBelowMd && <span className="inline-flex flex-col items-center gap-0.5 md:hidden" data-testid="open-unsupported-narrow">
+      {/* Not an Open action: it says so, like the pill it stands in for. */}
+      <button type="button" disabled aria-label={`${label}: ${NOT_SUPPORTED_LABEL}. ${action.reason}`}
+        className={cn(cls, "cursor-not-allowed opacity-45 hover:translate-y-0")}>{text("Open")}{icon}</button>
+      {narrowInfo(`Why ${label} is not supported yet`)}
+    </span>}
+    <span className={cn("inline-flex shrink-0 cursor-not-allowed items-center gap-1.5 rounded-full border text-sm font-semibold",
+      compact ? "min-h-9 whitespace-nowrap border-white/20 px-3 text-cream/60 max-md:px-2 max-md:text-[11px] max-md:leading-tight" : "h-11 border-ink/20 px-4 text-ink/45",
+      iconOnlyBelowMd && "max-md:hidden")}>
+      <span>{NOT_SUPPORTED_LABEL}</span>
+      <InfoTip label={`Why ${label} is not supported yet`} tone={compact ? "dark" : "light"} placement={compact ? "below" : "above"}>{action.reason}</InfoTip>
+    </span>
   </span>;
   return <span className={cn("text-xs", compact ? "text-smoke" : "text-ink/60")}>{action.reason}</span>;
 }
@@ -168,7 +184,7 @@ export function PoolTable({ pools, apr, actionFor, sort, onSort, icons, highligh
   testId?: string;
 }) {
   // `relative` keeps the absolutely positioned sr-only labels inside this scroller (else they widen the page on phones).
-  return <div className="relative mt-3 overflow-x-auto rounded-[28px] border border-white/12 bg-char">
+  return <div className="relative mt-3 overflow-x-auto rounded-surface border border-white/12 bg-char">
     <table className="w-full min-w-[980px] text-left text-sm max-md:min-w-0" data-testid={testId}>
       <thead><tr className="border-b border-white/10">
         {COLUMNS.map((column) => {
@@ -202,7 +218,7 @@ export function PoolTable({ pools, apr, actionFor, sort, onSort, icons, highligh
                 <p className="hidden max-w-[8rem] truncate text-xs text-smoke sm:block max-md:hidden" title={`${pool.nameA} / ${pool.nameB}`}>{pool.nameA} / {pool.nameB}</p>
                 <p className="mt-0.5 whitespace-nowrap text-xs tabular-nums text-smoke md:hidden" data-testid="tvl-narrow">TVL {money(pool.tvlUsd)}</p>
                 {/* Below 768px the Protocol column is hidden: the badge tells the same pair on two protocols apart. */}
-                <span className="mt-1 inline-flex h-5 items-center rounded-full border border-white/25 px-2 font-data text-[9px] uppercase tracking-[0.1em] text-cream/80 md:hidden" data-testid="protocol-badge-narrow">{PROTOCOL_LABELS[pool.protocol]}</span>
+                <span className="mt-1 inline-flex h-5 items-center whitespace-nowrap rounded-full border border-white/25 px-1.5 font-data text-[9px] uppercase tracking-[0.04em] text-cream/80 md:hidden" data-testid="protocol-badge-narrow">{PROTOCOL_LABELS[pool.protocol]}</span>
               </div>
             </div>
           </td>

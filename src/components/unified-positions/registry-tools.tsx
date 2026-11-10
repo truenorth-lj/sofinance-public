@@ -41,7 +41,7 @@ export type RegistryToolProps = {
 
 const CARD = "mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-8";
 export const BUTTON = "mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-4 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-cream/40 disabled:hover:bg-white/10";
-export const FIELD = "w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-base font-semibold text-cream outline-none focus:border-white/40 disabled:opacity-60 sm:text-sm";
+export const FIELD = "w-full rounded-inset border border-white/20 bg-white/10 px-4 py-3 text-base font-semibold text-cream outline-none focus:border-white/40 disabled:opacity-60 sm:text-sm";
 export const LABEL = "mt-5 block text-xs font-medium uppercase tracking-[0.16em] text-smoke";
 const LAMPORTS_PER_SOL = 1_000_000_000;
 
@@ -186,12 +186,12 @@ export function TxStatus({ tx, successText, walletNote }: { tx: PositionTx; succ
     : tx.status === "confirming" ? "Confirming on Solana…" : null;
   if (stage) return <>
     <p role="status" className="mt-3 flex items-center gap-2 text-sm text-cream/80"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />{stage}</p>
-    {tx.status === "wallet" && walletNote ? <p data-testid="registry-wallet-note" className="mt-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{walletNote}</p> : null}
+    {tx.status === "wallet" && walletNote ? <p data-testid="registry-wallet-note" className="mt-2 rounded-inset border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{walletNote}</p> : null}
   </>;
   if (tx.status === "success") return <p role="status" className="mt-3 text-sm text-cream/80">
     {successText}{tx.signature ? <> · <a href={solscanTxUrl(tx.signature)} target="_blank" rel="noreferrer" className="underline">View on Solscan</a></> : null}
   </p>;
-  if (tx.status === "failed") return <div role="alert" className="mt-3 flex gap-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">
+  if (tx.status === "failed") return <div role="alert" className="mt-3 flex gap-2 rounded-inset border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">
     <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
     <div><p>{tx.error}</p>
       {tx.signature ? <a href={solscanTxUrl(tx.signature)} target="_blank" rel="noreferrer" className="mt-1 inline-block underline">View on Solscan</a> : null}
@@ -204,7 +204,7 @@ export function TxStatus({ tx, successText, walletNote }: { tx: PositionTx; succ
 
 /** PR10 marker: an earlier multi-step run of this panel stopped half-way (the panel went away between steps). */
 export function InterruptedNote({ entry, onDismiss }: { entry: TxInterruption; onDismiss?: () => void }) {
-  return <div role="status" data-testid="tx-interrupted" className="mt-3 flex gap-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">
+  return <div role="status" data-testid="tx-interrupted" className="mt-3 flex gap-2 rounded-inset border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">
     <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
     <div><p>{txInterruptionMessage(entry)}</p>
       {entry.signatures.map((signature, index) => <a key={signature} href={solscanTxUrl(signature)} target="_blank" rel="noreferrer" className="mt-1 mr-3 inline-block underline">Step {index + 1} on Solscan</a>)}

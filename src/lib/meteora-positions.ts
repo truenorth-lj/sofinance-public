@@ -13,14 +13,14 @@ import {
   ASSUMPTIONS_LABEL, computePositionPerformance, computeTokenNativeMetrics, PERFORMANCE_METHOD, TOKEN_NATIVE_ASSUMPTIONS,
 } from "@sofinance/engine/position-performance-math";
 import { rpcConnection, rpcProvider, type RpcProvider } from "@sofinance/engine/rpc";
-import { fetchJupiterPriceQuotes, type JupiterPriceQuote } from "@sofinance/engine/token-prices";
+import { fetchTokenPricesUsd, type TokenPriceQuote } from "@sofinance/engine/token-prices";
 import { buildStockPerformance } from "./stock-performance-build";
 import { getTokenMetadata } from "@sofinance/engine/token-metadata";
 import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
 import { parseMeteoraPositionCashflowEvents, type MeteoraEventContext } from "./meteora-position-events";
 import { aggregateCashflowsForPosition } from "./position-performance-events";
 import { fetchPositionHistoryTransactions, toChronological, type HistoryConnection } from "./position-performance-history";
-import type { PositionHistoryEvent, PositionPerformanceResult } from "./position-performance";
+import { describePositionPricing, type PositionHistoryEvent, type PositionPerformanceResult } from "./position-performance";
 import type { PositionRangeFacts } from "./position-range-onchain";
 import { buildRealizedFeeAprSeries } from "./realized-fee-apr-series";
 import { matchWrapPairShape } from "./rwa-pairing";
@@ -340,16 +340,15 @@ export async function getMeteoraPositionPerformance(positionAccount: string, opt
   let pricingSource: PositionPerformanceResult["pricing"]["source"] = "none";
   let pricingLabel = "USD pricing skipped; token-raw / token-native metrics only.";
   const pricingStarted = Date.now();
-  let quotes = new Map<string, JupiterPriceQuote>();
+  let quotes = new Map<string, TokenPriceQuote>();
   if (!options.skipPricing) {
     try {
-      quotes = await fetchJupiterPriceQuotes([pool.tokenXMint, pool.tokenYMint], fetcher, options.jupiterApiKey ?? getJupiterApiKey());
-      priceUsdA = quotes.get(pool.tokenXMint)?.usdPrice ?? null;
-      priceUsdB = quotes.get(pool.tokenYMint)?.usdPrice ?? null;
-      if (priceUsdA !== null && priceUsdB !== null) {
-        pricingSource = "jupiter-price-v3";
-        pricingLabel = "USD uses Jupiter Price API v3 at evaluation time (current), NOT historical tx-time prices.";
-      } else pricingLabel = "Jupiter Price v3 did not return both mint prices; USD metrics null.";
+      quotes = await fetchTokenPricesUsd([pool.tokenXMint, pool.tokenYMint], fetcher, options.jupiterApiKey ?? getJupiterApiKey());
+      const described = describePositionPricing(quotes.get(pool.tokenXMint), quotes.get(pool.tokenYMint));
+      priceUsdA = described.priceUsdA;
+      priceUsdB = described.priceUsdB;
+      pricingSource = described.source;
+      pricingLabel = described.label;
     } catch {
       pricingLabel = "USD pricing request failed; USD metrics null.";
     }
