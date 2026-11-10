@@ -6,7 +6,9 @@ describe("shared PositionSelect usage", () => {
   it("uses the unified All positions entry while preserving manual public performance lookup", () => {
     const app = readFileSync(resolve("src/components/selected-app.tsx"), "utf8");
     const perf = readFileSync(resolve("src/components/position-performance-panel.tsx"), "utf8");
-    expect(app).not.toContain("<GroupedPositionSelect");
+    // The one dropdown left is the Compound fees tab's (it has no All positions card).
+    expect(app.match(/<GroupedPositionSelect/g)).toHaveLength(1);
+    expect(app).toContain('id="compound-position"');
     expect(app).toContain("all-positions-heading");
     expect(app).toContain("<StocksOverview embedded");
     expect(app).toContain("position-fallback-select");
