@@ -38,6 +38,9 @@ import { RegistryPositionTool, type ToolBalance } from "./unified-positions/regi
 import { useStoredTokenIcons } from "./use-stored-token-icons";
 import { tokenSymbol } from "@/lib/position-label";
 import { UnavailableTool } from "./unified-positions/unavailable-tool";
+import { StocksOverview, type OverviewPosition } from "./stocks-overview";
+import { fetchDexPerformance } from "@/lib/dex/client";
+import type { PositionPerformanceReport } from "@/lib/position-performance-report";
 
 const TOOL_META: Readonly<Record<ToolId, ToolMeta>> = Object.freeze({
   compound: { label: "Compound fees", icon: Sprout, controls: "compound-view" },
@@ -125,6 +128,8 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [assetRisksOpen, setAssetRisksOpen] = useState(false);
   const [activeView, setActiveView] = useState<ToolId>(initialView);
+  // The Performance panel's last read (by position key), handed to the all-stocks overview so it is not read twice.
+  const [panelResult, setPanelResult] = useState<{ key: string; report: PositionPerformanceReport | null; error: boolean } | null>(null);
   // Step 1 of a 100% withdrawal closes the position, and its confirmation's balances refresh then reads no
   // position (`state` becomes null). Unmounting the Withdraw panel then aborted its run before step 2 (convert)
   // was prepared. So while a withdrawal is running or partly done (busy, or a checkpoint/Resume is pending),
@@ -199,7 +204,8 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
       // Keyed by the position only: the cross-op lock is per position and must not depend on the open tab (PM review of #289).
       tool: (item: UnifiedPosition, view: ToolId) => <RegistryPositionTool key={item.key} position={item} descriptor={registry.descriptor(item)!}
         capabilities={registry.capabilities(item)!} view={view} balances={walletBalances} symbolOf={(token) => tokenSymbol(token.id, metadata, token.symbol)}
-        onConfirmed={() => { setOtherKey(item.key); setRegistryRefresh((value) => value + 1); void refreshDiscovery(); }} />,
+        onConfirmed={() => { setOtherKey(item.key); setRegistryRefresh((value) => value + 1); void refreshDiscovery(); }}
+        onPerformance={(key, result) => setPanelResult({ key, ...result })} showStockPerformance={!stockShownInOverview} />,
       capabilities: registry.capabilities(otherSelected)! }
     : otherSelected && external ? { header: external.header, details: external.details, tool: external.tool, capabilities: capabilitiesFor(external.source, otherSelected) }
       : null;
@@ -247,6 +253,30 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
         ? formatSmallLegMovesPriceMessage({ minority: poolLabel(quoteErrorOutputMint),
           majority: poolLabel(quoteErrorOutputMint === state.mintA ? state.mintB : state.mintA) })
         : error;
+  // Performance tab, all-stocks overview: every open Solana position whose source reads performance (the other chain has none).
+  // The position the Performance panel below reads is taken from that panel instead of being read again.
+  const panelKey = unavailableReason ? "" : otherSelected ? (otherBinding ? otherSelected.key : "")
+    : performanceMint ? positionKey(positionSource.id, performanceMint) : "";
+  const fromPanel = (key: string): OverviewPosition["fromPanel"] => key !== panelKey ? undefined
+    : panelResult?.key === key ? { report: panelResult.report, error: panelResult.error } : "loading";
+  const overviewPositions: OverviewPosition[] = !connected || !wallet ? [] : [
+    ...solanaPositions.filter((item) => !isClosed(item)).map((item): OverviewPosition => ({ key: item.key,
+      positionId: item.nativeId, pool: { id: item.poolId, source: positionSource.displayName,
+        label: `${poolLabel(item.tokenA.id)} / ${poolLabel(item.tokenB.id)}` }, load: async (signal) => {
+      const params = new URLSearchParams({ positionMint: item.nativeId, wallet });
+      const response = await fetch(`/api/position-performance?${params}`, { signal, headers: { Accept: "application/json" } });
+      const body = await response.json().catch(() => null) as (PositionPerformanceReport & { error?: string }) | null;
+      if (!response.ok || !body || body.positionMint !== item.nativeId) throw new Error(body?.error || "Performance could not be loaded.");
+      return body;
+    }, fromPanel: fromPanel(item.key) })),
+    ...registry.positions.filter((item) => !isClosed(item) && registry.capabilities(item)?.performance.supported).map((item): OverviewPosition => ({
+      key: item.key, positionId: item.nativeId, pool: { id: item.poolId, source: registry.optionSource(item, metadata).displayName,
+        label: `${tokenSymbol(item.tokenA.id, metadata, item.tokenA.symbol)} / ${tokenSymbol(item.tokenB.id, metadata, item.tokenB.symbol)}` },
+      load: async (signal) => (await fetchDexPerformance(registry.descriptor(item)!, item.key, { signal })).report ?? null,
+      fromPanel: fromPanel(item.key) })),
+  ];
+  const stockShownInOverview = overviewPositions.length > 1 && panelResult?.key === panelKey
+    && Boolean(panelResult.report?.stock) && overviewPositions.some((item) => item.key === panelKey);
   // "Rescan wallet": the Solana scan (unchanged) plus, on /app, the Robinhood Chain scan via the parent's refresh counter.
   const rescan = () => { if (wallet) { void refreshDiscovery(); setRegistryRefresh((value) => value + 1); } onRescan?.(); };
   return <div className="min-h-screen bg-canvas text-cream">
@@ -302,6 +332,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
 
       <ActionSelector value={activeView} onChange={changeView} options={toolOptions(capabilities, TOOL_META,
         otherSelected ? {} : { withdraw: !state || !wallet || (busy && activeView !== "withdraw") })} />
+      {activeView === "performance" && overviewPositions.length > 1 && <div className="mt-3"><StocksOverview positions={overviewPositions} selectedPositionKey={panelKey} onSelectPosition={pickKey} selectionDisabled={anyBusy} /></div>}
       {unavailableReason ? <UnavailableTool id={`${activeView}-view`} reason={unavailableReason} />
         : otherSelected && otherBinding ? <div id={`${activeView}-view`}>{otherBinding.tool(otherSelected, activeView)}</div> : <>
       {activeView === "withdraw" && <div id="withdraw-view">{shownWithdraw ? <WithdrawPanel key={`${shownWithdraw.wallet}:${shownWithdraw.positionMint}`} wallet={shownWithdraw.wallet} positionMint={shownWithdraw.positionMint} mintA={shownWithdraw.mintA} mintB={shownWithdraw.mintB} label={poolLabel} outputs={capabilities.withdrawOutputs} onClose={()=>setActiveView("compound")} onBusyChange={onWithdrawBusy} onConfirmed={()=>{void refreshState();void refreshDiscovery();}} /> : <p className="mt-4 text-sm text-smoke">Connect your wallet and choose a position to withdraw.</p>}</div>}
@@ -314,7 +345,8 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
           {activeView === "performance" && linkedForeignPosition && <p role="status" className="rounded-2xl border border-white/15 bg-white/[0.04] px-4 py-3 text-xs leading-5 text-smoke">
             Showing the linked position {initialMint.slice(0, 4)}…{initialMint.slice(-4)}. It is not held by the connected wallet, so only public data is shown.
           </p>}
-          {activeView === "performance" && <PositionPerformancePanel embedded selectedMint={performanceMint} selectedNftAccount={nftAccountLookup.account}
+          {activeView === "performance" && <PositionPerformancePanel embedded showStockPerformance={!stockShownInOverview} selectedMint={performanceMint} selectedNftAccount={nftAccountLookup.account}
+            onResult={(mint, result) => setPanelResult({ key: positionKey(positionSource.id, mint), ...result })}
             nftAccountPending={nftAccountLookup.pending} initialWallet={initialWallet} previewPoolId={previewPoolId} />}
         </div>
         <div id="deposit-view" hidden={activeView !== "deposit"}>

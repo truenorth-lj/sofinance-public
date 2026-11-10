@@ -92,6 +92,20 @@ describe("pickDexScreenerUsdPrice", () => {
 });
 
 describe("fetchJupiterPricesUsd", () => {
+  it("retains Jupiter metadata alongside the cached price without a second request", async () => {
+    const fetcher = mockFetch(() => json(200, {
+      [TSLAX]: { usdPrice: "376.8", priceChange24h: "-2.5", liquidity: "2255035" },
+    }));
+    const first = await fetchTokenPricesUsd([TSLAX], fetcher);
+    const cached = await fetchTokenPricesUsd([TSLAX], fetcher);
+    expect(cached.get(TSLAX)).toEqual({
+      price: 376.8, source: "jupiter", priceChange24hPct: -2.5, liquidityUsd: 2255035,
+    });
+    expect(cached.get(TSLAX)).toEqual(first.get(TSLAX));
+    expect((await fetchJupiterPricesUsd([TSLAX], fetcher)).get(TSLAX)).toBe(376.8);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it("uses Jupiter Price API v3 when the mint is present", async () => {
     const fetcher = mockFetch((url) => {
       if (url.includes("/price/v3")) return json(200, { [TSLAX]: { usdPrice: 376.79702919622997, decimals: 8 } });

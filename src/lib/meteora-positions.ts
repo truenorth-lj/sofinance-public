@@ -13,7 +13,8 @@ import {
   ASSUMPTIONS_LABEL, computePositionPerformance, computeTokenNativeMetrics, PERFORMANCE_METHOD, TOKEN_NATIVE_ASSUMPTIONS,
 } from "@sofinance/engine/position-performance-math";
 import { rpcConnection, rpcProvider, type RpcProvider } from "@sofinance/engine/rpc";
-import { fetchTokenPricesUsd } from "@sofinance/engine/token-prices";
+import { fetchTokenPricesUsd, type TokenPriceQuote } from "@sofinance/engine/token-prices";
+import { buildStockPerformance } from "./stock-performance-build";
 import { getTokenMetadata } from "@sofinance/engine/token-metadata";
 import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
 import { parseMeteoraPositionCashflowEvents, type MeteoraEventContext } from "./meteora-position-events";
@@ -339,9 +340,10 @@ export async function getMeteoraPositionPerformance(positionAccount: string, opt
   let pricingSource: PositionPerformanceResult["pricing"]["source"] = "none";
   let pricingLabel = "USD pricing skipped; token-raw / token-native metrics only.";
   const pricingStarted = Date.now();
+  let quotes = new Map<string, TokenPriceQuote>();
   if (!options.skipPricing) {
     try {
-      const quotes = await fetchTokenPricesUsd([pool.tokenXMint, pool.tokenYMint], fetcher, options.jupiterApiKey ?? getJupiterApiKey());
+      quotes = await fetchTokenPricesUsd([pool.tokenXMint, pool.tokenYMint], fetcher, options.jupiterApiKey ?? getJupiterApiKey());
       const described = describePositionPricing(quotes.get(pool.tokenXMint), quotes.get(pool.tokenYMint));
       priceUsdA = described.priceUsdA;
       priceUsdB = described.priceUsdB;
@@ -406,6 +408,10 @@ export async function getMeteoraPositionPerformance(positionAccount: string, opt
     priceUsdA, priceUsdB, decimalsA: snapshot.decimalsX, decimalsB: snapshot.decimalsY, openedAt,
   });
   if (incomplete) realizedFeeAprSeries.points = [];
+  const stock = options.skipPricing ? null : await buildStockPerformance({
+    history, positionId: snapshot.positionAccount, poolId: snapshot.poolId, mintA: pool.tokenXMint, mintB: pool.tokenYMint,
+    decimalsA: snapshot.decimalsX, decimalsB: snapshot.decimalsY, tokenNative, metrics, incomplete, quotes, nowSeconds, fetcher, signal,
+  });
 
   return {
     wallet: options.wallet ?? null,
@@ -438,6 +444,7 @@ export async function getMeteoraPositionPerformance(positionAccount: string, opt
     },
     metrics,
     tokenNative,
+    stock,
     pricing: { source: pricingSource, label: pricingLabel, priceUsdA, priceUsdB },
     method: PERFORMANCE_METHOD,
     assumptions,

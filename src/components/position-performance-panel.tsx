@@ -25,15 +25,20 @@ export function PositionPerformancePanel({
   selectedMint,
   selectedNftAccount,
   nftAccountPending = false,
+  onResult,
+  showStockPerformance = true,
 }: {
   initialMint?: string;
   initialWallet?: string;
   previewPoolId?: string;
   embedded?: boolean;
+  showStockPerformance?: boolean;
   selectedMint?: string;
   selectedNftAccount?: string;
   /** The parent is still resolving the holder's NFT token account (see resolveNftAccountLookup). */
   nftAccountPending?: boolean;
+  /** A read finished (report null on failure), so the all-stocks overview need not read this position again. */
+  onResult?: (positionMint: string, result: { report: PerformanceResponse | null; error: boolean }) => void;
 }) {
   const { address, connected, connect } = useWalletConnection();
   const connectedAddress = connected ? address : undefined;
@@ -49,6 +54,8 @@ export function PositionPerformancePanel({
   } | null>(null);
   const [loadedData, setLoadedData] = useState<{ body: PerformanceResponse; context: string } | null>(null);
   const lookup = useRef(new DecisionSession());
+  const onResultRef = useRef(onResult);
+  useEffect(() => { onResultRef.current = onResult; });
   const [error, setError] = useState<string | null>(null);
   const [loadingContext, setLoadingContext] = useState<string | null>(null);
   const walletField = resolveWalletField({
@@ -124,6 +131,7 @@ export function PositionPerformancePanel({
     const attempt = lookup.current.begin(); if (!attempt) return;
     setLoadingContext(context);
     setError(null);
+    let last: PerformanceResponse | null = null;
     try {
       const params = new URLSearchParams({ positionMint: mint });
       if (wallet.trim()) params.set("wallet", wallet.trim());
@@ -147,10 +155,15 @@ export function PositionPerformancePanel({
           clearPositionHistoryRefresh(mint, refresh.version);
         }
         setLoadedData({body, context});
+        last = body;
         if (!body.truncated || !body.historyFetch?.canContinue) break;
       }
+      if (last && attempt.current()) onResultRef.current?.(mint, { report: last, error: false });
     } catch (err) {
-      if (attempt.current()) { setLoadedData(null); setError(err instanceof Error ? err.message : "Lookup failed"); }
+      if (attempt.current()) {
+        setLoadedData(null); setError(err instanceof Error ? err.message : "Lookup failed");
+        onResultRef.current?.(mint, { report: null, error: true });
+      }
     } finally {
       if (attempt.current()) { attempt.finish(); setLoadingContext(null); }
     }
@@ -284,8 +297,8 @@ export function PositionPerformancePanel({
     </section>}
 
     {(embedded || data || previewPoolId) && (
-    <section aria-label="Performance results" className="rounded-[28px] border border-white/12 bg-char p-5 sm:p-7 lg:col-span-12">
-      <h3 className="mb-5 text-base font-semibold text-cream">Performance results</h3>
+    <section aria-label={showStockPerformance ? "Performance results" : "Position details"} className="rounded-[28px] border border-white/12 bg-char p-5 sm:p-7 lg:col-span-12">
+      <h3 className="mb-5 text-base font-semibold text-cream">{showStockPerformance ? "Performance results" : "Position details"}</h3>
       {embedded && !data && !error && (
         autoLoadSharedPosition ? <div role="status" className="flex items-center gap-2 text-sm text-smoke">
           <LoaderCircle className="h-4 w-4 animate-spin" />Loading performance…
@@ -299,7 +312,7 @@ export function PositionPerformancePanel({
         </button>
       </div>}
 
-      {data && <PerformanceSummary data={data} embedded={embedded} metadata={positionMetadata}
+      {data && <PerformanceSummary data={data} embedded={embedded} metadata={positionMetadata} showStockPerformance={showStockPerformance}
         loadingRemaining={Boolean(loadingContext)} onLoadRemaining={() => void load()} />}
 
 

@@ -8,6 +8,7 @@
  */
 import { PositionAssetRow } from "./position-asset-row";
 import { PoolDailyAprChart } from "./pool-daily-apr-panel";
+import { StockPerformanceTiles } from "./stock-performance-tiles";
 import { formatHoldingTime, returnUnavailableReason } from "../lib/position-performance-display";
 import type { PositionPerformanceReport } from "../lib/position-performance-report";
 
@@ -31,8 +32,10 @@ const tok = (value: number | null | undefined, digits = 6) => {
 
 type AssetMetadata = Record<string, { icon?: string | null } | undefined>;
 
-export function PerformanceSummary({ data, embedded, metadata, loadingRemaining = false, onLoadRemaining }: {
+export function PerformanceSummary({ data, embedded, metadata, showStockPerformance = true, loadingRemaining = false, onLoadRemaining }: {
   data: PerformanceResponse;
+  /** False when the selected position is already represented by the stock overview. */
+  showStockPerformance?: boolean;
   /** Embedded in My positions: the position assets block is already drawn above, so it is left out here. */
   embedded: boolean;
   metadata: AssetMetadata;
@@ -54,8 +57,14 @@ export function PerformanceSummary({ data, embedded, metadata, loadingRemaining 
     missingUsdPrice: !te && (data.pricing.priceUsdA === null || data.pricing.priceUsdB === null),
     truncated: data.truncated ?? false,
   });
+  const stock = data.stock ?? null;
   return (
         <div className="space-y-5 text-sm" aria-live="polite">
+          {!showStockPerformance && <dl data-testid="position-detail-identity" className="grid gap-3 rounded-xl border border-white/10 p-3 text-xs sm:grid-cols-2">
+            <div className="min-w-0"><dt className="text-smoke">Position</dt><dd className="mt-1 break-all text-cream">{data.positionMint}</dd></div>
+            <div className="min-w-0"><dt className="text-smoke">Pool</dt><dd className="mt-1 break-all text-cream">{data.poolId}</dd></div>
+          </dl>}
+          {stock && showStockPerformance && <StockPerformanceTiles stock={stock} pairLabel={tn?.symbolA && tn?.symbolB ? `${tn.symbolA} / ${tn.symbolB}` : null} />}
           {!hasRecordedDeposits && <p role="status" className="rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs leading-5 text-cream/80">No deposit history was found. Current inventory is available, but trading-fee APR needs opening or deposit records.</p>}
           {te && <p className="text-xs leading-5 text-smoke">Amounts shown in {te.baseSymbol} equivalent.</p>}
           <div className="grid gap-3 sm:grid-cols-2">
@@ -71,16 +80,16 @@ export function PerformanceSummary({ data, embedded, metadata, loadingRemaining 
                   emphasize
                   wide
                 />
-                <Stat
+                {!stock && <Stat
                   label={`Fees accrued`}
                   value={`${tok(te!.metrics.feesEarned)} ${te!.baseSymbol}`}
                   description={`${data.metrics.feesEarnedUsd !== null ? `${money(data.metrics.feesEarnedUsd)} USD at current prices · ` : ""}Collected plus unclaimed fees.`}
-                />
-                <Stat
+                />}
+                {!stock && <Stat
                   label={`Current position value (${te!.baseSymbol} equivalent)`}
                   value={`${tok(te!.metrics.equity)} ${te!.baseSymbol}`}
                   description={`${data.metrics.currentEquityUsd !== null ? `${money(data.metrics.currentEquityUsd)} USD · ` : ""}Liquidity ${tok(te!.metrics.liquidity)} + unclaimed fees ${tok(te!.metrics.uncollectedFees)} ${te!.baseSymbol}.`}
-                />
+                />}
               </>
             ) : (
               <>

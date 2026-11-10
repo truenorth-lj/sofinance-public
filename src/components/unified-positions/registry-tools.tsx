@@ -18,6 +18,7 @@ import type { ToolId, TokenRef, UnifiedPosition, WithdrawOutput } from "@/lib/un
 import { useTxPipeline } from "../transactions/use-tx-pipeline";
 import { useWalletConnection } from "../wallet-connection";
 import { RegistryPerformancePanel } from "./registry-performance";
+import type { PositionPerformanceReport } from "@/lib/position-performance-report";
 import { beginPositionOp, trackPositionSignature, usePositionOpLock } from "./position-op-lock";
 
 /** A wallet balance the Add panel can check against (raw atomic string). */
@@ -28,11 +29,14 @@ export type RegistryToolProps = {
   descriptor: DexDescriptor;
   capabilities: DexCapabilities;
   view: ToolId;
+  showStockPerformance?: boolean;
   /** Wallet balances by token id; a missing entry means "not read" (the server still checks). */
   balances: Readonly<Record<string, ToolBalance | undefined>>;
   symbolOf: (token: TokenRef) => string;
   /** A send of this position landed: re-read positions and balances. */
   onConfirmed: () => void;
+  /** The Performance tab read this position (report null on failure), so the all-stocks overview need not read it again. */
+  onPerformance?: (key: string, result: { report: PositionPerformanceReport | null; error: boolean }) => void;
 };
 
 const CARD = "mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-8";

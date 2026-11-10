@@ -31,7 +31,13 @@ export const DEXSCREENER_PRICE_SPACING_MS = 220;
 const PRICE_FETCH_TIMEOUT_MS = 5_000;
 
 export type TokenPriceSource = "jupiter" | "dexscreener" | "raydium";
-export type TokenPriceQuote = { price: number; source: TokenPriceSource };
+export type TokenPriceQuote = {
+  price: number;
+  source: TokenPriceSource;
+  /** Optional Jupiter rolling 24h change; never inferred for fallback quotes. */
+  priceChange24hPct?: number;
+  liquidityUsd?: number;
+};
 
 type CachedMintPrice = { quote: TokenPriceQuote | undefined; expiresAt: number };
 
@@ -90,6 +96,11 @@ function parseUsd(raw: unknown, allowZero = false): number | null {
   if (!Number.isFinite(value)) return null;
   if (allowZero ? value < 0 : value <= 0) return null;
   return value;
+}
+
+function finiteMetadata(raw: unknown): number | undefined {
+  const value = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() ? Number(raw) : NaN;
+  return Number.isFinite(value) ? value : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -153,11 +164,11 @@ async function fetchJupiterPriceBatch(
   mints: string[],
   fetcher: typeof fetch,
   apiKey?: string,
-): Promise<{ prices: Map<string, number>; failed: boolean }> {
-  const prices = new Map<string, number>();
+): Promise<{ prices: Map<string, TokenPriceQuote>; failed: boolean }> {
+  const prices = new Map<string, TokenPriceQuote>();
   try {
     activeJupiterApiKey = apiKey;
-    const body = await jupiterPacer.pace(() => jupiterRequest<Record<string, { usdPrice?: number | string } | null>>({
+    const body = await jupiterPacer.pace(() => jupiterRequest<Record<string, { usdPrice?: number | string; priceChange24h?: unknown; liquidity?: unknown } | null>>({
       path: JUPITER_PRICE_V3_PATH,
       query: { ids: mints.join(",") },
       fetcher,
@@ -169,8 +180,16 @@ async function fetchJupiterPriceBatch(
       signal: AbortSignal.timeout(PRICE_FETCH_TIMEOUT_MS),
     }));
     for (const mint of mints) {
-      const value = parseUsd(body[mint]?.usdPrice, true);
-      if (value !== null) prices.set(mint, value);
+      const row = body[mint];
+      const value = parseUsd(row?.usdPrice, true);
+      if (value !== null) {
+        const quote: TokenPriceQuote = { price: value, source: "jupiter" };
+        const change = finiteMetadata(row?.priceChange24h);
+        const liquidity = finiteMetadata(row?.liquidity);
+        if (change !== undefined) quote.priceChange24hPct = change;
+        if (liquidity !== undefined) quote.liquidityUsd = liquidity;
+        prices.set(mint, quote);
+      }
     }
     return { prices, failed: false };
   } catch {
@@ -218,9 +237,8 @@ async function loadTokenPricesUsd(
       continue;
     }
     for (const mint of batch) {
-      const value = prices.get(mint);
-      if (value !== undefined) {
-        const quote = { price: value, source: "jupiter" as const };
+      const quote = prices.get(mint);
+      if (quote !== undefined) {
         out.set(mint, quote);
         cacheSet(mint, quote, TOKEN_PRICE_TTL_MS);
       } else {

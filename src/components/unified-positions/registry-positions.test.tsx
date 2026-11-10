@@ -129,6 +129,24 @@ describe("/app My positions with registry DEXes", () => {
     expect(panel.textContent).not.toContain("Meteora");
   });
 
+  it("Performance: a stock represented in the overview keeps registry position details without duplicate stock cards", async () => {
+    state.raydium = [raydiumRow];
+    const body = performanceBody();
+    state.performance.body = { ...body, report: { ...body.report, stock: {
+      symbol: "TSLA", priceMint: MINT_A, priceUsd: 400, change24hPct: 1, sharesNow: 1.255, valueUsd: 502,
+      sharesIn: null, firstDepositAtIso: null, entryPriceUsd: null, priceChangeUsd: null, priceChangePct: null,
+      feeShares: 0.005, feeUsd: 2, totalUsd: null, sparkline24h: [], sparklineSinceEntry: [],
+      entryPriceSource: null, entryUnavailableReason: "Entry price unavailable.",
+    } } };
+    await render({ initialView: "performance", initialPositionKey: `meteora-dlmm:${POSITION}` });
+    const panel = container.querySelector('[data-testid="registry-performance"]')!;
+    expect(container.querySelector('[data-testid="stocks-overview"]')).not.toBeNull();
+    expect(panel.textContent).toContain("Position details");
+    expect(panel.querySelector('[data-testid="stock-performance"]')).toBeNull();
+    expect(panel.querySelector('[data-testid="position-detail-identity"]')?.textContent).toContain(POSITION);
+    expect(panel.querySelector('[data-testid="pool-daily-apr-chart"]')).not.toBeNull();
+  });
+
   it("Performance: a failed read shows the server's plain message and retries on request", async () => {
     state.performance = { status: 404, body: { error: "No Meteora position exists at that address.", code: "POSITION_NOT_FOUND" } };
     await render({ initialView: "performance" });
