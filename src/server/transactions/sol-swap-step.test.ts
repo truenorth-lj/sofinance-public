@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/engine-host", () => ({}));
 
-const engine = vi.hoisted(() => ({ delivery: vi.fn(), build: vi.fn(), feeSeen: [] as number[] }));
-vi.mock("@sofinance/engine/sol-swap-step", () => ({ readSolSwapDelivery: engine.delivery, buildAndSimulateSolSwapStep: vi.fn() }));
+const engine = vi.hoisted(() => ({ delivery: vi.fn(), spent: vi.fn(), build: vi.fn(), feeSeen: [] as number[] }));
+vi.mock("@sofinance/engine/sol-swap-step", () => ({ readSolSwapDelivery: engine.delivery, isSolSwapCreditSpent: engine.spent, buildAndSimulateSolSwapStep: vi.fn() }));
 vi.mock("@sofinance/engine/open-atomic", () => ({ buildAndSimulateOpenPosition: engine.build }));
 vi.mock("@/lib/open-permit", () => ({ issueOpenPositionPermit: () => "permit" }));
 vi.mock("@/lib/rpc-fee-estimate", () => ({ withFeeEstimateRetry: (fn: () => unknown) => fn() }));
@@ -11,16 +11,18 @@ vi.mock("@/lib/rpc-fee-estimate", () => ({ withFeeEstimateRetry: (fn: () => unkn
 import bs58 from "bs58";
 import { Keypair } from "@solana/web3.js";
 import { readSwapFeeConfig } from "@sofinance/engine/swap/fee";
-import { assertSolSwapFeeCredit, SOL_SWAP_FEE_CREDIT_MS } from "./sol-swap-step";
+import { assertSolSwapFeeCredit, SOL_SWAP_CREDIT_USED_MESSAGE, SOL_SWAP_FEE_CREDIT_MS, SOL_SWAP_FEE_SHORT_MESSAGE, SOL_SWAP_NOT_STEP_ONE_MESSAGE } from "./sol-swap-step";
 import { prepareOpen, SINGLE_TX_SOL_OPEN_MESSAGE } from "./open-prepare";
 import { APP_OPEN_PREPARE, MCP_OPEN_PREPARE } from "./surface-policy";
 
 const wallet = Keypair.generate().publicKey.toBase58();
 const mint = Keypair.generate().publicKey.toBase58();
+const outputAccount = Keypair.generate().publicKey.toBase58();
 const signature = bs58.encode(new Uint8Array(64).fill(7));
 const now = 1_800_000_000_000;
 const delivered = (over: Record<string, unknown> = {}) => ({
-  status: "confirmed", delivered: "24650000", decimals: 9, blockTime: now / 1000 - 60, feeAccountPaid: true, slot: 462750173, ...over,
+  status: "confirmed", delivered: "24650000", decimals: 9, blockTime: now / 1000 - 60, feeAccountPaid: true, feeCheck: "ok", slot: 462750173,
+  outputAccounts: [outputAccount], ...over,
 });
 
 beforeEach(() => {
@@ -28,6 +30,7 @@ beforeEach(() => {
   vi.stubEnv("SOFINANCE_FEE_WALLET", Keypair.generate().publicKey.toBase58());
   vi.stubEnv("SOFINANCE_FEE_BPS", "10");
   engine.delivery.mockReset().mockResolvedValue(delivered());
+  engine.spent.mockReset().mockResolvedValue(false);
   engine.feeSeen = [];
   engine.build.mockReset().mockImplementation(async () => {
     engine.feeSeen.push(readSwapFeeConfig().bps);
@@ -40,10 +43,25 @@ describe("assertSolSwapFeeCredit", () => {
   it("accepts a recent confirmed fee-paying swap that delivered at least the open amount", async () => {
     await expect(assertSolSwapFeeCredit(wallet, signature, mint, "0.02465")).resolves.toEqual({ slot: 462750173 });
     expect(engine.delivery).toHaveBeenCalledWith({ signature, wallet, outputMint: mint });
+    expect(engine.spent).toHaveBeenCalledWith({ signature, wallet, outputMint: mint, outputAccounts: [outputAccount] });
+  });
+  it("rejects a reused swap: its tokens were already deposited (or moved) after the swap", async () => {
+    engine.spent.mockResolvedValue(true);
+    await expect(assertSolSwapFeeCredit(wallet, signature, mint, "0.02465")).rejects.toThrow(SOL_SWAP_CREDIT_USED_MESSAGE);
+  });
+  it("rejects a missing or short protocol fee before reading any later history", async () => {
+    engine.delivery.mockResolvedValue(delivered({ feeAccountPaid: false, feeCheck: "fee_short" }));
+    await expect(assertSolSwapFeeCredit(wallet, signature, mint, "0.02465")).rejects.toThrow(SOL_SWAP_FEE_SHORT_MESSAGE);
+    expect(engine.spent).not.toHaveBeenCalled();
+  });
+  it("rejects a transaction that is not a server-built step-1 SOL swap (dust, non-SOL input, extra transfers)", async () => {
+    engine.delivery.mockResolvedValue(delivered({ feeAccountPaid: false, feeCheck: "not_sol_swap" }));
+    await expect(assertSolSwapFeeCredit(wallet, signature, mint, "0.02465")).rejects.toThrow(SOL_SWAP_NOT_STEP_ONE_MESSAGE);
+    expect(engine.spent).not.toHaveBeenCalled();
   });
   it.each([
     ["unconfirmed", { status: "pending" }, "not confirmed"],
-    ["fee not paid", { feeAccountPaid: false }, "did not pay the protocol fee"],
+    ["fee not paid", { feeAccountPaid: false, feeCheck: "fee_short" }, "did not pay the full protocol fee"],
     ["too old", { blockTime: (now - SOL_SWAP_FEE_CREDIT_MS - 1000) / 1000 }, "too old"],
     ["over-claimed", { delivered: "24649999" }, "exceeds what the step 1/2 swap delivered"],
   ])("rejects %s", async (_name, over, message) => {
@@ -89,6 +107,11 @@ describe("prepareOpen with SOL", () => {
   it("does not build when the step-1 swap check fails", async () => {
     engine.delivery.mockResolvedValue(delivered({ feeAccountPaid: false }));
     await expect(prepareOpen(command({ solSwapSignature: signature }), () => "secret", APP_OPEN_PREPARE)).rejects.toThrow("protocol fee");
+    expect(engine.build).not.toHaveBeenCalled();
+  });
+  it("does not build (no fee-free open) when the step-1 swap was already used", async () => {
+    engine.spent.mockResolvedValue(true);
+    await expect(prepareOpen(command({ solSwapSignature: signature }), () => "secret", APP_OPEN_PREPARE)).rejects.toThrow(SOL_SWAP_CREDIT_USED_MESSAGE);
     expect(engine.build).not.toHaveBeenCalled();
   });
   it("ignores a step-1 signature on the MCP surface (fee still charged)", async () => {
