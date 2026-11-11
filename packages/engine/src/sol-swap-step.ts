@@ -7,10 +7,10 @@
 // normal token-input open sized from what this swap actually delivered.
 import { notEnoughBalanceMessage } from "./balance-message";
 import {
-  createAssociatedTokenAccountIdempotentInstruction, createCloseAccountInstruction, getAssociatedTokenAddressSync,
-  TOKEN_PROGRAM_ID, unpackAccount,
+  ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction, createCloseAccountInstruction,
+  getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, unpackAccount,
 } from "@solana/spl-token";
-import { ComputeBudgetProgram, PublicKey, type Connection, type VersionedTransaction } from "@solana/web3.js";
+import { ComputeBudgetProgram, PublicKey, SystemProgram, type Connection, type VersionedTransaction } from "@solana/web3.js";
 import { parseTokenAmount } from "./amount";
 import { NATIVE_SOL_MINT } from "./ids";
 import { stampPreparedBlockhash, restampVersionedTransaction } from "./fresh-blockhash";
@@ -22,7 +22,8 @@ import { JupiterNoRouteError, type BuildRoute } from "./swap/jupiter";
 import { feeSwapLeg } from "./swap/leg";
 import { computeSwapFee, readSwapFeeConfig, swapFeeRecipientAta } from "./swap/fee";
 import { wrapNativeSolInstructions } from "./swap/collection";
-import { rejectUnselectedWalletTokenWrites, swapRouteInstructions } from "./swap/instructions";
+import { JUPITER_PROGRAM_ID, rejectUnselectedWalletTokenWrites, swapRouteInstructions } from "./swap/instructions";
+import { WALLET_EXTRA_PROGRAM_IDS } from "./wallet-returned-tx";
 import { readOpenPoolState } from "./open-state";
 import { JUPITER_MAX_ACCOUNTS } from "./jupiter-route-retry";
 import { atomicComputeUnitLimitInstruction, measuredComputeUnitLimit } from "./transaction-limits";
@@ -187,6 +188,8 @@ export type SolSwapDelivery =
     feeAccountPaid: boolean;
     feeCheck: SolSwapFeeCheck;
     slot: number;
+    /** Top-level program ids of the swap transaction, in order (for refusal logs). */
+    programIds: string[];
     /** The wallet's token account(s) that received `delivered`; step 2/2 checks nothing has left them since. */
     outputAccounts: string[];
   };
@@ -211,15 +214,9 @@ type CompiledInstruction = { programIdIndex: number; accountKeyIndexes: number[]
 /** Why a landed transaction does or does not earn the step-2 fee credit. */
 export type SolSwapFeeCheck = "ok" | "not_sol_swap" | "fee_short";
 
-const SYSTEM_PROGRAM = "11111111111111111111111111111111";
-const ATA_PROGRAM = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
-const COMPUTE_BUDGET_PROGRAM = ComputeBudgetProgram.programId.toBase58();
-const JUPITER_V6_PROGRAM = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
-/** What a wallet may add to a transaction it signs (same list the relay's strict match allows). */
-const WALLET_ADDED_PROGRAMS = new Set([
-  COMPUTE_BUDGET_PROGRAM, "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95", // Lighthouse
-  "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr", "Memo1UhkJRfHyvLMcVucJwxXeuD728EqVDDwQDxFMNo",
-]);
+const SYSTEM_PROGRAM = SystemProgram.programId.toBase58();
+const ATA_PROGRAM = ASSOCIATED_TOKEN_PROGRAM_ID.toBase58();
+const JUPITER_PROGRAM = JUPITER_PROGRAM_ID.toBase58();
 const SYSTEM_TRANSFER = 2, TOKEN_CLOSE_ACCOUNT = 9, TOKEN_SYNC_NATIVE = 17;
 
 /**
@@ -236,7 +233,7 @@ export function solSwapStepWrappedLamports(instructions: CompiledInstruction[], 
     const program = keyAt(ix.programIdIndex);
     const account = (n: number) => keyAt(ix.accountKeyIndexes[n] ?? -1);
     const data = ix.data;
-    if (program === JUPITER_V6_PROGRAM) { swaps++; continue; }
+    if (program === JUPITER_PROGRAM) { swaps++; continue; }
     if (program === SYSTEM_PROGRAM) {
       if (data.length !== 12 || new DataView(data.buffer, data.byteOffset, 12).getUint32(0, true) !== SYSTEM_TRANSFER) return null;
       if (account(0) !== wallet || account(1) !== nativeAta) return null;
@@ -251,7 +248,8 @@ export function solSwapStepWrappedLamports(instructions: CompiledInstruction[], 
       if (data.length > 1 || (data.length === 1 && data[0]! > 1) || account(0) !== wallet || account(2) !== wallet) return null;
       continue;
     }
-    if (program && WALLET_ADDED_PROGRAMS.has(program)) continue;
+    // What a wallet may add to a transaction it signs (the same allow-list the relay's strict match uses).
+    if (program && WALLET_EXTRA_PROGRAM_IDS.has(program)) continue;
     return null;
   }
   return swaps === 1 && wrapped > 0n ? wrapped : null;
@@ -349,6 +347,7 @@ export async function readSolSwapDelivery(input: {
   return {
     status: "confirmed", delivered: delivered.toString(), decimals: post.uiTokenAmount.decimals, blockTime: tx.blockTime ?? null,
     feeAccountPaid: feeCheck === "ok", feeCheck, slot: tx.slot, outputAccounts,
+    programIds: [...new Set(tx.transaction.message.compiledInstructions.map((ix) => keyAt(ix.programIdIndex) ?? "?"))],
   };
 }
 

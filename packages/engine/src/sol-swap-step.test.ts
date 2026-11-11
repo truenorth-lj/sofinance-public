@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AddressLookupTableProgram, ComputeBudgetProgram, Keypair, PublicKey, SystemProgram, type AccountInfo, type Connection } from "@solana/web3.js";
-import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { AddressLookupTableAccount, AddressLookupTableProgram, ComputeBudgetProgram, Keypair, PublicKey, SystemProgram, type AccountInfo, type Connection } from "@solana/web3.js";
+import { ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 vi.mock("./open-state", () => ({ readOpenPoolState: vi.fn() }));
 vi.mock("./swap/leg", () => ({ feeSwapLeg: vi.fn() }));
 vi.mock("./rpc/fee-estimate", () => ({ estimateFeeForMessage: vi.fn(async () => 5_000), OPEN_FEE_ESTIMATE_MESSAGE: "x" }));
@@ -8,6 +8,7 @@ import { readOpenPoolState } from "./open-state";
 import { feeSwapLeg } from "./swap/leg";
 import { NATIVE_SOL_MINT } from "./ids";
 import { swapFeeRecipientAta } from "./swap/fee";
+import liveRoute from "./fixtures/sol-swap-step-jupiter-route-tslax.json";
 import { buildAndSimulateSolSwapStep, isSolSwapCreditSpent, readSolSwapDelivery, SOL_SWAP_SPENT_SCAN_LIMIT, solSwapStepWrappedLamports } from "./sol-swap-step";
 
 const wallet = Keypair.generate().publicKey, other = Keypair.generate().publicKey;
@@ -83,6 +84,7 @@ describe("readSolSwapDelivery", () => {
     expect(await read(connection())).toEqual({
       status: "confirmed", delivered: "24650000", decimals: 9, blockTime: 1_700_000_000, feeAccountPaid: true, feeCheck: "ok", slot: 462_750_173,
       outputAccounts: [outputAta.toBase58()],
+      programIds: [ComputeBudgetProgram.programId.toBase58(), ATA_PROGRAM.toBase58(), SystemProgram.programId.toBase58(), TOKEN_PROGRAM_ID.toBase58(), JUPITER.toBase58()],
     });
   });
   it("reports pending, expired and failed without guessing an amount", async () => {
@@ -291,5 +293,50 @@ describe("buildAndSimulateSolSwapStep", () => {
     // Step 2's fee check recognises the transaction this builder ships, with the wrapped amount as its input.
     const keyAt = (index: number) => transaction.message.staticAccountKeys[index]?.toBase58();
     expect(solSwapStepWrappedLamports(transaction.message.compiledInstructions, keyAt, wallet.toBase58())).toBe(1_000_000_000n);
+  });
+  it("recognises the transaction it builds from a recorded live Jupiter route (real setup instructions and lookup tables)", async () => {
+    // fixtures/sol-swap-step-jupiter-route-tslax.json: SOL -> USDC -> TSLAx, recorded read-only from the public Jupiter
+    // API with buildJupiterRoute's options. Its three setup instructions are Jupiter's own ATA creates (wSOL, the
+    // USDC hop, TSLAx on Token-2022); with wrapAndUnwrapSol off Jupiter returns no cleanup, so the close is ours.
+    const live = liveRoute;
+    const owner = new PublicKey(live.wallet);
+    vi.stubEnv("SOFINANCE_FEE_WALLET", live.feeWallet);
+    expect(live.swapInstructions.setupInstructions).toHaveLength(3);
+    expect(live.swapInstructions.cleanupInstruction).toBeNull();
+    const outMint = new PublicKey(live.quote.outputMint);
+    const outSetup = live.swapInstructions.setupInstructions.find((item) => item.accounts[3]!.pubkey === outMint.toBase58())!;
+    const outAta = new PublicKey(outSetup.accounts[1]!.pubkey), outProgram = new PublicKey(outSetup.accounts[5]!.pubkey);
+    const tables = Object.entries(live.lookupTables).map(([address, keys]) => {
+      accounts.set(address, lookupTable(keys.map((item) => new PublicKey(item))));
+      return new AddressLookupTableAccount({ key: new PublicKey(address), state: {
+        deactivationSlot: 2n ** 64n - 1n, lastExtendedSlot: 0, lastExtendedSlotStartIndex: 0, addresses: keys.map((item) => new PublicKey(item)) } });
+    });
+    const liveConnection = { ...swapConnection,
+      simulateTransaction: vi.fn(async () => ({ context: { slot: 2 }, value: { err: null, unitsConsumed: 160_000, accounts: [
+        { data: ["", "base64"], owner: SystemProgram.programId.toBase58(), lamports: Number(SOL - 100_000_000n - 2_039_280n - 5_000n), executable: false },
+        { data: [tokenAccount(outMint, owner, BigInt(live.quote.outAmount)).toString("base64"), "base64"], owner: outProgram.toBase58(), lamports: 2_039_280, executable: false },
+      ] } })),
+    } as unknown as Connection;
+    vi.mocked(readOpenPoolState).mockResolvedValue({
+      poolId: poolId.toBase58(), mintA: outMint.toBase58(), mintB: otherMint.toBase58(),
+      ataA: outAta.toBase58(), ataB: getAssociatedTokenAddressSync(otherMint, owner, false, TOKEN_PROGRAM_ID).toBase58(),
+      programA: outProgram.toBase58(), programB: TOKEN_PROGRAM_ID.toBase58(), decimalsA: 8, decimalsB: 6, symbolA: "TSLAx", symbolB: "OTHER",
+      balances: { a: "0", b: "0" }, inputBalance: SOL.toString(), solLamports: SOL.toString(),
+      paused: false, frozen: false, transferFee: false, unsupportedExtensions: [],
+    } as never);
+    vi.mocked(feeSwapLeg).mockImplementation(async (input) => ({
+      inputMint: input.inputMint, outputMint: input.outputMint, spend: input.spend,
+      feeAmount: input.spend * 10n / 10_000n, feeInRoute: true, minOut: BigInt(live.quote.otherAmountThreshold),
+      route: { ...live.quote, ...live.swapInstructions, tipInstruction: null, addressesByLookupTableAddress: live.lookupTables },
+    }) as never);
+    const { summary, transaction } = await buildAndSimulateSolSwapStep(live.wallet, poolId.toBase58(), "0.1", { connection: liveConnection });
+    expect(BigInt(live.quote.inAmount)).toBe(100_000_000n);
+    expect(summary.outputAccount).toBe(outAta.toBase58());
+    const keys = transaction.message.getAccountKeys({ addressLookupTableAccounts: tables });
+    const keyAt = (index: number) => keys.get(index)?.toBase58();
+    const programs = transaction.message.compiledInstructions.map((item) => keyAt(item.programIdIndex));
+    // The live setup ATAs survive into the shipped transaction (de-duplicated with the builder's own wSOL / output creates).
+    expect(programs.filter((program) => program === ASSOCIATED_TOKEN_PROGRAM_ID.toBase58()).length).toBeGreaterThanOrEqual(2);
+    expect(solSwapStepWrappedLamports(transaction.message.compiledInstructions, keyAt, live.wallet)).toBe(100_000_000n);
   });
 });

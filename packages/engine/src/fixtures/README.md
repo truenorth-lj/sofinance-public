@@ -98,3 +98,15 @@ chain data) of 15 stock tokens (xStocks, Backpack, Ondo) read from Solana
 mainnet on 2026-11-04. Spot-swap tests run the mint checks on these exact
 bytes: the five tokens whose ScaledUiAmount multiplier is not 1 are refused,
 and permanent delegate / confidential transfer are accepted.
+
+`sol-swap-step-jupiter-route-tslax.json` is a live Jupiter route for a 0.1 SOL
+-> TSLAx step-1 swap (SOL -> USDC -> TSLAx), recorded 2026-11-12 (UTC+8)
+read-only from the keyless public `api.jup.ag/swap/v1` quote and
+swap-instructions endpoints with the options `buildJupiterRoute` sends
+(slippage 50 bps, maxAccounts 48, 10 bps platform fee, wrapAndUnwrapSol and
+shared accounts off). It keeps Jupiter's real setup instructions (three ATA
+creates) and its `null` cleanup, plus the contents of the two lookup tables
+(public `getMultipleAccounts`). The wallet and fee wallet are freshly
+generated keys with no funds; nothing was signed or sent. The SOL step-1
+builder test ships a transaction from it and checks step 2's fee check
+recognises that transaction.

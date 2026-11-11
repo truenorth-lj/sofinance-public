@@ -321,3 +321,23 @@ export const positionEntryPrices = pgTable("position_entry_prices", {
   check("position_entry_prices_status_check", sql`(status = 'ok' AND price_usd IS NOT NULL AND price_usd > 0 AND price_usd < 'Infinity'::numeric) OR (status = 'no_trade' AND price_usd IS NULL)`),
   check("position_entry_prices_trades_check", sql`jsonb_typeof(trades) = 'array' AND jsonb_array_length(trades) <= 3 AND (status = 'ok' OR trades = '[]'::jsonb)`),
 ]);
+
+/**
+ * Step 2/2 fee credits of two-step SOL deposits: one row per step-1 swap whose fee waived a step-2 open
+ * (`src/server/transactions/sol-swap-step.ts`). Claimed when step 2 is prepared and bound to that prepared transaction's
+ * blockhash, so two prepares can not both skip the fee within one blockhash window. Claimed again only after that
+ * blockhash expired with the swap's tokens unmoved (a cancelled or dropped step 2 can be retried). Never deleted.
+ */
+export const solSwapFeeCredits = pgTable("sol_swap_fee_credits", {
+  swapSignature: text("swap_signature").primaryKey(),
+  wallet: text("wallet").notNull(),
+  openBlockhash: text("open_blockhash").notNull(),
+  openLastValidBlockHeight: bigint("open_last_valid_block_height", { mode: "number" }).notNull(),
+  claims: integer("claims").default(1).notNull(),
+  firstClaimedAt: timestamp("first_claimed_at", { withTimezone: true, mode: "string" }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  lastClaimedAt: timestamp("last_claimed_at", { withTimezone: true, mode: "string" }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, () => [
+  check("sol_swap_fee_credits_signature_check", sql`swap_signature ~ '^[1-9A-HJ-NP-Za-km-z]{64,88}$'`),
+  check("sol_swap_fee_credits_keys_check", sql`wallet ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$' AND open_blockhash ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$'`),
+  check("sol_swap_fee_credits_claim_check", sql`open_last_valid_block_height BETWEEN 0 AND 9007199254740991 AND claims > 0`),
+]);

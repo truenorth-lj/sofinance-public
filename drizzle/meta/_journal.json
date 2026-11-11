@@ -43,6 +43,13 @@
       "when": 1794301967902,
       "tag": "0005_stock-entry-prices",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794420087548,
+      "tag": "0006_sol-swap-fee-credits",
+      "breakpoints": true
     }
   ]
 }

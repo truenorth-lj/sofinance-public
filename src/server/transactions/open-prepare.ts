@@ -7,7 +7,7 @@ import { issueOpenPositionPermit } from "@/lib/open-permit";
 import { withFeeEstimateRetry } from "@/lib/rpc-fee-estimate";
 import { assertSolInputAllowed } from "@/lib/sol-input-policy";
 import { runWithSwapFeePaidUpstream } from "@sofinance/engine/fee-waiver";
-import { assertSolSwapFeeCredit } from "./sol-swap-step";
+import { assertSolSwapFeeCredit, claimSolSwapFeeCredit } from "./sol-swap-step";
 import { APP_OPEN_PREPARE, MCP_OPEN_PREPARE } from "./surface-policy";
 import { txPermitsFor } from "@/lib/tx-send/permit";
 
@@ -33,17 +33,24 @@ export async function prepareOpen(command: OpenPrepareCommand, readSigningSecret
   assertSolInputAllowed(selection);
   if (selection.inputKind === "native") throw new Error(SINGLE_TX_SOL_OPEN_MESSAGE);
   const feePaidUpstream = profile === APP_OPEN_PREPARE && command.solSwapSignature !== undefined;
-  let minContextSlot: number | undefined;
+  let credit: Awaited<ReturnType<typeof assertSolSwapFeeCredit>> | undefined;
   if (feePaidUpstream) {
     // Checked before entering the waiver scope, which hides the fee wallet.
-    ({ slot: minContextSlot } = await assertSolSwapFeeCredit(wallet, command.solSwapSignature!, selection.inputMint, amount));
+    credit = await assertSolSwapFeeCredit(wallet, command.solSwapSignature!, selection.inputMint, amount);
   }
+  const minContextSlot = credit?.slot;
   const build = () => profile === APP_OPEN_PREPARE
     ? withFeeEstimateRetry(() => buildAndSimulateOpenPosition(
       wallet, selection, amount, range, floorBps, toleranceBps, { enforceResaleFloor: false, nftMint, ...(minContextSlot ? { minContextSlot } : {}) },
     ))
     : buildAndSimulateOpenPosition(wallet, selection, amount, range, floorBps, toleranceBps, { nftMint });
   const { summary, transaction } = feePaidUpstream ? await runWithSwapFeePaidUpstream(build) : await build();
+  if (credit) {
+    // Single use: recorded against this open's blockhash before the fee-free transaction leaves the server.
+    await claimSolSwapFeeCredit({ wallet, signature: command.solSwapSignature!, inputMint: selection.inputMint,
+      outputAccounts: credit.outputAccounts, programIds: credit.programIds,
+      blockhash: summary.blockhash, lastValidBlockHeight: summary.lastValidBlockHeight });
+  }
   const secret = readSigningSecret();
   const permit = issueOpenPositionPermit(secret, {
     wallet, message: Buffer.from(transaction.message.serialize()).toString("base64"), summary,

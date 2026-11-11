@@ -206,7 +206,11 @@ file is right for every venue. Interface depth over a rich, scattered API.
 
 ---
 
-## 4. Types (`src/lib/open-position/model.ts`)
+## 4. Types (proposed; not in the codebase)
+
+> Status 2026-11-12: these types were added as `src/lib/open-position/model.ts` in #341 and deleted unused in
+> #345 (no importer). The shipped form's props live in `src/components/open-position/open-position-form.tsx`;
+> the block below is the original design, kept for reference.
 
 ```ts
 export type OpenVenueId = "raydium-clmm" | "orca-whirlpool" | "meteora-dlmm" | "rhc-uniswap-v4";
