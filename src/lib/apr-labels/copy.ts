@@ -1,5 +1,4 @@
-/** Labels and tooltips for the APR figures on the /app/rwa-pairs cards. Copy only; no APR math here. */
-export const HIGHEST_RANGE_APR_7D_LABEL = "Est. highest range APR · 7d avg · not a prediction";
+
 /** Homepage link text for the APR docs page (homepage copy avoids the word in the docs page title). */
 export const HOMEPAGE_APR_DOCS_LINK_LABEL = "How estimates work";
 /** Pools table column and homepage help. Same basis as the cards: a $1,000 deposit in the best range. */

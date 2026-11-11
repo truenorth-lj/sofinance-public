@@ -15,7 +15,7 @@ import { RHC_MULTICALL3, RHC_REGISTRY, rhcRegistryPairs, type RhcIssuer, type Rh
  * Live pools stay exactly the allowlist. A derived pool that is not allowlisted, and any v3 pool, is a
  * hidden candidate reported for review; nothing here changes what users see.
  */
-export const UNIV3_RHC_FACTORY: Address = "0x1f7d7550b1b028f7571e69a784071f0205fd2efa";
+const UNIV3_RHC_FACTORY: Address = "0x1f7d7550b1b028f7571e69a784071f0205fd2efa";
 export const UNIV3_FEE_TIERS = Object.freeze([100, 500, 3000, 10000] as const);
 const V3_FACTORY_ABI = parseAbi(["function getPool(address tokenA, address tokenB, uint24 fee) view returns (address pool)"]);
 const BEACON_ABI = parseAbi(["function implementation() view returns (address)"]);

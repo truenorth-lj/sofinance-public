@@ -11,7 +11,7 @@ export const ENTRY_PRICE_MAX_AGE_SECONDS = 3_600;
 /** Median of the nearest usable trades; the lookup stops reading the pool once it has this many. */
 export const ENTRY_PRICE_TRADES = 3;
 /** Smaller fills are dust and rounding-sensitive. */
-export const MIN_TRADE_USDC = 1;
+const MIN_TRADE_USDC = 1;
 
 export type RawTokenBalance = { accountIndex: number; mint: string; uiTokenAmount: { amount: string; decimals: number } };
 /** The parts of a `getTransaction` (jsonParsed or json, v0 or v1) result this module reads. */

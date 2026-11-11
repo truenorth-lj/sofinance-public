@@ -22,9 +22,9 @@ import type { SnapshotRhcPools } from "./rwa-store-types";
 export type { RhcPositionValueRow };
 export type RhcPositionValuesResult = { state: "values"; values: RhcPositionValueRow[]; checkedAt: number };
 
-export const VALUES_TTL_MS = 30_000;
+const VALUES_TTL_MS = 30_000;
 /** A saved price older than this is not shown (PM, 2026-11-01). */
-export const STORED_PRICE_MAX_AGE_MS = 48 * 60 * 60_000;
+const STORED_PRICE_MAX_AGE_MS = 48 * 60 * 60_000;
 const cache = new AsyncCache<RhcPositionValuesResult>({ ttlMs: VALUES_TTL_MS, failureTtlMs: 10_000, maxEntries: 500 });
 const storedCache = new AsyncCache<SnapshotRhcPools | null>({ ttlMs: 60_000, failureTtlMs: 30_000, maxEntries: 1 });
 let client: PublicClient | null = null;
@@ -41,7 +41,7 @@ const readStoredPools: StoredRhcPools = () => storedCache.get("pools", async () 
 const positive = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n > 0;
 
 /** Pool id (lowercase) → saved token USD prices, only when the save is at most 48h old. */
-export function storedTokenPrices(snapshot: SnapshotRhcPools | null, now = Date.now()): Map<string, TokenPrices> {
+function storedTokenPrices(snapshot: SnapshotRhcPools | null, now = Date.now()): Map<string, TokenPrices> {
   const out = new Map<string, TokenPrices>();
   const observed = snapshot?.observedAt ? Date.parse(snapshot.observedAt) : NaN;
   if (!snapshot || !Number.isFinite(observed) || now - observed > STORED_PRICE_MAX_AGE_MS) return out;

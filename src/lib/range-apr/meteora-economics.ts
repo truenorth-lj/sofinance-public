@@ -49,5 +49,3 @@ export function meteoraEconomicsSource(spec?: MeteoraPoolSpec): HttpPoolEconomic
     source: `${METEORA_DLMM_DATAPI}/pools/{address} (TVL, price, token amounts)`,
   };
 }
-
-export const METEORA_ECONOMICS_SOURCE: HttpPoolEconomicsSource = meteoraEconomicsSource();

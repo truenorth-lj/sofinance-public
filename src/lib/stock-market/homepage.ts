@@ -8,7 +8,7 @@ const TIMEOUT_MS = 8_000;
  * A cold eligibility read probes each displayed stock's route one Jupiter call at a time (>= 1.1 s apart, 1 req/s
  * free tier), so it needs longer than the market read. Runs at build / ISR regeneration, not while a visitor waits.
  */
-export const ELIGIBILITY_TIMEOUT_MS = 30_000;
+const ELIGIBILITY_TIMEOUT_MS = 30_000;
 
 async function withTimeout<T>(promise: Promise<T>, ms = TIMEOUT_MS): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;

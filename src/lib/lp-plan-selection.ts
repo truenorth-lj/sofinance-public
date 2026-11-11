@@ -1,7 +1,7 @@
 import { formatFeeTier, shortMint } from "./position-label";
 
 /** Base58 Solana address, same shape the pool-daily-apr route accepts. */
-export const SOLANA_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+const SOLANA_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 /** Owner’s preferred two-sided RWA pool when the Plan page has no `?pool=`. */
 export const DEFAULT_PLAN_POOL_ID = "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro";
@@ -44,7 +44,7 @@ export function formatPlanPoolOption(row: PlanPairOption): string {
   return parts.join(" · ");
 }
 
-export function formatPlanTvl(tvlUsd: number | null | undefined): string | null {
+function formatPlanTvl(tvlUsd: number | null | undefined): string | null {
   if (tvlUsd === null || tvlUsd === undefined || !Number.isFinite(tvlUsd) || tvlUsd < 0) return null;
   if (tvlUsd >= 1_000_000) return `$${(tvlUsd / 1_000_000).toFixed(1)}M`;
   if (tvlUsd >= 1_000) return `$${(tvlUsd / 1_000).toFixed(0)}k`;

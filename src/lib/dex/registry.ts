@@ -74,7 +74,7 @@ export function dexDescriptorProblems(descriptors: readonly DexDescriptor[]): st
   return problems;
 }
 
-export function dexModuleProblems(modules: readonly DexModule[]): string[] {
+function dexModuleProblems(modules: readonly DexModule[]): string[] {
   const problems = dexDescriptorProblems(modules.map((entry) => entry.descriptor));
   for (const { descriptor, poolSource } of modules) {
     if (poolSource && poolSource.id !== descriptor.id) problems.push(`${descriptor.id}: pool source "${poolSource.id}" has a different id`);

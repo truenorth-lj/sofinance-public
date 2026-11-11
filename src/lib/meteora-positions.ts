@@ -37,9 +37,6 @@ import { matchWrapPairShape } from "./rwa-pairing";
 
 export const METEORA_PROTOCOL = "meteora-dlmm" as const;
 export const METEORA_POOL_NOT_SUPPORTED = "This Meteora position is in a pool SoFinance does not support yet.";
-/** Bounds for `meteoraPositionFirstSignature` (used by the open log write path). */
-const FIRST_SIGNATURE_PAGE = 1000;
-const FIRST_SIGNATURE_MAX_PAGES = 5;
 const LIST_MAX_POSITIONS = 50;
 const MULTIPLE_ACCOUNTS_BATCH = 100;
 /** Discriminator + lb_pair + owner: enough to pick the allowlisted positions before fetching full accounts. */
@@ -126,19 +123,6 @@ async function snapshotFromData(positionAccount: string, data: Uint8Array, conne
     rangeSide: meteoraRangeSide(pool.activeId, position.lowerBinId, position.upperBinId),
     amounts: { x: totals.amountX, y: totals.amountY }, uncollected: { x: totals.feeX, y: totals.feeY },
   };
-}
-
-/** First successful signature of the position account (its open), bounded; null when the history is longer (fail closed). */
-export async function meteoraPositionFirstSignature(connection: Pick<Connection, "getSignaturesForAddress">, address: string): Promise<string | null> {
-  let before: string | undefined;
-  let oldest: string | null = null;
-  for (let page = 0; page < FIRST_SIGNATURE_MAX_PAGES; page++) {
-    const batch = await connection.getSignaturesForAddress(new PublicKey(address), { limit: FIRST_SIGNATURE_PAGE, before }, "confirmed");
-    for (const item of batch) if (!item.err) oldest = item.signature;
-    if (batch.length < FIRST_SIGNATURE_PAGE) return oldest;
-    before = batch[batch.length - 1]!.signature;
-  }
-  return null;
 }
 
 /** Live snapshot for a position account: null when it is not a Meteora position, throws for a pool SoFinance does not support. */

@@ -5,7 +5,7 @@ import { iconFor, type IconChain, type TokenIconMap } from "@/lib/token-icons/ma
 import { TokenIcon } from "./token-icon";
 
 /** Fallback icon for a Solana mint the database has no icon for: Raydium serves listed mints' icons at this path. */
-export const raydiumIcon = (mint: string) => `https://img-v1.raydium.io/icon/${mint}.png`;
+const raydiumIcon = (mint: string) => `https://img-v1.raydium.io/icon/${mint}.png`;
 
 export type PairTokenIconsPair = {
   mintA: string;

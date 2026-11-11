@@ -73,10 +73,3 @@ export type DocsSlug = DocsPage["slug"];
 export function docsPageBySlug(slug: DocsSlug): DocsPage {
   return DOCS_PAGES.find((page) => page.slug === slug)!;
 }
-
-export function docsPageByHref(pathname: string): DocsPage | undefined {
-  if (pathname === DOCS_ROUTES.gettingStarted || pathname === `${DOCS_ROUTES.gettingStarted}/`) {
-    return DOCS_PAGES[0];
-  }
-  return DOCS_PAGES.find((page) => page.href !== DOCS_ROUTES.gettingStarted && pathname.startsWith(page.href));
-}

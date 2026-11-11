@@ -15,7 +15,7 @@ export function holdPlotY(zeroY: number, axisY: number, minGap = 6): number {
   return Math.abs(zeroY - axisY) < minGap ? zeroY - minGap : zeroY;
 }
 
-export function normalizeTick(value: number): number {
+function normalizeTick(value: number): number {
   if (!Number.isFinite(value) || Object.is(value, -0) || Math.abs(value) < 1e-9) return 0;
   return value;
 }

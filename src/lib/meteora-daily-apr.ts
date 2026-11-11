@@ -24,7 +24,7 @@ const ASSUMPTION_TAIL = [
 /** How the series' TVL was chosen: stored daily rows for `storedDays` of its points, today's TVL for the rest. */
 export type MeteoraTvlBasis = { storedDays: number; days: number; storeProblem?: string };
 
-export function meteoraDailyAprAssumptions(basis: MeteoraTvlBasis = { storedDays: 0, days: 0 }): string {
+function meteoraDailyAprAssumptions(basis: MeteoraTvlBasis = { storedDays: 0, days: 0 }): string {
   const tvl = basis.storedDays > 0
     ? `TVL: Meteora publishes no TVL history, so SoFinance stores the Meteora datapi pool TVL once per UTC day (at that day's first APR refresh); ${basis.storedDays} of ${basis.days} days use that day's stored TVL. Other days use today's TVL, so their APR is off by however much TVL has changed since.`
     : `TVL: Meteora publishes no TVL history, and no stored daily TVL covers these days${basis.storeProblem ? ` (${basis.storeProblem})` : ""}. Other days use today's TVL from the Meteora datapi pool endpoint, so a day's APR is off by however much TVL has changed since.`;
@@ -34,9 +34,7 @@ export function meteoraDailyAprAssumptions(basis: MeteoraTvlBasis = { storedDays
   ].join(" ");
 }
 
-export const METEORA_DAILY_APR_ASSUMPTIONS = meteoraDailyAprAssumptions();
-
-export const METEORA_DAILY_APR_DAYS = 90;
+const METEORA_DAILY_APR_DAYS = 90;
 const TIMEOUT_MS = 10_000;
 const CACHE_TTL_MS = 3_600_000;
 /** A degraded answer (`PoolDailyAprResult.degraded`) is reused for a minute only. */

@@ -22,14 +22,14 @@ import { captureQuoteSettleFailure } from "../sentry/capture";
 export const JUPITER_BROWSER_ORIGIN = "https://api.jup.ag";
 export const JUPITER_RELAY_NEEDED_CODE = "jupiter_relay_needed";
 /** Responses older than this are re-fetched (quotes are short-lived). */
-export const RELAY_RESPONSE_MAX_AGE_MS = 30_000;
-export const MAX_RELAY_ROUNDS = 8;
+const RELAY_RESPONSE_MAX_AGE_MS = 30_000;
+const MAX_RELAY_ROUNDS = 8;
 /** Consecutive 409s that only re-quote an already-seen pair at a new amount. */
-export const RELAY_AMOUNT_CHURN_LIMIT = 3;
+const RELAY_AMOUNT_CHURN_LIMIT = 3;
 /** Consecutive quote amounts within this many bps of the larger amount have settled. */
-export const RELAY_AMOUNT_CONVERGE_BPS = 100;
+const RELAY_AMOUNT_CONVERGE_BPS = 100;
 /** Extra rounds after churn/round limit, used to binary-search a conservative spend. */
-export const RELAY_BINARY_SEARCH_LIMIT = 8;
+const RELAY_BINARY_SEARCH_LIMIT = 8;
 /**
  * Real cause: each sizing pass changed the swap amounts and Jupiter's quotes for the new amounts kept moving, so no
  * stable split was found within the round limit. Nothing is signed or sent at this stage.
@@ -38,7 +38,7 @@ export const RELAY_DID_NOT_SETTLE_MESSAGE =
   "Jupiter's quotes kept changing while we sized the swaps, so we could not lock in a price. Nothing was sent. " +
   "Wait a few seconds and try again; a smaller amount or a wider range settles faster.";
 /** Browser IP quota is exhausted; the caller should fall back to the server key. */
-export const JUPITER_RATE_LIMIT_MESSAGE =
+const JUPITER_RATE_LIMIT_MESSAGE =
   "Jupiter is rate-limiting quotes from this browser. Wait a few seconds and retry.";
 /** Both the keyed server path and the browser relay failed. */
 export const JUPITER_QUOTE_UNAVAILABLE_MESSAGE =
@@ -266,7 +266,7 @@ function remember(store: JupiterRelayStore, need: RelayNeed, entry: StoredRespon
 }
 
 /** Pair identity for a Jupiter quote URL, ignoring the amount (used to detect sizing churn). */
-export function quotePairKey(url: string): string | null {
+function quotePairKey(url: string): string | null {
   if (!url.startsWith("/swap/v1/quote")) return null;
   const params = new URLSearchParams(url.split("?")[1] ?? "");
   const inputMint = params.get("inputMint");

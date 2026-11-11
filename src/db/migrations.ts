@@ -5,7 +5,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import type postgres from "postgres";
 
-export const rwaTables = ["background_job_state", "rwa_apr_daily", "rwa_apr_latest", "rwa_feed_state", "rwa_pool_latest"];
+const rwaTables = ["background_job_state", "rwa_apr_daily", "rwa_apr_latest", "rwa_feed_state", "rwa_pool_latest"];
 const identifier = (value: string) => {
   if (!/^[a-z_][a-z0-9_]*$/.test(value)) throw new Error("Invalid migration schema");
   return value;

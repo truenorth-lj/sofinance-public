@@ -27,11 +27,9 @@ export const PAIRING_VERSION = "rwa-pairing-v1";
 export const ALGORITHM_VERSION = "range-apr-v1";
 export const SOLANA_POOL_ID = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 /** Uniswap v4 pool id on Robinhood Chain: 0x + 64 hex. */
-export const RHC_POOL_ID = /^0x[0-9a-f]{64}$/i;
+const RHC_POOL_ID = /^0x[0-9a-f]{64}$/i;
 /** Any pool address the store accepts (Solana base58 or RHC 0x-hex). */
 export const POOL_ID = /^(?:[1-9A-HJ-NP-Za-km-z]{32,44}|0x[0-9a-f]{64})$/i;
-/** @deprecated Alias kept for existing imports. Prefer SOLANA_POOL_ID when the chain is known. */
-export const SOLANA_ONLY_POOL_ID = SOLANA_POOL_ID;
 export const jobNames = ["rwa-discovery", "rwa-apr-refresh"] as const;
 export type JobName = (typeof jobNames)[number];
 export type Lease = { job: JobName; owner: string; epoch: number };
@@ -217,7 +215,7 @@ export function presetCountAllowed(poolId: string, protocol: PoolProtocolId | un
 }
 
 /** Icon rows from the daily refresh. Re-checked against `ICON_HOSTS` here so no caller can store an off-list link. */
-export const tokenIconWriteSchema = z.array(z.object({
+const tokenIconWriteSchema = z.array(z.object({
   chain: z.enum(["solana", "robinhood"]),
   address: z.string().max(64),
   image: z.string().max(1024),

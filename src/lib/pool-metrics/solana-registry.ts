@@ -58,7 +58,7 @@ export function solanaRegistryEntries(mint: SolanaMintInput): SolanaRegistryToke
 }
 
 /** Curated Solana tokens (the USDC / USDT CLMM allowlist pool): issuer identity is the mint itself. */
-export const SOLANA_STATIC_TOKENS: readonly SolanaRegistryToken[] = Object.freeze([
+const SOLANA_STATIC_TOKENS: readonly SolanaRegistryToken[] = Object.freeze([
   { chain: "solana", address: USDC_MINT, symbol: "USDC", issuer: "circle", underlying: "USD", verification: { method: "allowlist" },
     wrapKind: null, qualification: "allowlist", jupiterTags: [] },
   { chain: "solana", address: USDT_MINT, symbol: "USDT", issuer: "tether", underlying: "USD", verification: { method: "allowlist" },

@@ -218,7 +218,7 @@ function readPoolMints(raw: unknown): StructuralCandidate | null {
  * Structural FOOx/FOO gate only (no Jupiter / whitelist yet).
  * Used to collect candidate pools before mint qualification lookups.
  */
-export function isStructuralWrapPairCandidate(raw: unknown): StructuralCandidate | null {
+function isStructuralWrapPairCandidate(raw: unknown): StructuralCandidate | null {
   const candidate = readPoolMints(raw);
   if (!candidate) return null;
   const shape = matchWrapPairShape(candidate.symbolA, candidate.symbolB);

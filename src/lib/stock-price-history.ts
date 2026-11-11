@@ -16,7 +16,7 @@ import "server-only";
 import { ThrottleGate } from "./range-apr/throttle-gate";
 import type { PriceClose } from "./stock-performance";
 
-export const COINGECKO_API = "https://api.coingecko.com/api/v3";
+const COINGECKO_API = "https://api.coingecko.com/api/v3";
 const DAY = 86_400;
 const DAILY_TTL_MS = 12 * 60 * 60_000;
 /** 3 h: 16 stocks × (2 daily + 8 hourly) = 160 calls/day per instance at most, well inside the Demo plan's 10,000/month.
@@ -38,7 +38,7 @@ export function resetStockPriceHistoryCache() {
   hourlyCache.clear();
 }
 
-export function coinGeckoApiKey(): string | undefined {
+function coinGeckoApiKey(): string | undefined {
   return process.env.COINGECKO_API_KEY?.trim() || undefined;
 }
 

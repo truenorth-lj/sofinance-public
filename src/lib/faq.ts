@@ -10,10 +10,10 @@ export type FaqSection = { id: string; title: string; items: FaqItem[] };
 /** When the pool lists below were last checked against the live pools page. */
 export const FAQ_POOLS_AS_OF = "30 October 2026";
 
-export const FAQ_SOLANA_POOLS =
+const FAQ_SOLANA_POOLS =
   "SpaceX (SPCX/SPCXx), Strategy (MSTR/MSTRx), Nvidia, Alphabet, Apple, Tesla, Meta, Amazon, Intel, AMD, Broadcom, SanDisk, SK hynix and Robinhood";
 
-export const FAQ_ROBINHOOD_CHAIN_POOLS = "SPCX, NVDA, SPY, META, GOOGL, AAPL, MSTR, CRCL, TSLA, QQQ and GME";
+const FAQ_ROBINHOOD_CHAIN_POOLS = "SPCX, NVDA, SPY, META, GOOGL, AAPL, MSTR, CRCL, TSLA, QQQ and GME";
 
 export const FAQ_RISK_LINE =
   "Liquidity providing can lose money. Fee APR figures are estimates from recent windows, not promises. Not investment advice.";

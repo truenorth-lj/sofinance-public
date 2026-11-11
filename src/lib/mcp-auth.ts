@@ -23,7 +23,7 @@ const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
  * Challenge lifetime. Shortened from 5 minutes because nonce replay
  * protection is best-effort in-memory (Vercel isolates do not share it).
  */
-export const CHALLENGE_SKEW_MS = 2 * 60 * 1000;
+const CHALLENGE_SKEW_MS = 2 * 60 * 1000;
 
 const usedChallengeNonces = new Map<string, number>();
 

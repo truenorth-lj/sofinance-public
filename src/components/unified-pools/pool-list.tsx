@@ -53,7 +53,7 @@ export function newPoolTitle(days: number): string {
 }
 
 /** Tooltip of the "Low TVL" tag. */
-export const LOW_TVL_TITLE = `Under $${LOW_TVL_USD / 1_000}k in the pool: a few trades can move this APR a lot, so it ranks below bigger pools.`;
+const LOW_TVL_TITLE = `Under $${LOW_TVL_USD / 1_000}k in the pool: a few trades can move this APR a lot, so it ranks below bigger pools.`;
 
 /** "Low TVL" tag for a pool under `LOW_TVL_USD` (its APR still shows; it ranks below every bigger pool). */
 export function LowTvlTag({ tone }: { tone: "light" | "dark" }) {

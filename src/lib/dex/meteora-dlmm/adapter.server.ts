@@ -71,7 +71,7 @@ const STATUS: Record<"inside" | "below" | "above", RangeStatus> = { inside: "in"
 const scrub = (message: string) => message.replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, "[endpoint]");
 
 /** Every error leaving the adapter is a DexError with the real cause in plain words. */
-export function toMeteoraDexError(error: unknown): unknown {
+function toMeteoraDexError(error: unknown): unknown {
   if (error instanceof DexError) return error;
   // The Jupiter browser relay collects missing responses from this throw; it must pass through unchanged.
   if (error instanceof Error && error.name === "JupiterRelayMissingError") return error;

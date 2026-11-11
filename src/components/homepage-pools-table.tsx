@@ -48,7 +48,7 @@ const RHC_POOLS_URL = "/api/protocol-pools?protocol=uniswap-v4-rhc";
  * Where Open goes: the pool on `/app/rwa-pairs` with `?openPool=…`, which opens that pool's own flow there (Raydium:
  * Create position; Robinhood Chain and registry DEXes such as Meteora: their dialog).
  */
-export function openPoolHref(pool: Pick<HomepagePool, "poolAddress">) {
+function openPoolHref(pool: Pick<HomepagePool, "poolAddress">) {
   return `${APP_ROUTES.rwaPairs}?openPool=${encodeURIComponent(pool.poolAddress)}`;
 }
 
@@ -56,7 +56,7 @@ export function openPoolHref(pool: Pick<HomepagePool, "poolAddress">) {
  * Open as on `/app/rwa-pairs`: tokens not supported yet say so; a registry DEX (Meteora) opens only when its `open`
  * capability is supported and the DEX route is on (`@/lib/dex` registry, no DEX-name checks here); other pools open.
  */
-export const openAction = (pool: UnifiedPool): OpenAction => {
+const openAction = (pool: UnifiedPool): OpenAction => {
   const unsupported = unsupportedTokenReason(pool);
   if (unsupported) return { kind: "unsupported", reason: unsupported };
   const open = dexDescriptors.descriptorFor(pool.protocol)?.capabilities.open;

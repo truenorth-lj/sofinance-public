@@ -16,7 +16,7 @@ import type { DailyTvlRecord, DailyTvlRecordInput, DailyTvlStats } from "../regi
  * `tvl_usd` is not reused: it is the discovery scan's value, refreshed on its own cadence.
  * A datapi 429 stops the run at once (no new requests; reads already in flight finish); the rest wait for the next run.
  */
-export const METEORA_TVL_BUDGET_MS = 15_000;
+const METEORA_TVL_BUDGET_MS = 15_000;
 const METEORA_TVL_CONCURRENCY = 4;
 const METEORA_TVL_TIMEOUT_MS = 5_000;
 const MAX_POOLS = 200;

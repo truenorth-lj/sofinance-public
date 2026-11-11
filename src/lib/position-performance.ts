@@ -1,7 +1,6 @@
 import "@/lib/engine-host";
 import "server-only";
 
-import BN from "bn.js";
 import {
   CLMM_PROGRAM_ID,
   getPdaPersonalPositionAddress,
@@ -570,20 +569,4 @@ export async function getPositionPerformance(
     timings: { totalMs: Date.now() - started, accountsMs, historyMs: fetched.metric.elapsedMs,
       pricingMs, metadataMs: Date.now() - metadataStarted },
   };
-}
-
-/** Lightweight re-export for callers that only need BN-backed sqrt helpers in tests. */
-export function amountsForLiquidityAtPoolPrice(
-  sqrtPriceX64: BN,
-  tickLower: number,
-  tickUpper: number,
-  liquidity: BN,
-) {
-  return LiquidityMathUtil.getAmountsForLiquidity(
-    sqrtPriceX64,
-    TickUtil.getSqrtPriceAtTick(tickLower),
-    TickUtil.getSqrtPriceAtTick(tickUpper),
-    liquidity,
-    false,
-  );
 }

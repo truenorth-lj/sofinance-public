@@ -13,9 +13,9 @@ import {
 import type { DailyAprPoint } from "./apr-series";
 import { geckoGate, geckoOhlcvUrl, geckoPoolsUrl } from "./pool-metrics/gecko";
 
-export const RAYDIUM_LIQUIDITY_LINE = `${RAYDIUM_API_V3}/pools/line/liquidity`;
+const RAYDIUM_LIQUIDITY_LINE = `${RAYDIUM_API_V3}/pools/line/liquidity`;
 export const RAYDIUM_POOL_IDS = `${RAYDIUM_API_V3}/pools/info/ids`;
-export const GECKO_TERMINAL_OHLCV = geckoPoolsUrl("solana");
+const GECKO_TERMINAL_OHLCV = geckoPoolsUrl("solana");
 
 const STALE_THRESHOLD_MS = 3_600_000;
 const USER_AGENT = "SoFinance/0.1 (pool daily APR; +https://sofinancelab.xyz)";
@@ -69,7 +69,7 @@ export class NotRaydiumPoolError extends Error {
 
 /** True when the /pools/info/ids answer is a successful lookup with no pool in it. */
 /** Raydium's pool info could not confirm this pool (no answer, or no row for it). Thrown before anything is cached. */
-export class RaydiumPoolUnconfirmedError extends Error {
+class RaydiumPoolUnconfirmedError extends Error {
   constructor(poolId: string) {
     super(`Raydium pool info did not confirm pool ${poolId}`);
     this.name = "RaydiumPoolUnconfirmedError";
@@ -128,7 +128,7 @@ async function fetchJson(
   return response.json();
 }
 
-export async function safeJson(
+async function safeJson(
   fetcher: typeof fetch,
   url: string,
   timeoutMs: number,

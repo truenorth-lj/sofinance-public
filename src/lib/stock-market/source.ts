@@ -24,11 +24,11 @@ import { buildStockMarket, cardRankings, parseJupiterStockRow, STOCK_CARD_ROWS, 
 import { computeStockBuyEligibility, spotSwapAllowlistFor, type SpotSwapStockContext, type StockBuyEligibility } from "./buy";
 import { STOCK_UNIVERSE } from "./universe";
 
-export const STOCK_MARKET_REVALIDATE_SECONDS = 600;
-export const STOCK_SEARCH_BATCH = 100;
+const STOCK_MARKET_REVALIDATE_SECONDS = 600;
+const STOCK_SEARCH_BATCH = 100;
 /** Minimum spacing between this module's Jupiter calls (free tier: 1 request/s per org). */
 export const STOCK_JUPITER_SPACING_MS = 1_100;
-export const STOCK_ROUTE_PROBE_TTL_MS = 30 * 60_000;
+const STOCK_ROUTE_PROBE_TTL_MS = 30 * 60_000;
 const SEARCH_TIMEOUT_MS = 15_000;
 
 let lastJupiterCallAt = 0;

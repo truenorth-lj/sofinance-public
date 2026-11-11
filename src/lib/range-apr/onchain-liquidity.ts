@@ -8,8 +8,8 @@ import { buildLiquidityBins, tickArrayStartsForWindow, windowBounds, type Liquid
 import { NotRaydiumClmmPoolError } from "./not-clmm-pool";
 
 /** Analysed price window: at least +-300 raw ticks (~3%) and at least +-6 bins on coarse pools. */
-export const WINDOW_MIN_TICKS = 300;
-export const WINDOW_MIN_BINS = 6;
+const WINDOW_MIN_TICKS = 300;
+const WINDOW_MIN_BINS = 6;
 
 export function halfWindowBinsFor(tickSpacing: number): number {
   return Math.max(WINDOW_MIN_BINS, Math.ceil(WINDOW_MIN_TICKS / tickSpacing));

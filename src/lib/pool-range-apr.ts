@@ -24,8 +24,8 @@ import type { OccupancySource, PoolRangeAprPayload, VolumeSource } from "./range
 import type { Connection } from "@solana/web3.js";
 import { NotRaydiumClmmPoolError } from "./range-apr/not-clmm-pool";
 
-export const RANGE_APR_LABEL = "Est. fee APR";
-export const SOLANA_CLMM_CHAIN_SOURCE = "Solana RPC: CLMM pool account + tick arrays (liquidity per price bin)";
+const RANGE_APR_LABEL = "Est. fee APR";
+const SOLANA_CLMM_CHAIN_SOURCE = "Solana RPC: CLMM pool account + tick arrays (liquidity per price bin)";
 
 export const RANGE_APR_ASSUMPTIONS = [
   `Estimate, not a prediction. Uses the last ${VOLUME_WINDOW_DAYS} complete UTC days of pool volume (GeckoTerminal, current day excluded) against the pool's liquidity right now (on-chain tick arrays).`,
@@ -283,7 +283,7 @@ type Volume = { avgDailyVolumeUsd: number; days: number; source: VolumeSource; p
  * Average daily volume, in order: GeckoTerminal daily candles (the complete days that exist, up to 7: D4), then
  * the protocol's own published 7-day volume. Snapshots saved before this label fix say "raydium-7d".
  */
-export function pickVolume(profile: Pick<VolumeProfile, "daily" | "economics" | "protocol">): Volume | null {
+function pickVolume(profile: Pick<VolumeProfile, "daily" | "economics" | "protocol">): Volume | null {
   if (profile.daily) {
     const { avgDailyVolumeUsd, days, source, dayVolumes } = profile.daily;
     return { avgDailyVolumeUsd, days, source: source ?? "geckoterminal-daily", ...(dayVolumes ? { dayVolumes } : {}) };

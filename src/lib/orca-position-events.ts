@@ -25,7 +25,7 @@ type HistoryInstruction = ParsedTransactionWithMeta["transaction"]["message"]["i
 const disc = (name: string) => createHash("sha256").update(`global:${name}`).digest().subarray(0, 8).toString("hex");
 const eventDisc = (name: string) => createHash("sha256").update(`event:${name}`).digest().subarray(0, 8).toString("hex");
 
-export const ORCA_INSTRUCTION = Object.freeze({
+const ORCA_INSTRUCTION = Object.freeze({
   openPosition: disc("open_position"),
   openPositionWithMetadata: disc("open_position_with_metadata"),
   openPositionWithTokenExtensions: disc("open_position_with_token_extensions"),

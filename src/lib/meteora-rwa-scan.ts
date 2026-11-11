@@ -31,11 +31,11 @@ import { fetchXstocksSolanaMintSet, getXstocksObservedAt } from "./rwa-xstocks-w
  */
 
 /** Curated Meteora stablecoin pools (USDC / USDT). Empty: none is listed (product decision, SCAN_DESIGN.md §12.1). */
-export const METEORA_ALLOWLISTED_STABLE_POOLS: readonly MeteoraPoolSpec[] = Object.freeze([]);
+const METEORA_ALLOWLISTED_STABLE_POOLS: readonly MeteoraPoolSpec[] = Object.freeze([]);
 
 const QUERY_CONCURRENCY = 5;
 /** datapi text search that returns every pool with a Backed xStocks token (token names end in "xStock"). */
-export const METEORA_XSTOCKS_QUERY = "xStock";
+const METEORA_XSTOCKS_QUERY = "xStock";
 const FACTS_TIMEOUT_MS = 8_000;
 
 export type MeteoraScanStats = {

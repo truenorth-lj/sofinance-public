@@ -30,7 +30,7 @@ const PUBLIC_ERROR_LIMIT = 220;
 export const INSUFFICIENT_SOL_CODE = "insufficient_sol";
 
 /** Solana dropped the transaction once its blockhash aged out (about a minute); it never landed. */
-export const TX_EXPIRED_CODE = "tx_expired";
+const TX_EXPIRED_CODE = "tx_expired";
 export const TX_EXPIRED_MESSAGE =
   "This transaction expired before Solana included it, so nothing changed. Try again to sign a fresh one.";
 

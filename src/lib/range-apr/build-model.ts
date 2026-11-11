@@ -41,14 +41,14 @@ export function lpFeeFraction(protocolFeeRate: number | null, fundFeeRate: numbe
 }
 
 /** Fewer complete days than this, or this much unplaced volume, marks the estimate as low confidence. */
-export const LOW_CONFIDENCE_MIN_DAYS = 3;
-export const LOW_CONFIDENCE_MAX_UNPLACED_PCT = 30;
+const LOW_CONFIDENCE_MIN_DAYS = 3;
+const LOW_CONFIDENCE_MAX_UNPLACED_PCT = 30;
 
 /**
  * Fewer hourly candles than this inside the window (thin pools trade in few hours; missing hours are zero
  * volume, which is correct) means the price path is thinly observed: flagged low confidence.
  */
-export const LOW_CONFIDENCE_MIN_CANDLES = 12;
+const LOW_CONFIDENCE_MIN_CANDLES = 12;
 
 /** Daily volume observed day by day (not a published 7-day total). */
 const OBSERVED_DAILY_SOURCES: ReadonlySet<VolumeSource> = new Set(["geckoterminal-daily", "meteora-datapi-daily"]);

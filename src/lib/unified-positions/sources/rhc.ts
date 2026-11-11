@@ -29,7 +29,7 @@ function priceRangeOf(p: RhcPositionView | null, stablePair: boolean): PriceRang
   return formatTickPriceRange({ tickLower: p.tickLower, tickUpper: p.tickUpper, token0: spec.currency0, token1: spec.currency1, stablePair });
 }
 
-export function rhcUnifiedPosition(lookup: PositionLookup, held: ScannedPosition | null): UnifiedPosition<RhcNative> {
+function rhcUnifiedPosition(lookup: PositionLookup, held: ScannedPosition | null): UnifiedPosition<RhcNative> {
   const p = lookup.position;
   const spec = specFor(p?.poolId);
   // Every allowlisted pool is a StablePair hook pool.

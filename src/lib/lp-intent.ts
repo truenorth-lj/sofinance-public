@@ -2,7 +2,7 @@ import Decimal from "decimal.js";
 
 const D = Decimal.clone({ precision: 60 });
 export const MAX_PLAN_DAYS = 365;
-export const MAX_PLAN_USDC = "10000000";
+const MAX_PLAN_USDC = "10000000";
 export type ExitAsset = "usdc" | "tokens";
 
 /** Accepts "1,000.50"-style input; returns a canonical positive decimal string or null. */

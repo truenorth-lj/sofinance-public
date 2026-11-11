@@ -26,7 +26,7 @@ export const METEORA_RANGE_APR_LABEL = "Estimated fee APR";
 /** Where the volume and hourly price history came from (wording only). */
 export type MeteoraHistoryLabel = "GeckoTerminal" | "Meteora";
 
-export const meteoraRangeAprAssumptions = (history: MeteoraHistoryLabel) => [
+const meteoraRangeAprAssumptions = (history: MeteoraHistoryLabel) => [
   `Estimate, not a prediction. Uses the last ${VOLUME_WINDOW_DAYS} complete UTC days of pool volume (${history}, current day excluded) against the pool's liquidity right now (on-chain Meteora DLMM bin arrays).`,
   "Fees = volume that traded inside your range × the pool's base fee × the share LPs keep (Meteora keeps its on-chain protocol share) × your share of the liquidity in each bin, assuming an even (Spot) spread across the range.",
   "The variable (volatility) fee is left out, so busy periods can collect more than shown.",

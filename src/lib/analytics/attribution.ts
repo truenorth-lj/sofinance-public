@@ -1,6 +1,6 @@
 export const FIRST_TOUCH_KEY = "sofinance:growth:first-touch:v1";
 
-export const UTM_KEYS = [
+const UTM_KEYS = [
   "utm_source",
   "utm_medium",
   "utm_campaign",
@@ -41,7 +41,7 @@ export function parseAttribution(search: string): Attribution {
   return attribution;
 }
 
-export function sanitizeAttribution(record: Record<string, unknown>): Attribution {
+function sanitizeAttribution(record: Record<string, unknown>): Attribution {
   const attribution: Attribution = {};
   const ref = sanitizeAttrValue(record.ref);
   if (ref) attribution.ref = ref;
@@ -58,7 +58,7 @@ export function resolveFirstTouch(existing: Attribution | null, incoming: Attrib
   return incoming;
 }
 
-export function loadStoredAttribution(storage: Pick<Storage, "getItem">): Attribution | null {
+function loadStoredAttribution(storage: Pick<Storage, "getItem">): Attribution | null {
   try {
     const raw = storage.getItem(FIRST_TOUCH_KEY);
     if (!raw) return null;

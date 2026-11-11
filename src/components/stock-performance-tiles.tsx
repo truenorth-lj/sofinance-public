@@ -12,7 +12,7 @@ import { changeTone, formatChangePct, formatShares, formatShortDate, formatUsd }
 
 const toneClass = { up: "text-mint", down: "text-coral", flat: "text-smoke" } as const;
 
-export function Sparkline({ values, className }: { values: readonly number[]; className?: string }) {
+function Sparkline({ values, className }: { values: readonly number[]; className?: string }) {
   if (values.length < 2) return null;
   const min = Math.min(...values);
   const max = Math.max(...values);

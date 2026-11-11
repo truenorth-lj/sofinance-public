@@ -28,7 +28,7 @@ async function getJson(url: string, fetcher: typeof fetch, signal?: AbortSignal,
 const chunks = (list: string[]) => Array.from({ length: Math.ceil(list.length / CHUNK) }, (_, i) => list.slice(i * CHUNK, (i + 1) * CHUNK));
 
 /** Jupiter token search (the same call `/api/token-metadata` makes), icons already through `trustedIcon`. */
-export const jupiterIcons = (fetcher: typeof fetch = fetch): IconLookup => async (mints) => {
+const jupiterIcons = (fetcher: typeof fetch = fetch): IconLookup => async (mints) => {
   const out: Record<string, unknown> = {};
   for (const part of chunks(mints)) for (const [mint, meta] of Object.entries(await getTokenMetadata(part, fetcher))) out[mint] = meta.icon;
   return out;
@@ -66,7 +66,7 @@ export const dexScreenerIcons = (fetcher: typeof fetch = fetch): IconLookup => a
  * few calls a minute, so one call covers every allowlisted Robinhood Chain token). `attributes.image_url`; their
  * "missing.png" placeholder counts as none.
  */
-export const GECKOTERMINAL_TOKENS_PER_CALL = 30;
+const GECKOTERMINAL_TOKENS_PER_CALL = 30;
 export const geckoTerminalIcons = (fetcher: typeof fetch = fetch, gate?: ThrottleGate): IconLookup => async (addresses, signal) => {
   const out: Record<string, unknown> = {};
   for (let i = 0; i < addresses.length; i += GECKOTERMINAL_TOKENS_PER_CALL) {
@@ -120,6 +120,3 @@ export const solanaIconSources = (fetcher?: typeof fetch): IconSources =>
  */
 export const rhcCronIconSources = (fetcher?: typeof fetch): IconSources =>
   [{ source: "dexscreener", lookup: dexScreenerIcons(fetcher) }];
-/** `gate`: a GeckoTerminal gate, so the call is spaced and stops after a 429. Not used by the cron (see above). */
-export const rhcIconSources = (fetcher?: typeof fetch, gate?: ThrottleGate): IconSources =>
-  [{ source: "dexscreener", lookup: dexScreenerIcons(fetcher) }, { source: "geckoterminal", lookup: geckoTerminalIcons(fetcher, gate) }];

@@ -1,4 +1,4 @@
-export const POSITION_HISTORY_WORKER_COUNT = 8;
+const POSITION_HISTORY_WORKER_COUNT = 8;
 
 /**
  * Refill free slots immediately and retain listing order in the result.

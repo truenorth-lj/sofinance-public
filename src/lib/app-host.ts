@@ -14,7 +14,7 @@ import { isPosthogRelayPath } from "./analytics/relay";
  * no other config flag is required.
  */
 
-export function hostnameFromHost(host: string | null | undefined): string {
+function hostnameFromHost(host: string | null | undefined): string {
   if (!host) return "";
   return host.split(":")[0]?.toLowerCase() ?? "";
 }

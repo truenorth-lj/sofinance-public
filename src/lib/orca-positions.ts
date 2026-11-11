@@ -63,7 +63,7 @@ export type OrcaPositionSnapshot = {
 };
 
 /** Live position state, or null when the mint has no Orca position account. Throws for non-allowlisted pools. */
-export async function readOrcaPositionSnapshot(positionMint: string, connection: OrcaConnection): Promise<OrcaPositionSnapshot | null> {
+async function readOrcaPositionSnapshot(positionMint: string, connection: OrcaConnection): Promise<OrcaPositionSnapshot | null> {
   const positionAccount = orcaPositionAddress(new PublicKey(positionMint).toBase58());
   const info = await connection.getAccountInfo(new PublicKey(positionAccount), "confirmed");
   if (!info || info.owner.toBase58() !== ORCA_WHIRLPOOL_PROGRAM_ID || !isOrcaPositionAccount(info.data)) return null;

@@ -4,10 +4,10 @@ import { SOCIAL_LINKS } from "@/lib/social-links";
 export type JsonLd = Record<string, unknown>;
 
 export const ORGANIZATION_ID = `${CANONICAL_SITE_URL}/#organization`;
-export const WEBSITE_ID = `${CANONICAL_SITE_URL}/#website`;
+const WEBSITE_ID = `${CANONICAL_SITE_URL}/#website`;
 
 /** One Organization node (same @id everywhere, so search engines merge the blog's and the homepage's). */
-export function organizationJsonLd(): JsonLd {
+function organizationJsonLd(): JsonLd {
   return {
     "@type": "Organization",
     "@id": ORGANIZATION_ID,

@@ -69,7 +69,7 @@ export function feeLine(rule: FeeRule, swapNoun: string): string {
 }
 
 /** The rent line shown before a full withdraw is signed. */
-export function closeRentLine(position: UnifiedPosition, descriptor: DexDescriptor): string | null {
+function closeRentLine(position: UnifiedPosition, descriptor: DexDescriptor): string | null {
   const rent = descriptor.meta.rent;
   if (!rent?.refundableOnClose) return null;
   if (position.closeRefundLamports && /^\d+$/.test(position.closeRefundLamports)) {
@@ -80,7 +80,7 @@ export function closeRentLine(position: UnifiedPosition, descriptor: DexDescript
 }
 
 /** The line shown before a partial withdraw when the DEX leaves the unclaimed fees in the position (capability only). */
-export function partialWithdrawFeesLine(capabilities: DexCapabilities): string | null {
+function partialWithdrawFeesLine(capabilities: DexCapabilities): string | null {
   if (!capabilities.withdraw.supported || !capabilities.withdraw.partial || !capabilities.withdraw.partialLeavesFees) return null;
   return capabilities.claim.supported ? "Unclaimed fees stay in the position. Use Claim fees below." : "Unclaimed fees stay in the position.";
 }
@@ -205,7 +205,7 @@ export function TxStatus({ tx, successText, walletNote }: { tx: PositionTx; succ
 }
 
 /** PR10 marker: an earlier multi-step run of this panel stopped half-way (the panel went away between steps). */
-export function InterruptedNote({ entry, onDismiss }: { entry: TxInterruption; onDismiss?: () => void }) {
+function InterruptedNote({ entry, onDismiss }: { entry: TxInterruption; onDismiss?: () => void }) {
   return <div role="status" data-testid="tx-interrupted" className="mt-3 flex gap-2 rounded-inset border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">
     <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
     <div><p>{txInterruptionMessage(entry)}</p>
@@ -375,7 +375,7 @@ function RegistryClaimPanel({ position, descriptor, symbolOf, onConfirmed }: Reg
  * the current price (price below the range → all token A, above → all token B: how every concentrated-liquidity
  * range works, so no DEX branch). Null when the fees were not read.
  */
-export function compoundableFees(position: UnifiedPosition): { a: bigint; b: bigint; leftA: bigint; leftB: bigint } | null {
+function compoundableFees(position: UnifiedPosition): { a: bigint; b: bigint; leftA: bigint; leftB: bigint } | null {
   const fees = position.holdings?.unclaimedFeesRaw ?? null;
   if (!fees || !/^\d+$/.test(fees.a) || !/^\d+$/.test(fees.b)) return null;
   const a = BigInt(fees.a);

@@ -63,7 +63,7 @@ const specFor = (poolId: string) => UNIV4_RHC_ALLOWLISTED_POOLS.find((spec) => s
  * first, the Ondo ("…on") token second, e.g. "MSTR/MSTRon", "TSLA/TSLAon", whatever the on-chain currency0/currency1
  * order is. Returns the pool's two tokens in that order (`flipped` when that is currency1 first).
  */
-export function rhcDisplayTokens<T extends { issuer: "robinhood" | "ondo" }>(spec: { currency0: T; currency1: T }): { first: T; second: T; flipped: boolean } {
+function rhcDisplayTokens<T extends { issuer: "robinhood" | "ondo" }>(spec: { currency0: T; currency1: T }): { first: T; second: T; flipped: boolean } {
   const flipped = spec.currency0.issuer !== "robinhood" && spec.currency1.issuer === "robinhood";
   return flipped ? { first: spec.currency1, second: spec.currency0, flipped } : { first: spec.currency0, second: spec.currency1, flipped };
 }

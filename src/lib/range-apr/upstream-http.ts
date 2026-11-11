@@ -5,7 +5,7 @@
  */
 import type { JsonResult } from "./upstream-retry";
 
-export const UPSTREAM_USER_AGENT =
+const UPSTREAM_USER_AGENT =
   "SoFinance/0.1 (range APR; +https://sofinancelab.xyz)";
 
 /** Seconds ("120") or an HTTP date; null when absent or unusable. */

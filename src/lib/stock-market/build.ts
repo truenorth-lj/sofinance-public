@@ -18,9 +18,9 @@
 import { STOCK_CARD_ROWS } from "./public";
 import { STOCK_EXCLUDED_MINTS, STOCK_UNIVERSE, type StockIssuer, type StockUniverseRow } from "./universe";
 
-export const STOCK_MIN_MCAP_USD = 1_000_000;
-export const STOCK_MIN_LIQUIDITY_USD = 50_000;
-export const STOCK_MIN_VOLUME_24H_USD = 10_000;
+const STOCK_MIN_MCAP_USD = 1_000_000;
+const STOCK_MIN_LIQUIDITY_USD = 50_000;
+const STOCK_MIN_VOLUME_24H_USD = 10_000;
 export { STOCK_CARD_ROWS };
 
 /** The fields we read from one Jupiter Tokens V2 search row. */

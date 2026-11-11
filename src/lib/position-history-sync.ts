@@ -62,7 +62,7 @@ function bindOpeningEvents(events: PositionCashflowEvent[], tx: ParsedTransactio
 }
 
 /** web3.js parsed receipts contain PublicKeys; JSONB stores their base58 values. */
-export function rehydratePositionReceipt(receipt: Record<string, unknown>): ParsedTransactionWithMeta {
+function rehydratePositionReceipt(receipt: Record<string, unknown>): ParsedTransactionWithMeta {
   const tx = JSON.parse(JSON.stringify(receipt)) as ParsedTransactionWithMeta;
   const instructions = [tx.transaction.message.instructions,
     ...(tx.meta?.innerInstructions ?? []).map(group => group.instructions)];
