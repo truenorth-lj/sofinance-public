@@ -42,7 +42,7 @@ export const RWA_PAIRS_STALE_MS = APR_SNAPSHOT_DELAYED_AFTER_MS;
  * Age of the data behind a saved 7d estimate: its chain observation, or (when it was computed from saved price
  * history) the older of that and the price history's own observation. NaN when unreadable; null when unsaved.
  */
-export function aprSnapshotAgeMs(payload: PoolRangeAprPayload, nowMs: number): number | null {
+function aprSnapshotAgeMs(payload: PoolRangeAprPayload, nowMs: number): number | null {
   const freshness = payload.freshness;
   if (!freshness) return null;
   const chain = Date.parse(freshness.chainObservedAt ?? freshness.snapshotAt);

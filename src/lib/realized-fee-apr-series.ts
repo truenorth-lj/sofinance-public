@@ -3,9 +3,9 @@ import { aggregateCashflowsForPosition, type PositionCashflowEvent } from "./pos
 import { utcDate, utcDayStart } from "./apr-series";
 import { feeAprFromRatio, holdingDaysFromSeconds, sideUsd } from "@sofinance/engine/position-performance-math";
 
-export const REALIZED_FEE_APR_SERIES_LABEL = "Position realized fee APR (cumulative, on-chain events)";
+const REALIZED_FEE_APR_SERIES_LABEL = "Position realized fee APR (cumulative, on-chain events)";
 
-export const REALIZED_FEE_APR_SERIES_ASSUMPTIONS = [
+const REALIZED_FEE_APR_SERIES_ASSUMPTIONS = [
   "Points exist only on event days (open / increase / decrease) and the evaluation day.",
   "APR = cumulative fees ÷ deposited × 365 ÷ holding days, using current USD prices (not tx-time prices).",
   "Uncollected fees are included only on the evaluation day. Earlier days use collected fees only.",

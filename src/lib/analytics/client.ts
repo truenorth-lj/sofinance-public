@@ -39,7 +39,7 @@ export function posthogApiHost(): string {
 }
 
 /** PostHog app host, for links the SDK builds (toolbar). The relay is not a UI host. */
-export function posthogUiHost(): string {
+function posthogUiHost(): string {
   return posthogUpstream(process.env.NEXT_PUBLIC_POSTHOG_HOST).ui;
 }
 

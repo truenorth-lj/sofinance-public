@@ -10,7 +10,7 @@ import type { DexDescriptor, FeePolicy } from "../types";
  * rate on the swapped part of the input only (inside the Jupiter swap, into the fee wallet's pre-existing ATA for the
  * input mint); the part already in a pool token is free. Compound charges nothing (PM decision 11/1).
  */
-export const METEORA_DLMM_FEE_POLICY: FeePolicy = Object.freeze({
+const METEORA_DLMM_FEE_POLICY: FeePolicy = Object.freeze({
   ...NO_FEE_POLICY,
   open: Object.freeze({ kind: "swap-input-bps", bps: 10 }),
   add: Object.freeze({ kind: "swap-input-bps", bps: 10 }),

@@ -19,7 +19,7 @@ import type { OpenAction } from "./pool-list";
 import { ProjectionChart } from "./projection-chart";
 
 /** Horizons offered in the dialog, as the chart's range switch. */
-export const SHARE_CALC_DAYS = [30, 90, 180, 365] as const;
+const SHARE_CALC_DAYS = [30, 90, 180, 365] as const;
 const rangeLabel = (days: number) => (days === 365 ? "1Y" : `${days}D`);
 /** Quick amounts under the input. */
 const PRESETS = ["100", "1000", "10000"] as const;

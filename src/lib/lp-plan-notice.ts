@@ -2,7 +2,7 @@ import { HOMEPAGE_MIN_TVL_USD } from "./homepage-pools";
 import { isThinPlanSample, PLAN_MIN_RELIABLE_SAMPLE_DAYS } from "./lp-plan-yield";
 
 /** Pools below this TVL get the small-pool warning in the calculator: the same $5k floor the homepage list uses. */
-export const PLAN_SMALL_POOL_TVL_USD = HOMEPAGE_MIN_TVL_USD;
+const PLAN_SMALL_POOL_TVL_USD = HOMEPAGE_MIN_TVL_USD;
 
 /**
  * What the share calculator says about the data behind a projection:

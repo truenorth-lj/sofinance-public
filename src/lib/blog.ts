@@ -108,7 +108,7 @@ function parseArticleFile(filename: string): BlogArticle {
   };
 }
 
-export function listBlogFilenames(): string[] {
+function listBlogFilenames(): string[] {
   return readdirSync(CONTENT_DIR)
     .filter((name) => name.endsWith(".md") || name.endsWith(".mdx"))
     .sort();
@@ -141,7 +141,7 @@ export function formatBlogDate(isoDate: string): string {
   return `${monthName} ${day}, ${year}`;
 }
 
-export function absoluteUrl(path: string, base = getCanonicalSiteUrl()): string {
+function absoluteUrl(path: string, base = getCanonicalSiteUrl()): string {
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
   return path === "/" ? base : `${base}${path}`;
 }
@@ -157,10 +157,6 @@ export function getPublicPngSize(src: string): BlogImageSize {
     throw new Error(`Not a PNG: ${src}`);
   }
   return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
-}
-
-export function blogIndexPath(): string {
-  return BLOG_ROUTES.home;
 }
 
 export function articleCanonicalPath(slug: string): string {

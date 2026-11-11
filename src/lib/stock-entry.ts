@@ -20,7 +20,7 @@ import { stockReferencePool, type StockReferencePool } from "./stock-reference-p
 
 export const MAX_ENTRY_PRICE_LOOKUPS_PER_READ = 4;
 /** Wall-clock budget for the lookups in one read. Four lookups at up to 41 RPC each still fit when groups of four run in parallel. */
-export const LOOKUP_BUDGET_MS = 15_000;
+const LOOKUP_BUDGET_MS = 15_000;
 /** The one temporary reason; every other missing price is "not recorded" (the stock view's default reason). */
 export const ENTRY_PRICE_PENDING_REASON = "Entry price is still being recorded; it appears on a later view.";
 

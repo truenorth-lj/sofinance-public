@@ -56,7 +56,7 @@ export function CloseStatus({ sent, symbols }: { sent: CloseSent; symbols: [stri
 }
 
 /** A held position outside SoFinance's allowlist: labelled, view only. */
-export const otherPoolNote = (s: ScannedPosition | undefined) => s?.stablePair
+const otherPoolNote = (s: ScannedPosition | undefined) => s?.stablePair
   ? "StablePair pool that SoFinance does not list yet: view only."
   : "Another Uniswap v4 pool, not supported by SoFinance: view only.";
 

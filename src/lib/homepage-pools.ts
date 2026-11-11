@@ -51,7 +51,7 @@ export function buildHomepagePools(input: {
 export const RWA_PAIRS_DEFAULT_SELECT = { filters: DEFAULT_FILTERS, hideDuplicates: true, sort: DEFAULT_SORT } as const;
 
 /** The homepage's selection: `/app/rwa-pairs`' default view with the homepage TVL floor as its TVL filter. */
-export const HOMEPAGE_SELECT = {
+const HOMEPAGE_SELECT = {
   ...RWA_PAIRS_DEFAULT_SELECT,
   filters: { ...DEFAULT_FILTERS, minTvl: HOMEPAGE_MIN_TVL_USD },
 } as const;

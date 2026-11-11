@@ -10,7 +10,7 @@ import { ThrottleGate } from "../range-apr/throttle-gate";
  */
 export type GeckoNetwork = "solana" | "robinhood";
 
-export const GECKO_TERMINAL_API = "https://api.geckoterminal.com/api/v2";
+const GECKO_TERMINAL_API = "https://api.geckoterminal.com/api/v2";
 
 /** `https://api.geckoterminal.com/api/v2/networks/{network}/pools` */
 export const geckoPoolsUrl = (network: GeckoNetwork) => `${GECKO_TERMINAL_API}/networks/${network}/pools`;

@@ -1,10 +1,10 @@
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 
 /** The pools page (Solana + Robinhood Chain); `?openPool=<id>` opens that pool. */
-export const POOLS_PAGE_PATH = "/app/rwa-pairs";
+const POOLS_PAGE_PATH = "/app/rwa-pairs";
 
 /** Link that opens one pool's Open position flow on the pools page. */
-export function poolsPageOpenPath(poolId: string): string {
+function poolsPageOpenPath(poolId: string): string {
   return `${POOLS_PAGE_PATH}?openPool=${encodeURIComponent(poolId)}`;
 }
 

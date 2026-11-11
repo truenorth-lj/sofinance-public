@@ -6,7 +6,7 @@ import type { AtomicStatus } from "@/lib/attempt-status";
 
 const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
 
-export function transactionStatusCopy(status: AtomicStatus) {
+function transactionStatusCopy(status: AtomicStatus) {
   switch (status) {
     case "success": return { title: "Liquidity added", detail: "Confirmed on Solana. Balances refreshed." };
     case "failed": return { title: "Add liquidity failed on-chain", detail: "Solana ran it but a safety check (such as the price limit) stopped it, so nothing changed except the network fee." };

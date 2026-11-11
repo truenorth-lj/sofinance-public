@@ -44,7 +44,7 @@ export function clearOrcaRangeAprCache() {
 }
 
 /** Pure: shared assembly plus Orca wording, sources and the read-only pool state. */
-export function assembleOrcaRangeApr(
+function assembleOrcaRangeApr(
   poolId: string, profile: VolumeProfile, chain: OrcaPoolLiquidity, nowSeconds: number,
 ): OrcaRangeAprPayload {
   const payload = assemblePoolRangeApr(poolId, profile, chain, nowSeconds, { assumptions: ORCA_RANGE_APR_ASSUMPTIONS, chainSource: ORCA_CHAIN_SOURCE });

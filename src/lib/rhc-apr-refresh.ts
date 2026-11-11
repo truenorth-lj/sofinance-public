@@ -38,16 +38,16 @@ import { ALGORITHM_VERSION, type Lease, type ProfileFetchState, type RwaStore, t
  */
 export const RHC_PROFILE_MAX_AGE_MS = 6 * 3_600_000;
 /** Roll-forward needs the saved history to reach back to (now − 24 h − this): GeckoTerminal's txns window is 24 h. */
-export const RHC_QUIET_COVERAGE_SLACK_MS = 15 * 60_000;
-export const RHC_FAILURE_BACKOFF_MS = 12 * 3_600_000;
-export const RHC_FAILURE_BACKOFF_MAX_MS = 4 * 86_400_000;
+const RHC_QUIET_COVERAGE_SLACK_MS = 15 * 60_000;
+const RHC_FAILURE_BACKOFF_MS = 12 * 3_600_000;
+const RHC_FAILURE_BACKOFF_MAX_MS = 4 * 86_400_000;
 /** Measured block rate (`RHC_BLOCK_ANCHOR`), for pool creation days. */
 const RHC_BLOCKS_PER_SECOND = 9.6;
 
 type Fetcher = typeof fetch;
 
 /** The per-pool tick window read (two multicalls) gives up after this, so one slow RPC cannot hold the queue. */
-export const RHC_LIQUIDITY_TIMEOUT_MS = 10_000;
+const RHC_LIQUIDITY_TIMEOUT_MS = 10_000;
 
 /** Rejects with `message` after `ms` (or when `signal` aborts); the slow call is left to settle on its own. */
 export function withTimeout<T>(work: Promise<T>, ms: number, message: string, signal?: AbortSignal): Promise<T> {
@@ -197,7 +197,7 @@ function storedFrom(fresh: VolumeProfile, nowMs: number, fetchState?: ProfileFet
 }
 
 /** One USD price for either token (same stock on both sides); null when the market batch has none. */
-export function rhcTokenPriceUsd(market: Univ4MarketData | undefined): number | null {
+function rhcTokenPriceUsd(market: Univ4MarketData | undefined): number | null {
   const prices = [market?.priceUsd?.token0, market?.priceUsd?.token1].filter((p): p is number => !!p && Number.isFinite(p) && p > 0);
   return prices.length ? prices.reduce((sum, p) => sum + p, 0) / prices.length : null;
 }

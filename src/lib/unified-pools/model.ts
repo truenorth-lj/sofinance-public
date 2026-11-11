@@ -63,7 +63,7 @@ export function samePairKey(pool: Pick<UnifiedPool, "chain" | "protocol" | "mint
 }
 
 /** Shown (on a greyed Open button) where the list cannot open a position in the pool's protocol. */
-export const METEORA_OPEN_UNAVAILABLE = "Opening Meteora positions isn't available yet";
+const METEORA_OPEN_UNAVAILABLE = "Opening Meteora positions isn't available yet";
 
 /** Why the list cannot open this pool, or null when it can (Meteora DLMM: not from the list, PM 2026-11-01). */
 export function openUnavailableReason(pool: Pick<UnifiedPool, "protocol">): string | null {

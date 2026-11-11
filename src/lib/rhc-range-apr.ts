@@ -1,7 +1,7 @@
 import "@/lib/engine-host";
 import "server-only";
 
-import type { Hex, PublicClient } from "viem";
+import type { PublicClient } from "viem";
 import { UNIV4_RHC_ALLOWLISTED_POOLS, type Univ4AllowlistedPool } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import { readPoolState } from "@sofinance/engine/protocols/uniswap-v4/discovery";
 import { readTickWindow } from "@sofinance/engine/protocols/uniswap-v4/open-chain";
@@ -31,7 +31,7 @@ export { resolveRhcPresetRanges, sqrtPriceX96ToX64 } from "./rhc-range-apr-prese
  * ±10 ticks / ±0.3% / ±1%. Behind `RHC_APR7D_ENABLED`.
  */
 
-export const RHC_RANGE_APR_ASSUMPTIONS = [
+const RHC_RANGE_APR_ASSUMPTIONS = [
   `Estimate, not a prediction. Uses the last ${VOLUME_WINDOW_DAYS} complete UTC days of pool volume (GeckoTerminal, current day excluded) against the pool's liquidity right now (StateView tick bitmap).`,
   "Fees = volume that traded inside your range × the StablePairHook's current fee rate × your share of the liquidity in each price bin. The hook fee is dynamic; this uses the live value.",
   "Volume only counts while the price is inside your range, using hourly price history; time out of range collects nothing.",
@@ -39,7 +39,7 @@ export const RHC_RANGE_APR_ASSUMPTIONS = [
   `Rate shown for a ~$${RANGE_APR_REFERENCE_CAPITAL_USD} deposit; larger deposits dilute their own share of the fees.`,
 ].join(" ");
 
-export const RHC_CHAIN_SOURCE = "Robinhood Chain RPC: StateView slot0 + tick bitmap/liquidity (X96→X64)";
+const RHC_CHAIN_SOURCE = "Robinhood Chain RPC: StateView slot0 + tick bitmap/liquidity (X96→X64)";
 
 const ECONOMICS_TTL_MS = 30 * 60_000;
 const CHAIN_TTL_MS = 30_000;
@@ -60,7 +60,7 @@ export function isAllowlistedRhcPool(poolId: string): boolean {
   return UNIV4_RHC_ALLOWLISTED_POOLS.some((p) => p.poolId.toLowerCase() === poolId.toLowerCase());
 }
 
-export function rhcPoolSpec(poolId: string): Univ4AllowlistedPool | null {
+function rhcPoolSpec(poolId: string): Univ4AllowlistedPool | null {
   return UNIV4_RHC_ALLOWLISTED_POOLS.find((p) => p.poolId.toLowerCase() === poolId.toLowerCase()) ?? null;
 }
 
@@ -123,7 +123,7 @@ export const RHC_ECONOMICS_SOURCE: LoadedPoolEconomicsSource = {
   load: loadRhcEconomics,
 };
 
-export async function readRhcPoolLiquidity(poolId: string, publicClient: PublicClient = client()): Promise<OnchainPoolLiquidity> {
+async function readRhcPoolLiquidity(poolId: string, publicClient: PublicClient = client()): Promise<OnchainPoolLiquidity> {
   const spec = rhcPoolSpec(poolId);
   if (!spec) throw new Error("RHC pool is not allowlisted");
   const state = await readPoolState(publicClient, spec);
@@ -193,15 +193,4 @@ export async function fetchRhcRangeApr(poolId: string, options: FetchRhcRangeApr
     ? await Promise.all([loadProfile(), loadChain()])
     : await Promise.all([volumeCache.get(poolId, loadProfile), chainCache.get(poolId, loadChain)]);
   return assembleRhcRangeApr(poolId, profile, chain, nowSeconds);
-}
-
-export function clearRhcRangeAprCache(): void {
-  volumeCache.clear();
-  chainCache.clear();
-  stateClient = null;
-}
-
-/** Allowlisted pool ids (lowercase) for the cron / registry. */
-export function rhcAprPoolIds(): readonly Hex[] {
-  return UNIV4_RHC_ALLOWLISTED_POOLS.map((p) => p.poolId);
 }

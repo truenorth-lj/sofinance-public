@@ -12,7 +12,7 @@ import {
 import type { PlanYieldComparison } from "@/lib/lp-plan-yield";
 import { formatSigned } from "./format";
 
-export const MIN_LABEL_PX = 11;
+const MIN_LABEL_PX = 11;
 
 export type ChartBox = { width: number; height: number; compact: boolean };
 

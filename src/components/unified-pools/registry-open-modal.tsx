@@ -31,13 +31,13 @@ import { feeLine, openRentLines, TxStatus, tokenAccountRentLine } from "../unifi
 import { useWalletConnection } from "../wallet-connection";
 
 /** Slippage for the swap legs of an open (code constant; PR10 rule: no new env flags). */
-export const OPEN_SLIPPAGE_BPS = 50;
+const OPEN_SLIPPAGE_BPS = 50;
 /** Wait after the last keystroke before asking for a quote. */
 const QUOTE_DEBOUNCE_MS = 400;
 export const NETWORK_FEE_COPY = "Network fee is set by your wallet.";
-export const SOL_RESERVE_COPY = "Keep some SOL beyond the rent. Your wallet may add a priority fee to each step (often about 0.001–0.002 SOL), and that fee must also fit in your SOL.";
+const SOL_RESERVE_COPY = "Keep some SOL beyond the rent. Your wallet may add a priority fee to each step (often about 0.001–0.002 SOL), and that fee must also fit in your SOL.";
 export const SOL_REFUSED_COPY = "SOL can't be used to open a position. Use one of the listed tokens.";
-export const RANGE_TOO_WIDE_COPY = (units: number, max: number, unit: string) =>
+const RANGE_TOO_WIDE_COPY = (units: number, max: number, unit: string) =>
   `Not available to open yet: this range spans ${units} ${unit}s, and one position holds at most ${max}.`;
 export const NO_RANGE_FITS_COPY = "No range of this pool fits one position, so it is not available to open yet.";
 
@@ -105,7 +105,7 @@ type Balances = { sol: bigint | null; byMint: Record<string, string> };
 type WalletAssets = { assets?: { mint: string; kind: string; balance: string }[] };
 const solText = (lamports: bigint) => (Number(lamports) / 1e9).toFixed(4);
 /** The SOL-short message: what the open needs (rent, network fees, temporary swap accounts, reserve), what the wallet has, and what is missing. */
-export const solShortCopy = (need: bigint, have: bigint) =>
+const solShortCopy = (need: bigint, have: bigint) =>
   `Not enough SOL: this open needs about ${solText(need)} SOL (rent, network fees, temporary swap accounts and a small reserve), and your wallet has ${solText(have)} SOL. Add about ${solText(need - have)} SOL to open.`;
 const price = (value: number) => (value >= 1 ? value.toPrecision(6) : value.toPrecision(4));
 

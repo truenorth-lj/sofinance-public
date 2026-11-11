@@ -6,7 +6,7 @@ import "server-only";
  * Paginated GET https://api.xstocks.fi/api/v2/public/assets
  */
 
-export const XSTOCKS_ASSETS_API = "https://api.xstocks.fi/api/v2/public/assets";
+const XSTOCKS_ASSETS_API = "https://api.xstocks.fi/api/v2/public/assets";
 const PAGE_LIMIT = 100;
 const MAX_PAGES = 40;
 const CACHE_TTL_MS = 30 * 60_000;

@@ -8,7 +8,7 @@ import type { DecisionRequest, LedgerEvent } from "./lp-accounting";
 import { jupiterQuote } from "@sofinance/engine/swap/client";
 import { asRpcUserError } from "@sofinance/engine/rpc/errors";
 import { rpcRequest } from "@sofinance/engine/rpc";
-export function validPrincipalQuote(q: Record<string, unknown>, mint: string, amount: string): boolean {
+function validPrincipalQuote(q: Record<string, unknown>, mint: string, amount: string): boolean {
   return q.inputMint===mint && q.outputMint==="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" && q.inAmount===amount && q.swapMode==="ExactIn" && typeof q.outAmount==="string" && /^\d+$/.test(q.outAmount) && BigInt(q.outAmount)>0n && typeof q.otherAmountThreshold==="string" && /^\d+$/.test(q.otherAmountThreshold) && BigInt(q.otherAmountThreshold)<=BigInt(q.outAmount) && Array.isArray(q.routePlan) && q.routePlan.length>0;
 }
 const RPC_SOURCE = "solana-rpc";

@@ -27,7 +27,7 @@ export const FAILURE_TTL_MS = 15_000;
 export const FRESH_MIN_AGE_MS = 10_000;
 const MAX_WALLETS = 500;
 /** Start-to-start spacing of scan RPC calls (measured 2026-10-30: the official RPC answers 429 after ~20 calls at ~6/s). */
-export const SCAN_CALL_SPACING_MS = 250;
+const SCAN_CALL_SPACING_MS = 250;
 
 export type RhcScanResult = {
   state: "scan";
@@ -122,9 +122,6 @@ export async function scanRhcPositions(wallet: Address, options: { fresh?: boole
   inflight.set(key, task);
   try { return await task; } finally { inflight.delete(key); }
 }
-
-/** RPC calls made through scan clients on this instance. */
-export function scanRpcCallCount(): number { return calls; }
 
 /* ---- request limit ---- */
 const WINDOW_MS = 60_000;

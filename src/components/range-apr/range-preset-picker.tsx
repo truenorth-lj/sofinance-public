@@ -29,7 +29,7 @@ const cellTone = (active: boolean) => (active
 type OtherRange = { id: string; name: string; text: string };
 
 /** "$1,000" style deposit label; cents only below $10. */
-export function formatDepositUsd(value: number): string {
+function formatDepositUsd(value: number): string {
   const amount = Number.isFinite(value) ? value : 1_000;
   return `$${amount.toLocaleString("en-US", { maximumFractionDigits: amount < 10 ? 2 : 0 })}`;
 }

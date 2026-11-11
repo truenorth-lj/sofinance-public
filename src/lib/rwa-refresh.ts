@@ -63,16 +63,9 @@ type Options = {
  */
 export const RWA_REFRESH_MAX_DURATION_MS = 300_000;
 /** 20% of `maxDuration` kept free: the whole invocation (discovery + APR) is budgeted to 240 s. */
-export const RWA_REFRESH_DEADLINE_SLACK_MS = 60_000;
+const RWA_REFRESH_DEADLINE_SLACK_MS = 60_000;
 /** No pool is started inside this last part of the APR job: `prepareDaily`, `finish` and the response. */
 export const APR_SAVE_RESERVE_MS = 10_000;
-/**
- * Typical time for one queued pool. GeckoTerminal calls are the long pole: they start ≥ 12 s apart on the cron gate
- * (`CRON_GECKO_SPACING_MS`), latency 0.41 s median / 0.69 s max (10/31). Solana: 2 calls (day + hour candles) ≈ 24 s,
- * beside one RPC liquidity read, then one save. RHC: 1 call (2 without a token price) + two multicalls + save ≈ 12 s
- * (0 calls when the pool is rolled forward). Budget 25 s (the 2-call case).
- */
-export const APR_POOL_BUDGET_MS = 25_000;
 /**
  * Longest time one pool can take (the run's start guard), all in parallel then the save: Raydium economics (3
  * attempts × 5 s timeout + backoff ≈ 17 s); 2 gated GeckoTerminal calls (one attempt each, the first waits ≤ 12 s for
@@ -104,7 +97,7 @@ export const APR_POOLS_PER_RUN = 12;
  * and the run is "partial", but the job only counts as failed when MORE than this share of the pools it finished
  * were degraded (e.g. 1 of 7 is not a failure, 4 of 7 is). Errors, 429s and exceptions still fail the job on their own.
  */
-export const APR_DEGRADED_FAILURE_SHARE = 0.5;
+const APR_DEGRADED_FAILURE_SHARE = 0.5;
 /** True when the degraded pools are more than `APR_DEGRADED_FAILURE_SHARE` of the pools finished this run. */
 export function degradedIsSystemic(degraded: number, done: number): boolean {
   return done > 0 && degraded > done * APR_DEGRADED_FAILURE_SHARE;
@@ -143,7 +136,7 @@ export type MeteoraAprQueueStats = Omit<AprQueueStats, "stoppedBy"> & { stoppedB
  * Datapi cost per pool: 1 pool + 1 daily volume + 3 hourly OHLCV spans = 5 requests (8 pools ≈ 40 per run).
  */
 export const METEORA_APR_POOLS_PER_RUN = 8;
-export const METEORA_APR_CONCURRENCY = 3;
+const METEORA_APR_CONCURRENCY = 3;
 export const METEORA_APR_POOL_TIMEOUT_MS = 10_000;
 
 /**
@@ -332,7 +325,7 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
  */
 /** Time the Meteora scan may take inside discovery (~2 × seeds requests at 5 at a time, then one RPC batch), so a slow
  * datapi leaves time for the icons and the RHC check. */
-export const METEORA_SCAN_BUDGET_MS = 30_000;
+const METEORA_SCAN_BUDGET_MS = 30_000;
 
 async function publishMeteoraFeed(store: RwaStore, lease: Lease, raydiumPairs: readonly RwaPairRow[],
   fetcher: typeof fetch | undefined, signal: AbortSignal): Promise<MeteoraScanStats & { published: number }> {

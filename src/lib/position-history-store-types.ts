@@ -16,7 +16,7 @@ const eventSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("decrease"), positionNftMint: pubkey, liquidity: integerAmount,
     principalA: integerAmount, principalB: integerAmount, feeA: integerAmount, feeB: integerAmount }),
 ]);
-export const positionContextSchema = z.object({ positionMint: pubkey, positionAccount: pubkey,
+const positionContextSchema = z.object({ positionMint: pubkey, positionAccount: pubkey,
   poolId: pubkey, mintA: pubkey, mintB: pubkey, vaultA: pubkey, vaultB: pubkey });
 export type StoredPositionTransaction = {
   signature: string; slot: number; blockTime: number | null;

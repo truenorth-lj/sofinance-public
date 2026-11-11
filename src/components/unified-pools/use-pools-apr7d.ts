@@ -10,7 +10,7 @@ import { POOL_NOT_TRACKED_MESSAGE } from "@/lib/range-apr/not-clmm-pool";
 export type { Apr7dState, AprFreshness } from "@/lib/unified-pools/apr7d";
 
 /** Kept for tests and offline copy when `RHC_APR7D_ENABLED` is off. */
-export const NO_7D_APR_RHC = "No 7-day estimate for this pool yet.";
+const NO_7D_APR_RHC = "No 7-day estimate for this pool yet.";
 
 /**
  * Estimated highest range APR (7-day average) for every pool in the list (Solana + RHC when the flag is on),

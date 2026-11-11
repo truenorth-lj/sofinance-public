@@ -41,7 +41,7 @@ export function isUserFacingSelectedError(error: unknown): boolean {
   return code !== undefined && USER_FACING_SELECTED_CODES.has(code);
 }
 
-export function isUpstreamAvailabilityError(error: unknown): boolean {
+function isUpstreamAvailabilityError(error: unknown): boolean {
   if (error instanceof CompoundSendError && error.cause !== undefined) {
     return isUpstreamAvailabilityError(error.cause);
   }

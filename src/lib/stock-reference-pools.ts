@@ -41,7 +41,7 @@ const ROWS: readonly Row[] = [
   ["TSLAqBbv4CNCnzWFeB7LmydAyEiNMJtve7DYKLpdK4S", "TSLA", "orca-whirlpool", "4hZm9mBGP4A8hXM9TB7DnfqfYT7qrXr58q8jYXcXLDo3", "3TibzWnfCEnh3u1CTToJH4N8ifA5fTw2LUKAFJigrmtk", "7GBHsg148xXbi7rTXcphS9bDomdYRmrximnsVyknP8mG"], // $925k liquidity, $391k 24h volume
 ];
 
-export const STOCK_REFERENCE_POOLS: ReadonlyMap<string, StockReferencePool> = new Map(ROWS.map(
+const STOCK_REFERENCE_POOLS: ReadonlyMap<string, StockReferencePool> = new Map(ROWS.map(
   ([mint, symbol, protocol, pool, stockVault, usdcVault]) => [mint, { mint, symbol, protocol, pool, stockVault, usdcVault }]));
 
 export function stockReferencePool(mint: string): StockReferencePool | null {

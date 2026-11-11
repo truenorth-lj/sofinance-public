@@ -1,7 +1,7 @@
 import "@/lib/engine-host";
 import { uiPriceBPerAFromTick } from "@sofinance/engine/position-performance-math";
 
-export const DEFAULT_NEAR_EDGE_FRACTION = 0.1;
+const DEFAULT_NEAR_EDGE_FRACTION = 0.1;
 
 export type RangeSide = "below" | "inside" | "above";
 

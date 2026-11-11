@@ -1,0 +1,36 @@
+// Dead-code report: `pnpm knip`. Read-only; it never edits files.
+// Entry points that Next.js does not discover on its own are listed here (CLI scripts, the MCP server and shim).
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  // e2e/ is its own npm package (own lockfile), excluded from the root tsc / ESLint / Vitest too.
+  "ignoreWorkspaces": ["e2e"],
+  "workspaces": {
+    ".": {
+      "entry": [
+        "scripts/*.{ts,mjs,cjs}",
+        "src/mcp/server.ts",
+        "src/mcp/remote-shim.ts",
+        "src/**/*.type-test.ts",
+        "next.config.test.ts"
+      ],
+      "project": ["src/**/*.{ts,tsx}", "scripts/**/*.{ts,mjs,cjs}"],
+      "ignore": ["src/mcp/server-only-mock*.js"]
+    },
+    "packages/engine": {
+      "project": ["src/**/*.ts"]
+    }
+  },
+  "ignoreDependencies": [
+    // Tailwind v4 is loaded through `@import "tailwindcss"` in globals.css and @tailwindcss/postcss.
+    "tailwindcss",
+    // Transitive through @tailwindcss/postcss; only named in postcss.config.mjs.
+    "postcss",
+    // Runtime dependency of @solana/wallet-adapter-react; kept pinned at the root on purpose.
+    "@solana/wallet-adapter-base",
+    // scripts/meteora-sdk-vectors.cjs is a one-off vector generator run with ad-hoc installs.
+    "@coral-xyz/anchor",
+    "@meteora-ag/dlmm"
+  ],
+  // Installed inside e2e/ (its own package) by CI.
+  "ignoreBinaries": ["playwright"]
+}

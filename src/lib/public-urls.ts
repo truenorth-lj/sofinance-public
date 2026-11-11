@@ -1,5 +1,5 @@
 /** Path prefix for the product UI after the marketing landing took `/`. */
-export const APP_PATH = "/app";
+const APP_PATH = "/app";
 
 export const APP_ROUTES = {
   home: APP_PATH,
@@ -77,7 +77,7 @@ export function buildPlanPath(input: { poolId: string; pair?: string; protocol?:
 }
 
 /** User-facing documentation (public site, English). */
-export const DOCS_PATH = "/docs";
+const DOCS_PATH = "/docs";
 
 export const DOCS_ROUTES = {
   home: DOCS_PATH,
@@ -90,7 +90,7 @@ export const DOCS_ROUTES = {
 } as const;
 
 /** Long-form articles (public site, English). Add a file in `content/blog/` to publish. */
-export const BLOG_PATH = "/blog";
+const BLOG_PATH = "/blog";
 
 export const BLOG_ROUTES = {
   home: BLOG_PATH,

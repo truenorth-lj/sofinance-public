@@ -8,8 +8,8 @@ export type TokenIconRow = { chain: IconChain; address: string; image: string; s
 /** chain → token address (Solana mint as-is, Robinhood Chain lowercase 0x) → icon URL. */
 export type TokenIconMap = Record<IconChain, Record<string, string>>;
 
-export const SOLANA_MINT = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
-export const EVM_ADDRESS = /^0x[0-9a-f]{40}$/;
+const SOLANA_MINT = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+const EVM_ADDRESS = /^0x[0-9a-f]{40}$/;
 
 /** Robinhood Chain addresses are stored lowercase; Solana mints are case-sensitive. */
 export function iconAddress(chain: IconChain, address: string): string {
@@ -47,7 +47,7 @@ export const MANUAL_TOKEN_ICONS: readonly TokenIconRow[] = Object.freeze([
   { chain: "robinhood", address: "0x9b8294f24453379aa87c807ab82bf1d5722153fc", image: "https://s3-symbol-logo.tradingview.com/spacex.svg", source: "manual" },
 ]);
 
-export const emptyIconMap = (): TokenIconMap => ({ solana: {}, robinhood: {} });
+const emptyIconMap = (): TokenIconMap => ({ solana: {}, robinhood: {} });
 
 /** Map from stored rows, with the manual list filling only tokens the database has no icon for. */
 export function tokenIconMap(rows: readonly TokenIconRow[], manual: readonly TokenIconRow[] = MANUAL_TOKEN_ICONS): TokenIconMap {

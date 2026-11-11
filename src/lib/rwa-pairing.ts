@@ -51,10 +51,10 @@ export const STABLECOIN_BASES = new Set([
 ]);
 
 /** Jupiter tags that qualify a mint as stocks/RWA (primary filter). */
-export const JUPITER_RWA_TAGS = new Set(["stocks", "rwa"]);
+const JUPITER_RWA_TAGS = new Set(["stocks", "rwa"]);
 
 /** Preferred Jupiter tags (not required; used for ranking / labels). */
-export const JUPITER_PREFERRED_TAGS = new Set(["xstocks", "backpack"]);
+const JUPITER_PREFERRED_TAGS = new Set(["xstocks", "backpack"]);
 
 export type WrapKind = "suffix-x" | "suffix-dash-x" | "suffix-underscore-x" | "prefix-x";
 

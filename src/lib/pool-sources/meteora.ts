@@ -15,7 +15,7 @@ import type { PoolPairRef, PoolSource } from "./types";
  * The spec a stored Meteora pool is read with: its id, X/Y mints (mintA = X, mintB = Y, as discovery wrote them)
  * and bin step. Throws when the stored row has no bin step (a row this lane must not guess for).
  */
-export function meteoraSpecOf(poolId: string, pair: PoolPairRef | undefined): MeteoraPoolSpec {
+function meteoraSpecOf(poolId: string, pair: PoolPairRef | undefined): MeteoraPoolSpec {
   if (!pair || pair.poolAddress !== poolId || !Number.isInteger(pair.binStep) || pair.binStep! < 1) {
     throw new Error("Meteora pool row has no bin step");
   }

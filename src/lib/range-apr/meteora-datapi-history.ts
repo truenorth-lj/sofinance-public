@@ -21,7 +21,7 @@ export { feeTotals, invertCandles, type DailyFeePoint, type FeeTotals, type Pool
 
 /** One OHLCV call covers at most this much (datapi caps 1h candles at ~4 days). */
 export const DATAPI_HOURLY_SPAN_SECONDS = 84 * 3600;
-export const DATAPI_TIMEOUT_MS = 5_000;
+const DATAPI_TIMEOUT_MS = 5_000;
 
 export type MeteoraDatapiFailure = "datapi-429" | "datapi-timeout";
 
