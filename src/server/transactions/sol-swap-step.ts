@@ -26,13 +26,20 @@ export async function readSolSwapStepStatus(wallet: string, signature: string, o
   return readSolSwapDelivery({ signature, wallet, outputMint, lastValidBlockHeight });
 }
 
+/** Shown when the given transaction is not a SoFinance step 1/2 SOL swap (other program, other input, extra transfers). */
+export const SOL_SWAP_NOT_STEP_ONE_MESSAGE =
+  "That transaction isn't a SoFinance step 1/2 SOL swap, so this open can't skip its fee. Open with the tokens as a normal deposit.";
+/** Shown when the step-1 swap paid less than the protocol fee due on the SOL it swapped. */
+export const SOL_SWAP_FEE_SHORT_MESSAGE =
+  "Step 1/2 swap did not pay the full protocol fee, so this open can't skip its fee. Open with the tokens as a normal deposit.";
 /** Shown when a step-1 swap's tokens were already deposited (or moved) after the swap. */
 export const SOL_SWAP_CREDIT_USED_MESSAGE =
   "This SOL swap was already used for an open. To deposit more, open with the tokens as a normal deposit (the usual fee applies).";
 
 /**
  * Step 2/2 fee credit: the open skips its fee only when the step-1 swap is confirmed, paid by this wallet,
- * paid the protocol fee due on what it swapped (from the transaction's balances), is recent, delivered at
+ * is a server-built step-1 SOL swap that paid the protocol fee due on the SOL it wrapped (engine
+ * `checkSolSwapStepFee`, from the transaction itself), is recent, delivered at
  * least the amount this open deposits, and its tokens have not been moved since (single use, checked
  * on-chain; a cancelled or failed step 2 moves nothing, so it can be retried). Returns the swap's slot so
  * step 2 never simulates against state from before the swap landed.
@@ -41,7 +48,9 @@ export async function assertSolSwapFeeCredit(wallet: string, signature: string, 
   if (typeof signature !== "string" || bs58.decode(signature).length !== 64) throw new Error("Invalid step-1 swap signature");
   const delivery = await readSolSwapDelivery({ signature, wallet, outputMint: inputMint });
   if (delivery.status !== "confirmed") throw new Error("Step 1/2 swap is not confirmed yet");
-  if (!delivery.feeAccountPaid) throw new Error("Step 1/2 swap did not pay the full protocol fee, so this open can't skip its fee. Open with the tokens as a normal deposit.");
+  if (!delivery.feeAccountPaid) {
+    throw new Error(delivery.feeCheck === "not_sol_swap" ? SOL_SWAP_NOT_STEP_ONE_MESSAGE : SOL_SWAP_FEE_SHORT_MESSAGE);
+  }
   if (delivery.blockTime !== null && Date.now() - delivery.blockTime * 1000 > SOL_SWAP_FEE_CREDIT_MS) {
     throw new Error("Step 1/2 swap is too old to continue; open with the tokens as a normal deposit");
   }

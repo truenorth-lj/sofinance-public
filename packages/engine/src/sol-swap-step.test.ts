@@ -8,29 +8,47 @@ import { readOpenPoolState } from "./open-state";
 import { feeSwapLeg } from "./swap/leg";
 import { NATIVE_SOL_MINT } from "./ids";
 import { swapFeeRecipientAta } from "./swap/fee";
-import { buildAndSimulateSolSwapStep, isSolSwapCreditSpent, readSolSwapDelivery, SOL_SWAP_SPENT_SCAN_LIMIT, solSwapFeeAmounts, solSwapFeeCovered } from "./sol-swap-step";
+import { buildAndSimulateSolSwapStep, isSolSwapCreditSpent, readSolSwapDelivery, SOL_SWAP_SPENT_SCAN_LIMIT, solSwapStepWrappedLamports } from "./sol-swap-step";
 
 const wallet = Keypair.generate().publicKey, other = Keypair.generate().publicKey;
 const mint = Keypair.generate().publicKey.toBase58();
 const feeWallet = Keypair.generate().publicKey;
 const feeAta = swapFeeRecipientAta(feeWallet, new PublicKey(NATIVE_SOL_MINT), TOKEN_PROGRAM_ID);
 const outputAta = Keypair.generate().publicKey, walletWsol = Keypair.generate().publicKey;
+const nativeAta = getAssociatedTokenAddressSync(new PublicKey(NATIVE_SOL_MINT), wallet, false, TOKEN_PROGRAM_ID);
+const JUPITER = new PublicKey("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4");
+const ATA_PROGRAM = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 const SOL = 1_000_000_000;
 const RENT = 2_039_280;
 const token = (accountIndex: number, owner: PublicKey, amount: string, tokenMint = mint) => ({ accountIndex, mint: tokenMint, owner: owner.toBase58(), uiTokenAmount: { amount, decimals: 9, uiAmount: null, uiAmountString: "" } });
 const balance = (owner: PublicKey, amount: string, tokenMint = mint) => token(2, owner, amount, tokenMint);
 const feeTokens = (amount: string) => token(1, feeWallet, amount, NATIVE_SOL_MINT);
 
+// Keys of the default step-1 swap; instruction account indexes point into this list.
+const KEYS = [wallet, feeAta, outputAta, other, nativeAta, SystemProgram.programId, TOKEN_PROGRAM_ID, JUPITER, ATA_PROGRAM, ComputeBudgetProgram.programId, walletWsol];
+const ix = (programIdIndex: number, accountKeyIndexes: number[], data: number[] | Uint8Array) => ({ programIdIndex, accountKeyIndexes, data: Uint8Array.from(data) });
+const transfer = (lamports: number, from = 0, to = 4) => {
+  const data = new Uint8Array(12); const view = new DataView(data.buffer);
+  view.setUint32(0, 2, true); view.setBigUint64(4, BigInt(lamports), true);
+  return ix(5, [from, to], data);
+};
+/** buildForOutput's shape: CU limit, wrap (create, transfer, sync), output ATA, Jupiter swap, close. */
+const stepIxs = (wrapped = SOL) => [
+  ix(9, [], [2, 0, 0, 0, 0]), ix(8, [0, 4, 0, 6], [1]), transfer(wrapped), ix(6, [4], [17]),
+  ix(8, [0, 2, 0, 6], [1]), ix(7, [0, 4, 2, 1], [1, 2, 3]), ix(6, [4, 0, 0], [9]),
+];
+
 type Opts = {
   status?: unknown; keys?: PublicKey[]; pre?: unknown[]; post?: unknown[]; err?: unknown; height?: number;
-  preBalances?: number[]; postBalances?: number[]; fee?: number;
+  preBalances?: number[]; postBalances?: number[]; fee?: number; instructions?: ReturnType<typeof ix>[];
 };
+const balances = (wallet0: number, fee1: number, out2 = RENT, wsol10 = 0) => [wallet0, fee1, out2, 1, 0, 1, 1, 1, 1, 1, wsol10];
 /**
- * A legit 1 SOL step-1 swap by default: keys [wallet, fee wSOL ATA, output ATA (existing), other];
- * the wallet spends 1 SOL + the 5,000 lamport network fee, and the fee account gets 10 bps (1,000,000 lamports).
+ * A legit 1 SOL step-1 swap by default: the wallet spends the wrapped 1 SOL + the 5,000 lamport network fee
+ * (its output account already exists), and the fee account gets 10 bps (1,000,000 lamports).
  */
 function connection(opts: Opts = {}) {
-  const keys = opts.keys ?? [wallet, feeAta, outputAta, other];
+  const keys = opts.keys ?? KEYS;
   return {
     getSignatureStatuses: vi.fn(async () => ({ value: ["status" in opts ? opts.status : { err: null, confirmationStatus: "confirmed" }] })),
     getBlockHeight: vi.fn(async () => opts.height ?? 0),
@@ -38,17 +56,24 @@ function connection(opts: Opts = {}) {
       blockTime: 1_700_000_000, slot: 462_750_173,
       meta: {
         err: opts.err ?? null, loadedAddresses: { writable: [], readonly: [] }, fee: opts.fee ?? 5_000,
-        preBalances: opts.preBalances ?? [10 * SOL, RENT + 5_000_000, RENT, 1],
-        postBalances: opts.postBalances ?? [9 * SOL - 5_000, RENT + 6_000_000, RENT, 1],
+        preBalances: opts.preBalances ?? balances(10 * SOL, RENT + 5_000_000),
+        postBalances: opts.postBalances ?? balances(9 * SOL - 5_000, RENT + 6_000_000),
         preTokenBalances: opts.pre ?? [balance(wallet, "100"), feeTokens("5000000")],
         postTokenBalances: opts.post ?? [balance(wallet, "24650100"), token(3, other, "5"), feeTokens("6000000")],
       },
-      transaction: { message: { getAccountKeys: () => ({ length: keys.length, get: (i: number) => keys[i] }) } },
+      transaction: { message: {
+        getAccountKeys: () => ({ length: keys.length, get: (i: number) => keys[i] }),
+        compiledInstructions: opts.instructions ?? stepIxs(),
+      } },
     })),
   } as unknown as Connection;
 }
 const read = (conn: Connection, extra: Record<string, unknown> = {}) => readSolSwapDelivery({ signature: "sig", wallet: wallet.toBase58(), outputMint: mint, connection: conn, ...extra });
-const fee = async (opts: Opts) => ((await read(connection(opts))) as { feeAccountPaid?: boolean }).feeAccountPaid;
+const feeCheck = async (opts: Opts) => {
+  const result = (await read(connection(opts))) as { feeAccountPaid?: boolean; feeCheck?: string };
+  expect(result.feeAccountPaid).toBe(result.feeCheck === "ok");
+  return result.feeCheck;
+};
 
 beforeEach(() => { vi.stubEnv("SOFINANCE_FEE_WALLET", feeWallet.toBase58()); vi.stubEnv("SOFINANCE_FEE_BPS", "10"); });
 afterEach(() => vi.unstubAllEnvs());
@@ -56,7 +81,7 @@ afterEach(() => vi.unstubAllEnvs());
 describe("readSolSwapDelivery", () => {
   it("measures what the swap actually delivered to the wallet (post minus pre) and where it landed", async () => {
     expect(await read(connection())).toEqual({
-      status: "confirmed", delivered: "24650000", decimals: 9, blockTime: 1_700_000_000, feeAccountPaid: true, slot: 462_750_173,
+      status: "confirmed", delivered: "24650000", decimals: 9, blockTime: 1_700_000_000, feeAccountPaid: true, feeCheck: "ok", slot: 462_750_173,
       outputAccounts: [outputAta.toBase58()],
     });
   });
@@ -68,59 +93,90 @@ describe("readSolSwapDelivery", () => {
     expect(await read(connection({ err: { x: 1 } }))).toEqual({ status: "failed" });
   });
   it("rejects a transaction from another fee payer or one that delivered nothing", async () => {
-    await expect(read(connection({ keys: [other, feeAta, outputAta, other] }))).rejects.toThrow("not paid by this wallet");
+    await expect(read(connection({ keys: [other, ...KEYS.slice(1)] }))).rejects.toThrow("not paid by this wallet");
     await expect(read(connection({ post: [balance(wallet, "100")] }))).rejects.toThrow("did not deliver");
     await expect(read(connection({ post: [balance(wallet, "999", Keypair.generate().publicKey.toBase58())] }))).rejects.toThrow("did not deliver");
   });
 });
 
-describe("readSolSwapDelivery protocol fee check (feeAccountPaid)", () => {
+describe("readSolSwapDelivery protocol fee check (feeCheck / feeAccountPaid)", () => {
   const delivered = [balance(wallet, "24650100")];
-  it("rejects a swap whose fee account is missing or received nothing", async () => {
-    expect(await fee({ keys: [wallet, other, outputAta, other] })).toBe(false);
-    expect(await fee({ post: [...delivered, feeTokens("5000000")] })).toBe(false);
-    expect(await fee({ post: delivered, pre: [balance(wallet, "100")] })).toBe(false);
+
+  it("accepts the server-built shape with wallet-added compute budget, Lighthouse and memo instructions", async () => {
+    const lighthouse = new PublicKey("L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95");
+    expect(await feeCheck({ keys: [...KEYS, lighthouse], instructions: [ix(9, [], [3, 1]), ...stepIxs(), ix(11, [0], [7])] })).toBe("ok");
   });
-  it("rejects a short fee: half of the 10 bps due on 1 SOL", async () => {
-    expect(await fee({ post: [...delivered, feeTokens("5500000")] })).toBe(false);
+  it("rejects a missing or short fee", async () => {
+    expect(await feeCheck({ keys: [wallet, other, ...KEYS.slice(2)] })).toBe("fee_short");
+    expect(await feeCheck({ post: [...delivered, feeTokens("5000000")] })).toBe("fee_short");
+    expect(await feeCheck({ post: [...delivered, feeTokens("5500000")] })).toBe("fee_short");
   });
-  it("allows only the documented slack below the fee due (10,001 lamports at 10 bps)", async () => {
-    expect(await fee({ post: [...delivered, feeTokens(String(6_000_000 - 10_001))] })).toBe(true);
-    expect(await fee({ post: [...delivered, feeTokens(String(6_000_000 - 10_002))] })).toBe(false);
+  it("treats an existing fee account with no pre-transaction balance as unmeasured (not covered)", async () => {
+    expect(await feeCheck({ pre: [balance(wallet, "100")] })).toBe("fee_short");
+    // A fee account created in this transaction (no lamports before) is measured from 0.
+    expect(await feeCheck({ pre: [balance(wallet, "100")], post: [...delivered, feeTokens("1000000")],
+      preBalances: balances(10 * SOL, 0), postBalances: balances(9 * SOL - 5_000, RENT + 1_000_000) })).toBe("ok");
   });
-  it("charges the fee on wSOL the wallet already held, not just on SOL wrapped in this transaction", async () => {
-    // Wraps 0.001 SOL but swaps 50 SOL of wSOL the wallet already had: 10 bps of ~50 SOL is due, 1,000,000 was paid.
-    const keys = [wallet, feeAta, outputAta, other, walletWsol];
-    const wsol = (amount: string) => token(4, wallet, amount, NATIVE_SOL_MINT);
-    expect(await fee({
-      keys, preBalances: [10 * SOL, RENT, RENT, 1, RENT + 50 * SOL], postBalances: [10 * SOL - 1_000_000 - 5_000, RENT, RENT, 1, RENT + 1_000_000],
-      pre: [balance(wallet, "100"), feeTokens("5000000"), wsol(String(50 * SOL))],
-      post: [...delivered, feeTokens("6000000"), wsol("1000000")],
-    })).toBe(false);
+  it("allows only 1 lamport + 1% of the fee due as rounding slack (10,001 lamports on 1 SOL)", async () => {
+    expect(await feeCheck({ post: [...delivered, feeTokens(String(6_000_000 - 10_001))] })).toBe("ok");
+    expect(await feeCheck({ post: [...delivered, feeTokens(String(6_000_000 - 10_002))] })).toBe("fee_short");
+  });
+  it("keeps the slack relative on a small swap: 0.01 SOL owes 10,000 lamports and may be short by 101 at most", async () => {
+    const small = (paid: number) => ({ instructions: stepIxs(10_000_000), post: [...delivered, feeTokens(String(5_000_000 + paid))],
+      postBalances: balances(10 * SOL - 10_000_000 - 5_000, RENT + 5_000_000 + paid) });
+    expect(await feeCheck(small(10_000 - 101))).toBe("ok");
+    expect(await feeCheck(small(10_000 - 102))).toBe("fee_short");
+    expect(await feeCheck(small(2_500))).toBe("fee_short");
+  });
+  it("rejects a dust swap whose 10 bps rounds to zero, even with a lamport paid to the fee account", async () => {
+    expect(await feeCheck({ instructions: stepIxs(999), post: [...delivered, feeTokens("5000001")],
+      postBalances: balances(10 * SOL - 999 - 5_000, RENT + 5_000_001) })).toBe("fee_short");
+  });
+  it("rejects a non-SOL swap (e.g. USDC -> stock) that sends a lamport of wSOL to the fee account", async () => {
+    const usdc = Keypair.generate().publicKey.toBase58();
+    // No wrap at all: just a Jupiter swap spending USDC.
+    expect(await feeCheck({ instructions: [ix(7, [0, 1, 2], [1])], pre: [balance(wallet, "100"), feeTokens("5000000"), token(10, wallet, "50000000", usdc)],
+      post: [...delivered, feeTokens("5000001"), token(10, wallet, "0", usdc)], postBalances: balances(10 * SOL - 5_000, RENT + 5_000_001) })).toBe("not_sol_swap");
+    // A real 1 SOL wrap and fee, but the swap also spends the wallet's USDC.
+    expect(await feeCheck({ pre: [balance(wallet, "100"), feeTokens("5000000"), token(10, wallet, "50000000", usdc)],
+      post: [...delivered, feeTokens("6000000"), token(10, wallet, "0", usdc)] })).toBe("not_sol_swap");
+  });
+  it("rejects an inflated delivery: a small real swap plus tokens transferred in by another instruction", async () => {
+    const tokenTransferIn = ix(6, [3, 2, 3], [3, 0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(await feeCheck({ instructions: [...stepIxs(), tokenTransferIn] })).toBe("not_sol_swap");
+    // A second swap, a SOL transfer elsewhere, or an unknown program are refused the same way.
+    expect(await feeCheck({ instructions: [...stepIxs(), ix(7, [0], [1])] })).toBe("not_sol_swap");
+    expect(await feeCheck({ instructions: [...stepIxs(), transfer(5, 0, 3)] })).toBe("not_sol_swap");
+    expect(await feeCheck({ keys: [...KEYS, other], instructions: [...stepIxs(), ix(11, [0], [1])] })).toBe("not_sol_swap");
+  });
+  it("rejects swapping wSOL the wallet already held beyond the wrapped amount (+0.01 SOL)", async () => {
+    // Wraps 1 SOL but also swaps 50 SOL of held wSOL (account 10, left open).
+    const wsol = (amount: string) => token(10, wallet, amount, NATIVE_SOL_MINT);
+    expect(await feeCheck({
+      preBalances: balances(10 * SOL, RENT + 5_000_000, RENT, RENT + 50 * SOL), postBalances: balances(9 * SOL - 5_000, RENT + 6_000_000, RENT, RENT),
+      pre: [balance(wallet, "100"), feeTokens("5000000"), wsol(String(50 * SOL))], post: [...delivered, feeTokens("6000000"), wsol("0")],
+    })).toBe("not_sol_swap");
   });
   it("does not count the rent of a new output token account as swapped SOL", async () => {
-    expect(await fee({
-      preBalances: [10 * SOL, RENT + 5_000_000, 0, 1], postBalances: [9 * SOL - 5_000 - RENT, RENT + 6_000_000, RENT, 1],
+    expect(await feeCheck({
+      preBalances: balances(10 * SOL, RENT + 5_000_000, 0), postBalances: balances(9 * SOL - 5_000 - RENT, RENT + 6_000_000, RENT),
       pre: [feeTokens("5000000")], post: [balance(wallet, "24650000"), feeTokens("6000000")],
-    })).toBe(true);
+    })).toBe("ok");
   });
   it("is satisfied when no fee is configured", async () => {
     vi.stubEnv("SOFINANCE_FEE_BPS", "0");
-    expect(await fee({ post: delivered })).toBe(true);
+    expect(await feeCheck({ post: delivered })).toBe("ok");
     vi.stubEnv("SOFINANCE_FEE_BPS", "10"); vi.stubEnv("SOFINANCE_FEE_WALLET", "");
-    expect(await fee({ post: delivered })).toBe(true);
+    expect(await feeCheck({ post: delivered })).toBe("ok");
   });
 });
 
-describe("solSwapFeeAmounts / solSwapFeeCovered", () => {
-  it("computes what the swap spent and what the fee account received", () => {
-    const meta = { fee: 5_000, preBalances: [10 * SOL, 0, 0], postBalances: [9 * SOL - 5_000, 0, 0],
-      preTokenBalances: [feeTokens("5")], postTokenBalances: [feeTokens("1000005")] };
-    const keys = [wallet, feeAta, outputAta].map((key) => key.toBase58());
-    const amounts = solSwapFeeAmounts(meta, (index) => keys[index], wallet.toBase58(), feeAta.toBase58());
-    expect(amounts).toEqual({ spent: BigInt(SOL), received: 1_000_000n });
-    expect(solSwapFeeCovered(amounts, 10)).toBe(true);
-    expect(solSwapFeeCovered({ spent: BigInt(SOL), received: 0n }, 10)).toBe(false);
+describe("solSwapStepWrappedLamports", () => {
+  const keyAt = (index: number) => KEYS[index]?.toBase58();
+  it("returns the wrapped lamports for the server-built shape and null otherwise", () => {
+    expect(solSwapStepWrappedLamports(stepIxs(), keyAt, wallet.toBase58())).toBe(BigInt(SOL));
+    expect(solSwapStepWrappedLamports(stepIxs().filter((item) => item.programIdIndex !== 7), keyAt, wallet.toBase58())).toBeNull();
+    expect(solSwapStepWrappedLamports(stepIxs().filter((item) => item.programIdIndex !== 5), keyAt, wallet.toBase58())).toBeNull();
   });
 });
 
@@ -232,5 +288,8 @@ describe("buildAndSimulateSolSwapStep", () => {
     const limit = transaction.message.compiledInstructions.find((ix) =>
       transaction.message.staticAccountKeys[ix.programIdIndex]!.toBase58() === budget && ix.data[0] === 2);
     expect(Buffer.from(limit!.data).readUInt32LE(1)).toBe(140_000);
+    // Step 2's fee check recognises the transaction this builder ships, with the wrapped amount as its input.
+    const keyAt = (index: number) => transaction.message.staticAccountKeys[index]?.toBase58();
+    expect(solSwapStepWrappedLamports(transaction.message.compiledInstructions, keyAt, wallet.toBase58())).toBe(1_000_000_000n);
   });
 });

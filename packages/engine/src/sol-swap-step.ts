@@ -183,8 +183,9 @@ export type SolSwapDelivery =
   | { status: "pending" | "expired" | "failed" }
   | {
     status: "confirmed"; delivered: string; decimals: number; blockTime: number | null;
-    /** True when the protocol fee account received at least the fee due on what this swap spent (or no fee is configured). */
+    /** True when `feeCheck` is "ok": a server-built step-1 SOL swap that paid the fee due (or no fee is configured). */
     feeAccountPaid: boolean;
+    feeCheck: SolSwapFeeCheck;
     slot: number;
     /** The wallet's token account(s) that received `delivered`; step 2/2 checks nothing has left them since. */
     outputAccounts: string[];
@@ -193,53 +194,125 @@ export type SolSwapDelivery =
 /** Largest rent deposit counted for one new token account (a Token-2022 account with extensions stays under this). */
 const MAX_NEW_TOKEN_ACCOUNT_RENT = 3_000_000n;
 /**
- * Debit the fee check leaves unexplained before it calls a fee short: 0.01 SOL of extra wallet spend
- * (a wallet-added tip, a route-created account), plus 1 lamport of rounding. At 10 bps that is 10,001 lamports.
+ * Extra SOL the wallet may lose beyond the wrapped amount (a wallet-added tip, a route-created account) before the
+ * swap is treated as spending more than it wrapped. Bounds fee-free pre-held wSOL to 10 bps of 0.01 SOL.
  */
-const FEE_SLACK_SPEND_LAMPORTS = 10_000_000n;
+const MAX_EXTRA_SPEND_LAMPORTS = 10_000_000n;
+/** Fee shortfall tolerated for rounding: 1 lamport plus 1% of the fee due, never more than 10,001 lamports. */
+const MAX_FEE_SLACK_LAMPORTS = 10_001n;
 
+type TokenBalance = { accountIndex: number; mint: string; owner?: string; uiTokenAmount: { amount: string } };
 type SwapTransactionMeta = {
   fee: number; preBalances: number[]; postBalances: number[];
-  preTokenBalances?: { accountIndex: number; mint: string; owner?: string; uiTokenAmount: { amount: string } }[] | null;
-  postTokenBalances?: { accountIndex: number; mint: string; owner?: string; uiTokenAmount: { amount: string } }[] | null;
+  preTokenBalances?: TokenBalance[] | null; postTokenBalances?: TokenBalance[] | null;
 };
+type CompiledInstruction = { programIdIndex: number; accountKeyIndexes: number[]; data: Uint8Array };
+
+/** Why a landed transaction does or does not earn the step-2 fee credit. */
+export type SolSwapFeeCheck = "ok" | "not_sol_swap" | "fee_short";
+
+const SYSTEM_PROGRAM = "11111111111111111111111111111111";
+const ATA_PROGRAM = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+const COMPUTE_BUDGET_PROGRAM = ComputeBudgetProgram.programId.toBase58();
+const JUPITER_V6_PROGRAM = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
+/** What a wallet may add to a transaction it signs (same list the relay's strict match allows). */
+const WALLET_ADDED_PROGRAMS = new Set([
+  COMPUTE_BUDGET_PROGRAM, "L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95", // Lighthouse
+  "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr", "Memo1UhkJRfHyvLMcVucJwxXeuD728EqVDDwQDxFMNo",
+]);
+const SYSTEM_TRANSFER = 2, TOKEN_CLOSE_ACCOUNT = 9, TOKEN_SYNC_NATIVE = 17;
 
 /**
- * Protocol fee check for a landed step-1 swap, from the transaction's own balances (never the quote):
- * - `spent`: what left the wallet's SOL + wSOL, minus the network fee and new token-account rent. A legit
- *   step 1 wraps and swaps exactly `requested`, so this is the swap input the 10 bps is charged on.
- * - `received`: how much the fee wallet's wSOL account went up in this transaction.
+ * The wrapped SOL (lamports) when `instructions` have the shape `buildForOutput` builds for step 1, else null:
+ * ATA creates, wrap (System transfer wallet -> its wSOL ATA, sync), exactly one Jupiter v6 swap, close the wSOL ATA,
+ * plus only what a wallet may add (compute budget, Lighthouse, memo). Any other instruction (a token transfer in,
+ * a SOL transfer elsewhere, a second swap) means this is not a server-built step-1 swap.
  */
-export function solSwapFeeAmounts(meta: SwapTransactionMeta, keyAt: (index: number) => string | undefined, wallet: string, feeAta: string) {
+export function solSwapStepWrappedLamports(instructions: CompiledInstruction[], keyAt: (index: number) => string | undefined, wallet: string): bigint | null {
+  const nativeAta = getAssociatedTokenAddressSync(new PublicKey(NATIVE_SOL_MINT), new PublicKey(wallet), false, TOKEN_PROGRAM_ID).toBase58();
+  const token = TOKEN_PROGRAM_ID.toBase58();
+  let wrapped = 0n, swaps = 0;
+  for (const ix of instructions) {
+    const program = keyAt(ix.programIdIndex);
+    const account = (n: number) => keyAt(ix.accountKeyIndexes[n] ?? -1);
+    const data = ix.data;
+    if (program === JUPITER_V6_PROGRAM) { swaps++; continue; }
+    if (program === SYSTEM_PROGRAM) {
+      if (data.length !== 12 || new DataView(data.buffer, data.byteOffset, 12).getUint32(0, true) !== SYSTEM_TRANSFER) return null;
+      if (account(0) !== wallet || account(1) !== nativeAta) return null;
+      wrapped += new DataView(data.buffer, data.byteOffset, 12).getBigUint64(4, true);
+      continue;
+    }
+    if (program === token) {
+      if (data.length !== 1 || ![TOKEN_SYNC_NATIVE, TOKEN_CLOSE_ACCOUNT].includes(data[0]!) || account(0) !== nativeAta) return null;
+      continue;
+    }
+    if (program === ATA_PROGRAM) {
+      if (data.length > 1 || (data.length === 1 && data[0]! > 1) || account(0) !== wallet || account(2) !== wallet) return null;
+      continue;
+    }
+    if (program && WALLET_ADDED_PROGRAMS.has(program)) continue;
+    return null;
+  }
+  return swaps === 1 && wrapped > 0n ? wrapped : null;
+}
+
+/**
+ * Protocol fee check for a landed step-1 swap, from the transaction itself (never the quote or the client):
+ * 1. Shape: it is a server-built step-1 SOL swap (`solSwapStepWrappedLamports`); its input is the wrapped SOL.
+ * 2. Input: the wallet lost no other token, and its SOL + wSOL went down by the wrapped amount (plus at most
+ *    0.01 SOL extra), after the network fee and new token-account rent. So pre-held wSOL or another token
+ *    can't be swapped fee-free, and only SOL bought the delivered tokens.
+ * 3. Fee: the fee wallet's wSOL account went up by at least 10 bps of the wrapped amount, which must be a non-zero
+ *    fee (dust swaps don't qualify), less 1 lamport + 1% rounding slack (max 10,001 lamports).
+ */
+export function checkSolSwapStepFee(input: {
+  meta: SwapTransactionMeta; instructions: CompiledInstruction[]; keyAt: (index: number) => string | undefined;
+  wallet: string; feeAta: string; bps: number;
+}): SolSwapFeeCheck {
+  const { meta, keyAt, wallet, feeAta } = input;
+  const wrapped = solSwapStepWrappedLamports(input.instructions, keyAt, wallet);
+  if (wrapped === null || keyAt(0) !== wallet) return "not_sol_swap";
   const pre = meta.preTokenBalances ?? [], post = meta.postTokenBalances ?? [];
+  const byMint = (balances: TokenBalance[]) => {
+    const totals = new Map<string, bigint>();
+    for (const item of balances) if (item.owner === wallet) totals.set(item.mint, (totals.get(item.mint) ?? 0n) + BigInt(item.uiTokenAmount.amount));
+    return totals;
+  };
+  const before = byMint(pre), after = byMint(post);
+  for (const [mint, amount] of before) if (mint !== NATIVE_SOL_MINT && (after.get(mint) ?? 0n) < amount) return "not_sol_swap";
+  let feeIndex = -1;
+  for (let index = 0; keyAt(index) !== undefined; index++) if (keyAt(index) === feeAta) { feeIndex = index; break; }
   const walletWsol = new Set([...pre, ...post].filter((item) => item.owner === wallet && item.mint === NATIVE_SOL_MINT).map((item) => item.accountIndex));
   const lamports = (balances: number[]) => BigInt(balances[0] ?? 0) + [...walletWsol].reduce((total, index) => total + BigInt(balances[index] ?? 0), 0n);
   let rent = 0n;
   for (const index of new Set(post.map((item) => item.accountIndex))) {
-    if (index !== 0 && !walletWsol.has(index) && (meta.preBalances[index] ?? 0) === 0 && (meta.postBalances[index] ?? 0) > 0) {
+    if (index !== 0 && index !== feeIndex && !walletWsol.has(index) && (meta.preBalances[index] ?? 0) === 0 && (meta.postBalances[index] ?? 0) > 0) {
       const deposit = BigInt(meta.postBalances[index]!);
       rent += deposit < MAX_NEW_TOKEN_ACCOUNT_RENT ? deposit : MAX_NEW_TOKEN_ACCOUNT_RENT;
     }
   }
   const spent = lamports(meta.preBalances) - lamports(meta.postBalances) - BigInt(meta.fee) - rent;
-  const feeAmount = (balances: typeof pre) => balances
-    .filter((item) => item.mint === NATIVE_SOL_MINT && keyAt(item.accountIndex) === feeAta)
-    .reduce((total, item) => total + BigInt(item.uiTokenAmount.amount), 0n);
-  return { spent: spent > 0n ? spent : 0n, received: feeAmount(post) - feeAmount(pre) };
-}
-
-/** True when the fee account got at least the fee due on `spent` (within the documented slack), and something at all. */
-export function solSwapFeeCovered(amounts: { spent: bigint; received: bigint }, bps: number) {
-  const due = computeSwapFee(amounts.spent, bps);
-  const slack = computeSwapFee(FEE_SLACK_SPEND_LAMPORTS, bps) + 1n;
-  return amounts.received > 0n && amounts.received + slack >= due;
+  if (spent < wrapped || spent > wrapped + MAX_EXTRA_SPEND_LAMPORTS) return "not_sol_swap";
+  const due = computeSwapFee(wrapped, input.bps);
+  if (due <= 0n) return "fee_short";
+  // Fee account balance change. An existing fee account with no pre balance can't be measured: not covered.
+  if (feeIndex < 0) return "fee_short";
+  const feePre = pre.find((item) => item.accountIndex === feeIndex && item.mint === NATIVE_SOL_MINT);
+  const feePost = post.find((item) => item.accountIndex === feeIndex && item.mint === NATIVE_SOL_MINT);
+  if (!feePost || (!feePre && (meta.preBalances[feeIndex] ?? 0) > 0)) return "fee_short";
+  const received = BigInt(feePost.uiTokenAmount.amount) - BigInt(feePre?.uiTokenAmount.amount ?? "0");
+  const slackPlusOne = 1n + due / 100n;
+  const slack = slackPlusOne < MAX_FEE_SLACK_LAMPORTS ? slackPlusOne : MAX_FEE_SLACK_LAMPORTS;
+  return received > 0n && received + slack >= due ? "ok" : "fee_short";
 }
 
 /**
  * What a confirmed step-1 swap ACTUALLY delivered to the wallet: the wallet's
  * post- minus pre-transaction balance of `outputMint` from the transaction
- * meta (never the quote). Also checks that the wallet paid it and that the
- * protocol fee account received the fee due on what the swap spent.
+ * meta (never the quote). Also checks that the wallet paid it, that it is a
+ * server-built step-1 SOL swap, and that it paid the protocol fee due on the
+ * SOL it swapped (`checkSolSwapStepFee`).
  */
 export async function readSolSwapDelivery(input: {
   signature: string; wallet: string; outputMint: string; lastValidBlockHeight?: number; connection?: Connection;
@@ -267,14 +340,15 @@ export async function readSolSwapDelivery(input: {
   const feeConfig = readSwapFeeConfig();
   const feeAta = feeConfig.wallet ? swapFeeRecipientAta(feeConfig.wallet, new PublicKey(NATIVE_SOL_MINT), TOKEN_PROGRAM_ID).toBase58() : null;
   const keyAt = (index: number) => keys.get(index)?.toBase58();
-  const feeAccountPaid = !feeAta || feeConfig.bps === 0 ||
-    solSwapFeeCovered(solSwapFeeAmounts(tx.meta, keyAt, input.wallet, feeAta), feeConfig.bps);
+  const feeCheck: SolSwapFeeCheck = !feeAta || feeConfig.bps === 0 ? "ok" : checkSolSwapStepFee({
+    meta: tx.meta, instructions: tx.transaction.message.compiledInstructions, keyAt, wallet: input.wallet, feeAta, bps: feeConfig.bps,
+  });
   const outputAccounts = [...new Set((tx.meta.postTokenBalances ?? [])
     .filter((item) => item.owner === input.wallet && item.mint === input.outputMint)
     .map((item) => keyAt(item.accountIndex)).filter((key): key is string => Boolean(key)))];
   return {
     status: "confirmed", delivered: delivered.toString(), decimals: post.uiTokenAmount.decimals, blockTime: tx.blockTime ?? null,
-    feeAccountPaid, slot: tx.slot, outputAccounts,
+    feeAccountPaid: feeCheck === "ok", feeCheck, slot: tx.slot, outputAccounts,
   };
 }
 
