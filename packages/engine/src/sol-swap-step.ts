@@ -20,7 +20,7 @@ import { defaultRpcConnection, rpcConnection } from "./rpc";
 import { estimateFeeForMessage, OPEN_FEE_ESTIMATE_MESSAGE } from "./rpc/fee-estimate";
 import { JupiterNoRouteError, type BuildRoute } from "./swap/jupiter";
 import { feeSwapLeg } from "./swap/leg";
-import { readSwapFeeConfig, swapFeeRecipientAta } from "./swap/fee";
+import { computeSwapFee, readSwapFeeConfig, swapFeeRecipientAta } from "./swap/fee";
 import { wrapNativeSolInstructions } from "./swap/collection";
 import { rejectUnselectedWalletTokenWrites, swapRouteInstructions } from "./swap/instructions";
 import { readOpenPoolState } from "./open-state";
@@ -181,13 +181,65 @@ export async function buildAndSimulateSolSwapStep(walletAddress: string, poolId:
 
 export type SolSwapDelivery =
   | { status: "pending" | "expired" | "failed" }
-  | { status: "confirmed"; delivered: string; decimals: number; blockTime: number | null; feeAccountPaid: boolean; slot: number };
+  | {
+    status: "confirmed"; delivered: string; decimals: number; blockTime: number | null;
+    /** True when the protocol fee account received at least the fee due on what this swap spent (or no fee is configured). */
+    feeAccountPaid: boolean;
+    slot: number;
+    /** The wallet's token account(s) that received `delivered`; step 2/2 checks nothing has left them since. */
+    outputAccounts: string[];
+  };
+
+/** Largest rent deposit counted for one new token account (a Token-2022 account with extensions stays under this). */
+const MAX_NEW_TOKEN_ACCOUNT_RENT = 3_000_000n;
+/**
+ * Debit the fee check leaves unexplained before it calls a fee short: 0.01 SOL of extra wallet spend
+ * (a wallet-added tip, a route-created account), plus 1 lamport of rounding. At 10 bps that is 10,001 lamports.
+ */
+const FEE_SLACK_SPEND_LAMPORTS = 10_000_000n;
+
+type SwapTransactionMeta = {
+  fee: number; preBalances: number[]; postBalances: number[];
+  preTokenBalances?: { accountIndex: number; mint: string; owner?: string; uiTokenAmount: { amount: string } }[] | null;
+  postTokenBalances?: { accountIndex: number; mint: string; owner?: string; uiTokenAmount: { amount: string } }[] | null;
+};
+
+/**
+ * Protocol fee check for a landed step-1 swap, from the transaction's own balances (never the quote):
+ * - `spent`: what left the wallet's SOL + wSOL, minus the network fee and new token-account rent. A legit
+ *   step 1 wraps and swaps exactly `requested`, so this is the swap input the 10 bps is charged on.
+ * - `received`: how much the fee wallet's wSOL account went up in this transaction.
+ */
+export function solSwapFeeAmounts(meta: SwapTransactionMeta, keyAt: (index: number) => string | undefined, wallet: string, feeAta: string) {
+  const pre = meta.preTokenBalances ?? [], post = meta.postTokenBalances ?? [];
+  const walletWsol = new Set([...pre, ...post].filter((item) => item.owner === wallet && item.mint === NATIVE_SOL_MINT).map((item) => item.accountIndex));
+  const lamports = (balances: number[]) => BigInt(balances[0] ?? 0) + [...walletWsol].reduce((total, index) => total + BigInt(balances[index] ?? 0), 0n);
+  let rent = 0n;
+  for (const index of new Set(post.map((item) => item.accountIndex))) {
+    if (index !== 0 && !walletWsol.has(index) && (meta.preBalances[index] ?? 0) === 0 && (meta.postBalances[index] ?? 0) > 0) {
+      const deposit = BigInt(meta.postBalances[index]!);
+      rent += deposit < MAX_NEW_TOKEN_ACCOUNT_RENT ? deposit : MAX_NEW_TOKEN_ACCOUNT_RENT;
+    }
+  }
+  const spent = lamports(meta.preBalances) - lamports(meta.postBalances) - BigInt(meta.fee) - rent;
+  const feeAmount = (balances: typeof pre) => balances
+    .filter((item) => item.mint === NATIVE_SOL_MINT && keyAt(item.accountIndex) === feeAta)
+    .reduce((total, item) => total + BigInt(item.uiTokenAmount.amount), 0n);
+  return { spent: spent > 0n ? spent : 0n, received: feeAmount(post) - feeAmount(pre) };
+}
+
+/** True when the fee account got at least the fee due on `spent` (within the documented slack), and something at all. */
+export function solSwapFeeCovered(amounts: { spent: bigint; received: bigint }, bps: number) {
+  const due = computeSwapFee(amounts.spent, bps);
+  const slack = computeSwapFee(FEE_SLACK_SPEND_LAMPORTS, bps) + 1n;
+  return amounts.received > 0n && amounts.received + slack >= due;
+}
 
 /**
  * What a confirmed step-1 swap ACTUALLY delivered to the wallet: the wallet's
  * post- minus pre-transaction balance of `outputMint` from the transaction
- * meta (never the quote). Also a cheap sanity check that the wallet paid it
- * and that the protocol fee account was written. Not anti-tampering.
+ * meta (never the quote). Also checks that the wallet paid it and that the
+ * protocol fee account received the fee due on what the swap spent.
  */
 export async function readSolSwapDelivery(input: {
   signature: string; wallet: string; outputMint: string; lastValidBlockHeight?: number; connection?: Connection;
@@ -212,8 +264,47 @@ export async function readSolSwapDelivery(input: {
   if (!post) throw new Error("Swap transaction did not deliver the expected pool token");
   const delivered = sum(tx.meta.postTokenBalances) - sum(tx.meta.preTokenBalances);
   if (delivered <= 0n) throw new Error("Swap transaction did not deliver the expected pool token");
-  const feeWallet = readSwapFeeConfig().wallet;
-  const feeAta = feeWallet ? swapFeeRecipientAta(feeWallet, new PublicKey(NATIVE_SOL_MINT), TOKEN_PROGRAM_ID).toBase58() : null;
-  const feeAccountPaid = !feeAta || [...Array(keys.length).keys()].some((index) => keys.get(index)?.toBase58() === feeAta);
-  return { status: "confirmed", delivered: delivered.toString(), decimals: post.uiTokenAmount.decimals, blockTime: tx.blockTime ?? null, feeAccountPaid, slot: tx.slot };
+  const feeConfig = readSwapFeeConfig();
+  const feeAta = feeConfig.wallet ? swapFeeRecipientAta(feeConfig.wallet, new PublicKey(NATIVE_SOL_MINT), TOKEN_PROGRAM_ID).toBase58() : null;
+  const keyAt = (index: number) => keys.get(index)?.toBase58();
+  const feeAccountPaid = !feeAta || feeConfig.bps === 0 ||
+    solSwapFeeCovered(solSwapFeeAmounts(tx.meta, keyAt, input.wallet, feeAta), feeConfig.bps);
+  const outputAccounts = [...new Set((tx.meta.postTokenBalances ?? [])
+    .filter((item) => item.owner === input.wallet && item.mint === input.outputMint)
+    .map((item) => keyAt(item.accountIndex)).filter((key): key is string => Boolean(key)))];
+  return {
+    status: "confirmed", delivered: delivered.toString(), decimals: post.uiTokenAmount.decimals, blockTime: tx.blockTime ?? null,
+    feeAccountPaid, slot: tx.slot, outputAccounts,
+  };
+}
+
+/** Transactions per output account the spent check reads; more than this after one swap is treated as spent. */
+export const SOL_SWAP_SPENT_SCAN_LIMIT = 25;
+
+/**
+ * Single-use check for a step-1 swap's fee credit, read from the chain (no server state): true once any
+ * successful transaction after the swap has moved `outputMint` out of the account(s) the swap delivered to,
+ * i.e. the delivered tokens were deposited (or sent) somewhere. A step-2 open that was cancelled, expired or
+ * failed moves nothing, so retrying it stays allowed. Conservative: an unreadable or very busy history counts as spent.
+ */
+export async function isSolSwapCreditSpent(input: {
+  signature: string; wallet: string; outputMint: string; outputAccounts: string[]; connection?: Connection;
+}): Promise<boolean> {
+  const connection = input.connection ?? rpcConnection();
+  if (!input.outputAccounts.length) return true;
+  const sum = (balances: { mint: string; owner?: string; uiTokenAmount: { amount: string } }[] | null | undefined) => (balances ?? [])
+    .filter((item) => item.owner === input.wallet && item.mint === input.outputMint)
+    .reduce((total, item) => total + BigInt(item.uiTokenAmount.amount), 0n);
+  for (const account of input.outputAccounts) {
+    const later = await connection.getSignaturesForAddress(new PublicKey(account), { until: input.signature, limit: SOL_SWAP_SPENT_SCAN_LIMIT }, "confirmed");
+    if (later.length >= SOL_SWAP_SPENT_SCAN_LIMIT) return true;
+    for (const entry of later) {
+      if (entry.err) continue;
+      const tx = await connection.getTransaction(entry.signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+      if (!tx?.meta) return true;
+      if (tx.meta.err) continue;
+      if (sum(tx.meta.postTokenBalances) < sum(tx.meta.preTokenBalances)) return true;
+    }
+  }
+  return false;
 }
