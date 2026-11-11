@@ -1,5 +1,6 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
+import { withTimeout as withTimeoutMs } from "@sofinance/engine/async";
 import { getPoolAprSnapshot, getRwaPairs } from "@/lib/rwa-store";
 import { getRhcAprSnapshot, getRhcPoolsSnapshot } from "@/lib/rhc-snapshot";
 import { isRhcApr7dEnabled, isRhcUniv4DiscoveryEnabled } from "@/lib/protocol-flags";
@@ -71,19 +72,7 @@ const cachedApr7d = unstable_cache(readApr7d, ["homepage-pools-apr7d-v5"], {
   tags: ["homepage-pools"],
 });
 
-async function withTimeout<T>(promise: Promise<T>): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error("snapshot timeout")), SNAPSHOT_TIMEOUT_MS);
-      }),
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
+const withTimeout = <T>(promise: Promise<T>) => withTimeoutMs(promise, SNAPSHOT_TIMEOUT_MS, { message: "snapshot timeout" });
 
 /**
  * Pools for the homepage's server-rendered HTML (Solana pairs and Robinhood Chain StablePair pools), so crawlers and

@@ -1,5 +1,6 @@
 import "@/lib/engine-host";
 import "server-only";
+import { fetchJsonStatus } from "@sofinance/engine/http-json";
 import { getTokenMetadata, trustedIcon } from "@sofinance/engine/token-metadata";
 import { DEXSCREENER_CHAIN_ID, GECKOTERMINAL_NETWORK } from "@sofinance/engine/protocols/uniswap-v4/market-data";
 import type { ThrottleGate } from "@/lib/range-apr/throttle-gate";
@@ -14,10 +15,9 @@ const TIMEOUT_MS = 6_000;
 
 async function getJson(url: string, fetcher: typeof fetch, signal?: AbortSignal, gate?: ThrottleGate): Promise<unknown> {
   const call = async () => {
-    const timeout = AbortSignal.timeout(TIMEOUT_MS);
-    const response = await fetcher(url, { headers: { accept: "application/json" }, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
-    if (response.status === 429) gate?.block();
-    return response.ok ? response.json() : null;
+    const { status, body } = await fetchJsonStatus(url, { fetcher, signal, timeoutMs: TIMEOUT_MS });
+    if (status === 429) gate?.block();
+    return body;
   };
   if (!gate) return call();
   // Through the cron run's GeckoTerminal gate: spaced with every other call, refused after a 429.

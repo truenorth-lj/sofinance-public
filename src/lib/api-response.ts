@@ -7,6 +7,7 @@ import { SelectedNoRouteError } from "./selected-no-route";
 import { AmountTooSmallError, SmallLegMovesPriceError } from "./selected-amount-error";
 import { captureApiRouteError, shouldCaptureApiError } from "./sentry/capture";
 import { logSafeError } from "./safe-error-log";
+import { NO_STORE_HEADERS } from "@/lib/http/no-store";
 
 /** Selected upstream failures are availability errors, not invalid user input. */
 export function selectedApiError(error: unknown, fallback: string) {
@@ -19,8 +20,7 @@ export function selectedApiError(error: unknown, fallback: string) {
   return Response.json({ error: limited ? "Jupiter rate limit reached. Please retry later." : UPSTREAM_UNAVAILABLE_MESSAGE,
     code: limited ? "jupiter_rate_limited" : "jupiter_unavailable",
     ...(retryAfterMs !== null ? { retryAfterMs } : {}),
-  }, { status: 503, headers: { "Cache-Control": "no-store",
-    ...(retryAfterMs !== null ? { "Retry-After": String(Math.ceil(retryAfterMs / 1000)) } : {}),
+  }, { status: 503, headers: { ...NO_STORE_HEADERS, ...(retryAfterMs !== null ? { "Retry-After": String(Math.ceil(retryAfterMs / 1000)) } : {}),
   } });
 }
 
@@ -67,6 +67,6 @@ export function apiError(error: unknown, fallback: string, status = 400, extra?:
   const sent = extra?.sent === false || error instanceof CompoundSendError && error.sent === false ? false : extra?.sent;
   if (sent === false) body.sent = false;
   return Response.json(body, {
-    status, headers: { "Cache-Control": "no-store" },
+    status, headers: NO_STORE_HEADERS,
   });
 }

@@ -1,3 +1,4 @@
+import { sleep } from "@sofinance/engine/async";
 /**
  * Per-instance gate in front of a rate-limited upstream (GeckoTerminal allows ~30 calls/min per egress IP and
  * serverless IPs are shared). It does three things:
@@ -49,7 +50,7 @@ export class ThrottleGate {
     this.minCooldownMs = options.minCooldownMs ?? 5_000;
     this.maxCooldownMs = options.maxCooldownMs ?? 60_000;
     this.now = options.now ?? (() => Date.now());
-    this.sleep = options.sleep ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    this.sleep = options.sleep ?? ((ms) => sleep(ms));
     this.stickyBlock = options.stickyBlock ?? false;
     this.maxAttempts = Math.max(1, options.maxAttempts ?? Number.POSITIVE_INFINITY);
   }

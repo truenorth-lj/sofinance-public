@@ -1,6 +1,7 @@
 import "@/lib/engine-host";
 import { PublicKey } from "@solana/web3.js";
 import { getTokenMetadata } from "@sofinance/engine/token-metadata";
+import { NO_STORE_HEADERS } from "@/lib/http/no-store";
 
 export async function POST(request: Request) {
   let mints: string[];
@@ -15,5 +16,5 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid token mint list" }, { status: 400 });
   }
   const tokens = await getTokenMetadata(mints);
-  return Response.json({ tokens }, { headers: { "Cache-Control": "no-store" } });
+  return Response.json({ tokens }, { headers: NO_STORE_HEADERS });
 }

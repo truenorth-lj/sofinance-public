@@ -17,7 +17,7 @@ vi.mock("./rhc-range-apr", async (load) => ({
 }));
 import { ThrottleGate } from "./range-apr/throttle-gate";
 import {
-  fetchRhcMarketBatch, planRhcProfileFetches, withTimeout, prepareRhcRun, rhcFailureBackoffMs, rhcPoolCreatedAtSeconds,
+  fetchRhcMarketBatch, planRhcProfileFetches, prepareRhcRun, rhcFailureBackoffMs, rhcPoolCreatedAtSeconds,
   rhcProfilePriority, rollRhcProfileForward, RHC_PROFILE_MAX_AGE_MS,
 } from "./rhc-apr-refresh";
 import type { Univ4MarketData } from "@sofinance/engine/protocols/uniswap-v4/market-data";
@@ -390,16 +390,6 @@ describe("RHC pools in the APR queue (prepareRhcRun + refreshPool)", () => {
     const current = harness({ profiles: Object.fromEntries(POOLS.map((spec) => [spec.poolId.toLowerCase(), profile(spec)])) });
     await current.run();
     expect(current.saves.every((save) => !save.profile!.profile.stale)).toBe(true);
-  });
-
-  it("withTimeout rejects a slow call (the RHC tick window read) after its limit or on abort", async () => {
-    const never = new Promise<never>(() => undefined);
-    await expect(withTimeout(never, 5, "Robinhood Chain tick window read timed out")).rejects.toThrow("Robinhood Chain tick window read timed out");
-    const controller = new AbortController();
-    const pending = withTimeout(never, 60_000, "x", controller.signal);
-    controller.abort(new Error("job timeout"));
-    await expect(pending).rejects.toThrow("job timeout");
-    await expect(withTimeout(Promise.resolve(1), 5, "x")).resolves.toBe(1);
   });
 
   it("rolls quiet pools forward with no call, beside the fetches", async () => {

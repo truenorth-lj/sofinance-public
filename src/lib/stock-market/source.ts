@@ -12,6 +12,7 @@ import "server-only";
  * CoinGecko is not called here (cross-check only, offline).
  */
 import { unstable_cache } from "next/cache";
+import { sleep } from "@sofinance/engine/async";
 import { rpcConnection, RpcUnavailableError } from "@sofinance/engine/rpc";
 import { jupiterRequest } from "@sofinance/engine/jupiter";
 import { JUPITER_TOKENS_SEARCH_PATH } from "@sofinance/engine/jupiter/urls";
@@ -41,7 +42,7 @@ let jupiterQueue: Promise<unknown> = Promise.resolve();
 function paced<T>(call: () => Promise<T>): Promise<T> {
   const run = jupiterQueue.then(async () => {
     const wait = lastJupiterCallAt + STOCK_JUPITER_SPACING_MS - Date.now();
-    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+    if (wait > 0) await sleep(wait);
     try { return await call(); } finally { lastJupiterCallAt = Date.now(); }
   });
   jupiterQueue = run.catch(() => undefined);

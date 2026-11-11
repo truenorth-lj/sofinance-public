@@ -2,6 +2,7 @@ import "@/lib/engine-host";
 import bs58 from "bs58";
 import { apiError } from "@/lib/api-response";
 import { rpcConnection } from "@sofinance/engine/rpc";
+import { NO_STORE_HEADERS } from "@/lib/http/no-store";
 
 /**
  * Read-only signature status. With `commitment: "confirmed"` a landed transaction reports
@@ -27,6 +28,6 @@ export async function POST(request: Request) {
     else if (commitment === "confirmed" && observed?.confirmationStatus === "confirmed") status = "confirmed";
     else if (observed) status = "pending";
     else status = (await connection.getBlockHeight("confirmed")) > (lastValidBlockHeight as number) ? "expired" : "pending";
-    return Response.json({ status }, { headers: { "Cache-Control": "no-store" } });
+    return Response.json({ status }, { headers: NO_STORE_HEADERS });
   } catch (error) { return apiError(error, "Transaction verification failed"); }
 }

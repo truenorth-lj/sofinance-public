@@ -2,6 +2,7 @@ import "@/lib/engine-host";
 import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import { fetchTokenPricesUsd, type TokenPriceSource } from "@sofinance/engine/token-prices";
+import { NO_STORE_HEADERS } from "@/lib/http/no-store";
 
 export async function GET() {
   const quotes = await fetchTokenPricesUsd([NATIVE_SOL_MINT, USDC_MINT], fetch, getJupiterApiKey());
@@ -16,5 +17,5 @@ export async function GET() {
     usdcUsd: usdcUsd !== undefined && Number.isFinite(usdcUsd) && usdcUsd > 0 ? usdcUsd : null,
     fetchedAt: Date.now(),
     source: sources.length ? sources.join("+") : "unavailable",
-  }, { headers: { "Cache-Control": "no-store" } });
+  }, { headers: NO_STORE_HEADERS });
 }

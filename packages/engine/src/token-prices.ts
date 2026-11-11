@@ -1,3 +1,4 @@
+import { sleep } from "./async";
 import { JUPITER_PRICE_TTL_MS, jupiterRequest } from "./jupiter";
 import { JUPITER_PRICE_V3_PATH, resolveJupiterApiKey } from "./jupiter/urls";
 
@@ -54,7 +55,7 @@ function createPacer(spacingOf: () => number): Pacer {
     pace<T>(run: () => Promise<T>): Promise<T> {
       const started = queue.then(async () => {
         const wait = lastAt + spacingOf() - Date.now();
-        if (wait > 0) await new Promise<void>((resolve) => setTimeout(resolve, wait));
+        if (wait > 0) await sleep(wait);
         try { return await run(); } finally { lastAt = Date.now(); }
       });
       queue = started.catch(() => undefined);
