@@ -3,6 +3,7 @@ import { getRwaConfig } from "@/lib/config/rwa-env";
 import { validRwaAuthorization } from "@/lib/rwa-auth";
 import { refreshRwaSnapshots } from "@/lib/rwa-refresh";
 import { captureApiRouteError } from "@/lib/sentry/capture";
+import { NO_STORE_HEADERS } from "@/lib/http/no-store";
 
 // Literal for Next's static analysis; `RWA_REFRESH_MAX_DURATION_MS` (rwa-refresh.ts) budgets the jobs to it.
 export const maxDuration = 300;
@@ -16,19 +17,19 @@ async function handleRefresh(request: Request, method: "GET" | "POST") {
   )
     return Response.json(
       { error: "Unauthorized" },
-      { status: 401, headers: { "Cache-Control": "no-store" } },
+      { status: 401, headers: NO_STORE_HEADERS },
     );
   if (!config.refreshEnabled || config.isPreview || (method === "GET" && !config.nativeCronEnabled))
     return Response.json(
       { error: "Refresh is disabled" },
-      { status: 503, headers: { "Cache-Control": "no-store" } },
+      { status: 503, headers: NO_STORE_HEADERS },
     );
   let force: boolean | undefined = false;
   if (method === "POST") {
     const parsed = z.object({ force: z.boolean().optional() }).strict()
       .safeParse(await request.json().catch(() => null));
     if (!parsed.success)
-      return Response.json({ error: "Invalid request" }, { status: 400, headers: { "Cache-Control": "no-store" } });
+      return Response.json({ error: "Invalid request" }, { status: 400, headers: NO_STORE_HEADERS });
     force = parsed.data.force;
   }
   // GET never parses a body or query, so force cannot bypass due/lease admission.
@@ -39,14 +40,14 @@ async function handleRefresh(request: Request, method: "GET" | "POST") {
         result.discovery.status === "error" || result.apr.status === "error"
           ? 503
           : 200,
-      headers: { "Cache-Control": "no-store" },
+      headers: NO_STORE_HEADERS,
     });
   } catch {
     // Database errors may contain credentials/receipts. Monitoring gets a fixed error only.
     captureApiRouteError(new Error("RWA refresh temporarily unavailable"), { request, route: "/api/internal/rwa-refresh", fallback: "RWA refresh temporarily unavailable", status: 503 });
     return Response.json(
       { error: "RWA refresh temporarily unavailable" },
-      { status: 503, headers: { "Cache-Control": "no-store" } },
+      { status: 503, headers: NO_STORE_HEADERS },
     );
   }
 }

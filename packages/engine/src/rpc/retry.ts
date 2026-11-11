@@ -1,5 +1,6 @@
 import { abortError, classifyRpcError, isMinContextSlotError, isRetryableKind, isUserAbort, retryAfterFrom } from "./errors";
 import { emitRpcLog } from "./logger";
+import { sleep } from "../async";
 import type { RpcErrorKind, RpcMetricId } from "./types";
 
 export type RetryConfig = {
@@ -63,23 +64,8 @@ export function computeBackoffMs(
   return Math.floor(random() * exp);
 }
 
-export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(abortError(signal));
-      return;
-    }
-    const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(abortError(signal));
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
-}
+/** Re-exported for existing importers; the implementation lives in `../async`. */
+export { sleep };
 
 /**
  * Wait before re-asking a provider that was behind `minContextSlot` (one Solana slot is ~400 ms).

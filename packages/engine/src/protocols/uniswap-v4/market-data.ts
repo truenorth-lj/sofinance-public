@@ -1,6 +1,7 @@
 import { isAddressEqual, type Address, type Hex } from "viem";
 import type { Univ4AllowlistedPool } from "./constants";
 import { poolFeeAprPct } from "../../fee-apr";
+import { fetchJsonStatus } from "../../http-json";
 
 /**
  * 24h volume and TVL for an allowlisted v4 pool from public indexers (PM decision 2026-10-29: no event scans
@@ -136,13 +137,8 @@ export type FetchUniv4MarketOptions = {
   onUpstream?: (event: { source: Univ4MarketSource; outcome: "ok" | "error" | "rate-limited" | "mismatch" }) => void;
 };
 
-async function getJson(url: string, options: FetchUniv4MarketOptions): Promise<{ status: number; body: unknown }> {
-  const response = await (options.fetcher ?? fetch)(url, {
-    headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(options.timeoutMs ?? 5_000),
-  });
-  return { status: response.status, body: response.ok ? await response.json() : null };
-}
+const getJson = (url: string, options: FetchUniv4MarketOptions) =>
+  fetchJsonStatus(url, { fetcher: options.fetcher, timeoutMs: options.timeoutMs ?? 5_000 });
 
 /** DexScreener first, GeckoTerminal as fallback; null when neither returns this pool. Never throws. */
 export async function fetchUniv4MarketData(spec: Univ4AllowlistedPool, options: FetchUniv4MarketOptions = {}): Promise<Univ4MarketData | null> {

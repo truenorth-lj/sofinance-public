@@ -1,3 +1,4 @@
+import { sleep as defaultSleep } from "@sofinance/engine/async";
 /**
  * Bounded retry for flaky public upstreams. Pure apart from the injected `fetchOnce` and `sleep`, so it is
  * unit tested without timers.
@@ -31,7 +32,7 @@ export async function retryJson(fetchOnce: () => Promise<JsonResult>, options: R
   const attempts = Math.max(1, options.attempts ?? 3);
   const base = options.baseDelayMs ?? 400;
   const max = options.maxDelayMs ?? 2_500;
-  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const sleep = options.sleep ?? defaultSleep;
   const random = options.random ?? Math.random;
   const shouldRetry = options.shouldRetry ?? ((failure) => isRetryableFailure(failure.reason));
   let last: JsonResult = { ok: false, reason: "request failed" };

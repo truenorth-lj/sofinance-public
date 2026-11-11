@@ -7,6 +7,7 @@ import {
   fetchMeteoraPoolsByMint, fetchMeteoraPoolsByQuery, parseMeteoraPool, parseMeteoraScanPool, type MeteoraPoolSummary,
 } from "@sofinance/engine/protocols/meteora/discovery";
 import { rpcConnection } from "@sofinance/engine/rpc";
+import { withTimeout } from "@sofinance/engine/async";
 import { meteoraPairRow, readMeteoraOnchainFacts, type MeteoraOnchainFacts, type MeteoraRowIdentity } from "./meteora-pairs";
 import { matchSameAssetPair, solanaStaticToken } from "./pool-metrics/solana-registry";
 import { pairRegistryTokens } from "./pool-metrics/token-registry";
@@ -87,12 +88,6 @@ async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) 
     }
   }));
   return out;
-}
-
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  return Promise.race([promise, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("timeout")), ms); })])
-    .finally(() => clearTimeout(timer));
 }
 
 /** Store pages: the datapi list has none, so the scanned count is split into ≤1000-pool chunks (`pageCounts`). */

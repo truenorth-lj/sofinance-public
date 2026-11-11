@@ -2,6 +2,8 @@ import "@/lib/engine-host";
 import "server-only";
 
 import type { PublicClient } from "viem";
+import { withTimeout } from "@sofinance/engine/async";
+import { fetchJsonStatus } from "@sofinance/engine/http-json";
 import { RHC_BLOCK_ANCHOR, UNIV4_RHC_ALLOWLISTED_POOLS, type Univ4AllowlistedPool } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import { discoverUniv4RhcPools, type Univ4PoolSummary } from "@sofinance/engine/protocols/uniswap-v4/discovery";
 import {
@@ -49,28 +51,7 @@ type Fetcher = typeof fetch;
 /** The per-pool tick window read (two multicalls) gives up after this, so one slow RPC cannot hold the queue. */
 const RHC_LIQUIDITY_TIMEOUT_MS = 10_000;
 
-/** Rejects with `message` after `ms` (or when `signal` aborts); the slow call is left to settle on its own. */
-export function withTimeout<T>(work: Promise<T>, ms: number, message: string, signal?: AbortSignal): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let onAbort: (() => void) | undefined;
-  const stop = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(message)), ms);
-    onAbort = () => reject(signal!.reason ?? new Error(message));
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
-  return Promise.race([work, stop]).finally(() => {
-    clearTimeout(timer);
-    if (onAbort) signal?.removeEventListener("abort", onAbort);
-  });
-}
-
-async function getJson(fetcher: Fetcher, url: string, signal: AbortSignal) {
-  const response = await fetcher(url, {
-    headers: { accept: "application/json" },
-    signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
-  });
-  return { status: response.status, body: response.ok ? ((await response.json()) as unknown) : null };
-}
+const getJson = (fetcher: Fetcher, url: string, signal: AbortSignal) => fetchJsonStatus(url, { fetcher, signal, timeoutMs: 10_000 });
 
 /** TVL / 24h volume for every allowlisted pool from one GeckoTerminal call (+ one DexScreener call for gaps). */
 export async function fetchRhcMarketBatch(input: {
@@ -352,7 +333,7 @@ export async function prepareRhcRun(input: {
       const chainObservedAt = new Date(clock()).toISOString();
       const chain = await withTimeout(rhcLiquidityAt(client, spec, {
         tick: summary.tick!, sqrtPriceX96: BigInt(summary.sqrtPriceX96!), liquidity: BigInt(summary.liquidity!),
-      }), RHC_LIQUIDITY_TIMEOUT_MS, "Robinhood Chain tick window read timed out", signal);
+      }), RHC_LIQUIDITY_TIMEOUT_MS, { message: "Robinhood Chain tick window read timed out", signal });
       const payload = assembleRhcRangeApr(poolId, stored.profile, chain, nowSeconds);
       payload.sample.windowEndUtc = stored.windowEndUtc;
       payload.sample.windowStartUtc = new Date(Date.parse(stored.windowEndUtc) - payload.sample.days * 86_400_000).toISOString();

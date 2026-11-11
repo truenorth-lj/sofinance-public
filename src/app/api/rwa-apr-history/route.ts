@@ -1,6 +1,7 @@
 import { getRwaStore, snapshotError } from "@/lib/rwa-store";
 import { POOL_ID } from "@/lib/rwa-store-types";
 import { validateHistoryRange } from "@/lib/rwa-daily";
+import { NO_STORE_HEADERS } from "@/lib/http/no-store";
 
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
@@ -15,7 +16,7 @@ export async function GET(request: Request) {
       {
         error: "A valid poolId and date range of at most 366 days are required",
       },
-      { status: 400, headers: { "Cache-Control": "no-store" } },
+      { status: 400, headers: NO_STORE_HEADERS },
     );
   }
   try {

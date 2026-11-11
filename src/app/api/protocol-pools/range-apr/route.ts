@@ -6,6 +6,7 @@ import { isAllowlistedRhcPool } from "@/lib/rhc-range-apr";
 import { getRhcAprSnapshot } from "@/lib/rhc-snapshot";
 import { snapshotError } from "@/lib/rwa-store";
 import { getRwaConfig } from "@/lib/config/rwa-env";
+import { NO_STORE_HEADERS } from "@/lib/http/no-store";
 
 /**
  * Read-only Orca Whirlpool pool state, range APR presets and liquidity distribution
@@ -14,7 +15,7 @@ import { getRwaConfig } from "@/lib/config/rwa-env";
  * `?protocol=meteora-dlmm&poolId=…` serves Meteora; `?protocol=uniswap-v4-rhc&poolId=…` serves Robinhood Chain
  * Uniswap v4 (behind `RHC_APR7D_ENABLED`).
  */
-const NOT_FOUND = () => Response.json({ error: "Not found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
+const NOT_FOUND = () => Response.json({ error: "Not found" }, { status: 404, headers: NO_STORE_HEADERS });
 
 const CDN_HEADERS = {
   "Cache-Control": "public, max-age=0, must-revalidate",

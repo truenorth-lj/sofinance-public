@@ -1,5 +1,6 @@
 import { readDecisionObservations } from "@/lib/lp-decision-data";
 import { buildDecision, decisionRequestSchema } from "@/lib/lp-decision";
+import { NO_STORE_HEADERS } from "@/lib/http/no-store";
 export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
@@ -14,7 +15,7 @@ export async function POST(request: Request) {
       result.sources = result.observations.attempts.map(a => ({source: `${a.source}: ${a.detail}`,asOf:a.observedAt,status:a.status === "error" ? "missing" as const : "fresh" as const}));
       result.warnings.push("Public observations retrieved. Historical USDC valuation, income attribution and full reconciliation are incomplete. Raw events do not necessarily represent attributable external income.");
     }
-    return Response.json(result, { headers: { "Cache-Control": "no-store" } });
+    return Response.json(result, { headers: NO_STORE_HEADERS });
   } catch {
     return Response.json({ error: "Invalid input, or the target date is outside the next 1–365 days (UTC)." }, { status: 400 });
   }

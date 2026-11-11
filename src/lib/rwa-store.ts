@@ -18,6 +18,7 @@ import {
   type StoreOperation,
   type StoreResultMap,
 } from "./rwa-store-types";
+import { NO_STORE_HEADERS } from "@/lib/http/no-store";
 
 let direct: { db: ReturnType<typeof getRwaDatabase>; store: RwaStore } | undefined;
 export function getRwaStore(): RwaStore {
@@ -134,7 +135,7 @@ export function snapshotError(error: unknown) {
   const code =
     error instanceof RwaStoreError ? error.code : "RWA_STORE_UNAVAILABLE";
   if (code === "POOL_NOT_TRACKED")
-    return Response.json({ error: POOL_NOT_TRACKED_MESSAGE, code }, { status: 404, headers: { "Cache-Control": "no-store" } });
+    return Response.json({ error: POOL_NOT_TRACKED_MESSAGE, code }, { status: 404, headers: NO_STORE_HEADERS });
   return Response.json(
     {
       error:
@@ -143,7 +144,7 @@ export function snapshotError(error: unknown) {
     },
     {
       status: 503,
-      headers: { "Cache-Control": "no-store", "Retry-After": "60" },
+      headers: { ...NO_STORE_HEADERS, "Retry-After": "60" },
     },
   );
 }

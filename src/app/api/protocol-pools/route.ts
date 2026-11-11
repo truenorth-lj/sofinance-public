@@ -5,6 +5,7 @@ import { isMeteoraDlmmDiscoveryEnabled, isOrcaDiscoveryEnabled, isRhcUniv4Discov
 import { getRhcPoolsSnapshot } from "@/lib/rhc-snapshot";
 import { snapshotError } from "@/lib/rwa-store";
 import { getRwaConfig } from "@/lib/config/rwa-env";
+import { NO_STORE_HEADERS } from "@/lib/http/no-store";
 
 /**
  * Read-only pool discovery for protocols that are not yet in `/api/rwa-pairs`.
@@ -24,7 +25,7 @@ export async function GET(request: Request) {
   const protocol = new URL(request.url).searchParams.get("protocol") ?? "orca-whirlpool";
   const entry = Object.hasOwn(DISCOVERY, protocol) ? DISCOVERY[protocol as keyof typeof DISCOVERY] : null;
   if (!entry || !entry.enabled())
-    return Response.json({ error: "Not found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
+    return Response.json({ error: "Not found" }, { status: 404, headers: NO_STORE_HEADERS });
   try {
     return Response.json(await entry.load(), { headers: {
       "Cache-Control": "public, max-age=0, must-revalidate",
