@@ -5,7 +5,7 @@ import { bpsFeeStrategy, feePolicyProblems } from "../fees";
 import { uiFor } from "../ui";
 import { UNISWAP_V4_RHC_FEE_POLICY, uniswapV4RhcDescriptor } from "./descriptor";
 
-describe("uniswap-v4-rhc descriptor (E2-register)", () => {
+describe("uniswap-v4-rhc descriptor (E2-alias)", () => {
   it("encodes the existing 10 bps swap-output open fee and none elsewhere; does not invent a rate", () => {
     expect(uniswapV4RhcDescriptor.meta.feePolicy).toBe(UNISWAP_V4_RHC_FEE_POLICY);
     expect(UNISWAP_V4_RHC_FEE_POLICY).toEqual({
@@ -28,21 +28,22 @@ describe("uniswap-v4-rhc descriptor (E2-register)", () => {
     }
   });
 
-  it("keeps openUi rhc-dialog, useDescriptorPlanTerms false, and listPositions false", () => {
+  it("keeps openUi rhc-dialog and useDescriptorPlanTerms false; alias inherits the same UI; listPositions is on", () => {
     expect(uniswapV4RhcDescriptor.id).toBe("uniswap-v4-rhc");
     expect(uniswapV4RhcDescriptor.chain).toBe("robinhood-chain");
     expect(uniswapV4RhcDescriptor.displayName).toBe("Uniswap v4");
     expect(uniswapV4RhcDescriptor.ui).toEqual({
       openUi: "rhc-dialog",
       useDescriptorPlanTerms: false,
-      listPositions: false,
+      listPositions: true,
     });
-    expect(uiFor("uniswap-v4-rhc")).toEqual({
-      openUi: "rhc-dialog",
+    const expectedUi = {
+      openUi: "rhc-dialog" as const,
       useDescriptorPlanTerms: false,
-      listPositions: false,
-    });
-    expect(uiFor("rhc-uniswap-v4")).toEqual({ openUi: "none", useDescriptorPlanTerms: false });
+      listPositions: true,
+    };
+    expect(uiFor("uniswap-v4-rhc")).toEqual(expectedUi);
+    expect(uiFor("rhc-uniswap-v4")).toEqual(expectedUi);
     expect(uniswapV4RhcDescriptor.capabilities.open.supported).toBe(false);
     expect(uniswapV4RhcDescriptor.capabilities.withdraw.supported).toBe(false);
     expect(uniswapV4RhcDescriptor.capabilities.plan.supported).toBe(false);

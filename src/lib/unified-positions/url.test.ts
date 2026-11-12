@@ -10,6 +10,8 @@ describe("initialSelectionFromQuery (/app URL state)", () => {
     expect(initialSelectionFromQuery({ position: "meteora-dlmm:Pos111" }).initialPositionKey).toBe("meteora-dlmm:Pos111");
     expect(initialSelectionFromQuery({ position: "rhc-uniswap-v4:4077059", view: "compound" }))
       .toEqual({ initialView: "compound", initialMint: "", initialPositionKey: "rhc-uniswap-v4:4077059" });
+    expect(initialSelectionFromQuery({ position: "uniswap-v4-rhc:4077059", view: "compound" }))
+      .toEqual({ initialView: "compound", initialMint: "", initialPositionKey: "uniswap-v4-rhc:4077059" });
   });
   it("old ?mint= and ?positionMint= links still work (back-compat)", () => {
     expect(initialSelectionFromQuery({ mint: "OldMint", view: "performance" })).toEqual({ initialView: "performance", initialMint: "OldMint", initialPositionKey: "" });

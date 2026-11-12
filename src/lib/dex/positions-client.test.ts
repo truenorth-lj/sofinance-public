@@ -78,8 +78,11 @@ describe("positionDescriptorsFor and Meteora client requests", () => {
     const listed = positionDescriptorsFor(dexDescriptors.descriptors, "solana-wallet").map((entry) => entry.id);
     expect(listed).toContain("meteora-dlmm");
     expect(listed).not.toContain("orca-whirlpool");
+    expect(listed).not.toContain("uniswap-v4-rhc");
     expect(dexDescriptors.descriptorFor("meteora-dlmm")!.ui?.listPositions).not.toBe(false);
     expect(dexDescriptors.descriptorFor("orca-whirlpool")!.ui?.listPositions).toBe(false);
+    expect(dexDescriptors.descriptorFor("uniswap-v4-rhc")!.ui?.listPositions).toBe(true);
+    expect(positionDescriptorsFor(dexDescriptors.descriptors, "evm-wallet").map((entry) => entry.id)).toEqual(["uniswap-v4-rhc"]);
   });
 
   it("Meteora positions and performance client requests are identical to before", async () => {

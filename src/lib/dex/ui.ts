@@ -6,13 +6,12 @@
  * No stub descriptors and no invented `feePolicy`. `showHighestRange` / `nullFeeLabel` stay on
  * `CHAIN_META`.
  *
- * TODO(PR11): retire/normalize the `rhc-uniswap-v4` alias in E2. Until then `uiFor` keeps it at
- * `openUi: "none"` and does not let `normalizeDexId` inherit `uniswap-v4-rhc` (or a future RHC
- * descriptor).
+ * The one-release `rhc-uniswap-v4` alias inherits the canonical descriptor's `ui` via
+ * `normalizeDexId` (`openUi: "rhc-dialog"`). `LEGACY_DEX_ID_ALIASES` stays until a later cleanup.
  */
 import { SUPPORTED } from "@/lib/unified-positions/model";
 import { DEX_DESCRIPTORS } from "./descriptors";
-import { LEGACY_DEX_ID_ALIASES, normalizeDexId, type DexId, type DexUi } from "./types";
+import { normalizeDexId, type DexId, type DexUi } from "./types";
 
 export type { DexOpenUi, DexUi } from "./types";
 
@@ -40,11 +39,10 @@ function defaultDescriptorFor(id: string) {
   return canonical ? DEX_DESCRIPTORS.find((descriptor) => descriptor.id === canonical) ?? null : null;
 }
 
-/** UI record for a canonical DEX id or the one-release `rhc-uniswap-v4` alias. */
+/** UI record for a canonical DEX id or the one-release `rhc-uniswap-v4` alias (inherits the canonical descriptor). */
 export function uiFor(protocol: string, deps: UiForDeps = {}): DexUi {
-  if (Object.hasOwn(LEGACY_DEX_ID_ALIASES, protocol)) return DEFAULT_UI;
-  const descriptor = (deps.descriptorFor ?? defaultDescriptorFor)(protocol);
-  if (descriptor?.ui) return descriptor.ui;
   const canonical = normalizeDexId(protocol);
+  const descriptor = (deps.descriptorFor ?? defaultDescriptorFor)(canonical ?? protocol);
+  if (descriptor?.ui) return descriptor.ui;
   return (canonical && DEX_UI_BY_ID[canonical]) || DEFAULT_UI;
 }

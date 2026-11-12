@@ -16,8 +16,8 @@ const scanned = (tokenId: string, over: Partial<NonNullable<PositionLookup["posi
 describe("rhcPositionSource", () => {
   it("wallet holdings first (scan order), then local ids the scan did not find, deduped", () => {
     const list = rhcPositionSource.fromDiscovery({ scanned: [scanned("9"), scanned("5")], lookups: [lookup("5"), lookup("12")] });
-    expect(list.map((p) => [p.key, p.native.held !== null])).toEqual([["rhc-uniswap-v4:9", true], ["rhc-uniswap-v4:5", true], ["rhc-uniswap-v4:12", false]]);
-    expect(list[0]).toMatchObject({ chain: "robinhood-chain", source: "rhc-uniswap-v4", poolId: POOL.poolId, rangeStatus: "unknown", liquidity: "1000" });
+    expect(list.map((p) => [p.key, p.native.held !== null])).toEqual([["uniswap-v4-rhc:9", true], ["uniswap-v4-rhc:5", true], ["uniswap-v4-rhc:12", false]]);
+    expect(list[0]).toMatchObject({ chain: "robinhood-chain", source: "uniswap-v4-rhc", poolId: POOL.poolId, rangeStatus: "unknown", liquidity: "1000" });
     expect(rhcPositionSource.fromDiscovery(null)).toEqual([]);
   });
 
@@ -87,7 +87,7 @@ describe("capabilitiesFor(position): per-position override (PM requirement)", ()
 describe("Robinhood Chain rows", () => {
   it("Closed (liquidity 0 or gone) rows go last and are labelled; otherwise the scan order is kept", () => {
     const list = rhcPositionSource.fromDiscovery({ scanned: [scanned("9", { liquidity: "0" }), scanned("8")], lookups: [{ tokenId: "4", position: null, error: "not-found" }, lookup("6")] });
-    const [group] = groupPositions(list, { "robinhood-chain": ["rhc-uniswap-v4"] });
+    const [group] = groupPositions(list, { "robinhood-chain": ["uniswap-v4-rhc"] });
     expect(group!.positions.map((p) => p.nativeId)).toEqual(["8", "6", "9", "4"]);
     expect(group!.showSourceName).toBe(false);
     expect(positionOptionLabel(rhcPositionSource, group!.positions[2]!)).toMatch(/^#9 · .* · Closed$/);

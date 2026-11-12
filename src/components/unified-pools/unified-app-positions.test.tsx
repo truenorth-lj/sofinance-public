@@ -75,10 +75,10 @@ describe("/app unified All positions", () => {
     expect(rows()).toHaveLength(3);
     const entry = container.querySelector('[aria-labelledby="all-positions-heading"]')!;
     expect(entry.querySelector('[aria-label="Position NFT number"]')).not.toBeNull();
-    await choose("rhc-uniswap-v4:7");
-    expect(selectedKey()).toBe("rhc-uniswap-v4:7");
+    await choose("uniswap-v4-rhc:7");
+    expect(selectedKey()).toBe("uniswap-v4-rhc:7");
     expect(container.querySelector('[data-testid="tool-unavailable"]')).not.toBeNull();
-    expect(new URL(window.location.href).searchParams.get("position")).toBe("rhc-uniswap-v4:7");
+    expect(new URL(window.location.href).searchParams.get("position")).toBe("uniswap-v4-rhc:7");
   });
   it("EVM wallet only: Solana group says connect, Robinhood Chain group with Closed last, first position selected on its Withdraw", async () => {
     await render();
@@ -86,7 +86,7 @@ describe("/app unified All positions", () => {
       expect.stringMatching(/^#9 · .+ · range 0\.98778–1\.0077 SPCXon per SPCX$/),
       "#7 · ticks -123 to 77",
       expect.stringMatching(/^#8 · .+ · Closed$/)]]]);
-    expect(selectedKey()).toBe("rhc-uniswap-v4:9");
+    expect(selectedKey()).toBe("uniswap-v4-rhc:9");
     expect(tab("Withdraw").getAttribute("aria-pressed")).toBe("true");
     expect(container.querySelector("[data-testid=rhc-withdraw]")?.getAttribute("data-position")).toBe("9");
     expect(container.querySelector("[data-testid=rhc-range]")!.textContent).toBe("Range 0.98778–1.0077 SPCXon per SPCX");
@@ -104,22 +104,22 @@ describe("/app unified All positions", () => {
     expect(container.querySelector("[data-testid=tool-unavailable]")!.textContent).toBe("Not available for this pool yet");
     expect(container.querySelector("[data-testid=rhc-withdraw]")).toBeNull();
     const url = new URL(window.location.href);
-    expect([url.searchParams.get("position"), url.searchParams.get("view")]).toEqual(["rhc-uniswap-v4:9", "compound"]);
+    expect([url.searchParams.get("position"), url.searchParams.get("view")]).toEqual(["uniswap-v4-rhc:9", "compound"]);
   });
 
   it("per-position capabilities: a position in an unlisted pool keeps the same tabs, only Withdraw is greyed with its reason", async () => {
     await render();
     const before = [...container.querySelectorAll("nav[aria-label='Position operations'] button")].map((b) => b.textContent);
-    await choose("rhc-uniswap-v4:7");
+    await choose("uniswap-v4-rhc:7");
     expect([...container.querySelectorAll("nav[aria-label='Position operations'] button")].map((b) => b.textContent)).toEqual(before);
     expect(tab("Withdraw").getAttribute("data-unavailable")).toBe("true");
     expect(container.querySelector("[data-testid=tool-unavailable]")!.textContent).toBe("StablePair pool that SoFinance does not list yet: view only.");
-    expect(new URL(window.location.href).searchParams.get("position")).toBe("rhc-uniswap-v4:7");
+    expect(new URL(window.location.href).searchParams.get("position")).toBe("uniswap-v4-rhc:7");
   });
 
   it("?position= opens that Robinhood Chain position; ?view=compound lands on its first available tool", async () => {
-    await render({ initialPositionKey: "rhc-uniswap-v4:8", initialView: "compound" });
-    expect(selectedKey()).toBe("rhc-uniswap-v4:8");
+    await render({ initialPositionKey: "uniswap-v4-rhc:8", initialView: "compound" });
+    expect(selectedKey()).toBe("uniswap-v4-rhc:8");
     expect(tab("Withdraw").getAttribute("aria-pressed")).toBe("true");
   });
 
@@ -135,7 +135,7 @@ describe("/app unified All positions", () => {
     expect(groups().map(([label]) => label)).toEqual(["Solana", "Robinhood Chain"]);
     expect(groups()[0]![1]).toEqual(["No positions found"]);
     expect((groups()[1]![1] as string[]).every((label) => !label.startsWith("Uniswap v4"))).toBe(true);
-    expect(selectedKey()).toBe("rhc-uniswap-v4:9");
+    expect(selectedKey()).toBe("uniswap-v4-rhc:9");
   });
 
   it("empty Robinhood Chain wallet: the group stays with a disabled 'No positions found' row and the open-a-position link", async () => {
@@ -149,9 +149,9 @@ describe("/app unified All positions", () => {
 
 describe("/app Closed positions", () => {
   it("a liquidity-0 Robinhood Chain position shows the shared Closed badge when selected", async () => {
-    await render({ initialPositionKey: "rhc-uniswap-v4:8" });
+    await render({ initialPositionKey: "uniswap-v4-rhc:8" });
     expect(container.querySelector("[data-testid=position-closed]")!.textContent).toBe("Closed: no liquidity left");
-    await choose("rhc-uniswap-v4:9");
+    await choose("uniswap-v4-rhc:9");
     expect(container.querySelector("[data-testid=position-closed]")).toBeNull();
   });
 });
@@ -159,7 +159,7 @@ describe("/app Closed positions", () => {
 describe("/app shared detail panel for a Robinhood Chain position (PM review of #270)", () => {
   it("no Solana connect prompt inside the panel while a Robinhood Chain position is selected; it is the Solana group's empty row", async () => {
     await render();
-    expect(selectedKey()).toBe("rhc-uniswap-v4:9");
+    expect(selectedKey()).toBe("uniswap-v4-rhc:9");
     expect(container.textContent).not.toContain("Connect your Solana wallet to find your Solana liquidity positions");
     const solana = container.querySelector('[data-testid="position-chain-group"][aria-label="Solana"]')!;
     expect(solana.querySelector("p")?.textContent).toBe(SOLANA_CONNECT_EMPTY_OPTION);
@@ -198,8 +198,17 @@ describe("/app shared detail panel for a Robinhood Chain position (PM review of 
 
   it("a position outside the allowlist keeps both token rows, all dashes", async () => {
     state.values = [];
-    await render({ initialPositionKey: "rhc-uniswap-v4:7" });
+    await render({ initialPositionKey: "uniswap-v4-rhc:7" });
     const assets = container.querySelector("[data-testid=rhc-position-assets]")!;
     expect([...assets.querySelectorAll("dd")].map((dd) => dd.textContent)).toEqual(["— Token 0", "—", "— Token 0", "—", "— Token 1", "—", "— Token 1", "—"]);
   });
+
+  it("a leftover rhc-uniswap-v4:<id> URL still selects the same canonical row", async () => {
+    await render({ initialPositionKey: "rhc-uniswap-v4:8", initialView: "compound" });
+    expect(selectedKey()).toBe("uniswap-v4-rhc:8");
+    await choose("uniswap-v4-rhc:7");
+    expect(selectedKey()).toBe("uniswap-v4-rhc:7");
+    expect(new URL(window.location.href).searchParams.get("position")).toBe("uniswap-v4-rhc:7");
+  });
+
 });

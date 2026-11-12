@@ -129,7 +129,8 @@ describe("source metadata lookups", () => {
     expect(uiFor("uniswap-v4-rhc").useDescriptorPlanTerms).toBe(false);
     expect(uiFor("meteora-dlmm")).toMatchObject({ openUi: "registry", useDescriptorPlanTerms: true });
     expect(uiFor("orca-whirlpool").openUi).toBe("none");
-    expect(uiFor("rhc-uniswap-v4").openUi).toBe("none");
+    expect(uiFor("rhc-uniswap-v4").openUi).toBe("rhc-dialog");
+    expect(uiFor("rhc-uniswap-v4")).toEqual(uiFor("uniswap-v4-rhc"));
     expect(chainMeta("solana")?.showHighestRange).toBe(true);
     expect(chainMeta("solana")?.nullFeeLabel).toBe("—");
     expect(chainMeta("robinhood")?.showHighestRange).toBe(false);

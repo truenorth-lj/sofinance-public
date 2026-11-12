@@ -10,12 +10,10 @@ import type { DexDescriptor, FeePolicy } from "../types";
  *
  * The live open/close money path stays on `/api/rhc-univ4-open` and `/api/rhc-univ4-exit` plus the
  * `rhc-dialog` shell. This descriptor records the already-shipped fee policy and UI flags; it does not
- * invent a rate. Generic `/api/dex/uniswap-v4-rhc/*` is disabled (`module.enabled` is always false).
- *
- * `openUi` stays `rhc-dialog`, `useDescriptorPlanTerms` stays false, `listPositions` is false (listing
- * moves in E2-alias). The generic StepResult open/withdraw/claim/compound/plan capabilities are
- * unsupported so registry tools and a Plan button do not appear. The pools Open button still uses
- * `openUi`, not these caps.
+ * invent a rate. Generic `/api/dex/uniswap-v4-rhc/*` write ops stay disabled; `positions` is served
+ * through the module (`listPositions` on). The generic StepResult open/withdraw/claim/compound/plan
+ * capabilities stay unsupported so registry write tools and a Plan button do not appear. The pools
+ * Open button still uses `openUi`, not these caps. `useDescriptorPlanTerms` stays false.
  */
 const NOT_YET = NOT_AVAILABLE_MESSAGE;
 
@@ -64,6 +62,6 @@ export const uniswapV4RhcDescriptor: DexDescriptor = Object.freeze({
   ui: Object.freeze({
     openUi: "rhc-dialog" as const,
     useDescriptorPlanTerms: false,
-    listPositions: false,
+    listPositions: true,
   }),
 } satisfies DexDescriptor);

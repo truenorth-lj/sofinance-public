@@ -15,13 +15,11 @@ export const DEX_IDS = ["raydium-clmm", "orca-whirlpool", "meteora-dlmm", "unisw
 export type DexId = (typeof DEX_IDS)[number];
 
 /**
- * Legacy spellings accepted for one release, then removed. `"rhc-uniswap-v4"` is the unified-positions
- * `PositionSourceId` spelling (position keys in URLs/local storage may still carry it). Only `normalizeDexId` reads
- * this table (old URLs / localStorage); adapters and the contract suite use the canonical id
- * (`position.source === descriptor.id`).
- *
- * TODO(PR11): delete LEGACY_DEX_ID_ALIASES (and the "rhc-uniswap-v4" PositionSourceId) once Uniswap v4 on Robinhood
- * Chain is served through the registry and stored keys have been migrated.
+ * Legacy spellings accepted for one release, then removed. `"rhc-uniswap-v4"` is still readable on
+ * stored position keys and leftover protocol spellings (`normalizeDexId`, `parsePositionKey`).
+ * Adapters and the contract suite emit the canonical id (`position.source === descriptor.id`).
+ * `uiFor` inherits the canonical descriptor's UI. Do not delete this table in this PR; a later
+ * cleanup may drop it (and the alias `PositionSourceId`) once stored keys have been migrated.
  */
 export const LEGACY_DEX_ID_ALIASES: Readonly<Record<string, DexId>> = Object.freeze({ "rhc-uniswap-v4": "uniswap-v4-rhc" });
 
