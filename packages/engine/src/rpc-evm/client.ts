@@ -1,8 +1,11 @@
-import { createPublicClient, fallback, http, type PublicClient, type Transport } from "viem";
+import { createPublicClient, http, type PublicClient, type Transport } from "viem";
 import { robinhoodChain } from "../chains/robinhood";
 import { engineEnv } from "../host";
 import { TokenBucket } from "../rpc/rate-limit";
-import { resolveEvmProviders, type EvmRpcProviderId, type EvmRpcRoute, type ResolvedEvmProvider } from "./providers";
+import {
+  orderProvidersForMethod, resolveEvmProviders,
+  type EvmRpcProviderId, type EvmRpcRoute, type ResolvedEvmProvider,
+} from "./providers";
 
 /** Thrown (and skipped by the fallback) when a provider's local budget is spent or its cooldown is active. */
 export class EvmRpcQuotaError extends Error {
@@ -12,7 +15,12 @@ export class EvmRpcQuotaError extends Error {
   }
 }
 
-export type EvmRpcEvent = { route: EvmRpcRoute; provider: EvmRpcProviderId; method: string; outcome: "ok" | "error" | "quota" };
+export type EvmRpcEvent = {
+  route: EvmRpcRoute;
+  provider: EvmRpcProviderId;
+  method: string;
+  outcome: "ok" | "error" | "quota" | "unsupported";
+};
 
 type Guard = { bucket: TokenBucket; cooldownUntil: number };
 const guards = new Map<string, Guard>();
@@ -32,8 +40,31 @@ export function resetEvmRpcGuards(): void {
   guards.clear();
 }
 
+const errorText = (error: unknown) => {
+  if (!(error instanceof Error)) return String(error);
+  const extra = error as { details?: string; shortMessage?: string };
+  return `${error.name} ${error.message} ${extra.details ?? ""} ${extra.shortMessage ?? ""}`;
+};
+
+const errorCode = (error: unknown): number | undefined => {
+  if (!error || typeof error !== "object") return undefined;
+  if ("code" in error && typeof (error as { code: unknown }).code === "number") return (error as { code: number }).code;
+  const cause = (error as { cause?: unknown }).cause;
+  if (cause && typeof cause === "object" && "code" in cause && typeof (cause as { code: unknown }).code === "number") {
+    return (cause as { code: number }).code;
+  }
+  return undefined;
+};
+
+/** JSON-RPC method-not-found / unsupported — skip the provider, do not count as a failure or start a 429 cooldown. */
+export function isUnsupportedRpcMethod(error: unknown): boolean {
+  if (errorCode(error) === -32601) return true;
+  return /method not found|unsupported method|method(?: \S+)? (?:is )?not supported|the method .*(does not exist|is not (supported|available|enabled))/i
+    .test(errorText(error));
+}
+
 const isRateLimited = (error: unknown) => {
-  const text = error instanceof Error ? `${error.message} ${(error as { details?: string }).details ?? ""}` : String(error);
+  const text = errorText(error);
   return /\b429\b|rate limit|too many requests/i.test(text);
 };
 
@@ -48,8 +79,9 @@ export type RhcClientOptions = {
 
 /**
  * Wraps one provider's transport with its local token bucket and a 429 cooldown. A spent budget
- * throws `EvmRpcQuotaError`, which viem's `fallback` treats as a failure and moves to the next
- * provider instead of sending (so we overflow rather than earn a 429).
+ * throws `EvmRpcQuotaError`, which the method-aware fallback treats as a failure and moves to the next
+ * provider instead of sending (so we overflow rather than earn a 429). An unsupported-method error
+ * is rethrown without opening the cooldown.
  */
 function guarded(route: EvmRpcRoute, provider: ResolvedEvmProvider, inner: Transport, options: RhcClientOptions): Transport {
   const now = options.now ?? (() => Date.now());
@@ -68,6 +100,10 @@ function guarded(route: EvmRpcRoute, provider: ResolvedEvmProvider, inner: Trans
           options.onEvent?.({ route, provider: provider.id, method: args.method, outcome: "ok" });
           return result;
         } catch (error) {
+          if (isUnsupportedRpcMethod(error)) {
+            options.onEvent?.({ route, provider: provider.id, method: args.method, outcome: "unsupported" });
+            throw error;
+          }
           if (isRateLimited(error)) guard.cooldownUntil = now() + RATE_LIMIT_COOLDOWN_MS;
           options.onEvent?.({ route, provider: provider.id, method: args.method, outcome: "error" });
           throw error;
@@ -77,7 +113,35 @@ function guarded(route: EvmRpcRoute, provider: ResolvedEvmProvider, inner: Trans
   };
 }
 
-/** Read-only viem client for one route: `fallback([...providers])` in catalog order (no ranking). */
+/** Try providers in method-specific order; `rank: false` and no same-provider retry, matching the previous fallback. */
+function methodAwareFallback(route: EvmRpcRoute, providers: readonly ResolvedEvmProvider[], transports: readonly Transport[]): Transport {
+  return (config) => {
+    const sessions = providers.map((provider, index) => ({
+      id: provider.id,
+      session: transports[index]!({ ...config, retryCount: 0 }),
+    }));
+    const primary = sessions[0]!.session;
+    return {
+      ...primary,
+      request: (async (args: { method: string; params?: unknown }) => {
+        const order = orderProvidersForMethod(route, args.method, providers);
+        let lastError: unknown;
+        for (const provider of order) {
+          const session = sessions.find(entry => entry.id === provider.id)?.session;
+          if (!session) continue;
+          try {
+            return await session.request(args as never);
+          } catch (error) {
+            lastError = error;
+          }
+        }
+        throw lastError ?? new Error(`No Robinhood Chain RPC provider for ${args.method}`);
+      }) as typeof primary.request,
+    };
+  };
+}
+
+/** Read-only viem client for one route: providers are tried in catalog order, except simulation methods (no ranking). */
 export function createRhcClient(route: EvmRpcRoute, options: RhcClientOptions = {}): PublicClient {
   const providers = resolveEvmProviders(route, options.env ?? engineEnv());
   if (providers.length === 0) throw new Error(`No Robinhood Chain RPC provider for route ${route}`);
@@ -86,7 +150,7 @@ export function createRhcClient(route: EvmRpcRoute, options: RhcClientOptions = 
     options.transportFor?.(provider, route) ?? http(provider.url, { timeout, retryCount: 0, batch: false }), options));
   return createPublicClient({
     chain: robinhoodChain,
-    transport: fallback(transports, { rank: false, retryCount: 0 }),
+    transport: methodAwareFallback(route, providers, transports),
     batch: { multicall: false },
   }) as PublicClient;
 }
