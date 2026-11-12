@@ -1,8 +1,9 @@
 "use client";
 
 import { formatPlanPoolOption, type PlanPairOption } from "@/lib/lp-plan-selection";
+import { shortAddress } from "@/lib/format/address";
 
-const shortId = (value: string) => `${value.slice(0, 4)}…${value.slice(-4)}`;
+const shortId = shortAddress;
 
 export function PoolSelect({
   poolId,

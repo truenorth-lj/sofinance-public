@@ -18,6 +18,8 @@ import { solSwapReceiptLabel } from "@/components/transactions/open/use-open-sub
 import { SOL_SWAP_RECEIPT_TTL_MS } from "@/components/transactions/open/sol-swap-receipt-store";
 import { depositUsd } from "@/lib/range-apr/size-aware";
 import { useDebouncedValue } from "./use-debounced-value";
+import { shortAddress } from "@/lib/format/address";
+import { solscanTxUrl } from "@/lib/format/explorer";
 
 const FIELD_HELP = {
   "Token A": "The conservative amount of token A available to open your LP position. The position may use less; any remaining tokens stay in your wallet.",
@@ -190,7 +192,7 @@ export function OpenPositionModal({
               <button type="button" onClick={c.dismissPendingSwap} className="text-cream/80 underline">
                 Dismiss
               </button>
-              <a className="underline" href={`https://solscan.io/tx/${c.pendingSwap.signature}`} target="_blank" rel="noreferrer">View swap on Solscan</a>
+              <a className="underline" href={solscanTxUrl(c.pendingSwap.signature)} target="_blank" rel="noreferrer">View swap on Solscan</a>
             </div>
           </div>
         )}
@@ -218,13 +220,13 @@ export function OpenPositionModal({
 
         {c.signature && c.submitStage !== "confirmed" && <div className="mt-3 space-y-2 text-sm" role="status">
           <p>{status}</p>
-          <a className="block text-cream/90 underline" href={`https://solscan.io/tx/${c.signature}`} target="_blank" rel="noreferrer">View original transaction on Solscan</a>
+          <a className="block text-cream/90 underline" href={solscanTxUrl(c.signature)} target="_blank" rel="noreferrer">View original transaction on Solscan</a>
           {c.retryConfirmation && <button type="button" onClick={c.retryConfirmation} className="text-cream/90 underline">Check transaction status</button>}
         </div>}
         {c.unconfirmedSwap && (
           <div className="mt-4 rounded-xl border border-amber-300/40 p-3 text-sm text-cream" role="status">
             <p>Your SOL swap still needs confirmation. Check it before opening another position.</p>
-            <a className="block underline" href={`https://solscan.io/tx/${c.unconfirmedSwap.signature}`} target="_blank" rel="noreferrer">View original swap on Solscan</a>
+            <a className="block underline" href={solscanTxUrl(c.unconfirmedSwap.signature)} target="_blank" rel="noreferrer">View original swap on Solscan</a>
             <button type="button" className="mt-2 underline disabled:opacity-40" disabled={c.busy || c.checkingSwap || !c.connected}
               onClick={() => void c.recheckSwap()}>{c.checkingSwap ? "Checking original swap…" : "Recheck original SOL swap"}</button>
           </div>
@@ -232,11 +234,11 @@ export function OpenPositionModal({
         {c.submitStage === "confirmed" ? (
           <div className="mt-3 space-y-2 text-sm">
             <p role="status" className="text-mint">Position opened</p>
-            <a className="block text-cream/90 underline" href={`https://solscan.io/tx/${c.signature}`} target="_blank" rel="noreferrer">
+            <a className="block text-cream/90 underline" href={solscanTxUrl(c.signature)} target="_blank" rel="noreferrer">
               View on Solscan
             </a>
             <a className="block text-cream/90 underline" href="/app">
-              Open in Positions{c.positionMint ? ` (${c.positionMint.slice(0, 4)}…${c.positionMint.slice(-4)})` : ""}
+              Open in Positions{c.positionMint ? ` (${shortAddress(c.positionMint)})` : ""}
             </a>
             <button type="button" onClick={c.createAnother} className="text-cream/90 underline">Create another position</button>
           </div>

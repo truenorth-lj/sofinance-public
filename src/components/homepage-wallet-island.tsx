@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { LoaderCircle, Wallet } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { homepageWallet, REMEMBERED_WALLET_KEY, useHomepageWallet } from "./homepage-wallet";
+import { shortAddress } from "@/lib/format/address";
 
 const HomepageWalletRoot = dynamic(() => import("./homepage-wallet-root").then((module) => module.HomepageWalletRoot), { ssr: false });
 
@@ -24,7 +25,7 @@ export function HomepageWalletIsland() {
 }
 
 const pill = "flex h-10 min-w-0 items-center justify-center gap-2 rounded-full px-5 text-[13px] font-semibold outline-none transition-colors";
-const short = (value: string) => `${value.slice(0, 4)}…${value.slice(-4)}`;
+const short = shortAddress;
 
 /**
  * The homepage header's wallet button. Connect wallet opens the wallet picker in place (the page stays); once connected

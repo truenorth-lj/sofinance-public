@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useEvmWalletConnection } from "../evm-wallet-connection";
+import { shortAddress } from "@/lib/format/address";
 
 /**
  * Shown by the Robinhood Chain sections (My positions block, Open position dialog) instead of their normal content while
@@ -13,7 +14,7 @@ export function RhcWrongNetworkPrompt({ purpose }: { purpose: string }) {
   const [busy, setBusy] = useState(false);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  const address = evm.wallet ? `${evm.wallet.address.slice(0, 6)}…${evm.wallet.address.slice(-4)}` : "";
+  const address = evm.wallet ? shortAddress(evm.wallet.address) : "";
   const switchNetwork = () => {
     setBusy(true);
     evm.switchNetwork().catch(() => { /* shown below from the session's error */ }).finally(() => { if (mounted.current) setBusy(false); });

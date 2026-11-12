@@ -14,8 +14,9 @@ import { RhcWrongNetworkPrompt } from "../unified-pools/rhc-wrong-network-prompt
 import { PositionAssetRow } from "../position-asset-row";
 import type { ExternalPositions } from "./external-positions";
 import { fetchPositionValues, type RhcPositionValueRow } from "./rhc-values";
+import { shortAddress } from "@/lib/format/address";
 
-const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+const short = shortAddress;
 const nativeOf = (position: UnifiedPosition) => position.native as RhcNative;
 
 /**

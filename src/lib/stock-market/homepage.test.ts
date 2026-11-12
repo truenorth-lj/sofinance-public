@@ -7,7 +7,7 @@ vi.mock("./source", () => ({ loadStockMarket: () => loadStockMarket(), loadStock
 
 const { loadHomepageStocks } = await import("./homepage");
 const market = { snapshotAt: "2026-11-04T12:00:00.000Z", gainers: [], stocks: [], tokensByUnderlying: {} };
-const option = { underlying: "TSLA", company: "Tesla", mint: "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB", mintShort: "XsDo…oB", issuerName: "xStocks", symbol: "TSLAx" };
+const option = { underlying: "TSLA", company: "Tesla", mint: "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB", mintShort: "XsDo…HzoB", issuerName: "xStocks", symbol: "TSLAx" };
 
 beforeEach(() => { loadStockMarket.mockReset(); loadStockBuyEligibility.mockReset(); });
 

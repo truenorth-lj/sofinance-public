@@ -4,7 +4,7 @@
  */
 export type TxChainStatus = "confirmed" | "failed" | "expired" | "pending";
 
-export const solscanTxUrl = (signature: string) => `https://solscan.io/tx/${signature}`;
+export { solscanTxUrl } from "@/lib/format/explorer";
 
 export async function readSignatureStatus(input: { signature: string; lastValidBlockHeight: number; fetchImpl?: typeof fetch }): Promise<TxChainStatus> {
   const response = await (input.fetchImpl ?? fetch)("/api/transaction-finality", {

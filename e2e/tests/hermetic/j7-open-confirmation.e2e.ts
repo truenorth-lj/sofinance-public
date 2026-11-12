@@ -73,7 +73,7 @@ async function setup(page: Page, wallet: FakeWallet, mode: "ok" | "unknown" | "u
   return { calls, create, setStatus: (status: string) => { chainStatus = status; }, signature: () => sentSignature };
 }
 
-const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
+const short = (value: string) => `${value.slice(0, 4)}…${value.slice(-4)}`;
 
 test("RPC acceptance remains pending; reload resumes the same signature by polling before showing Position opened", async ({ page, wallet, guards }) => {
   guards.allowConsole(/^Failed to load resource: the server responded with a status of 503/);

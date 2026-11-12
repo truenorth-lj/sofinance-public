@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { ArrowUpRight, CheckCircle2, CircleAlert, LoaderCircle } from "lucide-react";
 import type { CompoundSubmitFeedback } from "./use-compound-controller";
+import { solscanTxUrl } from "@/lib/format/explorer";
 
 export function compoundSubmitCopy(feedback: CompoundSubmitFeedback, slow = false) {
   switch (feedback.phase) {
@@ -42,7 +43,7 @@ export function CompoundSubmitDialog({ feedback, slow = false, onDismiss }: {
         <h2 id="compound-submit-title" className="mt-5 text-2xl font-semibold">{copy.title}</h2>
         <p id="compound-submit-detail" className="mt-2 text-sm leading-6 text-cream/80">{copy.detail}</p>
       </div>
-      <a href={`https://solscan.io/tx/${feedback.signature}`} target="_blank" rel="noreferrer"
+      <a href={solscanTxUrl(feedback.signature)} target="_blank" rel="noreferrer"
         className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-lilac underline underline-offset-4">View on Solscan <ArrowUpRight className="h-4 w-4" /></a>
       <div className="mt-6 flex gap-3">
         {(!active || slow) && <button type="button" onClick={onDismiss} autoFocus

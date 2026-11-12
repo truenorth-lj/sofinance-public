@@ -140,7 +140,7 @@ describe("issuer selection (PM rule)", () => {
     const hasRoute = vi.fn(async (): Promise<SpotSwapRouteCheck> => "ok");
     const selection = await selectSpotSwapToken(list, "tsla", { checkRoute: hasRoute });
     expect(selection).toMatchObject({ status: "selected", mint: tsla.toBase58(), issuerName: "xStocks", xstocks: true, skipped: [] });
-    expect(selection.status === "selected" && selection.mintShort).toMatch(/^.{4}….{2}$/);
+    expect(selection.status === "selected" && selection.mintShort).toMatch(/^.{4}….{4}$/);
     expect(hasRoute).toHaveBeenCalledTimes(1);
   });
   it("falls back to the next verified issuer when xStocks has no route", async () => {
@@ -226,11 +226,11 @@ describe("buildAndSimulateSpotSwap", () => {
     expect(transaction.message.header.numRequiredSignatures).toBe(1);
     expect(transaction.message.staticAccountKeys[0]!.equals(wallet)).toBe(true);
     expect(summary).toMatchObject({
-      operation: "spot-swap", outputMint: tsla.toBase58(), outputMintShort: expect.stringMatching(/^.{4}….{2}$/), outputSymbol: "TSLAx", issuerName: "xStocks", xstocks: true,
+      operation: "spot-swap", outputMint: tsla.toBase58(), outputMintShort: expect.stringMatching(/^.{4}….{4}$/), outputSymbol: "TSLAx", issuerName: "xStocks", xstocks: true,
       amount: "2000000", feeBps: 10, feeAmount: "2000", quotedOut: "522844", minOut: "520230", simulatedOut: "522844",
       outputProgram: TOKEN_2022_PROGRAM_ID.toBase58(), outputAccount: outputAta.toBase58(),
     });
-    expect(summary.feeWalletShort).toMatch(/^.{4}….{2}$/);
+    expect(summary.feeWalletShort).toMatch(/^.{4}….{4}$/);
     expect(JSON.stringify(summary)).not.toContain(feeWallet.toBase58());
     // The simulated debit (rent + fee) already includes the network fee: counted once.
     expect(summary.solRequirement).toEqual({

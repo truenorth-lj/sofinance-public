@@ -32,7 +32,7 @@ const { HomepageConnectButton, HomepageWalletIsland } = await import("./homepage
 const { StockCards } = await import("./stocks/stock-cards");
 
 const ADDRESS = "4mLbQ1zcfAWJx3fNPbXwVWr2sE8ZKkQyVxv9X5kUUK7";
-const tesla: StockBuyOption = { underlying: "TSLA", company: "Tesla", mint: "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB", mintShort: "XsDo…oB", issuerName: "xStocks", symbol: "TSLAx" };
+const tesla: StockBuyOption = { underlying: "TSLA", company: "Tesla", mint: "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB", mintShort: "XsDo…HzoB", issuerName: "xStocks", symbol: "TSLAx" };
 
 function connection(patch: Partial<WalletConnection> = {}): WalletConnection {
   return {

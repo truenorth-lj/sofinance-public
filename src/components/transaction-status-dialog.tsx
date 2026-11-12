@@ -3,8 +3,10 @@
 import { useEffect, useRef } from "react";
 import { ArrowUpRight, CheckCircle2, CircleAlert, Clock3, LoaderCircle, X } from "lucide-react";
 import type { AtomicStatus } from "@/lib/attempt-status";
+import { shortAddress } from "@/lib/format/address";
+import { solscanTxUrl } from "@/lib/format/explorer";
 
-const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
+const short = shortAddress;
 
 function transactionStatusCopy(status: AtomicStatus) {
   switch (status) {
@@ -52,7 +54,7 @@ export function TransactionStatusDialog({ attempt, status, error, open, onOpenCh
         <p role="alert" className="mt-4 rounded-2xl border border-lemon/25 bg-lemon/10 p-3 text-sm text-lemon">{error}</p>}
       <div className="mt-6 rounded-2xl border border-white/10 bg-char p-4">
         <p className="text-xs text-smoke">Transaction hash</p>
-        <a href={`https://solscan.io/tx/${attempt.signature}`} target="_blank" rel="noreferrer"
+        <a href={solscanTxUrl(attempt.signature)} target="_blank" rel="noreferrer"
           className="mt-2 block break-all font-mono text-sm leading-6 text-lilac underline underline-offset-4 hover:text-lilac">{attempt.signature} <ArrowUpRight className="inline h-4 w-4" /></a>
         <p className="mt-3 text-xs text-smoke">Destination NFT: {short(attempt.positionMint)}</p>
       </div>

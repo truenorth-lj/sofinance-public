@@ -22,10 +22,10 @@ vi.mock("@/lib/stock-market/spot-swap-client", async (importOriginal) => ({
 const { SpotSwapModal, amountProblem, PRICE_UPDATED_COPY, QUOTE_REFRESH_MS, SLIPPAGE_NOTE_COPY } = await import("./spot-swap-modal");
 const { SpotSwapQuoteError } = await import("@/lib/stock-market/spot-swap-client");
 
-const option = { underlying: "TSLA", company: "Tesla", mint: "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB", mintShort: "XsDo…oB", issuerName: "xStocks", symbol: "TSLAx" };
+const option = { underlying: "TSLA", company: "Tesla", mint: "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB", mintShort: "XsDo…HzoB", issuerName: "xStocks", symbol: "TSLAx" };
 const quote: SpotSwapQuoteResult = {
   underlying: "TSLA",
-  quote: { outputMint: option.mint, outputMintShort: "XsDo…oB", outputSymbol: "TSLAx", issuerName: "xStocks", xstocks: true, amount: "2000000", feeBps: 10, feeAmount: "2000",
+  quote: { outputMint: option.mint, outputMintShort: "XsDo…HzoB", outputSymbol: "TSLAx", issuerName: "xStocks", xstocks: true, amount: "2000000", feeBps: 10, feeAmount: "2000",
     feeWalletShort: "CS5C…AK", quotedOut: "4500000", minOut: "4477500", priceImpactPct: "0.0012", newAccountRentLamports: 2_039_280, baseNetworkFeeLamports: 5000,
     outputDecimals: 8, slippageBps: 100 },
   wallet: null,
@@ -61,7 +61,7 @@ afterEach(() => { act(() => root.unmount()); host.remove(); vi.useRealTimers(); 
 
 describe("SpotSwapModal", () => {
   it("shows the issuer, short mint, region notice and a connect button before a wallet", () => {
-    expect(text("spot-swap-issuer")).toBe("xStocks · XsDo…oB");
+    expect(text("spot-swap-issuer")).toBe("xStocks · XsDo…HzoB");
     expect(text("spot-swap-notice")).toBe("Not available to US persons or restricted regions. Tokens are issued by third parties.");
     expect(text("spot-swap-connect")).toBe("Connect wallet to buy");
   });

@@ -148,10 +148,10 @@ describe("StocksOverview", () => {
     expect(groups[0]!.textContent).toContain("Raydium");
     expect(groups[1]!.textContent).toContain("Orca");
     for (const group of groups) expect(group.textContent).toContain("NVDA / NVDAx");
-    expect(groups[0]!.querySelector('[title="pool-aaaaaaaaaaaa"]')?.textContent).toBe("pool-a…aaaa");
+    expect(groups[0]!.querySelector('[title="pool-aaaaaaaaaaaa"]')?.textContent).toBe("pool…aaaa");
     const positionRows = expanded.querySelectorAll('[data-testid="stock-position"]');
     expect(positionRows).toHaveLength(2);
-    expect(positionRows[0]!.querySelector('[title="position-pool-a-position-full-id"]')?.textContent).toBe("positi…l-id");
+    expect(positionRows[0]!.querySelector('[title="position-pool-a-position-full-id"]')?.textContent).toBe("posi…l-id");
     expect(positionRows[0]!.textContent).toContain("Value $446.38");
     expect(positionRows[0]!.textContent).toContain("Fees $5.50");
     expect(positionRows[1]!.textContent).toContain("Value $100.00");

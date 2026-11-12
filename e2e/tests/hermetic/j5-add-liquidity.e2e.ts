@@ -145,7 +145,7 @@ test("input enables Add after a lightweight preview; no automatic simulation or 
   expect(wallet.ledger).toEqual([]);
   await expect(page.getByText("Checked when you add liquidity", { exact: true })).toBeVisible();
   await expect(page.getByText("Protocol fee (0.10%)")).toBeVisible();
-  const inputLabel = `${selection.inputMint.slice(0, 5)}…${selection.inputMint.slice(-5)}`;
+  const inputLabel = `${selection.inputMint.slice(0, 4)}…${selection.inputMint.slice(-4)}`;
   await expect(page.getByText(`0.001 ${inputLabel}`, { exact: true })).toBeVisible();
   await page.screenshot({ path: test.info().outputPath("add-preview-desktop.png") });
 });
