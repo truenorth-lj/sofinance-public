@@ -8,6 +8,7 @@ import { readCompoundPositionState } from "@sofinance/engine/compound-state";
 import { simulateAndVerifyCompound } from "@sofinance/engine/compound-simulation";
 import { CompoundSendError } from "./public-error";
 import { rpcConnection } from "@sofinance/engine/rpc";
+import { broadcastSignedTransaction } from "@/lib/broadcast-signed-transaction";
 import type { CompoundSummary } from "@sofinance/engine/compound-types";
 
 export { CompoundSendError };
@@ -53,10 +54,10 @@ export async function sendSignedCompoundTransaction(
   }
   try {
     const expected = bs58.encode(transaction.signatures[0]!);
-    const signature = await connection.sendRawTransaction(transaction.serialize(), {
-      skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3,
+    const signature = await broadcastSignedTransaction({
+      connection, transaction, expectedSignature: expected,
+      mismatchMessage: "RPC returned compound signature mismatch, please verify on-chain status",
     });
-    if (signature !== expected) throw new Error("RPC returned compound signature mismatch, please verify on-chain status");
     invalidatePositionHistoryCache(summary.positionMint);
     return { signature };
   } catch (error) {

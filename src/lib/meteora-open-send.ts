@@ -13,6 +13,7 @@ import { exceedsTxSizeLimit, isZeroSignature } from "@sofinance/engine/transacti
 import { LIGHTHOUSE_PROGRAM_ID } from "@sofinance/engine/wallet-returned-tx";
 import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
 import { assertMeteoraFeeRule } from "./meteora-open";
+import { broadcastSignedTransaction } from "@/lib/broadcast-signed-transaction";
 
 /**
  * Meteora open flow, signing half (behind METEORA_DLMM_WALLET_SIGNING_ENABLED). Every prepared transaction carries
@@ -123,8 +124,10 @@ export async function sendMeteoraTransaction(
   }
   const expected = bs58.encode(signed.signatures[0]!);
   try {
-    const signature = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3 });
-    if (signature !== expected) throw new Error("RPC returned a different signature");
+    const signature = await broadcastSignedTransaction({
+      connection, transaction: signed, expectedSignature: expected,
+      mismatchMessage: "RPC returned a different signature",
+    });
     return { signature };
   } catch (error) {
     // A lost response may still have landed: the client checks the expected signature's status.
