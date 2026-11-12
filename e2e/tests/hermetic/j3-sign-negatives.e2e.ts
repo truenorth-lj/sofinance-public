@@ -64,7 +64,7 @@ test.describe("J3 sign link, wrong wallet", () => {
     const expected = randomAddress();
     const scenario = makeScenario("compound", expected, { payer: expected });
     const sign = await openAndConnect(page, wallet, scenario.token);
-    await sign.expectStatus(`Wrong wallet connected. Please connect wallet ${expected.slice(0, 5)}…${expected.slice(-5)}.`);
+    await sign.expectStatus(`Wrong wallet connected. Please connect wallet ${expected.slice(0, 4)}…${expected.slice(-4)}.`);
     await expect(sign.signButton).toHaveCount(0);
     await expect(sign.disconnectButton).toBeVisible();
     await page.screenshot({ path: test.info().outputPath("j3-wrong-wallet.png") });
