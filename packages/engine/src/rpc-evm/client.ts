@@ -1,4 +1,4 @@
-import { createPublicClient, http, type PublicClient, type Transport } from "viem";
+import { createPublicClient, http, shouldThrow, type PublicClient, type Transport } from "viem";
 import { robinhoodChain } from "../chains/robinhood";
 import { engineEnv } from "../host";
 import { TokenBucket } from "../rpc/rate-limit";
@@ -133,6 +133,8 @@ function methodAwareFallback(route: EvmRpcRoute, providers: readonly ResolvedEvm
             return await session.request(args as never);
           } catch (error) {
             lastError = error;
+            // Same stop list as viem's fallback (execution reverted, tx/user rejected, CAIP 5000).
+            if (error instanceof Error && shouldThrow(error)) throw error;
           }
         }
         throw lastError ?? new Error(`No Robinhood Chain RPC provider for ${args.method}`);

@@ -159,4 +159,30 @@ describe("rpc-evm client", () => {
     ]);
     expect(events.filter(event => event.outcome === "error" || event.outcome === "quota")).toEqual([]);
   });
+
+  it("rethrows a reverted estimateGas from the first provider without trying the rest", async () => {
+    const reverted = Object.assign(new Error("execution reverted"), { code: 3 });
+    const hits: { id: EvmRpcProviderId; method: string }[] = [];
+    const client = createRhcClient("state", {
+      env: DEDICATED,
+      transportFor: provider => custom({
+        request: async ({ method }) => {
+          hits.push({ id: provider.id, method });
+          if (method === "eth_estimateGas") throw reverted;
+          throw new Error(`unexpected ${method}`);
+        },
+      }, { retryCount: 0 }),
+    });
+    await expect(client.estimateGas({
+      account: "0x0000000000000000000000000000000000000001",
+      to: "0x0000000000000000000000000000000000000001",
+      data: "0x",
+    })).rejects.toSatisfy((error: unknown) => {
+      if (error === reverted) return true;
+      return Boolean(error && typeof error === "object" && "walk" in error
+        && typeof (error as { walk: (fn: (e: unknown) => boolean) => unknown }).walk === "function"
+        && (error as { walk: (fn: (e: unknown) => boolean) => unknown }).walk(e => e === reverted) === reverted);
+    });
+    expect(hits).toEqual([{ id: "drpc", method: "eth_estimateGas" }]);
+  });
 });
