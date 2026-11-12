@@ -169,6 +169,34 @@ const wideOnly = "max-md:hidden";
  * pinned while the table scrolls sideways if needed; below 768px only Pool (with TVL as a small line), Chain,
  * Est. APR · 7d and an icon-only Open are shown, so the table fits the screen with no horizontal scroll.
  */
+/** One list row on `/app/rwa-pairs` and the homepage "All pools" table. */
+export function PoolTableRow({ pool, apr, action, icons, highlight = false }: {
+  pool: UnifiedPool; apr: Apr7dState | undefined; action: OpenAction; icons?: TokenIconMap; highlight?: boolean;
+}) {
+  return <tr data-pool={pool.key} data-chain={pool.chain} data-highlighted={highlight ? "true" : undefined}
+    className={cn("border-b border-white/[0.06] last:border-0", highlight && "bg-white/[0.04]")}>
+    <td className={cn("sticky left-0 z-10 bg-char px-3 py-3 max-md:static", narrow)}>
+      <div className="flex items-center gap-3 max-md:gap-2">
+        <PairTokenIcons pair={iconPair(pool)} icons={icons} chain={pool.chain} ringClassName="ring-char" iconClassName="h-8 w-8 text-xs max-md:h-6 max-md:w-6 max-md:text-[10px]" />
+        <div className="min-w-0">
+          {/* Below 768px the pair may break after the "/" so long pairs fit. */}
+          <p className="whitespace-nowrap font-medium text-cream max-md:whitespace-normal max-md:leading-tight">{pairWithBreak(pool.pairLabel)}</p>
+          <p className="hidden max-w-[8rem] truncate text-xs text-smoke sm:block max-md:hidden" title={`${pool.nameA} / ${pool.nameB}`}>{pool.nameA} / {pool.nameB}</p>
+          <p className="mt-0.5 whitespace-nowrap text-xs tabular-nums text-smoke md:hidden" data-testid="tvl-narrow">TVL {money(pool.tvlUsd)}</p>
+          {/* Below 768px the Protocol column is hidden: the badge tells the same pair on two protocols apart. */}
+          <span className="mt-1 inline-flex h-5 items-center whitespace-nowrap rounded-full border border-white/25 px-1.5 font-data text-[9px] uppercase tracking-[0.04em] text-cream/80 md:hidden" data-testid="protocol-badge-narrow">{PROTOCOL_LABELS[pool.protocol]}</span>
+        </div>
+      </div>
+    </td>
+    <td className={cn("px-3 py-3", narrow)}><ChainBadge chain={pool.chain} tone="dark" wrapBelowMd /></td>
+    <td className={cn("px-3 py-3 text-cream/80", wideOnly)}><span className={cn(chip, "border border-white/25")} data-testid="protocol-badge">{PROTOCOL_LABELS[pool.protocol]}</span></td>
+    <td className={cn("px-3 py-3 text-right", narrow)}><Apr7dValue state={apr} size="sm" lowTvl={isLowTvl(pool)} /></td>
+    <td className={cn("px-3 py-3 text-right tabular-nums text-cream/80", wideOnly)}>{money(pool.tvlUsd)}</td>
+    <td className={cn("px-3 py-3 text-right tabular-nums text-cream/80", wideOnly)}>{money(pool.volume24hUsd)}</td>
+    <td className={cn("px-3 py-3 text-right", narrow)}><OpenButton action={action} label={pool.pairLabel} compact iconOnlyBelowMd /></td>
+  </tr>;
+}
+
 export function PoolTable({ pools, apr, actionFor, sort, onSort, icons, highlightKey, testId = "pools-table" }: {
   pools: readonly UnifiedPool[]; apr: Readonly<Record<string, Apr7dState | undefined>>; actionFor: (pool: UnifiedPool) => OpenAction;
   sort: { key: SortKey; dir: SortDir };
@@ -203,28 +231,7 @@ export function PoolTable({ pools, apr, actionFor, sort, onSort, icons, highligh
         <th scope="col" className={cn("px-3 py-3", narrow)}><span className="sr-only">Open</span></th>
       </tr></thead>
       <tbody>{pools.map((pool) => (
-        <tr key={pool.key} data-pool={pool.key} data-chain={pool.chain} data-highlighted={pool.key === highlightKey ? "true" : undefined}
-          className={cn("border-b border-white/[0.06] last:border-0", pool.key === highlightKey && "bg-white/[0.04]")}>
-          <td className={cn("sticky left-0 z-10 bg-char px-3 py-3 max-md:static", narrow)}>
-            <div className="flex items-center gap-3 max-md:gap-2">
-              <PairTokenIcons pair={iconPair(pool)} icons={icons} chain={pool.chain} ringClassName="ring-char" iconClassName="h-8 w-8 text-xs max-md:h-6 max-md:w-6 max-md:text-[10px]" />
-              <div className="min-w-0">
-                {/* Below 768px the pair may break after the "/" so long pairs fit. */}
-                <p className="whitespace-nowrap font-medium text-cream max-md:whitespace-normal max-md:leading-tight">{pairWithBreak(pool.pairLabel)}</p>
-                <p className="hidden max-w-[8rem] truncate text-xs text-smoke sm:block max-md:hidden" title={`${pool.nameA} / ${pool.nameB}`}>{pool.nameA} / {pool.nameB}</p>
-                <p className="mt-0.5 whitespace-nowrap text-xs tabular-nums text-smoke md:hidden" data-testid="tvl-narrow">TVL {money(pool.tvlUsd)}</p>
-                {/* Below 768px the Protocol column is hidden: the badge tells the same pair on two protocols apart. */}
-                <span className="mt-1 inline-flex h-5 items-center whitespace-nowrap rounded-full border border-white/25 px-1.5 font-data text-[9px] uppercase tracking-[0.04em] text-cream/80 md:hidden" data-testid="protocol-badge-narrow">{PROTOCOL_LABELS[pool.protocol]}</span>
-              </div>
-            </div>
-          </td>
-          <td className={cn("px-3 py-3", narrow)}><ChainBadge chain={pool.chain} tone="dark" wrapBelowMd /></td>
-          <td className={cn("px-3 py-3 text-cream/80", wideOnly)}><span className={cn(chip, "border border-white/25")} data-testid="protocol-badge">{PROTOCOL_LABELS[pool.protocol]}</span></td>
-          <td className={cn("px-3 py-3 text-right", narrow)}><Apr7dValue state={apr[pool.key]} size="sm" lowTvl={isLowTvl(pool)} /></td>
-          <td className={cn("px-3 py-3 text-right tabular-nums text-cream/80", wideOnly)}>{money(pool.tvlUsd)}</td>
-          <td className={cn("px-3 py-3 text-right tabular-nums text-cream/80", wideOnly)}>{money(pool.volume24hUsd)}</td>
-          <td className={cn("px-3 py-3 text-right", narrow)}><OpenButton action={actionFor(pool)} label={pool.pairLabel} compact iconOnlyBelowMd /></td>
-        </tr>
+        <PoolTableRow key={pool.key} pool={pool} apr={apr[pool.key]} action={actionFor(pool)} icons={icons} highlight={pool.key === highlightKey} />
       ))}</tbody>
     </table>
   </div>;
