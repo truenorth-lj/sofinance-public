@@ -6,12 +6,8 @@
 import { normalizeDexId } from "@/lib/dex/types";
 
 export type ChainId = "solana" | "robinhood-chain";
-/**
- * `"uniswap-v4-rhc"` is the canonical DEX id (`src/lib/dex/types.ts`) that DEX adapters emit.
- * `"rhc-uniswap-v4"` remains readable on stored keys and leftover URLs for one release; new keys
- * use the canonical spelling. A later cleanup may drop the alias together with `LEGACY_DEX_ID_ALIASES`.
- */
-export type PositionSourceId = "raydium-clmm" | "orca-whirlpool" | "meteora-dlmm" | "rhc-uniswap-v4" | "uniswap-v4-rhc";
+/** Canonical DEX id (`src/lib/dex/types.ts`) that DEX adapters emit. */
+export type PositionSourceId = "raydium-clmm" | "orca-whirlpool" | "meteora-dlmm" | "uniswap-v4-rhc";
 export type ToolId = "compound" | "performance" | "deposit" | "withdraw";
 export const TOOL_IDS: readonly ToolId[] = Object.freeze(["compound", "performance", "deposit", "withdraw"]);
 
@@ -107,7 +103,7 @@ export type PositionSource<N = unknown, D = unknown> = {
 export const SUPPORTED: Capability = Object.freeze({ supported: true });
 export const unsupported = (reason: string): Capability => Object.freeze({ supported: false, reason });
 
-const SOURCE_IDS: readonly PositionSourceId[] = ["raydium-clmm", "orca-whirlpool", "meteora-dlmm", "uniswap-v4-rhc", "rhc-uniswap-v4"];
+const SOURCE_IDS: readonly PositionSourceId[] = ["raydium-clmm", "orca-whirlpool", "meteora-dlmm", "uniswap-v4-rhc"];
 
 /** Canonical position source: leftover alias keys resolve through `normalizeDexId`. */
 export function normalizePositionSource(source: string | null | undefined): PositionSourceId | null {
@@ -130,7 +126,7 @@ export function parsePositionKey(value: string | null | undefined): { source: Po
   return source && nativeId ? { source, nativeId } : null;
 }
 
-/** True when two keys name the same position, including leftover `rhc-uniswap-v4:<id>` vs `uniswap-v4-rhc:<id>`. */
+/** True when two keys name the same position. */
 export function positionKeysEqual(a: string, b: string): boolean {
   const left = parsePositionKey(a);
   const right = parsePositionKey(b);

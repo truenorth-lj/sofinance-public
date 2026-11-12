@@ -8,8 +8,6 @@ describe("initialSelectionFromQuery (/app URL state)", () => {
   });
   it("?position= picks a Robinhood Chain or Meteora position by key", () => {
     expect(initialSelectionFromQuery({ position: "meteora-dlmm:Pos111" }).initialPositionKey).toBe("meteora-dlmm:Pos111");
-    expect(initialSelectionFromQuery({ position: "rhc-uniswap-v4:4077059", view: "compound" }))
-      .toEqual({ initialView: "compound", initialMint: "", initialPositionKey: "rhc-uniswap-v4:4077059" });
     expect(initialSelectionFromQuery({ position: "uniswap-v4-rhc:4077059", view: "compound" }))
       .toEqual({ initialView: "compound", initialMint: "", initialPositionKey: "uniswap-v4-rhc:4077059" });
   });
@@ -19,7 +17,8 @@ describe("initialSelectionFromQuery (/app URL state)", () => {
     expect(initialSelectionFromQuery({ mint: ["A", "B"] }).initialMint).toBe("A");
   });
   it("a valid ?position= wins over ?mint=; an invalid one falls back to it", () => {
-    expect(initialSelectionFromQuery({ position: "rhc-uniswap-v4:1", mint: "M" }).initialMint).toBe("");
+    expect(initialSelectionFromQuery({ position: "uniswap-v4-rhc:1", mint: "M" }).initialMint).toBe("");
+    expect(initialSelectionFromQuery({ position: "rhc-uniswap-v4:1", mint: "M" })).toEqual({ initialView: "compound", initialMint: "M", initialPositionKey: "" });
     expect(initialSelectionFromQuery({ position: "nope:1", mint: "M" })).toEqual({ initialView: "compound", initialMint: "M", initialPositionKey: "" });
   });
   it("unknown views fall back to Compound", () => {

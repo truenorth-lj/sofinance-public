@@ -43,7 +43,7 @@ describe("uniswap-v4-rhc descriptor (E2-alias)", () => {
       listPositions: true,
     };
     expect(uiFor("uniswap-v4-rhc")).toEqual(expectedUi);
-    expect(uiFor("rhc-uniswap-v4")).toEqual(expectedUi);
+    expect(uiFor("rhc-uniswap-v4")).toEqual({ openUi: "none", useDescriptorPlanTerms: false });
     expect(uniswapV4RhcDescriptor.capabilities.open.supported).toBe(false);
     expect(uniswapV4RhcDescriptor.capabilities.withdraw.supported).toBe(false);
     expect(uniswapV4RhcDescriptor.capabilities.plan.supported).toBe(false);

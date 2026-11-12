@@ -11,17 +11,15 @@ describe("position keys", () => {
     const key = positionKey("uniswap-v4-rhc", "1234");
     expect(key).toBe("uniswap-v4-rhc:1234");
     expect(parsePositionKey(key)).toEqual({ source: "uniswap-v4-rhc", nativeId: "1234" });
-    expect(positionKey("rhc-uniswap-v4", "1234")).toBe("uniswap-v4-rhc:1234");
     expect(parsePositionKey("raydium-clmm:AbC:x")).toEqual({ source: "raydium-clmm", nativeId: "AbC:x" });
   });
-  it("still reads leftover rhc-uniswap-v4 keys as the same position (one-release window)", () => {
-    expect(parsePositionKey("rhc-uniswap-v4:4077059")).toEqual({ source: "uniswap-v4-rhc", nativeId: "4077059" });
+  it("does not treat the retired rhc-uniswap-v4 spelling as a position key", () => {
+    expect(parsePositionKey("rhc-uniswap-v4:4077059")).toBeNull();
     expect(parsePositionKey("uniswap-v4-rhc:4077059")).toEqual({ source: "uniswap-v4-rhc", nativeId: "4077059" });
-    expect(positionKeysEqual("rhc-uniswap-v4:4077059", "uniswap-v4-rhc:4077059")).toBe(true);
-    expect(positionKeysEqual("rhc-uniswap-v4:4077059", "uniswap-v4-rhc:1")).toBe(false);
+    expect(positionKeysEqual("rhc-uniswap-v4:4077059", "uniswap-v4-rhc:4077059")).toBe(false);
   });
   it("rejects unknown sources and empty parts", () => {
-    for (const bad of ["", null, undefined, "nope:1", "raydium-clmm:", ":abc", "raydium-clmm"]) expect(parsePositionKey(bad)).toBeNull();
+    for (const bad of ["", null, undefined, "nope:1", "raydium-clmm:", ":abc", "raydium-clmm", "rhc-uniswap-v4:1"]) expect(parsePositionKey(bad)).toBeNull();
   });
 });
 

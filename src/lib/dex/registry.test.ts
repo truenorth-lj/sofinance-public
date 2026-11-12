@@ -12,10 +12,10 @@ import { createDexDescriptorRegistry, createDexRegistry } from "./registry";
 import { DEX_IDS, normalizeDexId } from "./types";
 
 describe("DEX ids", () => {
-  it("has one canonical spelling and accepts the legacy RHC alias", () => {
+  it("has one canonical spelling for each DEX id and rejects the retired RHC alias", () => {
     expect(DEX_IDS).toEqual(["raydium-clmm", "orca-whirlpool", "meteora-dlmm", "uniswap-v4-rhc"]);
     expect(normalizeDexId("uniswap-v4-rhc")).toBe("uniswap-v4-rhc");
-    expect(normalizeDexId("rhc-uniswap-v4")).toBe("uniswap-v4-rhc");
+    expect(normalizeDexId("rhc-uniswap-v4")).toBeNull();
     expect(normalizeDexId("toString")).toBeNull();
     expect(normalizeDexId("")).toBeNull();
   });
@@ -83,15 +83,16 @@ describe("DEX registry", () => {
     }
   });
 
-  it("looks DEXes up by canonical or legacy id and merges per-position overrides", async () => {
+  it("looks DEXes up by canonical id and merges per-position overrides", async () => {
     const blocked = { supported: false, reason: "Only the owner can close this position" } as const;
     const evm = { ...fakeEvmDescriptor, positionCapabilities: (position: UnifiedPosition) => (position.nativeId === "7" ? { withdraw: blocked } : {}) };
     const registry = createDexRegistry([fakeSolanaModule, { ...fakeEvmModule, descriptor: evm }]);
-    expect(registry.descriptorFor("rhc-uniswap-v4")).toBe(evm);
+    expect(registry.descriptorFor("uniswap-v4-rhc")).toBe(evm);
+    expect(registry.descriptorFor("rhc-uniswap-v4")).toBeNull();
     expect(registry.descriptorFor("orca-whirlpool")).toBeNull();
     expect(await registry.adapterFor("orca-whirlpool")).toBeNull();
     expect((await registry.adapterFor("meteora-dlmm"))?.descriptor).toBe(fakeSolanaDescriptor);
-    const position = { source: "rhc-uniswap-v4", nativeId: "7" } as UnifiedPosition;
+    const position = { source: "uniswap-v4-rhc", nativeId: "7" } as UnifiedPosition;
     expect(registry.capabilitiesFor(position)?.withdraw).toBe(blocked);
     expect(registry.capabilitiesFor({ ...position, nativeId: "8" })).toBe(evm.capabilities);
     expect(registry.capabilitiesFor({ ...position, source: "orca-whirlpool" })).toBeNull();

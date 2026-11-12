@@ -5,7 +5,7 @@ import { dexDescriptors, uiFor, type DexDescriptor } from "@/lib/dex/client";
 export type OpenHandlerKind = "unsupported" | "none" | "registry" | "native-modal" | "rhc-dialog";
 export type OpenHandler = { handler: OpenHandlerKind; reason?: string };
 
-/** Enough of a pool to decide the open path; `protocol` is a string so the legacy `rhc-uniswap-v4` alias can be tested. */
+/** Enough of a pool to decide the open path; `protocol` is a string so unknown spellings can be tested. */
 export type PoolOpenRef = {
   protocol: string;
   chain: string;

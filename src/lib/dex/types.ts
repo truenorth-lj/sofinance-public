@@ -14,24 +14,13 @@ import type { Capability, ChainId, SourceCapabilities, TokenRef, UnifiedPosition
 export const DEX_IDS = ["raydium-clmm", "orca-whirlpool", "meteora-dlmm", "uniswap-v4-rhc"] as const;
 export type DexId = (typeof DEX_IDS)[number];
 
-/**
- * Legacy spellings accepted for one release, then removed. `"rhc-uniswap-v4"` is still readable on
- * stored position keys and leftover protocol spellings (`normalizeDexId`, `parsePositionKey`).
- * Adapters and the contract suite emit the canonical id (`position.source === descriptor.id`).
- * `uiFor` inherits the canonical descriptor's UI. Do not delete this table in this PR; a later
- * cleanup may drop it (and the alias `PositionSourceId`) once stored keys have been migrated.
- */
-export const LEGACY_DEX_ID_ALIASES: Readonly<Record<string, DexId>> = Object.freeze({ "rhc-uniswap-v4": "uniswap-v4-rhc" });
-
 export function isDexId(value: unknown): value is DexId {
   return typeof value === "string" && (DEX_IDS as readonly string[]).includes(value);
 }
 
-/** Canonical id for a current or legacy spelling; null for anything else. */
+/** Canonical id, or null when the spelling is unknown (legacy aliases are not accepted). */
 export function normalizeDexId(value: string | null | undefined): DexId | null {
-  if (!value) return null;
-  if (isDexId(value)) return value;
-  return Object.hasOwn(LEGACY_DEX_ID_ALIASES, value) ? LEGACY_DEX_ID_ALIASES[value]! : null;
+  return value && isDexId(value) ? value : null;
 }
 
 export type DexSigner = SourceCapabilities["signer"];
