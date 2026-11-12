@@ -27,6 +27,12 @@ export type DexModule = {
    * module: the route never names a DEX id.
    */
   enabled?: (op: string) => boolean;
+  /**
+   * When provided and it returns true, the generic `/api/dex/[dex]/[op]` route answers 429 with Retry-After 60
+   * without loading the adapter (no I/O). Omitted = the route does not apply this extra limit. The hook is data
+   * on the module: the route never names a DEX id.
+   */
+  rateLimited?: (op: string, request: Request) => boolean;
 };
 
 /** What the APR refresh hands a DEX's daily TVL record: the store under the job's lease, and the job's fetch/clock/abort. */
@@ -58,6 +64,11 @@ export type DexRegistry = DexDescriptorRegistry & {
    * this is true, without calling `adapterFor`.
    */
   isDisabled(id: string, op: string): boolean;
+  /**
+   * True only when this id is a registered module whose `rateLimited(op, request)` hook returned true.
+   * The generic route 429s when this is true, without calling `adapterFor`.
+   */
+  isRateLimited(id: string, op: string, request: Request): boolean;
   poolSources(): readonly PoolSource[];
   /**
    * The daily fee APR series from the registered DEX that lists this pool; null when none does (the caller keeps its
@@ -132,6 +143,11 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
       const canonical = normalizeDexId(id);
       const entry = canonical ? byId.get(canonical) : undefined;
       return Boolean(entry?.enabled && !entry.enabled(op));
+    },
+    isRateLimited(id: string, op: string, request: Request) {
+      const canonical = normalizeDexId(id);
+      const entry = canonical ? byId.get(canonical) : undefined;
+      return Boolean(entry?.rateLimited?.(op, request));
     },
     poolSources: () => sources,
     async poolDailyApr(poolId: string) {

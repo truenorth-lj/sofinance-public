@@ -211,4 +211,12 @@ describe("/app shared detail panel for a Robinhood Chain position (PM review of 
     expect(new URL(window.location.href).searchParams.get("position")).toBe("uniswap-v4-rhc:7");
   });
 
+  it("makes exactly one positions scan network call per page load for an EVM wallet (dedicated route only)", async () => {
+    await render();
+    const paths = vi.mocked(fetch).mock.calls.map(([input]) => new URL(String(input), "http://x").pathname);
+    expect(paths.filter((path) => path === "/api/rhc-univ4-positions")).toHaveLength(1);
+    expect(paths.filter((path) => path === "/api/dex/uniswap-v4-rhc/positions")).toHaveLength(0);
+    expect(rows()).toHaveLength(3);
+  });
+
 });

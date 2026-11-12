@@ -51,6 +51,7 @@ describe("DEX registry", () => {
     expect(rhc?.enabled?.("positions")).toBe(true);
     expect(rhc?.enabled?.("performance")).toBe(false);
     expect(rhc?.enabled?.("quote-open")).toBe(false);
+    expect(rhc?.rateLimited).toEqual(expect.any(Function));
     const registry = createDexRegistry(DEX_MODULES);
     expect(registry.isDisabled("meteora-dlmm", "positions")).toBe(false);
     expect(registry.isDisabled("meteora-dlmm", "performance")).toBe(false);
