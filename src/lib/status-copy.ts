@@ -1,7 +1,7 @@
 /** Look up copy for a stage. Missing keys fall through to `fallback`. */
-export function statusCopy<S extends string>(
-  stage: S | null | undefined,
-  table: Partial<Record<S, string>>,
+export function statusCopy(
+  stage: string | null | undefined,
+  table: Partial<Record<string, string>>,
   fallback?: string,
 ): string | undefined {
   if (stage && table[stage] !== undefined) return table[stage];
