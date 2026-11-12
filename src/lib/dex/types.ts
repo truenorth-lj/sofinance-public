@@ -149,6 +149,11 @@ export type DexUi = {
   useDescriptorPlanTerms: boolean;
   /** Plan link when this venue has no descriptor yet (Raydium). Ignored when `capabilities.plan` exists. */
   planFallback?: Capability;
+  /**
+   * When false, the positions UI does not fetch this DEX's positions or performance.
+   * Omitted or true = fetch when the signer matches (Meteora today; the default must stay unchanged).
+   */
+  listPositions?: boolean;
 };
 
 /** UI-safe description of one DEX: the registry element the UI reads (extends the unified-positions source). */

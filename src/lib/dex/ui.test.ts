@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { meteoraDlmmDescriptor } from "./meteora-dlmm/descriptor";
+import { orcaWhirlpoolDescriptor } from "./orca-whirlpool/descriptor";
 import type { DexDescriptor, DexUi } from "./types";
 import { uiFor } from "./ui";
 import { LEGACY_PLAN_TERMS, planPoolTerms } from "@/lib/lp-plan-pool-terms";
@@ -52,5 +53,30 @@ describe("uiFor (E-move registry UI)", () => {
       useDescriptorPlanTerms: uiFor("meteora-dlmm").useDescriptorPlanTerms,
       listOpenReason: null,
     }).openCost.bps).toBe(110);
+  });
+
+  it("Orca stays none / legacy plan terms, with listPositions opted out, and uses NO_FEE_POLICY", () => {
+    expect(uiFor("orca-whirlpool")).toEqual({
+      openUi: "none",
+      useDescriptorPlanTerms: false,
+      listPositions: false,
+    });
+    expect(orcaWhirlpoolDescriptor.ui).toEqual({
+      openUi: "none",
+      useDescriptorPlanTerms: false,
+      listPositions: false,
+    });
+    expect(orcaWhirlpoolDescriptor.meta.feePolicy).toEqual({
+      open: { kind: "none" }, add: { kind: "none" }, compound: { kind: "none" },
+      claim: { kind: "none" }, withdrawPoolTokens: { kind: "none" }, withdrawUsdc: { kind: "none" },
+    });
+    const terms = planPoolTerms({
+      descriptor: orcaWhirlpoolDescriptor,
+      useDescriptorPlanTerms: uiFor("orca-whirlpool").useDescriptorPlanTerms,
+      listOpenReason: null,
+    });
+    expect(terms.openCost.bps).toBe(LEGACY_PLAN_TERMS.openCost.bps);
+    expect(terms.lpFeeShare).toBe(LEGACY_PLAN_TERMS.lpFeeShare);
+    expect(terms.exits).toEqual(LEGACY_PLAN_TERMS.exits);
   });
 });
