@@ -4,10 +4,10 @@ import { parseWallet } from "@sofinance/engine/api-input";
 import { withJupiterRelay } from "@/lib/jupiter-relay-route";
 import { loadSpotSwapStockContext } from "@/lib/stock-market/source";
 import { jsonObject, parseRawMinOut, parseSpotSwapAmount, parseUnderlying } from "@/lib/stock-market/public";
+import { json } from "@/lib/api/route";
 import { SPOT_SWAP_UNAVAILABLE_MESSAGE, spotSwapErrorResponse } from "@/lib/stock-market/spot-swap-response";
 import { prepareSpotSwapForStock } from "@/server/transactions/spot-swap";
 
-const NO_STORE = { "Cache-Control": "no-store" } as const;
 const INVALID = "This purchase request is not valid. Nothing was prepared.";
 const FALLBACK = "Couldn't prepare the purchase. Nothing was sent; please try again.";
 
@@ -19,7 +19,7 @@ const FALLBACK = "Couldn't prepare the purchase. Nothing was sent; please try ag
 export async function POST(request: Request) {
   let body: Record<string, unknown> | null;
   try { body = jsonObject(await request.clone().json()); } catch { body = null; }
-  if (!body) return Response.json({ error: INVALID }, { status: 400, headers: NO_STORE });
+  if (!body) return json({ error: INVALID }, 400);
   const underlying = parseUnderlying(body.underlying);
   const amount = parseSpotSwapAmount(body.amount);
   // The minimum the user saw and confirmed; the built route must not go below it.
@@ -30,14 +30,14 @@ export async function POST(request: Request) {
     wallet = parseWallet(body.wallet);
     if (typeof body.mint !== "string") throw new Error("mint");
     mint = new PublicKey(body.mint).toBase58();
-  } catch { return Response.json({ error: INVALID }, { status: 400, headers: NO_STORE }); }
-  if (!underlying || !amount || minOut === null) return Response.json({ error: INVALID }, { status: 400, headers: NO_STORE });
+  } catch { return json({ error: INVALID }, 400); }
+  if (!underlying || !amount || minOut === null) return json({ error: INVALID }, 400);
   let context;
   try { context = await loadSpotSwapStockContext(underlying); } catch (error) { return spotSwapErrorResponse(error, FALLBACK, "/api/spot-swap-prepare"); }
-  if (!context) return Response.json({ error: SPOT_SWAP_UNAVAILABLE_MESSAGE, code: "spot_swap_unavailable" }, { status: 404, headers: NO_STORE });
+  if (!context) return json({ error: SPOT_SWAP_UNAVAILABLE_MESSAGE, code: "spot_swap_unavailable" }, 404);
   return withJupiterRelay(request, async () => {
     try {
-      return Response.json(await prepareSpotSwapForStock(context, wallet, mint, amount, minOut), { headers: NO_STORE });
+      return json(await prepareSpotSwapForStock(context, wallet, mint, amount, minOut));
     } catch (error) {
       return spotSwapErrorResponse(error, FALLBACK, "/api/spot-swap-prepare");
     }
