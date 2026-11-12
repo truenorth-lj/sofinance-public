@@ -20,7 +20,6 @@ const mocks = vi.hoisted(() => ({
   modal: vi.fn(),
   registryModal: vi.fn(),
   calc: vi.fn(),
-  routeEnabled: true,
   openOverride: null as null | { supported: false; reason: string },
   planOverride: null as null | { supported: false; reason: string },
 }));
@@ -38,7 +37,6 @@ vi.mock("./use-pools-apr7d", () => ({
     mocks.state[pool.poolAddress] ?? (pool.poolAddress in mocks.apr ? { status: "ready", aprPct: mocks.apr[pool.poolAddress]!, rangeLabel: "Standard", lowConfidence: false, avgDailyVolumeUsd: null } : { status: "missing", reason: "No 7-day estimate" })])),
 }));
 vi.mock("../wallet-connection", () => ({ useWalletConnection: () => ({ connected: mocks.connected, connect: mocks.connect }) }));
-vi.mock("@/lib/protocol-flags", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/protocol-flags")>(), isDexTxRouteEnabled: () => mocks.routeEnabled }));
 vi.mock("./registry-open-modal", () => ({ RegistryOpenModal: (props: { pool: { poolAddress: string }; descriptor: { id: string } }) => {
   mocks.registryModal(props.pool.poolAddress, props.descriptor.id); return null; } }));
 vi.mock("./share-calc-dialog", () => ({ ShareCalcDialog: (props: { pool: { poolAddress: string }; open: { kind: string } }) => {
@@ -68,7 +66,6 @@ beforeEach(() => {
   mocks.icons = undefined;
   mocks.planOverride = null;
   mocks.openOverride = null;
-  mocks.routeEnabled = true;
   mocks.registryModal.mockReset();
   mocks.connect.mockReset();
   mocks.modal.mockReset();
@@ -151,18 +148,12 @@ describe("UnifiedPoolsPanel", () => {
     expect(mocks.connect).toHaveBeenCalledTimes(1); // not connected: the wallet prompt opens with the dialog
   });
 
-  it("an unsupported open capability shows its reason and no button; the dex route off shows no button either", async () => {
+  it("an unsupported open capability shows its reason and no button", async () => {
     mocks.openOverride = { supported: false, reason: "Opening needs a newer pool version." };
     await render({ orca: false, meteora: true, meteoraOpen: true, rhc: true });
-    let card = container.querySelector('[data-pool="solana:met1"]')!;
+    const card = container.querySelector('[data-pool="solana:met1"]')!;
     expect(card.querySelector("button[aria-label^='Open position in']")).toBeNull();
     expect(card.textContent).toContain("Opening needs a newer pool version.");
-    mocks.openOverride = null; mocks.routeEnabled = false;
-    await act(async () => root.unmount()); root = createRoot(container);
-    await render({ orca: false, meteora: true, meteoraOpen: true, rhc: true });
-    card = container.querySelector('[data-pool="solana:met1"]')!;
-    expect(card.querySelector("button[aria-label^='Open position in']")).toBeNull();
-    expect(card.textContent).toContain("Opening is not available yet");
     expect(mocks.registryModal).not.toHaveBeenCalled();
   });
 
