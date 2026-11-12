@@ -9,12 +9,14 @@ vi.mock("../lib/orca-positions", () => ({
   listOrcaPositions: vi.fn(async () => []),
   getOrcaPositionPerformance: vi.fn(async () => null),
   readOrcaPositionRangeFacts: vi.fn(async () => null),
+  positionMintLooksLikeOrca: vi.fn(async (mint: string) => mint === "om"),
 }));
 vi.mock("../lib/meteora-positions", () => ({
   METEORA_PROTOCOL: "meteora-dlmm",
   listMeteoraPositions: vi.fn(),
   readMeteoraPositionRangeFacts: vi.fn(),
   getMeteoraPositionPerformance: vi.fn(),
+  positionAccountLooksLikeMeteora: vi.fn(async (id: string) => id === "pos"),
 }));
 
 const { discoverWallet } = await import("@sofinance/engine/wallet-discovery");
@@ -72,7 +74,7 @@ describe("MCP Meteora routing (METEORA_DLMM_DISCOVERY_ENABLED)", () => {
 
     vi.mocked(orca.readOrcaPositionRangeFacts).mockResolvedValueOnce({ ...facts, positionMint: "om" });
     expect(await getPositionRangeStatus({ positionMint: "om" } as never)).toMatchObject({ protocol: "orca-whirlpool" });
-    expect(meteora.readMeteoraPositionRangeFacts).toHaveBeenCalledTimes(2);
+    expect(meteora.readMeteoraPositionRangeFacts).toHaveBeenCalledTimes(1);
   });
 
   it("preview: performance routes Meteora position accounts after Orca and before Raydium", async () => {
@@ -88,6 +90,6 @@ describe("MCP Meteora routing (METEORA_DLMM_DISCOVERY_ENABLED)", () => {
 
     vi.mocked(orca.getOrcaPositionPerformance).mockResolvedValueOnce({ metrics: {}, history: [], poolId: "op" } as never);
     expect(await getPositionPerformance({ positionMint: "om" } as never)).toMatchObject({ protocol: "orca-whirlpool" });
-    expect(meteora.getMeteoraPositionPerformance).toHaveBeenCalledTimes(2);
+    expect(meteora.getMeteoraPositionPerformance).toHaveBeenCalledTimes(1);
   });
 });

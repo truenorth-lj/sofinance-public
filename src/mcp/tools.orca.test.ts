@@ -9,6 +9,7 @@ vi.mock("../lib/orca-positions", () => ({
   listOrcaPositions: vi.fn(),
   getOrcaPositionPerformance: vi.fn(),
   readOrcaPositionRangeFacts: vi.fn(),
+  positionMintLooksLikeOrca: vi.fn(async (mint: string) => mint === "om"),
 }));
 // Meteora routing is covered in tools.meteora.test.ts; here it finds nothing.
 vi.mock("../lib/meteora-positions", () => ({
@@ -16,6 +17,7 @@ vi.mock("../lib/meteora-positions", () => ({
   listMeteoraPositions: vi.fn(async () => []),
   readMeteoraPositionRangeFacts: vi.fn(async () => null),
   getMeteoraPositionPerformance: vi.fn(async () => null),
+  positionAccountLooksLikeMeteora: vi.fn(async () => false),
 }));
 
 const { discoverWallet } = await import("@sofinance/engine/wallet-discovery");
@@ -70,10 +72,13 @@ describe("MCP Orca routing (ORCA_POSITIONS_ENABLED)", () => {
     const raydium = await getPositionPerformance({ positionMint: "m" } as never);
     expect(raydium).not.toHaveProperty("protocol");
     expect(raydium.poolId).toBe("rp");
+    expect(orca.getOrcaPositionPerformance).toHaveBeenCalledTimes(1);
+    expect(orca.positionMintLooksLikeOrca).toHaveBeenCalled();
 
     vi.mocked(orca.readOrcaPositionRangeFacts).mockResolvedValueOnce({ ...facts, positionMint: "om" }).mockResolvedValueOnce(null);
     expect(await getPositionRangeStatus({ positionMint: "om" } as never)).toMatchObject({ protocol: "orca-whirlpool", positionMint: "om", rangeSide: "inside" });
     expect(await getPositionRangeStatus({ positionMint: "m" } as never)).not.toHaveProperty("protocol");
+    expect(orca.readOrcaPositionRangeFacts).toHaveBeenCalledTimes(1);
     expect(readPositionRangeFacts).toHaveBeenCalledTimes(1);
   });
 
