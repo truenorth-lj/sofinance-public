@@ -1,10 +1,10 @@
 import "@/lib/engine-host";
+import { json } from "@/lib/api/route";
 import { apiError } from "@/lib/api-response";
 import { parsePermittedTx } from "@/lib/tx-simulate/permitted-input.server";
 import { simulateBeforeWallet } from "@/lib/tx-simulate/simulate.server";
 import { clientIp, txSimulateCheckRateLimited, txSimulateRateLimited } from "@/lib/tx-send/rate-limit";
 
-const NO_STORE = { "Cache-Control": "no-store" } as const;
 
 /**
  * Read-only pre-wallet check (tx pipeline preflight): simulates a transaction this app prepared (the prepare-issued
@@ -21,9 +21,9 @@ export async function POST(request: Request) {
     return apiError(error, "Transaction simulation failed", 400);
   }
   if (txSimulateCheckRateLimited(input.landedPermit, input.wallet)) return tooMany();
-  return Response.json(await simulateBeforeWallet(input.transaction, { lastValidBlockHeight: input.lastValidBlockHeight }), { headers: NO_STORE });
+  return json(await simulateBeforeWallet(input.transaction, { lastValidBlockHeight: input.lastValidBlockHeight }));
 }
 
 function tooMany() {
-  return Response.json({ ok: null, unavailable: true }, { status: 429, headers: { ...NO_STORE, "Retry-After": "10" } });
+  return json({ ok: null, unavailable: true }, 429, { "Retry-After": "10" });
 }

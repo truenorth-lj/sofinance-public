@@ -1,12 +1,12 @@
 import "@/lib/engine-host";
 import bs58 from "bs58";
+import { json } from "@/lib/api/route";
 import { apiError } from "@/lib/api-response";
 import { checkVoidedTx } from "@/lib/tx-simulate/expiry.server";
 import { parsePermittedTx } from "@/lib/tx-simulate/permitted-input.server";
 import { publicConnection } from "@/lib/tx-simulate/simulate.server";
 import { clientIp, txExpiryCheckRateLimited, txExpiryRateLimited } from "@/lib/tx-send/rate-limit";
 
-const NO_STORE = { "Cache-Control": "no-store" } as const;
 const isSignature = (value: unknown): value is string => {
   if (typeof value !== "string" || value.length > 90) return false;
   try { return bs58.decode(value).length === 64; } catch { return false; }
@@ -39,13 +39,13 @@ export async function POST(request: Request) {
   }
   if (txExpiryCheckRateLimited(permit, input.wallet)) return tooMany();
   try {
-    return Response.json(await checkVoidedTx(publicConnection(), input), { headers: NO_STORE });
+    return json(await checkVoidedTx(publicConnection(), input));
   } catch {
     // RPC trouble is never "expired": the browser keeps waiting.
-    return Response.json({ error: "Could not check Solana right now" }, { status: 502, headers: NO_STORE });
+    return json({ error: "Could not check Solana right now" }, 502);
   }
 }
 
 function tooMany() {
-  return Response.json({ error: "Too many checks. Wait a moment and try again." }, { status: 429, headers: { ...NO_STORE, "Retry-After": "10" } });
+  return json({ error: "Too many checks. Wait a moment and try again." }, 429, { "Retry-After": "10" });
 }
