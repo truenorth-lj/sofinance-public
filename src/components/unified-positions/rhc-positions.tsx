@@ -8,8 +8,10 @@ import { rhcPositionSource, type RhcNative } from "@/lib/unified-positions/sourc
 import type { ToolId, UnifiedPosition } from "@/lib/unified-positions/model";
 import { useOptionalEvmWalletConnection } from "../evm-wallet-connection";
 import type { RhcWallet } from "../rhc-univ4-open-panel";
-import { fetchPositions, fetchScan, poolOf, useRhcClose, type Scan } from "../rhc-close";
-import { ClosePreview, CloseStatus } from "../rhc-univ4-positions-panel";
+import { poolOf, useRhcClose } from "../rhc-close";
+import { CloseStatus, RhcCloseFollowup } from "../rhc-univ4-positions-panel";
+import { RhcPositionsToolbar } from "../rhc-positions-toolbar";
+import { useRhcPositionList } from "../use-rhc-position-list";
 import { RhcWrongNetworkPrompt } from "../unified-pools/rhc-wrong-network-prompt";
 import { PositionAssetRow } from "../position-asset-row";
 import type { ExternalPositions } from "./external-positions";
@@ -28,29 +30,11 @@ export function useRhcPositions({ wallet, signingEnabled, refreshKey, receiptPol
   wallet: RhcWallet | null; signingEnabled: boolean; refreshKey: number; receiptPoll?: { intervalMs?: number; timeoutMs?: number };
 }): ExternalPositions | undefined {
   const wrongNetwork = useOptionalEvmWalletConnection()?.wrongNetwork ?? false;
-  const [lookups, setLookups] = useState<PositionLookup[]>([]);
-  const [scan, setScan] = useState<Scan | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [addId, setAddId] = useState("");
   const address = wallet && !wrongNetwork ? wallet.address : null;
+  const list = useRhcPositionList({ address, refreshKey, trackedIds: trackedPositionIds });
+  const close = useRhcClose({ wallet, receiptPoll, onClosed: async () => { await list.load(); } });
 
-  const load = async (ids?: string[]) => {
-    if (!address) return;
-    setLoading(true);
-    const [r, s] = await Promise.all([fetchPositions(address, ids ?? trackedPositionIds(address)), ids ? Promise.resolve(null) : fetchScan(address, true)]);
-    setLookups(r.lookups); setLoadError(r.error); if (s) setScan(s); setLoading(false);
-  };
-  const close = useRhcClose({ wallet, receiptPoll, onClosed: async () => { await load(); } });
-
-  useEffect(() => {
-    if (!address) return;
-    let live = true;
-    void fetchPositions(address, trackedPositionIds(address)).then(r => { if (live) { setLookups(r.lookups); setLoadError(r.error); } });
-    void fetchScan(address, refreshKey > 0).then(s => { if (live) setScan(s); });
-    return () => { live = false; setScan(null); };
-  }, [address, refreshKey]);
-
+  const { lookups, scan, loadError, loading, addId, setAddId } = list;
   const positions = useMemo(() => rhcPositionSource.fromDiscovery({ scanned: scan?.positions ?? [], lookups }), [scan, lookups]);
   // Liquidity amounts + unclaimed fees for the detail panel (same rows as Solana); a dash while loading or when unread.
   const valueIds = positions.filter((p) => { const view = nativeOf(p).lookup.position; return view ? poolOf(view) !== null : false; }).map((p) => p.nativeId).sort().join(",");
@@ -64,14 +48,9 @@ export function useRhcPositions({ wallet, signingEnabled, refreshKey, receiptPol
   const valueOf = (tokenId: string) => values?.rows.get(tokenId) ?? null;
   if (!wallet) return undefined;
 
-  const add = () => {
-    const id = addId.trim();
-    if (!/^[0-9]{1,30}$/.test(id)) { setLoadError("Enter the position NFT number, for example 4077059."); return; }
-    setAddId("");
-    void load(trackPositionId(wallet.address, id));
-  };
-  const remove = (id: string) => { void load(untrackPositionId(wallet.address, id)); if (close.ready?.position.tokenId === id) close.setReady(null); };
-  const scanning = scan === null;
+  const add = () => list.submitAdd(trackPositionId);
+  const remove = (id: string) => { list.submitRemove(id, untrackPositionId); if (close.ready?.position.tokenId === id) close.setReady(null); };
+  const scanning = list.scanning;
   const sentElsewhere = close.sent && !positions.some((p) => p.nativeId === close.sent!.tokenId) ? close.sent : null;
 
   const status = <div className="mt-4 border-t border-white/10 pt-4" data-testid="rhc-positions-section">
@@ -80,18 +59,13 @@ export function useRhcPositions({ wallet, signingEnabled, refreshKey, receiptPol
       <p className="text-xs text-smoke" data-testid="rhc-wallet">{wallet.name}: {short(wallet.address)}</p>
     </div>
     {wrongNetwork ? <RhcWrongNetworkPrompt purpose="see and manage your positions" /> : <>
-      <p className="mt-1 text-xs text-smoke">Uniswap v4 positions this wallet holds on Robinhood Chain show up automatically. Missing one? Add its position NFT number.</p>
-      <div className="mt-2 flex flex-wrap gap-2">
-        <input inputMode="numeric" value={addId} onChange={e => setAddId(e.target.value)} placeholder="Position NFT #" aria-label="Position NFT number"
-          className="w-40 rounded-lg bg-black/30 p-2 text-base sm:text-sm text-cream" />
-        <button type="button" onClick={add} className="rounded-lg border border-white/25 px-3 py-1.5 text-xs font-semibold text-cream">Add</button>
-      </div>
-      {loading ? <p role="status" className="mt-2 text-xs text-smoke">Loading positions…</p> : null}
-      {scanning && !loading ? <p role="status" className="mt-2 text-xs text-smoke" data-testid="positions-scanning">Checking this wallet&apos;s Robinhood Chain positions…</p> : null}
-      {scan?.error ? <p className="mt-2 text-xs text-amber-200/90" data-testid="positions-scan-error">{scan.error}</p> : null}
-      {loadError ? <p className="mt-2 text-xs text-red-200" data-testid="positions-error">{loadError}</p> : null}
-      {!loading && !scanning && !positions.length && !loadError && !scan?.error ? <p className="mt-2 text-xs text-smoke" data-testid="positions-empty">
-        No Robinhood Chain positions in this wallet. <a href={APP_ROUTES.rwaPairs} className="font-semibold text-cream underline underline-offset-4">Open a new position</a></p> : null}
+      <RhcPositionsToolbar
+        intro={<p className="mt-1 text-xs text-smoke">Uniswap v4 positions this wallet holds on Robinhood Chain show up automatically. Missing one? Add its position NFT number.</p>}
+        addId={addId} onAddId={setAddId} onAdd={add} loading={loading} scanning={scanning}
+        scanError={scan?.error} loadError={loadError}
+        empty={!loading && !scanning && !positions.length && !loadError && !scan?.error
+          ? <p className="mt-2 text-xs text-smoke" data-testid="positions-empty">
+            No Robinhood Chain positions in this wallet. <a href={APP_ROUTES.rwaPairs} className="font-semibold text-cream underline underline-offset-4">Open a new position</a></p> : null} />
       {sentElsewhere ? <CloseStatus sent={sentElsewhere} symbols={["SPCX", "SPCXon"]} /> : null}
     </>}
   </div>;
@@ -135,22 +109,12 @@ export function useRhcPositions({ wallet, signingEnabled, refreshKey, receiptPol
       const pool = p ? poolOf(p) : null;
       const symbols: [string, string] = pool ? [pool.currency0.symbol, pool.currency1.symbol] : ["token0", "token1"];
       const { busy, ready, error, sent, preview, confirm } = close;
-      const mine = ready && ready.position.tokenId === lookup.tokenId ? ready : null;
       return <section className="mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-8" data-testid="rhc-withdraw" data-position={lookup.tokenId}>
         <h2 className="text-lg font-semibold text-cream">Withdraw · full close</h2>
         <p className="mt-2 text-xs leading-5 text-smoke">Closing removes all liquidity, collects accrued pool fees and burns the position NFT. Partial withdraw is not available on Robinhood Chain yet.</p>
         <button type="button" disabled={busy !== null} onClick={() => preview(lookup.tokenId)}
           className="mt-4 rounded-lg border border-white/25 px-3 py-1.5 text-xs font-semibold text-cream disabled:opacity-40">{busy === lookup.tokenId && !ready ? "Simulating…" : "Close"}</button>
-        {mine ? <>
-          <ClosePreview ready={mine} />
-          <button type="button" disabled={!signingEnabled || busy !== null} onClick={confirm}
-            className="mt-2 rounded-lg border border-white/25 px-3 py-1.5 text-xs font-semibold text-cream disabled:cursor-not-allowed disabled:opacity-40">
-            {busy === lookup.tokenId ? "Waiting for wallet…" : "Confirm close in wallet"}
-          </button>
-          {!signingEnabled ? <p className="text-xs text-amber-200/80">Wallet signing is off on this deployment. Nothing will be sent.</p> : null}
-        </> : null}
-        {error && error.tokenId === lookup.tokenId ? <p role="alert" className="mt-2 text-xs text-red-200">{error.message}</p> : null}
-        {sent && sent.tokenId === lookup.tokenId ? <CloseStatus sent={sent} symbols={symbols} /> : null}
+        <RhcCloseFollowup tokenId={lookup.tokenId} signingEnabled={signingEnabled} ready={ready} busy={busy} error={error} sent={sent} confirm={confirm} symbols={symbols} />
       </section>;
     },
   };
