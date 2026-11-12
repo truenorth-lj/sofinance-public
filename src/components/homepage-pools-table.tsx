@@ -16,7 +16,7 @@ import {
   type HomepageSourceTime,
 } from "@/lib/homepage-pools";
 import { isRhcUniv4DiscoveryEnabled } from "@/lib/protocol-flags";
-import { dexDescriptors } from "@/lib/dex/client";
+import { dexDescriptors, uiFor } from "@/lib/dex/client";
 import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
 import { APP_ROUTES, DOCS_ROUTES } from "@/lib/public-urls";
 import {
@@ -60,8 +60,13 @@ function openPoolHref(pool: Pick<HomepagePool, "poolAddress">) {
 const openAction = (pool: UnifiedPool): OpenAction => {
   const unsupported = unsupportedTokenReason(pool);
   if (unsupported) return { kind: "unsupported", reason: unsupported };
-  const open = dexDescriptors.descriptorFor(pool.protocol)?.capabilities.open;
-  if (open && !open.supported) return { kind: "disabled", reason: open.reason };
+  // Only a registry-dispatched Open (`openUi: "registry"`) consults `capabilities.open`. RHC
+  // (`rhc-dialog`) and Raydium (`native-modal`) stay deep links even if a descriptor marks the
+  // generic StepResult open path unsupported.
+  if (uiFor(pool.protocol).openUi === "registry") {
+    const open = dexDescriptors.descriptorFor(pool.protocol)?.capabilities.open;
+    if (open && !open.supported) return { kind: "disabled", reason: open.reason };
+  }
   return { kind: "link", href: openPoolHref(pool) };
 };
 

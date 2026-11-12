@@ -56,8 +56,12 @@ export function PoolCard({ pool, apr, action, icons, onCalculate }: {
   const ui = uiFor(pool.protocol);
   const chain = chainMeta(pool.chain);
   const externalUrl = ui.externalPoolUrl?.(pool.poolAddress);
-  // Registered DEXes say through their `plan` capability; Raydium (not in the DEX registry yet) keeps its link.
-  const plan = dexDescriptors.descriptorFor(pool.protocol)?.capabilities.plan ?? (ui.planFallback ?? null);
+  // A registered `plan` capability only drives the chip when plan terms or the open UI come from
+  // the registry (`useDescriptorPlanTerms` or `openUi` registry/none). RHC keeps `rhc-dialog` and
+  // `useDescriptorPlanTerms: false`, so it still uses `planFallback` (unset → no Calculate button),
+  // matching the pre-register screen. Meteora (plan terms on) and Orca (`openUi: "none"`) are unchanged.
+  const useRegisteredPlan = ui.useDescriptorPlanTerms || ui.openUi === "registry" || ui.openUi === "none";
+  const plan = (useRegisteredPlan ? dexDescriptors.descriptorFor(pool.protocol)?.capabilities.plan : null) ?? (ui.planFallback ?? null);
   // Stock pools count shares; the stablecoin pool has no stock, so its button just says Calculate.
   const calcLabel = planShareSymbol(pairLabelSymbols(pool.pairLabel)) ? "Calculate shares" : "Calculate";
   return <li className="flex min-w-0 flex-col rounded-[28px] bg-cream p-6 text-ink" data-pool={pool.key}>

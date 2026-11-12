@@ -19,7 +19,7 @@ export type { DexOpenUi, DexUi } from "./types";
 const DEFAULT_UI: DexUi = Object.freeze({ openUi: "none", useDescriptorPlanTerms: false });
 
 /**
- * UI for venues that do not yet have a `DexDescriptor`. Meteora's and Orca's values live on
+ * UI for venues that do not yet have a `DexDescriptor`. Meteora's, Orca's, and RHC's values live on
  * their `descriptor.ui`, not here.
  */
 const DEX_UI_BY_ID: Readonly<Partial<Record<DexId, DexUi>>> = Object.freeze({
@@ -27,10 +27,6 @@ const DEX_UI_BY_ID: Readonly<Partial<Record<DexId, DexUi>>> = Object.freeze({
     openUi: "native-modal",
     planFallback: SUPPORTED,
     externalPoolUrl: (poolId: string) => `https://raydium.io/clmm/create-position/?pool_id=${poolId}`,
-    useDescriptorPlanTerms: false,
-  }),
-  "uniswap-v4-rhc": Object.freeze({
-    openUi: "rhc-dialog",
     useDescriptorPlanTerms: false,
   }),
 });

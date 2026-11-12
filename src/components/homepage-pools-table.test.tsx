@@ -486,6 +486,7 @@ describe("homepage pools: Top Pools card and the full list", () => {
     expect(mocks.aprFor).toHaveBeenCalledWith(nvda.poolId, "uniswap-v4-rhc");
     expect(mocks.aprFor).toHaveBeenCalledWith("spcx-pool", "raydium-clmm");
     expect(rows[0]!.querySelector("a[href^='/app/rwa-pairs']")!.getAttribute("href")).toBe(`/app/rwa-pairs?openPool=${nvda.poolId}`);
+    expect(rows[0]!.querySelector("[data-testid=open-disabled]")).toBeNull();
     expect(rows[2]!.querySelector("a[href^='/app/rwa-pairs']")!.getAttribute("href")).toBe("/app/rwa-pairs?openPool=spcx-pool");
     // Different minutes per chain: each chain gets its own time.
     expect(container.querySelector("[data-testid='homepage-pools-updated']")!.textContent).toBe(

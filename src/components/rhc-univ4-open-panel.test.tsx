@@ -26,7 +26,7 @@ const pool = (over: Partial<RhcPoolView> = {}): RhcPoolView => ({
 const plan = {
   kind: "swap", depositToken: SPCX, amountIn: "1000000000000000000", swapIn: "480000000000000000", quoteOut: "479000000000000000", minOut: "478000000000000000",
   fee: "479000000000000", liquidity: "1", amount0Max: "1", amount1Max: "1", priceTolBps: 20, slippageBps: 20, ticksCrossed: [], iterations: 3,
-  sqrtPriceBeforeX96: "1", sqrtPriceAfterX96: "1", blockNumber: "98425782", feeRecipient: SPCX,
+  sqrtPriceBeforeX96: "1", sqrtPriceAfterX96: "1", blockNumber: "98425782", feeRecipient: "0xf33fee00000000000000000000000000000f33fe",
 };
 const leftover = { pctOfDeposit: 2.5, display: "2.5", refund0: "1", refund1: "1",
   message: { zh: "約 2.5% 無法放進區間，會在同一筆交易退回你的錢包", en: "About 2.5% won't fit in the range and is returned to your wallet in the same transaction" } };
@@ -61,6 +61,13 @@ describe("OpenPreview", () => {
     expect(container.querySelector("[data-testid=fee-placeholder]")).toBeNull();
     expect(text()).not.toMatch(/placeholder|TBD/i);
     expect(container.querySelector("[data-testid=retry-notice]")).toBeNull();
+  });
+  it("does not render plan.feeRecipient (the field stays in the prepare JSON, not the preview UI)", () => {
+    render(createElement(OpenPreview, { result: needsSig(true), pool: pool() }));
+    const shown = `${text()}${container.innerHTML}`.toLowerCase();
+    expect(plan.feeRecipient).toBe("0xf33fee00000000000000000000000000000f33fe");
+    expect(shown).not.toContain("0xf33fee00000000000000000000000000000f33fe");
+    expect(container.querySelector("[data-fee-recipient],[data-testid=fee-recipient]")).toBeNull();
   });
   it("shows 'fee wallet not configured' when the server fails closed", () => {
     const r = { state: "failed", code: "fee-wallet-unconfigured", message: "Fee wallet not configured; opening is disabled" } as OpenFlowResult;

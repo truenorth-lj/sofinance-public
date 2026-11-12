@@ -449,7 +449,9 @@ describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {
     const rhc = card(`robinhood:${rhcSpec.poolId.toLowerCase()}`);
     expect(rhc.querySelector("[data-testid=highest-range]")).toBeNull();
     expect(rhc.querySelector("a[href^='/app/plan']")).toBeNull();
-    expect(rhc.textContent).not.toMatch(/Raydium|Phantom/);
+    expect(rhc.querySelector("button[aria-haspopup=dialog]")).toBeNull();
+    expect(rhc.querySelector("[data-testid=plan-unavailable]")).toBeNull();
+    expect(rhc.textContent).not.toMatch(/Raydium|Phantom|Calculate/);
   });
 
   it("shows the Robinhood Chain card's stored icons (no Raydium fallback; letter avatars without one), in the card and list views", async () => {
