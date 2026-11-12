@@ -1,12 +1,12 @@
 import { knownTokenSymbol, notEnoughBalanceMessage } from "./balance-message";
 import BN from "bn.js";
-import { LiquidityMathUtil, SqrtPriceMath, TickUtil } from "@raydium-io/raydium-sdk-v2";
+import { LiquidityMathUtil, TickUtil } from "@raydium-io/raydium-sdk-v2";
 import {
   DEFAULT_ADD_TOLERANCE_BPS, DEFAULT_RESALE_FLOOR_BPS, MAX_PRICE_IMPACT_BPS, MIN_SOL_LAMPORTS,
   QUOTE_TTL_MS, SLIPPAGE_BPS,
 } from "./ids";
 import { describeResaleFloorFailure, meetsResaleFloor, parseAddToleranceBps, parseResaleFloorBps, parseTokenAmount } from "./amount";
-import { allocateSpend, padAmountMax, poolPriceRates, positionSide, settleSizingSpend, toleranceLiquidity } from "./quote-math";
+import { allocateSpend, padAmountMax, poolPriceRates, settleSizingSpend, toleranceLiquidity } from "./quote-math";
 import { type BuildRoute } from "./swap/jupiter";
 import { jupiterRelayHint, setJupiterRelayHint } from "./jupiter/client";
 import { estimateOpenPositionRent } from "./open-rent";
@@ -17,8 +17,8 @@ import { readOpenPoolState, type OpenPoolState, type OpenPositionSelection } fro
 import type { OpenPositionQuote } from "./open-types";
 import type { ResolvedOpenRange } from "./open-range";
 import type { JupiterRouteConstraints } from "./jupiter-route-retry";
-import { TargetPoolProjectionError } from "./target-pool-projection";
-import { CROSS_LIQUIDITY_BAND_MESSAGE, staysInLiquidityBand } from "./liquidity-band";
+import { CROSS_LIQUIDITY_BAND_MESSAGE } from "./liquidity-band";
+import { TargetPoolProjectionError, projectTargetPoolSqrt } from "./target-pool-projection";
 
 export type OpenSwapLeg = {
   inputMint: string;
@@ -45,29 +45,16 @@ function projectedSqrt(
   state: OpenPoolState, lowerSqrtX64: string, upperSqrtX64: string,
   rangeSide: "below" | "inside" | "above", routes: BuildRoute[],
 ): BN {
-  let price = new BN(state.sqrtPriceX64);
-  const liquidity = new BN(state.poolLiquidity);
-  let targetHops = 0;
-  for (const route of routes) for (const leg of route.routePlan) {
-    if (leg.swapInfo.ammKey !== state.poolId) continue;
-    targetHops++;
-    if (targetHops > 1 || leg.bps !== 10_000) {
-      throw new TargetPoolProjectionError("Target pool route too complex, cannot conservatively estimate pre-open price");
-    }
-    const zeroForOne = leg.swapInfo.inputMint === state.mintA && leg.swapInfo.outputMint === state.mintB;
-    const oneForZero = leg.swapInfo.inputMint === state.mintB && leg.swapInfo.outputMint === state.mintA;
-    if (!zeroForOne && !oneForZero) throw new Error("Target pool route asset mismatch");
-    price = SqrtPriceMath.getNextSqrtPriceFromInput(price, liquidity, new BN(leg.swapInfo.inAmount), zeroForOne);
-  }
-  if (positionSide(BigInt(price.toString()), BigInt(lowerSqrtX64), BigInt(upperSqrtX64)) !== rangeSide) {
-    throw new TargetPoolProjectionError("The swap for this amount would move the pool price outside the selected price range, " +
-      "so the deposit would no longer fit it. Try a smaller amount, or refresh the quote.");
-  }
-  // Liquidity is constant only inside the current tick-spacing band (initialized ticks sit on its edges).
-  if (!staysInLiquidityBand(state.sqrtPriceX64, price, state.tickCurrent, state.tickSpacing)) {
-    throw new TargetPoolProjectionError(CROSS_LIQUIDITY_BAND_MESSAGE);
-  }
-  return price;
+  return projectTargetPoolSqrt({
+    poolId: state.poolId, mintA: state.mintA, mintB: state.mintB,
+    sqrtPriceX64: state.sqrtPriceX64, poolLiquidity: state.poolLiquidity,
+    tickCurrent: state.tickCurrent, tickSpacing: state.tickSpacing,
+    lowerSqrtX64, upperSqrtX64, rangeSide, routes,
+    complexError: () => new TargetPoolProjectionError("Target pool route too complex, cannot conservatively estimate pre-open price"),
+    rangeError: () => new TargetPoolProjectionError("The swap for this amount would move the pool price outside the selected price range, " +
+      "so the deposit would no longer fit it. Try a smaller amount, or refresh the quote."),
+    bandError: () => new TargetPoolProjectionError(CROSS_LIQUIDITY_BAND_MESSAGE),
+  });
 }
 
 function amountsAt(sqrt: BN, lowerSqrtX64: string, upperSqrtX64: string, liquidity: BN) {

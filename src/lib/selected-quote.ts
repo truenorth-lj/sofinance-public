@@ -5,10 +5,10 @@ import { knownTokenSymbol, NOT_ENOUGH_SOL_FOR_FEES_MESSAGE, notEnoughBalanceMess
 import { readSwapFeeConfig } from "@sofinance/engine/swap/fee";
 import { assertNativeInputFeeCoverage, depositFeePlan, feeSwapLeg } from "@sofinance/engine/swap/leg";
 import BN from "bn.js";
-import { LiquidityMathUtil, SqrtPriceMath, TickUtil } from "@raydium-io/raydium-sdk-v2";
+import { LiquidityMathUtil, TickUtil } from "@raydium-io/raydium-sdk-v2";
 import { DEFAULT_ADD_TOLERANCE_BPS, DEFAULT_RESALE_FLOOR_BPS, MAX_PRICE_IMPACT_BPS, QUOTE_TTL_MS, SLIPPAGE_BPS } from "@sofinance/engine/ids";
 import { describeResaleFloorFailure, formatAmount, meetsResaleFloor, parseAddToleranceBps, parseResaleFloorBps, parseTokenAmount } from "@sofinance/engine/amount";
-import { allocateSpend, padAmountMax, poolPriceRates, positionSide, toleranceLiquidity } from "@sofinance/engine/quote-math";
+import { allocateSpend, padAmountMax, poolPriceRates, toleranceLiquidity } from "@sofinance/engine/quote-math";
 import { type QuoteRoute } from "@sofinance/engine/swap/jupiter";
 import type { Connection } from "@solana/web3.js";
 import type { JupiterRouteConstraints } from "@sofinance/engine/jupiter-route-retry";
@@ -20,7 +20,8 @@ import { AmountTooSmallError, formatAmountTooSmallMessage, formatSmallLegMovesPr
   minJupiterSwapAmount, SmallLegMovesPriceError } from "./selected-amount-error";
 import { tokenSymbol } from "./position-label";
 import { withSelectedRouteRetries } from "./selected-route-retry";
-import { CROSS_LIQUIDITY_BAND_MESSAGE, CROSS_POSITION_RANGE_MESSAGE, staysInLiquidityBand } from "@sofinance/engine/liquidity-band";
+import { CROSS_LIQUIDITY_BAND_MESSAGE, CROSS_POSITION_RANGE_MESSAGE } from "@sofinance/engine/liquidity-band";
+import { projectTargetPoolSqrt } from "@sofinance/engine/target-pool-projection";
 
 const MIN_JUPITER_SWAP = minJupiterSwapAmount(SLIPPAGE_BPS);
 /**
@@ -92,26 +93,16 @@ function smallLegMovesPrice(state: SelectedPositionState, minorityIsA: boolean):
 type SwapLeg = { inputMint: string; outputMint: string; spend: bigint; feeAmount: bigint; feeInRoute?: boolean; minOut: bigint; route: QuoteRoute | null };
 
 function projectedSqrt(state: SelectedPositionState, routes: QuoteRoute[]): BN {
-  let price = new BN(state.sqrtPriceX64);
-  const liquidity = new BN(state.poolLiquidity);
-  let targetHops = 0;
-  for (const route of routes) for (const leg of route.routePlan) {
-    if (leg.swapInfo.ammKey !== state.poolId) continue;
-    targetHops++;
-    if (targetHops > 1 || leg.bps !== 10_000) throw new Error("Target pool route too complex, cannot conservatively estimate pre-add price");
-    const zeroForOne = leg.swapInfo.inputMint === state.mintA && leg.swapInfo.outputMint === state.mintB;
-    const oneForZero = leg.swapInfo.inputMint === state.mintB && leg.swapInfo.outputMint === state.mintA;
-    if (!zeroForOne && !oneForZero) throw new Error("Target pool route asset mismatch");
-    price = SqrtPriceMath.getNextSqrtPriceFromInput(price, liquidity, new BN(leg.swapInfo.inAmount), zeroForOne);
-  }
-  if (positionSide(BigInt(price.toString()), BigInt(state.lowerSqrtX64), BigInt(state.upperSqrtX64)) !== state.rangeSide) {
-    throw new PoolPriceMoveError(CROSS_POSITION_RANGE_MESSAGE);
-  }
-  // Liquidity is constant only inside the current tick-spacing band (initialized ticks sit on its edges).
-  if (!staysInLiquidityBand(state.sqrtPriceX64, price, state.tickCurrent, state.tickSpacing)) {
-    throw new PoolPriceMoveError(CROSS_LIQUIDITY_BAND_MESSAGE);
-  }
-  return price;
+  return projectTargetPoolSqrt({
+    poolId: state.poolId, mintA: state.mintA, mintB: state.mintB,
+    sqrtPriceX64: state.sqrtPriceX64, poolLiquidity: state.poolLiquidity,
+    tickCurrent: state.tickCurrent, tickSpacing: state.tickSpacing,
+    lowerSqrtX64: state.lowerSqrtX64, upperSqrtX64: state.upperSqrtX64,
+    rangeSide: state.rangeSide, routes,
+    complexError: () => new Error("Target pool route too complex, cannot conservatively estimate pre-add price"),
+    rangeError: () => new PoolPriceMoveError(CROSS_POSITION_RANGE_MESSAGE),
+    bandError: () => new PoolPriceMoveError(CROSS_LIQUIDITY_BAND_MESSAGE),
+  });
 }
 
 /** The quoted swaps would move this pool's price out of the position range or the current liquidity band. */
