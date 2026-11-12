@@ -112,8 +112,8 @@ const extensionCases = [
     fill: (data: Buffer) => { data.writeUInt16LE(1, 88); data.writeUInt16LE(1, 106); } },
   { name: "active transfer hook", type: ExtensionType.TransferHook, field: "unsupportedExtensions", reason: "Current TransferHook exists",
     fill: (data: Buffer) => { key().toBuffer().copy(data, 32); } },
-  { name: "scaled multiplier", type: ExtensionType.ScaledUiAmountConfig, field: "unsupportedExtensions", reason: "ScaledUiAmount multiplier is not 1",
-    fill: (data: Buffer) => { data.writeDoubleLE(2, 32); data.writeDoubleLE(2, 48); } },
+  { name: "non-finite scaled multiplier", type: ExtensionType.ScaledUiAmountConfig, field: "unsupportedExtensions", reason: "ScaledUiAmount multiplier is not 1",
+    fill: (data: Buffer) => { data.writeDoubleLE(Number.POSITIVE_INFINITY, 32); data.writeDoubleLE(1, 48); } },
 ];
 describe("raw Token-2022 selected state", () => {
   it("derives and verifies the Token-2022 NFT ATA without wallet discovery", async () => {
@@ -142,9 +142,9 @@ describe("raw Token-2022 selected state", () => {
     accounts.set(ata.toBase58(), info(extendedToken(token(input, wallet, 1000n)), TOKEN_2022_PROGRAM_ID));
     await expect(state()).rejects.toThrow(reason);
   });
-  it("allows a ScaledUiAmount multiplier within 1% of 1 on a pool asset and as the input mint", async () => {
+  it("allows a finite ScaledUiAmount multiplier on a pool asset and as the input mint", async () => {
     const payload = Buffer.alloc(getTypeLen(ExtensionType.ScaledUiAmountConfig));
-    payload.writeDoubleLE(1.0009, 32); payload.writeDoubleLE(1.0017, 48);
+    payload.writeDoubleLE(2, 32); payload.writeDoubleLE(2, 48);
     accounts.set(mintA.toBase58(), info(extendedMint(mint(), ExtensionType.ScaledUiAmountConfig, payload), TOKEN_2022_PROGRAM_ID));
     accounts.set(vaultA.toBase58(), info(extendedToken(token(mintA, pool, 1000000n)), TOKEN_2022_PROGRAM_ID));
     expect((await state()).unsupportedExtensions).toEqual([]);

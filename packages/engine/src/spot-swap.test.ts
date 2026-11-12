@@ -190,10 +190,10 @@ describe("Token-2022 mint rules (same as open)", () => {
   it("rejects a paused mint", () => {
     expect(issues(extendedMint(ExtensionType.PausableConfig, (p) => { p[32] = 1; }))).toContain("paused");
   });
-  it("accepts a ScaledUiAmount multiplier within 1% of 1, and rejects one further away", () => {
+  it("accepts a finite ScaledUiAmount multiplier, including 2×, and rejects a non-finite one", () => {
     expect(issues(extendedMint(ExtensionType.ScaledUiAmountConfig, (p) => { p.writeDoubleLE(1.0009, 32); p.writeDoubleLE(1.0017, 48); }))).toEqual([]);
-    expect(issues(extendedMint(ExtensionType.ScaledUiAmountConfig, (p) => { p.writeDoubleLE(1.01, 32); p.writeDoubleLE(1.01, 48); }))).toEqual([]);
-    expect(issues(extendedMint(ExtensionType.ScaledUiAmountConfig, (p) => { p.writeDoubleLE(2, 32); p.writeDoubleLE(2, 48); }))).toContain("ScaledUiAmount multiplier not 1");
+    expect(issues(extendedMint(ExtensionType.ScaledUiAmountConfig, (p) => { p.writeDoubleLE(2, 32); p.writeDoubleLE(2, 48); }))).toEqual([]);
+    expect(issues(extendedMint(ExtensionType.ScaledUiAmountConfig, (p) => { p.writeDoubleLE(Number.NaN, 32); p.writeDoubleLE(1, 48); }))).toContain("ScaledUiAmount multiplier not 1");
   });
   it("rejects a transfer fee and a non-token owner", () => {
     expect(issues(extendedMint(ExtensionType.TransferFeeConfig, (p) => { p.writeUInt16LE(1, 88); p.writeUInt16LE(1, 106); }))).toContain("transfer_fee");
@@ -328,10 +328,10 @@ describe("buildAndSimulateSpotSwap", () => {
     expect(connection.getMultipleAccountsInfo).not.toHaveBeenCalled();
     expect(feeSwapLeg).not.toHaveBeenCalled();
   });
-  it("refuses paused and re-scaled mints before quoting", async () => {
+  it("refuses paused and non-finite ScaledUiAmount mints before quoting", async () => {
     accounts.set(tsla.toBase58(), info(extendedMint(ExtensionType.PausableConfig, (p) => { p[32] = 1; }), TOKEN_2022_PROGRAM_ID));
     expect(await code(build())).toBe("spot_swap_token_unavailable");
-    accounts.set(tsla.toBase58(), info(extendedMint(ExtensionType.ScaledUiAmountConfig, (p) => { p.writeDoubleLE(1, 32); p.writeDoubleLE(1.5, 48); }), TOKEN_2022_PROGRAM_ID));
+    accounts.set(tsla.toBase58(), info(extendedMint(ExtensionType.ScaledUiAmountConfig, (p) => { p.writeDoubleLE(1, 32); p.writeDoubleLE(Number.POSITIVE_INFINITY, 48); }), TOKEN_2022_PROGRAM_ID));
     expect(await code(build())).toBe("spot_swap_token_unavailable");
     expect(feeSwapLeg).not.toHaveBeenCalled();
   });

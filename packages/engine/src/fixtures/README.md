@@ -96,6 +96,6 @@ tests replay it through a fake RPC that fails on any key not in the capture.
 `spot-swap-mints-mainnet.json` holds the raw mint accounts (base64, public
 chain data) of 15 stock tokens (xStocks, Backpack, Ondo) read from Solana
 mainnet on 2026-11-04. Spot-swap tests run the mint checks on these exact
-bytes: a ScaledUiAmount multiplier within 1% of 1 is accepted (including the
+bytes: a finite ScaledUiAmount multiplier is accepted (including the
 five tokens that used to be refused solely for a tiny dividend multiplier),
 and permanent delegate / confidential transfer are accepted.

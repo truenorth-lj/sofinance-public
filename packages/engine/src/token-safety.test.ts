@@ -71,11 +71,8 @@ function scaledMint(multiplier: number, newMultiplier = multiplier): Mint {
 }
 
 describe("ScaledUiAmount multiplier tolerance", () => {
-  it("is the single switch: 0.01 (shipped) or Infinity (no cap)", () => {
-    expect(
-      SCALED_UI_MULTIPLIER_TOLERANCE === 0.01
-      || SCALED_UI_MULTIPLIER_TOLERANCE === Number.POSITIVE_INFINITY,
-    ).toBe(true);
+  it("is the single switch, currently no cap (LJ, 2026-11-12)", () => {
+    expect(SCALED_UI_MULTIPLIER_TOLERANCE).toBe(Number.POSITIVE_INFINITY);
   });
 
   it("treats a missing config, a multiplier of 1, 1.003, and today's small dividend multipliers as supported", () => {

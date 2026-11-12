@@ -46,16 +46,15 @@ const SUPPORTED_POOL_EXTENSIONS = new Set([
 
 /**
  * How far a ScaledUiAmount multiplier may be from 1 and still be treated as supported.
- * The single switch for this policy: `0.01` (1%, the shipped default) or `Number.POSITIVE_INFINITY`
- * (no cap — any finite multiplier is allowed; non-finite values are still refused). Changing this
- * one line is enough; callers all go through `scaledUiAmountOutOfTolerance`.
+ * The single switch for this policy: `Number.POSITIVE_INFINITY` (no cap — any finite multiplier
+ * is allowed; non-finite values are still refused) or `0.01` (1%). Callers all go through
+ * `scaledUiAmountOutOfTolerance`.
  *
- * 1% covers today's xStock / Backpack / Ondo dividend multipliers (largest live: Ondo SPYon ~0.95%)
- * and still blocks a split-sized move (e.g. 2×). Amounts and prices in this codebase stay raw /
- * decimals-only; they are not multiplied, so displayed size and USD values can differ from a
- * Scaled-UI-aware wallet by at most this bound (today well under it).
+ * LJ chose no cap on 2026-11-12 (Asia/Taipei): 「完全拿掉，不要上限」. Amounts and prices in this
+ * codebase stay raw / decimals-only; they are not multiplied, so displayed size and USD values
+ * can differ from a Scaled-UI-aware wallet by about (multiplier − 1).
  */
-export const SCALED_UI_MULTIPLIER_TOLERANCE = 0.01;
+export const SCALED_UI_MULTIPLIER_TOLERANCE = Number.POSITIVE_INFINITY;
 /** IEEE-754 slack so a stored value exactly at the bound is not treated as a hair over. */
 const SCALED_UI_MULTIPLIER_TOLERANCE_EPS = 1e-12;
 
@@ -63,7 +62,7 @@ function multiplierOutOfTolerance(value: number): boolean {
   return !Number.isFinite(value) || Math.abs(value - 1) > SCALED_UI_MULTIPLIER_TOLERANCE + SCALED_UI_MULTIPLIER_TOLERANCE_EPS;
 }
 
-/** True when this mint's current or scheduled ScaledUiAmount multiplier is more than 1% away from 1. */
+/** True when this mint's current or scheduled ScaledUiAmount multiplier is outside `SCALED_UI_MULTIPLIER_TOLERANCE` of 1, or is not a finite number. */
 export function scaledUiAmountOutOfTolerance(mint: Mint): boolean {
   const scaled = getScaledUiAmountConfig(mint);
   if (!scaled) return false;
@@ -72,8 +71,8 @@ export function scaledUiAmountOutOfTolerance(mint: Mint): boolean {
 
 /**
  * Settings of a pool mint the open / manage paths do not handle yet (their `unsupportedExtensions`; empty = fine), e.g.
- * "ScaledUiAmount multiplier not 1" when the balance multiplier is more than 1% from 1. The pool list uses the same
- * rule to grey out Open.
+ * "ScaledUiAmount multiplier not 1" when the multiplier is outside `SCALED_UI_MULTIPLIER_TOLERANCE` of 1
+ * (non-finite values are always refused). The pool list uses the same rule to grey out Open.
  */
 export function poolMintIssues(mint: Mint): string[] {
   const extensions = getExtensionTypes(mint.tlvData);

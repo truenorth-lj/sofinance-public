@@ -44,8 +44,8 @@ export type UnifiedPool = {
   poolFeeApr24hPct: number | null;
   /**
    * Settings of the pool's tokens that opening does not handle yet (the engine's `poolMintIssues`, e.g. "ScaledUiAmount
-   * multiplier not 1" when the multiplier is more than 1% from 1); absent or empty when it can be opened. Such a pool
-   * shows "Not supported yet" instead of Open.
+   * multiplier not 1" when the multiplier is outside `SCALED_UI_MULTIPLIER_TOLERANCE` of 1); absent or empty when it
+   * can be opened. Such a pool shows "Not supported yet" instead of Open.
    */
   unsupportedIssues?: readonly string[];
 };
