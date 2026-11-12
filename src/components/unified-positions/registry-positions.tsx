@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from "react";
 import { dexDescriptors, dexPositionLabel, dexPositionRangeText, dexRangeStatusText, fetchDexPositions, positionDescriptorsFor,
   type DexCapabilities, type DexDescriptor, type DexSigner } from "@/lib/dex/client";
 import { tokenSymbol, type PositionLabelMetadata } from "@/lib/position-label";
-import { isDexTxRouteEnabled } from "@/lib/protocol-flags";
 import { iconFor, type IconChain, type TokenIconMap } from "@/lib/token-icons/map";
 import type { ChainId, PositionSourceId, UnifiedPosition } from "@/lib/unified-positions/model";
 import { PositionAssetRow } from "../position-asset-row";
@@ -14,11 +13,9 @@ import { PositionAssetRow } from "../position-asset-row";
  * My positions from DEXes served through the registry (PR5): every descriptor whose signer is the connected wallet's,
  * except the sources the page already reads another way (`exclude`, today the inline Raydium scan). The panel renders
  * these rows, their header and details only from the unified shape and the descriptor; it never checks a DEX id.
- * Nothing is requested where the dex route is off (`DEX_TX_ROUTE_ENABLED`, on by default): the page is unchanged there
- * and makes no extra request.
  */
 export type RegistryPositions = {
-  /** DEXes this deployment serves for the wallet (a 404 drops a DEX, so with the route off nothing changes on the page). */
+  /** DEXes this deployment serves for the wallet (a 404 drops a DEX). */
   sourceIds: readonly PositionSourceId[];
   /** Display names of served DEXes being re-read (a rescan or a new wallet after one served). Never named before a DEX
    * has answered once, so a deployment that does not serve it shows nothing about it. */
@@ -41,8 +38,7 @@ export function useRegistryPositions({ owner, signer, exclude, refresh }: {
   owner: string | null; signer: DexSigner; exclude: readonly string[]; refresh: number;
 }): RegistryPositions {
   const excludeKey = exclude.join(",");
-  const descriptors = useMemo(() => (isDexTxRouteEnabled()
-    ? positionDescriptorsFor(dexDescriptors.descriptors, signer, excludeKey ? excludeKey.split(",") : []) : []), [signer, excludeKey]);
+  const descriptors = useMemo(() => positionDescriptorsFor(dexDescriptors.descriptors, signer, excludeKey ? excludeKey.split(",") : []), [signer, excludeKey]);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   useEffect(() => {
     if (!owner || !descriptors.length) return;

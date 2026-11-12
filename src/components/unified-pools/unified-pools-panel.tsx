@@ -25,7 +25,6 @@ import { PairTokenIcons } from "../pair-token-icons";
 import { OpenPositionModal } from "../open-position-modal";
 import { clearPoolRangeAprClientCache, loadPoolRangeApr, type RangeAprProtocol } from "../range-apr/pool-range-apr-client";
 import type { PoolRangeAprPayload } from "@/lib/range-apr/types";
-import { isDexTxRouteEnabled } from "@/lib/protocol-flags";
 import { RegistryOpenModal } from "./registry-open-modal";
 import { ShareCalcDialog } from "./share-calc-dialog";
 import type { RhcPoolView } from "../rhc-univ4-open-panel";
@@ -331,11 +330,10 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
   const actionFor = useCallback((pool: UnifiedPool): OpenAction => {
     const unsupported = unsupportedTokenReason(pool);
     if (unsupported) return { kind: "unsupported", reason: unsupported };
-    // Registered DEXes say through their `open` capability and open in the registry dialog (PR10); the shared DEX route
-    // is off on some deployments (DEX_TX_ROUTE_ENABLED), and then they offer no Open button at all.
+    // Registered DEXes say through their `open` capability and open in the registry dialog (PR10).
     const open = dexDescriptors.descriptorFor(pool.protocol)?.capabilities.open;
     if (open) {
-      if (!open.supported || !isDexTxRouteEnabled()) return { kind: "none", reason: open.supported ? "Opening is not available yet" : open.reason };
+      if (!open.supported) return { kind: "none", reason: open.reason };
       return { kind: "open", onOpen: () => { if (!connected) connect(); setRegistryOpen(pool); } };
     }
     if (pool.protocol === "raydium-clmm" || pool.protocol === "uniswap-v4-rhc") return { kind: "open", onOpen: () => openPool(pool) };

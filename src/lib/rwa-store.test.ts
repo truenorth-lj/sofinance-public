@@ -80,7 +80,7 @@ describe("saved RWA foreground reads", () => {
     const [, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
     expect(JSON.parse(String(init.body))).toMatchObject({ op: "pairs" });
     expect(JSON.parse(String(init.body))).not.toHaveProperty("feedKeys");
-    // Listing the Meteora scan feed too (METEORA_RWA_LIST_ENABLED, the default in every target) asks for both feeds.
+    // Listing the Meteora scan feed too asks for both feeds.
     await getRwaPairs({ minTvl: 0, maxPages: 10, sortBy: "tvl" });
     const [, both] = fetcher.mock.calls[2] as unknown as [string, RequestInit];
     expect(JSON.parse(String(both.body))).toMatchObject({ op: "pairs", feedKeys: ["raydium-clmm-rwa-v1", "meteora-dlmm-rwa-v1"] });

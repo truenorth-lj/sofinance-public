@@ -15,7 +15,7 @@ import {
   type HomepageSolanaRow,
   type HomepageSourceTime,
 } from "@/lib/homepage-pools";
-import { isDexTxRouteEnabled, isRhcUniv4DiscoveryEnabled } from "@/lib/protocol-flags";
+import { isRhcUniv4DiscoveryEnabled } from "@/lib/protocol-flags";
 import { dexDescriptors } from "@/lib/dex/client";
 import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
 import { APP_ROUTES, DOCS_ROUTES } from "@/lib/public-urls";
@@ -60,7 +60,7 @@ const openAction = (pool: UnifiedPool): OpenAction => {
   const unsupported = unsupportedTokenReason(pool);
   if (unsupported) return { kind: "unsupported", reason: unsupported };
   const open = dexDescriptors.descriptorFor(pool.protocol)?.capabilities.open;
-  if (open && (!open.supported || !isDexTxRouteEnabled())) return { kind: "disabled", reason: open.supported ? "Opening is not available yet" : open.reason };
+  if (open && !open.supported) return { kind: "disabled", reason: open.reason };
   return { kind: "link", href: openPoolHref(pool) };
 };
 

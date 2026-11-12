@@ -18,7 +18,7 @@ import { volumeWindowEnd } from "./rwa-daily";
 import { sanitizePublicError } from "./public-error";
 import { getRwaStore } from "./rwa-store";
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
-import { isMeteoraRwaScanEnabled, isRhcApr7dEnabled } from "./protocol-flags";
+import { isRhcApr7dEnabled } from "./protocol-flags";
 import { discoverMeteoraRwaPairs, METEORA_SCAN_MIN_TVL_USD, type MeteoraScanStats } from "./meteora-rwa-scan";
 import { prepareRhcRun, type RhcAprRunStats, type RhcRun } from "./rhc-apr-refresh";
 import { discoverRhcRegistryPools, rhcDiscoveryFindings, type RhcDiscoveryResult } from "./pool-metrics/rhc-discovery";
@@ -51,7 +51,7 @@ type Options = {
   deadlineMs?: number;
   /** The run's shared GeckoTerminal gate (tests pass one with a fake clock). */
   geckoGate?: ThrottleGate;
-  /** Meteora scan: deploy-target override of `METEORA_RWA_SCAN_ENABLED` (tests). */
+  /** Meteora scan: test override (default on). */
   meteoraScan?: boolean;
   /** Per-pool limit of the Meteora APR lane (tests); default `METEORA_APR_POOL_TIMEOUT_MS`. */
   meteoraPoolTimeoutMs?: number;
@@ -117,11 +117,11 @@ type JobResult = {
   rhc?: RhcAprRunStats;
   /** rwa-apr-refresh: the oldest-first queue (all active pools, how many this run selected / finished). */
   queue?: AprQueueStats;
-  /** rwa-apr-refresh: the Meteora lane (only when `METEORA_RWA_SCAN_ENABLED`). */
+  /** rwa-apr-refresh: the Meteora lane. */
   meteoraQueue?: MeteoraAprQueueStats;
-  /** rwa-apr-refresh: each DEX's daily TVL record, by DEX id (registry `recordDailyTvl`; only when `METEORA_RWA_SCAN_ENABLED`). */
+  /** rwa-apr-refresh: each DEX's daily TVL record, by DEX id (registry `recordDailyTvl`). */
   dailyTvl?: Partial<Record<DexId, DailyTvlStats>>;
-  /** rwa-discovery: the Meteora DLMM scan (only when `METEORA_RWA_SCAN_ENABLED`). */
+  /** rwa-discovery: the Meteora DLMM scan. */
   meteora?: (MeteoraScanStats & { published: number }) | { error: string };
 };
 export type AprQueueStats = { pools: number; selected: number; done: number; stoppedBy: "429" | "time" | null };
@@ -129,7 +129,7 @@ export type AprQueueStats = { pools: number; selected: number; done: number; sto
 export type MeteoraAprQueueStats = Omit<AprQueueStats, "stoppedBy"> & { stoppedBy: "datapi-429" | "time" | null; failed: number };
 
 /**
- * Meteora DLMM lane of the APR job (`METEORA_RWA_SCAN_ENABLED`): pools of the `meteora-dlmm-rwa-v1` feed with TVL ≥
+ * Meteora DLMM lane of the APR job: pools of the `meteora-dlmm-rwa-v1` feed with TVL ≥
  * $5k, oldest first, `METEORA_APR_POOLS_PER_RUN` per run, `METEORA_APR_CONCURRENCY` at a time, each within
  * `METEORA_APR_POOL_TIMEOUT_MS`. Price history comes from Meteora's datapi (no GeckoTerminal call), so the lane runs
  * beside the GeckoTerminal queue on the same job deadline. A datapi 429 ends the lane (that pool saves nothing).
@@ -269,7 +269,7 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
       processed = result.pairs.length;
       // Meteora DLMM (code flag): its own feed and generation, after Raydium's publish, so a Meteora failure keeps
       // its last generation and never touches Raydium's. Reported as an issue, not counted as a job failure.
-      if (options.meteoraScan ?? isMeteoraRwaScanEnabled()) {
+      if (options.meteoraScan ?? true) {
         meteora = await publishMeteoraFeed(store, lease, result.pairs, options.fetcher, signal)
           .catch((error) => ({ error: sanitizePublicError(error, "Meteora scan failed").slice(0, 200) }));
         if ("error" in meteora) { issues.push(`Meteora: ${meteora.error}`); status = "partial"; }
@@ -397,7 +397,7 @@ async function refreshAprPools(input: {
   const throttled = () => gate.hit429;
   const issues: string[] = [];
   // Finalizes earlier days' history rows and seeds today's (idempotent).
-  const meteoraOn = options.meteoraScan ?? isMeteoraRwaScanEnabled();
+  const meteoraOn = options.meteoraScan ?? true;
   await store.request({ op: "prepareDaily", lease, includeRhc: isRhcApr7dEnabled(),
     ...(meteoraOn ? { feedKeys: [FEED_KEY, FEED_KEY_METEORA] } : {}) });
   let rhc: RhcRun | null = null;

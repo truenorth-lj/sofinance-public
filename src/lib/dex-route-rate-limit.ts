@@ -1,7 +1,7 @@
 import { clientIp, slidingWindowLimiter } from "@/lib/tx-send/rate-limit";
 
 /**
- * Per-IP limits for `POST /api/dex/[dex]/[op]` (PM 11/1, before DEX_TX_ROUTE_ENABLED goes on in production). Same
+ * Per-IP limits for `POST /api/dex/[dex]/[op]` (PM 11/1). Same
  * in-memory sliding-minute pattern as `/api/tx-send` and the Robinhood Chain scan: no paid service, no platform setting.
  *
  * - Every op: DEX_ROUTE_REQUESTS_PER_IP_PER_MINUTE. A real open is a few quotes plus 2 steps (and a recovery if it

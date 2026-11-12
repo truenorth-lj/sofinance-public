@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Raydium selection, deep links and route-off/404/empty parity remain unchanged by registry discovery.
+// Raydium selection, deep links and 404/empty registry parity remain unchanged by registry discovery.
 // The full-page snapshots intentionally track the new All positions layout (not the former My positions card).
 import { act, createElement, type FunctionComponent } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -14,10 +14,8 @@ const LINKED = testKeypair(73).publicKey.toBase58();
 const POOL = testKeypair(74).publicKey.toBase58();
 const MINT_A = testKeypair(75).publicKey.toBase58();
 const MINT_B = testKeypair(76).publicKey.toBase58();
-const state = vi.hoisted(() => ({ routeOn: false, dexCalls: 0, dex: "404" as "404" | "empty" | "hang" | "500" }));
+const state = vi.hoisted(() => ({ dexCalls: 0, dex: "404" as "404" | "empty" | "hang" | "500" }));
 
-vi.mock("@/lib/protocol-flags", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/protocol-flags")>(),
-  isDexTxRouteEnabled: () => state.routeOn }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/app" }));
 vi.mock("../use-sol-usdc-price", () => ({ useSolUsdcPrices: () => ({ rate: null, usdcUsd: null }) }));
 vi.mock("../use-token-metadata", () => ({ useTokenMetadata: () => ({}) }));
@@ -33,7 +31,7 @@ const raydiumRow = (positionMint: string, tickLower: number, tickUpper: number) 
 let container: HTMLDivElement; let root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); localStorage.clear();
-  state.routeOn = false; state.dexCalls = 0; state.dex = "404";
+  state.dexCalls = 0; state.dex = "404";
   window.history.replaceState(null, "", "/app");
   vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
     const url = new URL(String(input), "http://x");
@@ -81,34 +79,25 @@ describe("/app Raydium selected state (unchanged by the registry DEXes)", () => 
     expect(new URL(window.location.href).searchParams.get("position")).toBe(`raydium-clmm:${FIRST}`);
   });
 
-  it("with the dex route on and the DEX not served (404) the markup is identical to the route-off page", async () => {
-    const off = await renderLinked();
-    await act(async () => root.unmount());
-    container.remove(); container = document.createElement("div"); document.body.append(container); root = createRoot(container);
-    state.routeOn = true;
-    const on = await renderLinked();
-    expect(on).toBe(off);
-  });
-
   const remount = async () => {
     await act(async () => root.unmount());
     container.remove(); container = document.createElement("div"); document.body.append(container); root = createRoot(container);
   };
 
-  it("with the dex route on by default and Meteora serving 0 positions, the Raydium markup is identical to today (no source prefix)", async () => {
-    const off = await renderLinked();
-    expect(state.dexCalls).toBe(0);
-    await remount();
-    state.routeOn = true; state.dex = "empty";
-    const on = await renderLinked();
+  it("with Meteora serving 0 positions, the Raydium markup is identical to a 404 (no source prefix)", async () => {
+    const missing = await renderLinked();
     expect(state.dexCalls).toBe(1);
-    expect(on).toBe(off);
+    await remount();
+    state.dexCalls = 0; state.dex = "empty";
+    const empty = await renderLinked();
+    expect(state.dexCalls).toBe(1);
+    expect(empty).toBe(missing);
     expect(rows().map((row) => row.firstChild?.textContent).join("\n")).not.toMatch(/Raydium|Meteora/);
-    expect(on).toMatchSnapshot();
+    expect(empty).toMatchSnapshot();
   });
 
   it("a hanging Meteora positions read does not hold back the Raydium list or selection", async () => {
-    state.routeOn = true; state.dex = "hang";
+    state.dex = "hang";
     await renderLinked();
     expect(state.dexCalls).toBe(1);
     expect(selectedKey()).toBe(`raydium-clmm:${LINKED}`);
@@ -116,7 +105,7 @@ describe("/app Raydium selected state (unchanged by the registry DEXes)", () => 
   });
 
   it("a failing (500) Meteora positions read leaves the Raydium list in place and only adds its plain error", async () => {
-    state.routeOn = true; state.dex = "500";
+    state.dex = "500";
     await renderLinked();
     expect(selectedKey()).toBe(`raydium-clmm:${LINKED}`);
     expect(rows().map((row) => row.getAttribute("data-position-key")).sort()).toEqual([`raydium-clmm:${FIRST}`, `raydium-clmm:${LINKED}`].sort());
