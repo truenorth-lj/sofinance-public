@@ -1,6 +1,5 @@
 import { unsupportedTokenReason } from "@/lib/unified-pools/model";
-import { dexDescriptors, type DexDescriptor } from "@/lib/dex/client";
-import { uiFor } from "./use-pool-sources";
+import { dexDescriptors, uiFor, type DexDescriptor } from "@/lib/dex/client";
 
 /** The shell the pools-page Open button or a `?openPool=` deep link actually invokes. */
 export type OpenHandlerKind = "unsupported" | "none" | "registry" | "native-modal" | "rhc-dialog";
@@ -14,7 +13,7 @@ export type PoolOpenRef = {
 };
 
 export type OpenDispatchDeps = {
-  descriptorFor?: (id: string) => Pick<DexDescriptor, "capabilities"> | null;
+  descriptorFor?: (id: string) => (Pick<DexDescriptor, "capabilities"> & Partial<Pick<DexDescriptor, "ui">>) | null;
 };
 
 export type PoolOpenDispatch = {
@@ -36,7 +35,7 @@ export function resolveOpenDispatch(pool: PoolOpenRef, deps: OpenDispatchDeps = 
   const unsupported = unsupportedTokenReason(pool);
   if (unsupported) return both({ handler: "unsupported", reason: unsupported });
 
-  const ui = uiFor(pool.protocol, pool.chain, { descriptorFor });
+  const ui = uiFor(pool.protocol, { descriptorFor });
   if (ui.openUi === "registry") {
     const open = descriptorFor(pool.protocol)?.capabilities.open;
     if (!open?.supported) return both({ handler: "none", reason: open?.reason ?? "Opening is not available yet" });

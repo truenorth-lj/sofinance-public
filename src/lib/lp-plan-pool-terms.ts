@@ -131,8 +131,8 @@ export function planPoolTerms(input: {
   descriptor: DexDescriptor | null;
   /**
    * When true, use descriptor fee/rent terms. Defaults to `Boolean(descriptor)` (today: true only for
-   * Meteora). E-dispatch callers pass `uiFor(protocol).useDescriptorPlanTerms` so a later descriptor
-   * cannot flip Plan numbers by existing.
+   * Meteora). Callers pass `uiFor(protocol).useDescriptorPlanTerms` (explicit descriptor/table data)
+   * so a later descriptor cannot flip Plan numbers just by being registered.
    */
   useDescriptorPlanTerms?: boolean;
   /** The pool list's own reason it cannot open this pool (`openUnavailableReason`), or null. */

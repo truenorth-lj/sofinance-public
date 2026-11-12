@@ -4,7 +4,8 @@ import { act, createElement, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RWA_PAIRS_LIST_PATH } from "@/lib/rwa-pairs-list";
-import { POOL_SOURCES, SOURCE_ERROR, chainMeta, protocolMeta, uiFor, usePoolSources, type Loaded, type UnifiedPoolFlags } from "./use-pool-sources";
+import { uiFor } from "@/lib/dex/client";
+import { POOL_SOURCES, SOURCE_ERROR, chainMeta, usePoolSources, type Loaded, type UnifiedPoolFlags } from "./use-pool-sources";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -120,25 +121,19 @@ describe("usePoolSources", () => {
 });
 
 describe("source metadata lookups", () => {
-  it("describes Raydium and RHC open paths without a DEX-id branch at the call site", () => {
-    expect(protocolMeta("raydium-clmm")?.opensNativeModal).toBe(true);
-    expect(protocolMeta("raydium-clmm")?.planFallback).toBeTruthy();
-    expect(protocolMeta("raydium-clmm")?.externalPoolUrl?.("pool1")).toBe("https://raydium.io/clmm/create-position/?pool_id=pool1");
-    expect(protocolMeta("uniswap-v4-rhc")?.opensNativeModal).toBe(true);
-    expect(protocolMeta("meteora-dlmm")?.opensNativeModal).toBeUndefined();
+  it("moved open UI fields come from uiFor; chain presentation stays on chainMeta", () => {
+    expect(uiFor("raydium-clmm")).toMatchObject({ openUi: "native-modal", useDescriptorPlanTerms: false });
+    expect(uiFor("raydium-clmm").planFallback).toBeTruthy();
+    expect(uiFor("raydium-clmm").externalPoolUrl?.("pool1")).toBe("https://raydium.io/clmm/create-position/?pool_id=pool1");
+    expect(uiFor("uniswap-v4-rhc").openUi).toBe("rhc-dialog");
+    expect(uiFor("uniswap-v4-rhc").useDescriptorPlanTerms).toBe(false);
+    expect(uiFor("meteora-dlmm")).toMatchObject({ openUi: "registry", useDescriptorPlanTerms: true });
+    expect(uiFor("orca-whirlpool").openUi).toBe("none");
+    expect(uiFor("rhc-uniswap-v4").openUi).toBe("none");
     expect(chainMeta("solana")?.showHighestRange).toBe(true);
+    expect(chainMeta("solana")?.nullFeeLabel).toBe("—");
+    expect(chainMeta("robinhood")?.showHighestRange).toBe(false);
     expect(chainMeta("robinhood")?.nullFeeLabel).toBe("Dynamic");
-    expect(chainMeta("robinhood")?.opensRhcDialog).toBe(true);
-  });
-});
-
-describe("uiFor (E-dispatch mapper)", () => {
-  it("openUi and useDescriptorPlanTerms match today's routing, with no new PROTOCOL_META rows", () => {
-    expect(uiFor("meteora-dlmm", "solana")).toMatchObject({ openUi: "registry", useDescriptorPlanTerms: true });
-    expect(uiFor("raydium-clmm", "solana")).toMatchObject({ openUi: "native-modal", useDescriptorPlanTerms: false });
-    expect(uiFor("uniswap-v4-rhc", "robinhood")).toMatchObject({ openUi: "rhc-dialog", useDescriptorPlanTerms: false });
-    expect(uiFor("orca-whirlpool", "solana")).toMatchObject({ openUi: "none", useDescriptorPlanTerms: false });
-    // Legacy alias is not in PROTOCOL_META; call-for-call it stays "none", not "rhc-dialog".
-    expect(uiFor("rhc-uniswap-v4", "robinhood")).toMatchObject({ openUi: "none", useDescriptorPlanTerms: false });
+    expect(chainMeta("robinhood")).not.toHaveProperty("opensRhcDialog");
   });
 });

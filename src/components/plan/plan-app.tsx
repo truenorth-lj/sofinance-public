@@ -11,8 +11,7 @@ import {
 import { parsePairLabel, parseSolanaAddress, resolvePlanSelection } from "@/lib/lp-plan-selection";
 import { effectiveExit, planPoolTerms, projectPoolPlan } from "@/lib/lp-plan-pool-terms";
 import { lowPlanApr, pairLabelSymbols, planShareSymbol } from "@/lib/lp-plan-shares";
-import { dexDescriptors } from "@/lib/dex/client";
-import { uiFor } from "@/components/unified-pools/use-pool-sources";
+import { dexDescriptors, uiFor } from "@/lib/dex/client";
 import { openUnavailableReason, type UnifiedProtocol } from "@/lib/unified-pools/model";
 import { APP_ROUTES } from "@/lib/public-urls";
 import { InkNav } from "@/components/ink";

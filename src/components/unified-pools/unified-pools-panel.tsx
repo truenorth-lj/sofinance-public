@@ -121,7 +121,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
 
   /** `connectWallet: false` for deep links: the Create position dialog opens with its own Connect wallet button. */
   const openPool = useCallback((pool: UnifiedPool, connectWallet = true) => {
-    // E-dispatch: `openUi`, not `chainMeta.opensRhcDialog` / descriptor presence.
+    // E-move: `openUi` from `uiFor` in the registry, not `chainMeta.opensRhcDialog` / descriptor presence.
     if (resolveOpenDispatch(pool).button.handler === "rhc-dialog") {
       const summary = rhcByKey.get(pool.key);
       const view = summary ? rhcPoolView(summary as RhcPoolSummary) : null;

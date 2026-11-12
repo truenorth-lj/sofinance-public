@@ -1,12 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { SUPPORTED } from "@/lib/unified-positions/model";
-import { dexDescriptors } from "@/lib/dex/client";
 import { RWA_PAIRS_LIST_PATH, fetchRwaPairsList } from "@/lib/rwa-pairs-list";
 import type { SnapshotSourceTime } from "@/lib/snapshot-updated";
 import type { TokenIconMap } from "@/lib/token-icons/map";
-import type { PoolChain, UnifiedProtocol } from "@/lib/unified-pools/model";
+import type { PoolChain } from "@/lib/unified-pools/model";
 
 /** Which sources this deployment may show; computed from the code flags on the server and passed down. */
 export type UnifiedPoolFlags = {
@@ -60,7 +58,7 @@ type RhcPoolsBody = {
 
 /**
  * One fetchable pool list. The 6 previously inlined DEX/chain branches live in this metadata
- * (and in `PROTOCOL_META` / `CHAIN_META`) instead of `===` checks in the panel.
+ * (and in `CHAIN_META` for chain presentation) instead of `===` checks in the panel.
  */
 export type PoolSourceSpec = {
   source: PoolSourceId;
@@ -117,80 +115,23 @@ export const POOL_SOURCES: readonly PoolSourceSpec[] = [
   },
 ];
 
-/** Per-protocol UI/open metadata. Looked up by id so the panel does not branch on DEX literals. */
-export type ProtocolMeta = {
-  planFallback?: typeof SUPPORTED;
-  externalPoolUrl?: (poolAddress: string) => string;
-  /** Open with the panel's existing native dialog (Raydium Create position or RHC). */
-  opensNativeModal?: boolean;
-};
-
-export const PROTOCOL_META: Partial<Record<UnifiedProtocol, ProtocolMeta>> = {
-  "raydium-clmm": {
-    planFallback: SUPPORTED,
-    externalPoolUrl: (poolId) => `https://raydium.io/clmm/create-position/?pool_id=${poolId}`,
-    opensNativeModal: true,
-  },
-  "uniswap-v4-rhc": { opensNativeModal: true },
-};
-
+/**
+ * Chain presentation, not DEX behavior (Phase E): Solana cards show Highest range and use "—"
+ * for a missing fee tier; Robinhood cards do not, and use "Dynamic". A future Solana DEX
+ * inherits the right presentation without a per-protocol entry.
+ */
 export type ChainMeta = {
   showHighestRange?: boolean;
   nullFeeLabel: string;
-  opensRhcDialog?: boolean;
 };
 
 export const CHAIN_META: Record<PoolChain, ChainMeta> = {
   solana: { showHighestRange: true, nullFeeLabel: "—" },
-  robinhood: { showHighestRange: false, nullFeeLabel: "Dynamic", opensRhcDialog: true },
+  robinhood: { showHighestRange: false, nullFeeLabel: "Dynamic" },
 };
-
-export const protocolMeta = (protocol: string): ProtocolMeta | undefined =>
-  PROTOCOL_META[protocol as UnifiedProtocol];
 
 export const chainMeta = (chain: string): ChainMeta | undefined =>
   CHAIN_META[chain as PoolChain];
-
-/** Which open shell the pools page / deep link uses. Temporary E-dispatch shape; E-move keeps this and drops PROTOCOL_META. */
-export type DexOpenUi = "registry" | "native-modal" | "rhc-dialog" | "none";
-
-export type DexUi = {
-  openUi: DexOpenUi;
-  externalPoolUrl?: (poolAddress: string) => string;
-  /**
-   * When true, Plan / share-calc use descriptor fee/rent terms. Must stay exactly as today:
-   * true only when a descriptor is already registered (Meteora).
-   */
-  useDescriptorPlanTerms: boolean;
-  planFallback?: typeof SUPPORTED;
-};
-
-export type UiForDeps = {
-  descriptorFor?: (id: string) => { capabilities: { open: { supported: boolean } } } | null;
-};
-
-/**
- * Temporary mapper: reads existing `PROTOCOL_META` and `CHAIN_META.opensRhcDialog`.
- * Not a new protocol-keyed table (the table ceiling must stay 3). Does not invent a
- * `feePolicy`. Does not normalize the `rhc-uniswap-v4` alias into `PROTOCOL_META`
- * (today that alias has no meta row, so open stays "not available").
- */
-export function uiFor(protocol: string, chain?: string, deps: UiForDeps = {}): DexUi {
-  const descriptorFor = deps.descriptorFor ?? ((id) => dexDescriptors.descriptorFor(id));
-  const descriptor = descriptorFor(protocol);
-  const meta = protocolMeta(protocol);
-  const openUi: DexOpenUi = descriptor?.capabilities.open
-    ? "registry"
-    : meta?.opensNativeModal
-      ? (chain && chainMeta(chain)?.opensRhcDialog ? "rhc-dialog" : "native-modal")
-      : "none";
-  return {
-    openUi,
-    externalPoolUrl: meta?.externalPoolUrl,
-    useDescriptorPlanTerms: Boolean(descriptor),
-    planFallback: meta?.planFallback,
-  };
-}
 
 const emptyLoaded = (): Loaded => ({ rows: [], rhc: [], updated: [] });
 
