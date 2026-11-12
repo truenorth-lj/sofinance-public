@@ -2,8 +2,8 @@
  * Which stock rows get a Buy button, and the allowlist the spot-swap engine buys from (PR B, PM rules):
  *   - candidates are the row's tokens that passed the card filters (`build.ts`), matched by exact mint;
  *   - each candidate's mint is read on-chain once; any `spotSwapMintIssues` (paused, transfer fee, frozen default,
- *     active hook, ScaledUiAmount multiplier not 1, unsupported extension) drops it, so a multiplier != 1 token
- *     never gets a Buy;
+ *     active hook, non-finite ScaledUiAmount multiplier, unsupported extension) drops it, so a token
+ *     with a non-finite multiplier never gets a Buy;
  *   - non-xStocks issuers carry Jupiter's metadata (name + tags) so the engine can require "verified" + a name;
  *   - the engine's `selectSpotSwapToken` picks the issuer (xStocks first, then the next with a 1 USDC route at
  *     <= 1% price impact). `no_route` -> no Buy.

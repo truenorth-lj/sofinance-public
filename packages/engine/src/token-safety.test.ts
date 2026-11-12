@@ -1,7 +1,7 @@
 import { AccountState, DefaultAccountStateLayout, ExtensionType, PausableConfigLayout, TransferFeeConfigLayout, type Mint } from "@solana/spl-token";
 import { PublicKey } from "@solana/web3.js";
 import { describe, expect, it } from "vitest";
-import { mintBlockReasons, mintDefaultFrozen, mintHasTransferFee, mintIsPaused } from "./token-safety";
+import { mintBlockReasons, mintDefaultFrozen, mintHasTransferFee, mintIsPaused, poolMintIssues, SCALED_UI_MULTIPLIER_TOLERANCE, scaledUiAmountOutOfTolerance } from "./token-safety";
 
 const key = new PublicKey("So11111111111111111111111111111111111111112");
 function tlv(entries: [ExtensionType, Buffer][]): Buffer {
@@ -57,5 +57,57 @@ describe("mint block reasons (shared by open path and RWA scan)", () => {
       [ExtensionType.TransferFeeConfig, transferFee(0, 1)],
       [ExtensionType.PausableConfig, pausable(true)],
     ]))).toEqual(["paused", "transfer_fee", "frozen"]);
+  });
+});
+
+function scaledPayload(multiplier: number, newMultiplier: number): Buffer {
+  const data = Buffer.alloc(56);
+  data.writeDoubleLE(multiplier, 32);
+  data.writeDoubleLE(newMultiplier, 48);
+  return data;
+}
+function scaledMint(multiplier: number, newMultiplier = multiplier): Mint {
+  return mint([[ExtensionType.ScaledUiAmountConfig, scaledPayload(multiplier, newMultiplier)]]);
+}
+
+describe("ScaledUiAmount multiplier tolerance", () => {
+  it("is the single switch, currently no cap (LJ, 2026-11-12)", () => {
+    expect(SCALED_UI_MULTIPLIER_TOLERANCE).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it("treats a missing config, a multiplier of 1, 1.003, and today's small dividend multipliers as supported", () => {
+    expect(poolMintIssues(mint())).toEqual([]);
+    expect(poolMintIssues(scaledMint(1, 1))).toEqual([]);
+    expect(scaledUiAmountOutOfTolerance(scaledMint(1, 1))).toBe(false);
+    expect(poolMintIssues(scaledMint(1.003))).toEqual([]);
+    // Live values as of 2026-11-12 (Taipei): NVDAx, SPYon (largest).
+    expect(poolMintIssues(scaledMint(1.0009180758490996, 1.001701196801074))).toEqual([]);
+    expect(poolMintIssues(scaledMint(1.0094730727840426))).toEqual([]);
+  });
+
+  it("accepts a multiplier at the bound and rejects one further away, or any non-finite value", () => {
+    const bound = SCALED_UI_MULTIPLIER_TOLERANCE;
+    if (Number.isFinite(bound)) {
+      expect(poolMintIssues(scaledMint(1 + bound))).toEqual([]);
+      expect(poolMintIssues(scaledMint(1 - bound))).toEqual([]);
+      expect(poolMintIssues(scaledMint(1 + bound + 0.000001))).toEqual(["ScaledUiAmount multiplier not 1"]);
+      expect(poolMintIssues(scaledMint(1 - bound - 0.000001))).toEqual(["ScaledUiAmount multiplier not 1"]);
+      expect(poolMintIssues(scaledMint(1, 1 + bound + 0.000001))).toEqual(["ScaledUiAmount multiplier not 1"]);
+      expect(poolMintIssues(scaledMint(1 + bound + 0.000001, 1))).toEqual(["ScaledUiAmount multiplier not 1"]);
+    } else {
+      expect(poolMintIssues(scaledMint(2, 2))).toEqual([]);
+      expect(poolMintIssues(scaledMint(0.5, 1))).toEqual([]);
+    }
+    expect(poolMintIssues(scaledMint(Number.NaN))).toEqual(["ScaledUiAmount multiplier not 1"]);
+    expect(poolMintIssues(scaledMint(Number.POSITIVE_INFINITY))).toEqual(["ScaledUiAmount multiplier not 1"]);
+  });
+
+  it("leaves the other mint checks unchanged (paused still a block reason; hook still an issue)", () => {
+    const paused = mint([
+      [ExtensionType.PausableConfig, pausable(true)],
+      [ExtensionType.ScaledUiAmountConfig, scaledPayload(1.0009, 1.0017)],
+    ]);
+    expect(mintBlockReasons(paused)).toEqual(["paused"]);
+    expect(poolMintIssues(paused)).toEqual([]);
   });
 });
