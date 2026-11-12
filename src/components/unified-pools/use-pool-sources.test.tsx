@@ -4,7 +4,7 @@ import { act, createElement, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RWA_PAIRS_LIST_PATH } from "@/lib/rwa-pairs-list";
-import { POOL_SOURCES, SOURCE_ERROR, chainMeta, protocolMeta, usePoolSources, type Loaded, type UnifiedPoolFlags } from "./use-pool-sources";
+import { POOL_SOURCES, SOURCE_ERROR, chainMeta, protocolMeta, uiFor, usePoolSources, type Loaded, type UnifiedPoolFlags } from "./use-pool-sources";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -129,5 +129,16 @@ describe("source metadata lookups", () => {
     expect(chainMeta("solana")?.showHighestRange).toBe(true);
     expect(chainMeta("robinhood")?.nullFeeLabel).toBe("Dynamic");
     expect(chainMeta("robinhood")?.opensRhcDialog).toBe(true);
+  });
+});
+
+describe("uiFor (E-dispatch mapper)", () => {
+  it("openUi and useDescriptorPlanTerms match today's routing, with no new PROTOCOL_META rows", () => {
+    expect(uiFor("meteora-dlmm", "solana")).toMatchObject({ openUi: "registry", useDescriptorPlanTerms: true });
+    expect(uiFor("raydium-clmm", "solana")).toMatchObject({ openUi: "native-modal", useDescriptorPlanTerms: false });
+    expect(uiFor("uniswap-v4-rhc", "robinhood")).toMatchObject({ openUi: "rhc-dialog", useDescriptorPlanTerms: false });
+    expect(uiFor("orca-whirlpool", "solana")).toMatchObject({ openUi: "none", useDescriptorPlanTerms: false });
+    // Legacy alias is not in PROTOCOL_META; call-for-call it stays "none", not "rhc-dialog".
+    expect(uiFor("rhc-uniswap-v4", "robinhood")).toMatchObject({ openUi: "none", useDescriptorPlanTerms: false });
   });
 });

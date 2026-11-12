@@ -12,6 +12,7 @@ import { parsePairLabel, parseSolanaAddress, resolvePlanSelection } from "@/lib/
 import { effectiveExit, planPoolTerms, projectPoolPlan } from "@/lib/lp-plan-pool-terms";
 import { lowPlanApr, pairLabelSymbols, planShareSymbol } from "@/lib/lp-plan-shares";
 import { dexDescriptors } from "@/lib/dex/client";
+import { uiFor } from "@/components/unified-pools/use-pool-sources";
 import { openUnavailableReason, type UnifiedProtocol } from "@/lib/unified-pools/model";
 import { APP_ROUTES } from "@/lib/public-urls";
 import { InkNav } from "@/components/ink";
@@ -76,6 +77,7 @@ export function PlanApp() {
   // Only a pool on the loaded list opens from here.
   const terms = useMemo(() => planPoolTerms({
     descriptor: protocol ? dexDescriptors.descriptorFor(protocol) : null,
+    useDescriptorPlanTerms: protocol ? uiFor(protocol).useDescriptorPlanTerms : false,
     listOpenReason: row
       ? (row.protocol ? openUnavailableReason({ protocol: row.protocol as UnifiedProtocol }) : null)
       : pairs.status === "loading"

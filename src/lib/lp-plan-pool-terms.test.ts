@@ -40,6 +40,15 @@ describe("planPoolTerms", () => {
     expect(terms.openCost.rowNote).toBeNull();
     expect(terms.exits).toEqual(["usdc", "tokens"]);
   });
+
+  it("useDescriptorPlanTerms false keeps legacy terms even when a descriptor is passed; omitted flag stays as today", () => {
+    const forcedLegacy = planPoolTerms({ descriptor: meteoraDlmmDescriptor, useDescriptorPlanTerms: false, listOpenReason: null });
+    expect(forcedLegacy.openCost.bps).toBe(LEGACY_PLAN_TERMS.openCost.bps);
+    expect(forcedLegacy.lpFeeShare).toBe(LEGACY_PLAN_TERMS.lpFeeShare);
+    expect(forcedLegacy.exits).toEqual(LEGACY_PLAN_TERMS.exits);
+    expect(planPoolTerms({ descriptor: meteoraDlmmDescriptor, listOpenReason: null }).openCost.bps).toBe(110);
+    expect(planPoolTerms({ descriptor: null, useDescriptorPlanTerms: true, listOpenReason: null }).openCost.bps).toBe(LEGACY_PLAN_TERMS.openCost.bps);
+  });
 });
 
 describe("LP share and closing cost", () => {
