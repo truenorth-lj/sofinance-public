@@ -10,19 +10,18 @@ import {
   isMeteoraPositionAccount, meteoraBinLookup, meteoraPositionLiquidity, meteoraPositionTotals, meteoraRangeSide, type MeteoraPosition,
 } from "@sofinance/engine/protocols/meteora/position";
 import {
-  ASSUMPTIONS_LABEL, computePositionPerformance, computeTokenNativeMetrics, PERFORMANCE_METHOD, TOKEN_NATIVE_ASSUMPTIONS,
+  computePositionPerformance, computeTokenNativeMetrics,
 } from "@sofinance/engine/position-performance-math";
 import { rpcConnection, rpcProvider, type RpcProvider } from "@sofinance/engine/rpc";
-import { fetchTokenPricesUsd, type TokenPriceQuote } from "@sofinance/engine/token-prices";
-import { buildStockPerformance } from "./stock-performance-build";
-import { getTokenMetadata } from "@sofinance/engine/token-metadata";
-import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
 import { parseMeteoraPositionCashflowEvents, type MeteoraEventContext } from "./meteora-position-events";
 import { aggregateCashflowsForPosition } from "./position-performance-events";
 import { fetchPositionHistoryTransactions, toChronological, type HistoryConnection } from "./position-performance-history";
-import { describePositionPricing, type PositionHistoryEvent, type PositionPerformanceResult } from "./position-performance";
+import { type PositionHistoryEvent, type PositionPerformanceResult } from "./position-performance";
+import {
+  assemblePerformanceResult, capMaxSignatures, PERFORMANCE_READ_TIMEOUT_MS,
+  priceAndLabel, resolveSymbols,
+} from "./position-performance-assemble";
 import type { PositionRangeFacts } from "./position-range-onchain";
-import { buildRealizedFeeAprSeries } from "./realized-fee-apr-series";
 import { matchWrapPairShape } from "./rwa-pairing";
 
 /**
@@ -41,7 +40,6 @@ const LIST_MAX_POSITIONS = 50;
 const MULTIPLE_ACCOUNTS_BATCH = 100;
 /** Discriminator + lb_pair + owner: enough to pick the allowlisted positions before fetching full accounts. */
 const POSITION_HEAD_LEN = METEORA_POSITION_OWNER_OFFSET + 32;
-const DEFAULT_MAX_SIGNATURES = 100;
 
 type MeteoraConnection = Pick<Connection, "getAccountInfo" | "getMultipleAccountsInfo"> & {
   getProgramAccounts(programId: PublicKey, config: GetProgramAccountsConfig): Promise<ReadonlyArray<{ pubkey: PublicKey; account: { data: Uint8Array } }>>;
@@ -292,13 +290,13 @@ export type MeteoraPerformanceOptions = {
  */
 export async function getMeteoraPositionPerformance(positionAccount: string, options: MeteoraPerformanceOptions = {}): Promise<PositionPerformanceResult | null> {
   const started = Date.now();
-  const signal = AbortSignal.timeout(50_000);
+  const signal = AbortSignal.timeout(PERFORMANCE_READ_TIMEOUT_MS);
   const connection = options.connection ?? rpcConnection(undefined, { signal });
   const read = await readMeteoraPosition(positionAccount, { connection, listedPool: options.listedPool });
   if (!read) return null;
   const { snapshot } = read;
   const accountsMs = Date.now() - started;
-  const maxSignatures = Math.min(Math.max(1, options.maxSignatures ?? DEFAULT_MAX_SIGNATURES), 500);
+  const maxSignatures = capMaxSignatures(options.maxSignatures);
   const nowSeconds = options.nowSeconds ?? Math.floor(Date.now() / 1000);
   const fetcher = options.fetcher ?? fetch;
   const { pool, position } = snapshot;
@@ -319,25 +317,11 @@ export async function getMeteoraPositionPerformance(positionAccount: string, opt
   const openedAt = opened?.blockTime ?? null;
   const holdingSeconds = openedAt !== null && openedAt > 0 ? Math.max(0, nowSeconds - openedAt) : 0;
 
-  let priceUsdA: number | null = null;
-  let priceUsdB: number | null = null;
-  let pricingSource: PositionPerformanceResult["pricing"]["source"] = "none";
-  let pricingLabel = "USD pricing skipped; token-raw / token-native metrics only.";
-  const pricingStarted = Date.now();
-  let quotes = new Map<string, TokenPriceQuote>();
-  if (!options.skipPricing) {
-    try {
-      quotes = await fetchTokenPricesUsd([pool.tokenXMint, pool.tokenYMint], fetcher, options.jupiterApiKey ?? getJupiterApiKey());
-      const described = describePositionPricing(quotes.get(pool.tokenXMint), quotes.get(pool.tokenYMint));
-      priceUsdA = described.priceUsdA;
-      priceUsdB = described.priceUsdB;
-      pricingSource = described.source;
-      pricingLabel = described.label;
-    } catch {
-      pricingLabel = "USD pricing request failed; USD metrics null.";
-    }
-  }
-  const pricingMs = Date.now() - pricingStarted;
+  const priced = await priceAndLabel({
+    mintA: pool.tokenXMint, mintB: pool.tokenYMint, skipPricing: options.skipPricing, fetcher,
+    jupiterApiKey: options.jupiterApiKey,
+  });
+  const { priceUsdA, priceUsdB, quotes, pricingMs } = priced;
   const sides = {
     deposited: { a: cashflows.depositedA, b: cashflows.depositedB },
     withdrawnPrincipal: { a: cashflows.withdrawnPrincipalA, b: cashflows.withdrawnPrincipalB },
@@ -349,18 +333,15 @@ export async function getMeteoraPositionPerformance(positionAccount: string, opt
     decimalsA: snapshot.decimalsX, decimalsB: snapshot.decimalsY });
 
   const metadataStarted = Date.now();
-  // Static allowlist symbols are a fallback only: feed-listed pools are not in it, and token metadata names them.
   const allow = allowlisted(snapshot.poolId);
-  let symbolA: string | null = allow?.mintX === pool.tokenXMint ? allow.wrappedSymbol : null;
-  let symbolB: string | null = allow?.mintY === pool.tokenYMint ? allow.plainSymbol : null;
-  try {
-    const meta = await getTokenMetadata([pool.tokenXMint, pool.tokenYMint], fetcher, options.jupiterApiKey ?? getJupiterApiKey());
-    symbolA = meta[pool.tokenXMint]?.symbol ?? symbolA;
-    symbolB = meta[pool.tokenYMint]?.symbol ?? symbolB;
-  } catch { /* allowlist symbols */ }
+  const { symbolA, symbolB } = await resolveSymbols({
+    mintA: pool.tokenXMint, mintB: pool.tokenYMint, fetcher, jupiterApiKey: options.jupiterApiKey,
+    initialA: allow?.mintX === pool.tokenXMint ? allow.wrappedSymbol : null,
+    initialB: allow?.mintY === pool.tokenYMint ? allow.plainSymbol : null,
+    metadata: "prefer",
+  });
   const wrap = matchWrapPairShape(symbolA ?? "", symbolB ?? "");
   const sameAssetWrap = wrap.matched === true;
-  // Bin step 1: the active bin id is the tick-equivalent price index (1.0001^id).
   const tickCurrent = pool.binStep === 1 ? pool.activeId : 0;
   const tokenNative = computeTokenNativeMetrics({
     ...sides, holdingDays: metrics.holdingDays, decimalsA: snapshot.decimalsX, decimalsB: snapshot.decimalsY,
@@ -369,71 +350,52 @@ export async function getMeteoraPositionPerformance(positionAccount: string, opt
     plainSymbol: sameAssetWrap ? wrap.plainSymbol : null, wrappedSymbol: sameAssetWrap ? wrap.wrappedSymbol : null,
   });
 
-  // Without the open (history longer than the window) the ledger is partial.
   const incomplete = fetched.truncated || !opened;
-  if (incomplete) {
-    metrics.pnlUsd = null;
-    metrics.holdingPeriodReturnPct = null;
-    metrics.annualizedReturnPct = null;
-    metrics.feeOnlyAprPct = null;
-    tokenNative.perSideFeeAprPct = { a: null, b: null };
-    if (tokenNative.tokenEquivalent) {
-      tokenNative.tokenEquivalent.metrics.holdingPeriodReturnPct = null;
-      tokenNative.tokenEquivalent.metrics.annualizedReturnPct = null;
-      tokenNative.tokenEquivalent.metrics.feeOnlyAprPct = null;
-    }
-  }
-  const assumptions = [ASSUMPTIONS_LABEL, TOKEN_NATIVE_ASSUMPTIONS,
-    "Meteora DLMM: token X/Y are reported as A/B; fees are claimed separately from withdrawals; rewards are not included; ledger liquidity is 0 because DLMM events report token amounts, not bin shares.",
-    ...(incomplete ? ["Position history is incomplete; return percentages are unavailable until the full history is available."] : [])].join(" ");
-  const realizedFeeAprSeries = buildRealizedFeeAprSeries({
-    history, positionMint: snapshot.positionAccount, poolId: snapshot.poolId, evaluatedAt: nowSeconds,
-    uncollectedFees: { a: snapshot.uncollected.x, b: snapshot.uncollected.y },
-    priceUsdA, priceUsdB, decimalsA: snapshot.decimalsX, decimalsB: snapshot.decimalsY, openedAt,
-  });
-  if (incomplete) realizedFeeAprSeries.points = [];
-  const stock = options.skipPricing ? null : await buildStockPerformance({
-    history, positionId: snapshot.positionAccount, poolId: snapshot.poolId, mintA: pool.tokenXMint, mintB: pool.tokenYMint,
-    decimalsA: snapshot.decimalsX, decimalsB: snapshot.decimalsY, tokenNative, metrics, incomplete, quotes, nowSeconds, fetcher, signal,
-  });
-
-  return {
-    wallet: options.wallet ?? null,
-    ownsNft: options.wallet ? options.wallet === position.owner : null,
-    positionMint: snapshot.positionAccount,
-    positionAccount: snapshot.positionAccount,
-    poolId: snapshot.poolId,
-    mintA: pool.tokenXMint,
-    mintB: pool.tokenYMint,
-    decimalsA: snapshot.decimalsX,
-    decimalsB: snapshot.decimalsY,
-    tickLower: position.lowerBinId,
-    tickUpper: position.upperBinId + 1,
-    tickCurrent: pool.activeId,
-    rangeSide: snapshot.rangeSide,
-    liquidity: meteoraPositionLiquidity(position).toString(),
-    openedAt,
-    openedAtIso: openedAt !== null ? new Date(openedAt * 1000).toISOString() : null,
-    evaluatedAt: nowSeconds,
-    evaluatedAtIso: new Date(nowSeconds * 1000).toISOString(),
-    signatureCount: fetched.signatureCount,
-    truncated: fetched.truncated,
-    maxSignatures,
-    history,
-    cashflows: {
-      depositedA: cashflows.depositedA.toString(), depositedB: cashflows.depositedB.toString(),
-      withdrawnPrincipalA: cashflows.withdrawnPrincipalA.toString(), withdrawnPrincipalB: cashflows.withdrawnPrincipalB.toString(),
-      feesCollectedA: cashflows.feesCollectedA.toString(), feesCollectedB: cashflows.feesCollectedB.toString(),
-      openCount: cashflows.openCount, increaseCount: cashflows.increaseCount, decreaseCount: cashflows.decreaseCount,
+  return assemblePerformanceResult({
+    identity: {
+      wallet: options.wallet ?? null,
+      ownsNft: options.wallet ? options.wallet === position.owner : null,
+      positionMint: snapshot.positionAccount,
+      positionAccount: snapshot.positionAccount,
+      poolId: snapshot.poolId,
+      mintA: pool.tokenXMint,
+      mintB: pool.tokenYMint,
+      decimalsA: snapshot.decimalsX,
+      decimalsB: snapshot.decimalsY,
+      tickLower: position.lowerBinId,
+      tickUpper: position.upperBinId + 1,
+      tickCurrent: pool.activeId,
+      rangeSide: snapshot.rangeSide,
+      liquidity: meteoraPositionLiquidity(position).toString(),
+      openedAt,
+      evaluatedAt: nowSeconds,
+      signatureCount: fetched.signatureCount,
+      truncated: fetched.truncated,
+      maxSignatures,
+      history,
+      cashflows: {
+        depositedA: cashflows.depositedA.toString(), depositedB: cashflows.depositedB.toString(),
+        withdrawnPrincipalA: cashflows.withdrawnPrincipalA.toString(), withdrawnPrincipalB: cashflows.withdrawnPrincipalB.toString(),
+        feesCollectedA: cashflows.feesCollectedA.toString(), feesCollectedB: cashflows.feesCollectedB.toString(),
+        openCount: cashflows.openCount, increaseCount: cashflows.increaseCount, decreaseCount: cashflows.decreaseCount,
+      },
     },
     metrics,
     tokenNative,
-    stock,
-    pricing: { source: pricingSource, label: pricingLabel, priceUsdA, priceUsdB },
-    method: PERFORMANCE_METHOD,
-    assumptions,
-    realizedFeeAprSeries,
+    quotes,
+    pricing: { source: priced.pricingSource, label: priced.pricingLabel, priceUsdA, priceUsdB },
+    incomplete,
+    incompleteMessage: "Position history is incomplete; return percentages are unavailable until the full history is available.",
+    extraAssumptions: ["Meteora DLMM: token X/Y are reported as A/B; fees are claimed separately from withdrawals; rewards are not included; ledger liquidity is 0 because DLMM events report token amounts, not bin shares."],
+    stockIncomplete: incomplete,
+    skipPricing: options.skipPricing,
+    fetcher,
+    signal,
+    uncollectedFees: { a: snapshot.uncollected.x, b: snapshot.uncollected.y },
     historyFetch: fetched.metric,
-    timings: { totalMs: Date.now() - started, accountsMs, historyMs: fetched.metric.elapsedMs, pricingMs, metadataMs: Date.now() - metadataStarted },
-  };
+    started,
+    accountsMs,
+    pricingMs,
+    metadataStarted,
+  });
 }

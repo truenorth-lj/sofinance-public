@@ -27,46 +27,39 @@ import {
   type PositionCashflowEvent,
 } from "./position-performance-events";
 import {
-  ASSUMPTIONS_LABEL,
   computePositionPerformance,
   computeTokenNativeMetrics,
-  PERFORMANCE_METHOD,
-  TOKEN_NATIVE_ASSUMPTIONS,
   type PositionPerformanceMetrics,
   type TokenNativeMetrics,
 } from "@sofinance/engine/position-performance-math";
 import { matchWrapPairShape } from "./rwa-pairing";
 import { JUPITER_PRICE_V3 } from "@sofinance/engine/jupiter/urls";
-import { fetchTokenPricesUsd, type TokenPriceQuote, type TokenPriceSource } from "@sofinance/engine/token-prices";
-import { buildStockPerformance } from "./stock-performance-build";
 import type { StockPerformance } from "./position-performance-report";
-import { getTokenMetadata } from "@sofinance/engine/token-metadata";
-import {
-  buildRealizedFeeAprSeries,
-  type RealizedFeeAprSeries,
-} from "./realized-fee-apr-series";
-import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
+import { type RealizedFeeAprSeries } from "./realized-fee-apr-series";
 import { getRwaConfig } from "./config/rwa-env";
 import { getPositionHistoryStore } from "./position-history-store";
 import type { PositionHistoryStore } from "./position-history-store-types";
 import { loadPerformanceHistory } from "./position-performance-history-load";
+import {
+  assemblePerformanceResult,
+  capMaxSignatures,
+  PERFORMANCE_READ_TIMEOUT_MS,
+  priceAndLabel,
+  resolveSymbols,
+} from "./position-performance-assemble";
 import { resetRpcCache } from "@sofinance/engine/rpc/cache";
 import { createHistoryRpcConnections } from "./position-history-rpc";
 
 const POSITION_DISCRIMINATOR = createHash("sha256").update("account:PersonalPositionState").digest().subarray(0, 8);
 const POOL_DISCRIMINATOR = createHash("sha256").update("account:PoolState").digest().subarray(0, 8);
 
-export const DEFAULT_MAX_SIGNATURES = 100;
 // At four public-RPC starts/second, 500 details cannot finish within the shared
 // fifty-second deadline. Durable reads checkpoint in bounded chunks instead.
 const MAX_PACED_HISTORY_DETAILS = 100;
+export { DEFAULT_MAX_SIGNATURES, MAX_PERFORMANCE_SIGNATURES, PERFORMANCE_READ_TIMEOUT_MS, describePositionPricing } from "./position-performance-assemble";
 export { JUPITER_PRICE_V3 };
 export const RAYDIUM_POOL_IDS = "https://api-v3.raydium.io/pools/info/ids";
 
-const STABLE_USD_MINTS = new Set([
-  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC
-  "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", // USDT
-]);
 
 export type PositionHistoryEvent = {
   signature: string;
@@ -129,12 +122,6 @@ export type PositionPerformanceResult = {
   timings?: { totalMs: number; accountsMs: number; historyMs: number; pricingMs: number; metadataMs: number };
 };
 
-const PRICE_SOURCE_ID: Record<TokenPriceSource, Exclude<PositionPricingSource, "none" | "dexscreener+jupiter" | "dexscreener+raydium" | "jupiter+raydium" | "dexscreener+jupiter+raydium">> = {
-  jupiter: "jupiter-price-v3",
-  dexscreener: "dexscreener",
-  raydium: "raydium-pool-stable",
-};
-
 export type PositionPricingSource =
   | "jupiter-price-v3"
   | "dexscreener"
@@ -144,28 +131,6 @@ export type PositionPricingSource =
   | "jupiter+raydium"
   | "dexscreener+jupiter+raydium"
   | "none";
-
-const PRICE_SOURCE_LABEL: Record<string, string> = {
-  "jupiter-price-v3": "USD uses Jupiter Price API v3 at evaluation time (current), NOT historical tx-time prices.",
-  dexscreener: "USD uses DexScreener at evaluation time (current), NOT historical tx-time prices. Jupiter Price API v3 was unavailable.",
-  "raydium-pool-stable": "USD from Raydium pool mid price with USDC/USDT ≈ $1 fallback (current), NOT historical tx-time prices.",
-};
-
-/** Label the actual sources used; never reports Jupiter alone when a fallback filled a mint. */
-export function describePositionPricing(
-  quoteA: TokenPriceQuote | undefined,
-  quoteB: TokenPriceQuote | undefined,
-): { source: PositionPricingSource; label: string; priceUsdA: number | null; priceUsdB: number | null } {
-  const priceUsdA = quoteA?.price ?? null;
-  const priceUsdB = quoteB?.price ?? null;
-  if (!quoteA || !quoteB) {
-    return { source: "none", label: "USD pricing did not return both mint prices; USD metrics null.", priceUsdA, priceUsdB };
-  }
-  const unique = [...new Set([quoteA.source, quoteB.source])].sort();
-  const source = (unique.length === 1 ? PRICE_SOURCE_ID[unique[0]!] : unique.join("+")) as PositionPricingSource;
-  const label = PRICE_SOURCE_LABEL[source] ?? `USD from ${unique.join(" and ")} at evaluation time (current), NOT historical tx-time prices.`;
-  return { source, label, priceUsdA, priceUsdB };
-}
 
 export type GetPositionPerformanceOptions = {
   wallet?: string;
@@ -189,33 +154,6 @@ export type GetPositionPerformanceOptions = {
   historyMemoryCache?: boolean;
   signal?: AbortSignal;
 };
-
-/** Fallback: Raydium pool mid price + $1 stable for USDC/USDT legs. */
-async function fetchRaydiumPoolUsdPrices(
-  poolId: string,
-  mintA: string,
-  mintB: string,
-  fetcher: typeof fetch,
-): Promise<Map<string, number>> {
-  const prices = new Map<string, number>();
-  const url = `${RAYDIUM_POOL_IDS}?ids=${encodeURIComponent(poolId)}`;
-  const response = await fetcher(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(5_000) });
-  if (!response.ok) return prices;
-  const body = (await response.json()) as { data?: Array<{ price?: number | string } | null> };
-  const pool = body.data?.[0];
-  const ratio = pool?.price !== null && pool?.price !== undefined ? Number(pool.price) : NaN; // tokenA per tokenB? Raydium: price = mintA/mintB quote
-  // Raydium docs: `price` is mintA quoted in mintB (how many B per 1 A).
-  if (!Number.isFinite(ratio) || ratio <= 0) return prices;
-  if (STABLE_USD_MINTS.has(mintB)) {
-    prices.set(mintB, 1);
-    prices.set(mintA, ratio);
-  } else if (STABLE_USD_MINTS.has(mintA)) {
-    prices.set(mintA, 1);
-    prices.set(mintB, 1 / ratio);
-  }
-  return prices;
-}
-
 
 async function fetchRaydiumPoolSymbols(
   poolId: string,
@@ -294,9 +232,9 @@ export async function getPositionPerformance(
   const started = Date.now();
   // A browser refresh after a trade can land on another serverless instance.
   if (options.refreshHistory || options.historyAfterSignatures?.length) resetRpcCache();
-  const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(50_000)]) : AbortSignal.timeout(50_000);
+  const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(PERFORMANCE_READ_TIMEOUT_MS)]) : AbortSignal.timeout(PERFORMANCE_READ_TIMEOUT_MS);
   const connection = options.connection ?? rpcConnection(undefined, { signal });
-  const maxSignatures = Math.min(Math.max(1, options.maxSignatures ?? DEFAULT_MAX_SIGNATURES), 500);
+  const maxSignatures = capMaxSignatures(options.maxSignatures);
   const fetcher = options.fetcher ?? fetch;
   const nowSeconds = options.nowSeconds ?? Math.floor(Date.now() / 1000);
 
@@ -382,42 +320,12 @@ export async function getPositionPerformance(
 
   const mintA = pool.mintA.toBase58();
   const mintB = pool.mintB.toBase58();
+  const priced = await priceAndLabel({
+    mintA, mintB, skipPricing: options.skipPricing, fetcher,
+    jupiterApiKey: options.jupiterApiKey, raydiumPoolId: poolId.toBase58(),
+  });
+  const { priceUsdA, priceUsdB, quotes, pricingMs } = priced;
 
-  let priceUsdA: number | null = null;
-  let priceUsdB: number | null = null;
-  let pricingSource: PositionPricingSource = "none";
-  let pricingLabel = "USD pricing skipped; token-raw / token-native metrics only.";
-  const pricingStarted = Date.now();
-  let quotes = new Map<string, TokenPriceQuote>();
-  if (!options.skipPricing) {
-    try {
-      quotes = await fetchTokenPricesUsd(
-        [mintA, mintB],
-        fetcher,
-        options.jupiterApiKey ?? getJupiterApiKey(),
-      );
-      let quoteA = quotes.get(mintA);
-      let quoteB = quotes.get(mintB);
-      if (!quoteA || !quoteB) {
-        const fallback = await fetchRaydiumPoolUsdPrices(poolId.toBase58(), mintA, mintB, fetcher);
-        const raydium = (mint: string): TokenPriceQuote | undefined => {
-          const price = fallback.get(mint);
-          return price !== undefined ? { price, source: "raydium" } : undefined;
-        };
-        quoteA = quoteA ?? raydium(mintA);
-        quoteB = quoteB ?? raydium(mintB);
-      }
-      const described = describePositionPricing(quoteA, quoteB);
-      priceUsdA = described.priceUsdA;
-      priceUsdB = described.priceUsdB;
-      pricingSource = described.source;
-      pricingLabel = described.label;
-    } catch {
-      pricingLabel = "USD pricing request failed; USD metrics null.";
-    }
-  }
-
-  const pricingMs = Date.now() - pricingStarted;
   const metrics = computePositionPerformance({
     deposited: { a: cashflows.depositedA, b: cashflows.depositedB },
     withdrawnPrincipal: { a: cashflows.withdrawnPrincipalA, b: cashflows.withdrawnPrincipalB },
@@ -434,29 +342,11 @@ export async function getPositionPerformance(
     decimalsB: pool.mintDecimalsB,
   });
 
-  let symbolA: string | null = null;
-  let symbolB: string | null = null;
   const metadataStarted = Date.now();
-  try {
-    const raySymbols = await fetchRaydiumPoolSymbols(poolId.toBase58(), fetcher);
-    symbolA = raySymbols.symbolA;
-    symbolB = raySymbols.symbolB;
-  } catch {
-    /* ignore */
-  }
-  if (!symbolA || !symbolB) {
-    try {
-      const meta = await getTokenMetadata(
-        [mintA, mintB],
-        fetcher,
-        options.jupiterApiKey ?? getJupiterApiKey(),
-      );
-      symbolA = symbolA ?? meta[mintA]?.symbol ?? null;
-      symbolB = symbolB ?? meta[mintB]?.symbol ?? null;
-    } catch {
-      /* ignore */
-    }
-  }
+  const { symbolA, symbolB } = await resolveSymbols({
+    mintA, mintB, fetcher, jupiterApiKey: options.jupiterApiKey, metadata: "fill-missing",
+    prefetch: () => fetchRaydiumPoolSymbols(poolId.toBase58(), fetcher),
+  });
 
   const wrap = matchWrapPairShape(symbolA ?? "", symbolB ?? "");
   const sameAssetWrap = wrap.matched === true;
@@ -483,90 +373,55 @@ export async function getPositionPerformance(
   });
 
   const incomplete = Boolean(historyStore && truncated) || fetched.metric.refreshSignaturesResolved === false;
-  if (incomplete) {
-    metrics.pnlUsd = null;
-    metrics.holdingPeriodReturnPct = null;
-    metrics.annualizedReturnPct = null;
-    metrics.feeOnlyAprPct = null;
-    tokenNative.perSideFeeAprPct = { a: null, b: null };
-    if (tokenNative.tokenEquivalent) {
-      tokenNative.tokenEquivalent.metrics.holdingPeriodReturnPct = null;
-      tokenNative.tokenEquivalent.metrics.annualizedReturnPct = null;
-      tokenNative.tokenEquivalent.metrics.feeOnlyAprPct = null;
-    }
-  }
-  const assumptions = [ASSUMPTIONS_LABEL, TOKEN_NATIVE_ASSUMPTIONS,
-    ...(incomplete ? ["Position history is incomplete; return percentages are unavailable until backfill and missing transactions are resolved."] : [])].join(" ");
-
-  const realizedFeeAprSeries = buildRealizedFeeAprSeries({
-    history,
-    positionMint,
-    poolId: poolId.toBase58(),
-    evaluatedAt: nowSeconds,
-    uncollectedFees: uncollected,
-    priceUsdA,
-    priceUsdB,
-    decimalsA: pool.mintDecimalsA,
-    decimalsB: pool.mintDecimalsB,
-    openedAt,
-  });
-  if (incomplete) realizedFeeAprSeries.points = [];
-
-  const stock = options.skipPricing ? null : await buildStockPerformance({
-    history, positionId: positionMint, poolId: poolId.toBase58(), mintA, mintB,
-    decimalsA: pool.mintDecimalsA, decimalsB: pool.mintDecimalsB, tokenNative, metrics,
-    incomplete: incomplete || truncated || !history.some((item) => item.events.some((event) => event.kind === "open")),
-    quotes, nowSeconds, fetcher, signal,
-  });
-
-  return {
-    wallet: options.wallet ?? null,
-    ownsNft,
-    positionMint,
-    positionAccount: positionPda.toBase58(),
-    poolId: poolId.toBase58(),
-    mintA,
-    mintB,
-    decimalsA: pool.mintDecimalsA,
-    decimalsB: pool.mintDecimalsB,
-    tickLower: position.tickLower,
-    tickUpper: position.tickUpper,
-    tickCurrent: pool.tickCurrent,
-    rangeSide,
-    liquidity: position.liquidity.toString(),
-    openedAt,
-    openedAtIso: openedAt !== null ? new Date(openedAt * 1000).toISOString() : null,
-    evaluatedAt: nowSeconds,
-    evaluatedAtIso: new Date(nowSeconds * 1000).toISOString(),
-    signatureCount: fetched.signatureCount,
-    truncated,
-    maxSignatures,
-    history,
-    cashflows: {
-      depositedA: cashflows.depositedA.toString(),
-      depositedB: cashflows.depositedB.toString(),
-      withdrawnPrincipalA: cashflows.withdrawnPrincipalA.toString(),
-      withdrawnPrincipalB: cashflows.withdrawnPrincipalB.toString(),
-      feesCollectedA: cashflows.feesCollectedA.toString(),
-      feesCollectedB: cashflows.feesCollectedB.toString(),
-      openCount: cashflows.openCount,
-      increaseCount: cashflows.increaseCount,
-      decreaseCount: cashflows.decreaseCount,
+  return assemblePerformanceResult({
+    identity: {
+      wallet: options.wallet ?? null,
+      ownsNft,
+      positionMint,
+      positionAccount: positionPda.toBase58(),
+      poolId: poolId.toBase58(),
+      mintA,
+      mintB,
+      decimalsA: pool.mintDecimalsA,
+      decimalsB: pool.mintDecimalsB,
+      tickLower: position.tickLower,
+      tickUpper: position.tickUpper,
+      tickCurrent: pool.tickCurrent,
+      rangeSide,
+      liquidity: position.liquidity.toString(),
+      openedAt,
+      evaluatedAt: nowSeconds,
+      signatureCount: fetched.signatureCount,
+      truncated,
+      maxSignatures,
+      history,
+      cashflows: {
+        depositedA: cashflows.depositedA.toString(),
+        depositedB: cashflows.depositedB.toString(),
+        withdrawnPrincipalA: cashflows.withdrawnPrincipalA.toString(),
+        withdrawnPrincipalB: cashflows.withdrawnPrincipalB.toString(),
+        feesCollectedA: cashflows.feesCollectedA.toString(),
+        feesCollectedB: cashflows.feesCollectedB.toString(),
+        openCount: cashflows.openCount,
+        increaseCount: cashflows.increaseCount,
+        decreaseCount: cashflows.decreaseCount,
+      },
     },
     metrics,
     tokenNative,
-    stock,
-    pricing: {
-      source: pricingSource,
-      label: pricingLabel,
-      priceUsdA,
-      priceUsdB,
-    },
-    method: PERFORMANCE_METHOD,
-    assumptions,
-    realizedFeeAprSeries,
+    quotes,
+    pricing: { source: priced.pricingSource, label: priced.pricingLabel, priceUsdA, priceUsdB },
+    incomplete,
+    incompleteMessage: "Position history is incomplete; return percentages are unavailable until backfill and missing transactions are resolved.",
+    stockIncomplete: incomplete || truncated || !history.some((item) => item.events.some((event) => event.kind === "open")),
+    skipPricing: options.skipPricing,
+    fetcher,
+    signal,
+    uncollectedFees: uncollected,
     historyFetch: fetched.metric,
-    timings: { totalMs: Date.now() - started, accountsMs, historyMs: fetched.metric.elapsedMs,
-      pricingMs, metadataMs: Date.now() - metadataStarted },
-  };
+    started,
+    accountsMs,
+    pricingMs,
+    metadataStarted,
+  });
 }
