@@ -18,6 +18,7 @@ import { solSwapReceiptLabel } from "@/components/transactions/open/use-open-sub
 import { SOL_SWAP_RECEIPT_TTL_MS } from "@/components/transactions/open/sol-swap-receipt-store";
 import { depositUsd } from "@/lib/range-apr/size-aware";
 import { useDebouncedValue } from "./use-debounced-value";
+import { openPositionStatusCopy } from "@/lib/status-copy";
 import { shortAddress } from "@/lib/format/address";
 import { solscanTxUrl } from "@/lib/format/explorer";
 
@@ -101,26 +102,13 @@ export function OpenPositionModal({
   const upfrontCost = quote ? BigInt(quote.rent.refundableLamports) + BigInt(quote.rent.nonRefundableLamports)
     + BigInt(quote.rent.walletTokenAccountLamports ?? "0") + BigInt(quote.networkFeeLamportsEstimate) : 0n;
 
-  const stepPrefix = c.openStep ? `Step ${c.openStep}/2 · ` : "";
-  const swapStatus = c.submitStage === "swap-preparing" ? "Preparing SOL swap…"
-    : c.submitStage === "swap-wallet" ? "Sign the SOL swap in your wallet…"
-      : c.submitStage === "swap-checking" ? "Your wallet returned an error. Checking Solana in case the swap went through…"
-      : c.submitStage === "swap-broadcasting" ? "Sending SOL swap…"
-        : c.submitStage === "swap-pending" ? "Waiting for the swap to confirm…" : null;
-  const status = swapStatus ? `${stepPrefix}${swapStatus}`
-    : c.openStep && (c.submitStage === "preparing" || c.submitStage === "wallet" || c.submitStage === "checking" || c.submitStage === "broadcasting")
-      ? `${stepPrefix}${c.submitStage === "preparing" ? "Preparing open position…" : c.submitStage === "wallet" ? "Sign the open position in your wallet…"
-        : c.submitStage === "checking" ? "Your wallet returned an error. Checking Solana in case it went through…" : "Sending open position…"}`
-    : c.submitStage === "preparing" ? "Preparing latest transaction…"
-    : c.submitStage === "wallet" ? "Confirm in your wallet…"
-      : c.submitStage === "checking" ? "Your wallet returned an error. Checking Solana in case it went through; please wait…"
-      : c.submitStage === "broadcasting" ? "Sending transaction…"
-        : c.submitStage === "pending" ? "Waiting for on-chain confirmation…"
-          : c.submitStage === "failed" ? "A safety check stopped it on-chain, so nothing changed except the network fee."
-            : c.submitStage === "expired" ? "It expired before Solana included it, so nothing changed."
-        : c.submitStage === "confirmed" ? "Position opened"
-          : c.quoteLoading && !quote ? "Fetching quote…"
-            : c.actionBlockedReason || "Ready to sign";
+  const status = openPositionStatusCopy({
+    submitStage: c.submitStage,
+    openStep: c.openStep,
+    quoteLoading: c.quoteLoading,
+    hasQuote: Boolean(quote),
+    actionBlockedReason: c.actionBlockedReason,
+  });
 
   const pairLabel = `${pair.wrappedSymbol}/${pair.plainSymbol}`;
   const assets = c.inputAssets.map((asset) => {

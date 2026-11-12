@@ -11,7 +11,7 @@
  * from the user; a bigger one comes back from prepare as new terms, shown in place with "Accept new price" (no error).
  */
 import { ChevronRight, LoaderCircle, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { formatPriceImpact, formatSol, formatTokenRaw, formatUsdc, STOCK_NOTICE_TEXT } from "@/lib/stock-market/format";
 import { parseSpotSwapAmount, SPOT_SWAP_MAX_USDC, type StockBuyOption } from "@/lib/stock-market/public";
@@ -19,6 +19,7 @@ import { fetchSpotSwapQuote, spotSwapTxAdapter, type SpotSwapChangedTerms, type 
 import { useTxPipeline } from "@/components/transactions/use-tx-pipeline";
 import { BUTTON, FIELD, TxStatus } from "@/components/unified-positions/registry-tools";
 import { useWalletConnection } from "@/components/wallet-connection";
+import { useTxWallet } from "@/components/use-tx-wallet";
 
 const QUOTE_DEBOUNCE_MS = 500;
 /** Re-quote this often while the modal is open and visible, so the price shown stays current. */
@@ -50,8 +51,8 @@ export function amountProblem(amount: string): string | null {
 }
 
 export function SpotSwapModal({ option, onClose }: { option: StockBuyOption; onClose: () => void }) {
-  const { address: wallet, connected, connect, signTransaction, signAndSendTransaction } = useWalletConnection();
-  const txWallet = useMemo(() => (wallet ? { address: wallet, signTransaction, signAndSendTransaction } : null), [wallet, signTransaction, signAndSendTransaction]);
+  const { address: wallet, connected, connect } = useWalletConnection();
+  const txWallet = useTxWallet();
   const tx = useTxPipeline(spotSwapTxAdapter, txWallet, { scope: `buy:${option.mint}`, inlineErrors: true });
   const relayStore = useRef(createJupiterRelayStore());
   const [amount, setAmount] = useState("");

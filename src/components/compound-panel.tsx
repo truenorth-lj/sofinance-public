@@ -9,6 +9,7 @@ import { useSolUsdcPrices } from "./use-sol-usdc-price";
 import { formatAmount } from "@sofinance/engine/amount";
 import type { CompoundController } from "./use-compound-controller";
 import { CANCEL_CHECK_PENDING_COPY, CHECKING_SOLANA_COPY } from "@/lib/tx-pipeline";
+import { compoundActionLabel } from "@/lib/status-copy";
 import { shortAddress } from "@/lib/format/address";
 import { solscanTxUrl, solscanAccountUrl } from "@/lib/format/explorer";
 
@@ -34,10 +35,7 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect, po
   const summary = preview || (c.attempt?.kind === "compound" ? c.attempt.summary : null);
   const displaySummary = summary?.positionMint === c.positionMint ? summary : preview;
   const amount = (value: string, decimals: number) => formatAmount(value, decimals, Math.min(decimals, 9));
-  const action = c.cleanup?.running ? c.stage === "preparing" ? "Preparing cleanup…" :
-    c.stage === "wallet" ? "Approve cleanup in wallet…" : c.stage === "checking" ? CHECKING_SOLANA_COPY : c.stage === "broadcasting" ? "Sending cleanup…" : "Verifying cleanup…"
-    : c.stage === "preparing" ? "Verifying harvested fees and simulating transaction…" :
-    c.stage === "wallet" ? "Confirming in wallet…" : c.stage === "checking" ? CHECKING_SOLANA_COPY : c.stage === "broadcasting" ? "Sending and verifying…" : "One-click compound";
+  const action = compoundActionLabel({ cleanupRunning: Boolean(c.cleanup?.running), stage: c.stage, checkingCopy: CHECKING_SOLANA_COPY });
   const blockedText = !c.wallet ? null : !c.positionMint ? "Please select existing position first" :
     c.externalBlocked ? "Another operation is in progress." : c.cancelPending ? CANCEL_CHECK_PENDING_COPY : state && !state.eligible ? state.reason :
         state && !c.hasFees ? "Currently no fees available to compound" : null;
