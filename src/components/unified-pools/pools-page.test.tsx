@@ -42,7 +42,7 @@ afterEach(async () => { await act(async () => root.unmount()); container.remove(
 describe("PoolsPage (/app/rwa-pairs)", () => {
   it("lists the pools, passes the deep link, and opens a Robinhood Chain pool in a MetaMask dialog with no Solana content", async () => {
     await act(async () => { root.render(createElement(EvmWalletProvider, { enabled: false, session: createEvmSession({ discover }) },
-      createElement(PoolsPage, { flags: { orca: false, meteora: false, meteoraOpen: false, rhc: true }, rhcSigningEnabled: true, deepLinkPool: "0xpool" }))); });
+      createElement(PoolsPage, { flags: { orca: false, meteora: false, rhc: true }, rhcSigningEnabled: true, deepLinkPool: "0xpool" }))); });
     expect(container.querySelector("#pools")).not.toBeNull();
     expect(seen.deepLink.at(-1)).toBe("0xpool");
     expect(container.querySelector("[role=dialog]")).toBeNull();
@@ -59,7 +59,7 @@ describe("PoolsPage (/app/rwa-pairs)", () => {
   it("the dialog connects the shared EVM session and reuses it on the next open (no second prompt)", async () => {
     const session = createEvmSession({ discover });
     await act(async () => { root.render(createElement(EvmWalletProvider, { enabled: false, session },
-      createElement(PoolsPage, { flags: { orca: false, meteora: false, meteoraOpen: false, rhc: true }, rhcSigningEnabled: true }))); });
+      createElement(PoolsPage, { flags: { orca: false, meteora: false, rhc: true }, rhcSigningEnabled: true }))); });
     await act(async () => { seen.openRhc!({ pool: { poolId: "0xpool" } }); });
     const first = seen.panel.mock.lastCall![0] as { connectWallet: () => Promise<unknown> };
     await act(async () => { await first.connectWallet(); });

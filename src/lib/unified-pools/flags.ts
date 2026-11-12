@@ -1,5 +1,5 @@
 import {
-  type DeployTarget, deployTarget, isMeteoraDlmmDiscoveryEnabled, isMeteoraDlmmTxBuildEnabled, isOrcaDiscoveryEnabled,
+  type DeployTarget, deployTarget, isMeteoraDlmmDiscoveryEnabled, isOrcaDiscoveryEnabled,
   isRhcUniv4DiscoveryEnabled, isRhcUniv4TradingEnabled, isRhcUniv4WalletSigningEnabled,
 } from "@/lib/protocol-flags";
 
@@ -12,7 +12,6 @@ export function unifiedPoolFlags(target: DeployTarget = deployTarget()) {
   return {
     orca: isOrcaDiscoveryEnabled(target),
     meteora: isMeteoraDlmmDiscoveryEnabled(target),
-    meteoraOpen: isMeteoraDlmmDiscoveryEnabled(target) && isMeteoraDlmmTxBuildEnabled(target),
     rhc,
     rhcSigning: rhc && isRhcUniv4WalletSigningEnabled(target),
   };
