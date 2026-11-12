@@ -31,9 +31,41 @@ export type PositionEventContext = {
   vaultB: string;
 };
 
-type HistoryInstruction = ParsedTransactionWithMeta["transaction"]["message"]["instructions"][number];
+export type HistoryInstruction = ParsedTransactionWithMeta["transaction"]["message"]["instructions"][number];
 
-function actualTransferAmount(
+const TOKEN_PROGRAMS = [TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58()];
+
+function transferAmount(type: unknown, info: { mint?: string; tokenAmount?: { amount?: unknown }; amount?: unknown }, mint: string): bigint | null {
+  if (type !== "transferChecked" && type !== "transfer") return null;
+  if (type === "transferChecked" && info.mint !== mint) return null;
+  const amount = type === "transferChecked" ? info.tokenAmount?.amount : info.amount;
+  if (typeof amount !== "string" || !/^\d+$/.test(amount)) return null;
+  return BigInt(amount);
+}
+
+/** Sum SPL / Token-2022 transfers that `match` includes; `null` if a token receipt is malformed. */
+export function sumTokenTransfers(
+  instructions: readonly HistoryInstruction[],
+  mint: string,
+  match: (info: { source?: string; destination?: string; authority?: string }) => "include" | "skip" | "malformed",
+): bigint | null {
+  let total = 0n;
+  for (const instruction of instructions) {
+    if (!TOKEN_PROGRAMS.includes(instruction.programId.toBase58())) continue;
+    if (!("parsed" in instruction)) return null;
+    const { type, info } = instruction.parsed;
+    const decision = match(info ?? {});
+    if (decision === "skip") continue;
+    if (decision === "malformed") return null;
+    const amount = transferAmount(type, info ?? {}, mint);
+    if (amount === null) return null;
+    total += amount;
+  }
+  return total;
+}
+
+/** Sum of transfers source → destination signed by `authority`, or null when a matching receipt is malformed. */
+export function actualTransferAmount(
   instructions: readonly HistoryInstruction[],
   source: string | undefined,
   destination: string | undefined,
@@ -41,20 +73,24 @@ function actualTransferAmount(
   authority: string | undefined,
 ): bigint | null {
   if (!source || !destination || !authority) return null;
-  let total = 0n;
-  for (const instruction of instructions) {
-    if (![TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58()].includes(instruction.programId.toBase58())) continue;
-    if (!("parsed" in instruction)) return null;
-    const { type, info } = instruction.parsed;
-    if (info?.source !== source || info?.destination !== destination) continue;
-    if (type !== "transferChecked" && type !== "transfer") return null;
-    if (info.authority !== authority) return null;
-    if (type === "transferChecked" && info.mint !== mint) return null;
-    const amount = type === "transferChecked" ? info.tokenAmount?.amount : info.amount;
-    if (typeof amount !== "string" || !/^\d+$/.test(amount)) return null;
-    total += BigInt(amount);
-  }
-  return total;
+  return sumTokenTransfers(instructions, mint, (info) => {
+    if (info.source !== source || info.destination !== destination) return "skip";
+    return info.authority !== authority ? "malformed" : "include";
+  });
+}
+
+/** Sum of transfers into (`in`) or out of (`out`, signed by the pool) a reserve. */
+export function reserveFlow(
+  instructions: readonly HistoryInstruction[],
+  reserve: string,
+  mint: string,
+  poolId: string,
+  direction: "in" | "out",
+): bigint | null {
+  return sumTokenTransfers(instructions, mint, (info) => {
+    if ((direction === "in" ? info.destination : info.source) !== reserve) return "skip";
+    return direction === "out" && info.authority !== poolId ? "malformed" : "include";
+  });
 }
 
 type WithdrawalCalculation = { principalA: bigint; principalB: bigint; feeA: bigint; feeB: bigint };
