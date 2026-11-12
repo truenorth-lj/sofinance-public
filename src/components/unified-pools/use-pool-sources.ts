@@ -11,8 +11,6 @@ import type { PoolChain, UnifiedProtocol } from "@/lib/unified-pools/model";
 export type UnifiedPoolFlags = {
   orca: boolean;
   meteora: boolean;
-  /** Meteora open flow page (`/app/meteora`) exists on this deployment. */
-  meteoraOpen: boolean;
   rhc: boolean;
 };
 
@@ -202,7 +200,7 @@ export function usePoolSources(flags: UnifiedPoolFlags): {
     setLoaded(next.loaded);
     setErrors(next.errors);
     setLoading(false);
-    // Discovery flags only (same as the previous inline loader); meteoraOpen does not change which lists we fetch.
+    // Discovery flags only (same as the previous inline loader).
   }, [flags.orca, flags.meteora, flags.rhc]); // eslint-disable-line react-hooks/exhaustive-deps -- see above
 
   useEffect(() => {

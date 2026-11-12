@@ -8,7 +8,7 @@ import { POOL_SOURCES, SOURCE_ERROR, chainMeta, protocolMeta, usePoolSources, ty
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const FLAGS: UnifiedPoolFlags = { orca: false, meteora: false, meteoraOpen: false, rhc: true };
+const FLAGS: UnifiedPoolFlags = { orca: false, meteora: false, rhc: true };
 
 const solanaRow = { poolAddress: "ray1", protocol: "raydium-clmm", mintA: "a", mintB: "b" };
 const orcaRow = { poolAddress: "orca1", protocol: "orca-whirlpool", mintA: "a", mintB: "b" };
@@ -99,7 +99,7 @@ describe("usePoolSources", () => {
   });
 
   it("fetches Orca and Meteora only when their flags are on", async () => {
-    const state = await run({ orca: true, meteora: true, meteoraOpen: true, rhc: false });
+    const state = await run({ orca: true, meteora: true, rhc: false });
     expect(state.loaded.rows.map((row) => row.poolAddress)).toEqual(["ray1", "orca1", "met1"]);
     expect(state.loaded.rhc).toEqual([]);
     expect(requested.some((url) => url.includes("orca-whirlpool"))).toBe(true);

@@ -87,7 +87,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const PROD: UnifiedPoolFlags = { orca: false, meteora: false, meteoraOpen: false, rhc: true };
+const PROD: UnifiedPoolFlags = { orca: false, meteora: false, rhc: true };
 async function render(flags: UnifiedPoolFlags = PROD, props: { deepLinkPool?: string; onOpenRhc?: (r: unknown) => void } = {}) {
   await act(async () => { root.render(createElement(UnifiedPoolsPanel, { flags, onOpenRhc: props.onOpenRhc ?? vi.fn(), deepLinkPool: props.deepLinkPool })); });
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
@@ -132,7 +132,7 @@ describe("UnifiedPoolsPanel", () => {
   });
 
   it("Meteora pools open the registry dialog from their open capability (no grey button, no Raydium modal, no link out)", async () => {
-    await render({ orca: false, meteora: true, meteoraOpen: true, rhc: true });
+    await render({ orca: false, meteora: true, rhc: true });
     expect(shown()).toContain("solana:met1");
     const card = container.querySelector('[data-pool="solana:met1"]')!;
     expect(card.querySelector("[data-testid=open-disabled]")).toBeNull();
@@ -150,7 +150,7 @@ describe("UnifiedPoolsPanel", () => {
 
   it("an unsupported open capability shows its reason and no button", async () => {
     mocks.openOverride = { supported: false, reason: "Opening needs a newer pool version." };
-    await render({ orca: false, meteora: true, meteoraOpen: true, rhc: true });
+    await render({ orca: false, meteora: true, rhc: true });
     const card = container.querySelector('[data-pool="solana:met1"]')!;
     expect(card.querySelector("button[aria-label^='Open position in']")).toBeNull();
     expect(card.textContent).toContain("Opening needs a newer pool version.");
@@ -158,14 +158,14 @@ describe("UnifiedPoolsPanel", () => {
   });
 
   it("a deep link to a Meteora pool opens the registry dialog without asking the wallet to connect", async () => {
-    await render({ orca: false, meteora: true, meteoraOpen: true, rhc: true }, { deepLinkPool: "met1" });
+    await render({ orca: false, meteora: true, rhc: true }, { deepLinkPool: "met1" });
     await vi.waitFor(() => expect(mocks.registryModal).toHaveBeenCalledWith("met1", "meteora-dlmm"));
     expect(mocks.connect).not.toHaveBeenCalled();
   });
 
   it("an unsupported plan capability greys the calculator button with its reason", async () => {
     mocks.planOverride = { supported: false, reason: "Planning needs a paid data feed for this pool." };
-    await render({ orca: false, meteora: true, meteoraOpen: true, rhc: true });
+    await render({ orca: false, meteora: true, rhc: true });
     const card = container.querySelector('[data-pool="solana:met1"]')!;
     expect(card.querySelector("button[aria-haspopup=dialog]")).toBeNull();
     const greyed = card.querySelector<HTMLElement>("[data-testid=plan-unavailable]")!;
