@@ -9,8 +9,10 @@ import { useSolUsdcPrices } from "./use-sol-usdc-price";
 import { formatAmount } from "@sofinance/engine/amount";
 import type { CompoundController } from "./use-compound-controller";
 import { CANCEL_CHECK_PENDING_COPY, CHECKING_SOLANA_COPY } from "@/lib/tx-pipeline";
+import { shortAddress } from "@/lib/format/address";
+import { solscanTxUrl, solscanAccountUrl } from "@/lib/format/explorer";
 
-const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
+const short = shortAddress;
 
 const statusText = {
   pending: "Transaction confirming. It may still succeed; starting again may repeat the operation.",
@@ -49,16 +51,16 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect, po
           : c.attempt.kind === "recovery" && c.attemptStatus === "success" ? "Balance and account rent recovered"
           : c.attemptStatus === "pending" && c.attemptError ? "Last attempt did not confirm; see the error below"
           : c.attemptStatus ? statusText[c.attemptStatus] : "Loading records"}
-      </p><a className="text-cream/80 underline" href={`https://solscan.io/tx/${c.attempt.signature}`} target="_blank" rel="noreferrer">View transaction {short(c.attempt.signature)}</a></div>
+      </p><a className="text-cream/80 underline" href={solscanTxUrl(c.attempt.signature)} target="_blank" rel="noreferrer">View transaction {short(c.attempt.signature)}</a></div>
       {c.confirmation?.receipt && c.attempt.kind === "compound" && <p className="mt-2 text-cream/80">Actual input: {amount(c.confirmation.receipt.investedA, c.attempt.summary.state.decimalsA)} {tokenLabel(c.attempt.summary.state.mintA)}  +  {amount(c.confirmation.receipt.investedB, c.attempt.summary.state.decimalsB)} {tokenLabel(c.attempt.summary.state.mintB)}</p>}
       <button type="button" onClick={c.retryReconcile} disabled={c.busy} className="mt-2 block text-cream/80 underline disabled:opacity-40">Requery on-chain result</button>
       <details className="mt-2 text-smoke/70"><summary className="cursor-pointer">Complete transaction signature and position</summary><p className="break-all">{c.attempt.signature}</p><p>NFT {c.attempt.positionMint}</p></details>
     </div>;
   const renderReceipt = (receipt: CompoundController["receipts"][number]) => <div key={receipt.sourceSignature} className="rounded-2xl border border-white/10 p-3">
-        <div className="flex flex-wrap items-center justify-between gap-3"><span className="text-xs text-smoke">{receipt.compoundAccounts.map(account => tokenLabel(account.mint)).join(" / ")} · NFT {short(receipt.positionMint)} · original transaction <a href={`https://solscan.io/tx/${receipt.sourceSignature}`} target="_blank" rel="noreferrer" className="text-cream/80 underline">{short(receipt.sourceSignature)}</a></span>
+        <div className="flex flex-wrap items-center justify-between gap-3"><span className="text-xs text-smoke">{receipt.compoundAccounts.map(account => tokenLabel(account.mint)).join(" / ")} · NFT {short(receipt.positionMint)} · original transaction <a href={solscanTxUrl(receipt.sourceSignature)} target="_blank" rel="noreferrer" className="text-cream/80 underline">{short(receipt.sourceSignature)}</a></span>
           <button onClick={() => c.recover(receipt)} disabled={!c.canCleanup || c.busy} className="inline-flex items-center justify-center gap-2 rounded-full border border-white/20 bg-transparent px-3 py-2 text-xs font-semibold text-cream/80 transition-colors hover:border-white/40 hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-40">Retrieve this balance</button></div>
         {c.recoveryError?.sourceSignature === receipt.sourceSignature && <p role="alert" className="mt-2 text-cream/80">{c.recoveryError.message}</p>}
-        <details className="mt-2 text-[11px] leading-5 text-smoke/70"><summary className="cursor-pointer">View wallet-controlled harvest accounts</summary>{receipt.compoundAccounts.map((account) => <p key={account.address} className="break-all"><a href={`https://solscan.io/account/${account.address}`} target="_blank" rel="noreferrer" className="text-cream/80 underline">{account.address}</a> · {tokenLabel(account.mint)}</p>)}</details>
+        <details className="mt-2 text-[11px] leading-5 text-smoke/70"><summary className="cursor-pointer">View wallet-controlled harvest accounts</summary>{receipt.compoundAccounts.map((account) => <p key={account.address} className="break-all"><a href={solscanAccountUrl(account.address)} target="_blank" rel="noreferrer" className="text-cream/80 underline">{account.address}</a> · {tokenLabel(account.mint)}</p>)}</details>
       </div>;
   return <section aria-labelledby="compound-heading" className="mt-6 rounded-[28px] border border-white/12 bg-char p-5 sm:p-8">
     <div className="flex items-center justify-between gap-4">
@@ -91,11 +93,11 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect, po
     {c.error && <div role="alert" className="mt-4 flex gap-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" /><span>{c.error}</span></div>}
     {!preview && displaySummary && <details className="mt-5 text-xs text-smoke"><summary className="cursor-pointer font-semibold">Previous transaction simulation record</summary><p className="mt-3">Previous transaction estimate; a new compound will re-read harvested fees and simulate. USDC values use current reference prices.</p><CompoundOverview state={displaySummary.state} summary={displaySummary} tokenLabel={tokenLabel} prices={prices} /></details>}
     {c.cleanup && <div role="status" className="mt-5 rounded-2xl border border-white/15 p-4 text-xs leading-6 text-cream/80">
-      {c.cleanup.compoundSignature && <p>Compound confirmed. <a className="underline" href={`https://solscan.io/tx/${c.cleanup.compoundSignature}`} target="_blank" rel="noreferrer">View compound transaction</a></p>}
+      {c.cleanup.compoundSignature && <p>Compound confirmed. <a className="underline" href={solscanTxUrl(c.cleanup.compoundSignature)} target="_blank" rel="noreferrer">View compound transaction</a></p>}
       <p>{c.cleanup.message}</p><p>{c.cleanup.completed} of {c.cleanup.total} harvest account groups cleaned.</p>
     </div>}
     {c.cleanupBatch && <div className="mt-3 text-xs leading-6 text-smoke">
-      {c.cleanupBatch.transactions.map(tx => <p key={tx.signature}><a className="underline" href={`https://solscan.io/tx/${tx.signature}`} target="_blank" rel="noreferrer">Cleanup transaction {short(tx.signature)}</a> · {tx.unsent ? "Not sent" : tx.status === "success" ? "Confirmed" : tx.status === "pending" ? "Confirming; automatically retrying verification" : tx.status}</p>)}
+      {c.cleanupBatch.transactions.map(tx => <p key={tx.signature}><a className="underline" href={solscanTxUrl(tx.signature)} target="_blank" rel="noreferrer">Cleanup transaction {short(tx.signature)}</a> · {tx.unsent ? "Not sent" : tx.status === "success" ? "Confirmed" : tx.status === "pending" ? "Confirming; automatically retrying verification" : tx.status}</p>)}
       <button type="button" onClick={c.retryReconcile} disabled={c.busy} className="underline disabled:opacity-40">Requery cleanup results</button>
     </div>}
     {c.wallet && <div className="mt-5 rounded-2xl border border-white/15 p-4 text-xs leading-6 text-smoke">

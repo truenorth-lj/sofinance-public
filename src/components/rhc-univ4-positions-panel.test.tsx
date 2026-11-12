@@ -162,7 +162,7 @@ describe("RhcUniv4PositionsPanel", () => {
       { tokenId: "3", position: position({ tokenId: "3", poolId: null, baseSymbol: null }) },
     ] });
     expect(button("Close")).toBeUndefined();
-    expect(text()).toContain("Owned by another wallet (0x2222…2222).");
+    expect(text()).toContain("Owned by another wallet (0x22…2222).");
     expect(text()).toContain("Closed (or never existed).");
     expect(text()).toContain("Not in a pool SoFinance supports.");
   });

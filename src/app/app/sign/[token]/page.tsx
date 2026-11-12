@@ -18,10 +18,12 @@ import { useOpenAttempt } from "@/components/use-open-attempt";
 import { captureGrowthEvent, captureGrowthEventOnce } from "@/lib/analytics/client";
 import { openFailureProperties, openOutcomeFailureProperties } from "@/lib/analytics/errors";
 import { GROWTH_EVENTS, openEventProperties } from "@/lib/analytics/events";
+import { shortAddress } from "@/lib/format/address";
+import { solscanTxUrl } from "@/lib/format/explorer";
 
 type Status = "loading" | "expired" | "wallet-mismatch" | "ready" | "signing" | "checking" | "submitting" | "success" | "error";
 
-const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
+const short = shortAddress;
 
 export default function SignPage() {
   const params = useParams<{ token: string }>();
@@ -385,7 +387,7 @@ export default function SignPage() {
               <p className="text-sm font-medium text-mint">{payload?.kind === "open-position" ? "Original open-position transaction" : "Transaction submitted"}</p>
               <p className="mt-2 text-xs text-mint">
                 <a
-                  href={`https://solscan.io/tx/${verificationSignature}`}
+                  href={solscanTxUrl(verificationSignature)}
                   target="_blank"
                   rel="noreferrer"
                   className="underline"

@@ -34,6 +34,7 @@ import { usePoolsApr7d, type Apr7dState } from "./use-pools-apr7d";
 import { APR7D_SHORT, Apr7dValue, newPoolTitle, rangeApr7dLabel, ChainBadge, chip, COLUMNS, iconPair, LowTvlTag, money, OpenButton, PoolTable, type OpenAction } from "./pool-list";
 import { dataDaysLabel, MIN_DATA_DAYS } from "@/lib/min-data-days";
 import { rankGroupLookup } from "@/lib/unified-pools/apr7d";
+import { shortAddress } from "@/lib/format/address";
 
 /** Which sources this deployment may show; computed from the code flags on the server and passed down. */
 export type UnifiedPoolFlags = {
@@ -160,8 +161,8 @@ function PoolCard({ pool, apr, action, icons, onCalculate }: {
       {raydium
         ? <a href={raydiumPoolUrl(pool.poolAddress)} target="_blank" rel="noreferrer" title={`Open pool ${pool.poolAddress} on Raydium`}
           className="ml-auto font-data text-[10px] tracking-[0.08em] text-ink/60 underline underline-offset-2 outline-none hover:text-ink focus-visible:text-ink">
-          {pool.poolAddress.slice(0, 4)}…{pool.poolAddress.slice(-4)}</a>
-        : <span className="ml-auto font-data text-[10px] tracking-[0.08em] text-ink/55" title={pool.poolAddress}>{pool.poolAddress.slice(0, 4)}…{pool.poolAddress.slice(-4)}</span>}
+          {shortAddress(pool.poolAddress)}</a>
+        : <span className="ml-auto font-data text-[10px] tracking-[0.08em] text-ink/55" title={pool.poolAddress}>{shortAddress(pool.poolAddress)}</span>}
     </div>
   </li>;
 }

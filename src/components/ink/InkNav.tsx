@@ -11,6 +11,7 @@ import { EXTERNAL_LINK_PROPS, SOCIAL_LINKS } from "@/lib/social-links";
 import { XIcon } from "@/components/x-icon";
 import { useOptionalEvmWalletConnection } from "@/components/evm-wallet-connection";
 import { RHC_CHAIN_ID } from "@/lib/rhc-wallet/eip1193";
+import { shortAddress } from "@/lib/format/address";
 
 interface InkNavProps {
   wallet?: string | null;
@@ -19,8 +20,8 @@ interface InkNavProps {
   onDisconnect?: () => void;
 }
 
-const short = (value: string) => `${value.slice(0, 4)}…${value.slice(-4)}`;
-const shortEvm = (value: string) => `${value.slice(0, 6)}…${value.slice(-4)}`;
+const short = shortAddress;
+const shortEvm = shortAddress;
 
 const NAV_LINKS = [
   { href: APP_ROUTES.home, label: "Positions" },

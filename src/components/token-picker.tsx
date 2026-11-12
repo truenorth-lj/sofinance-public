@@ -7,8 +7,9 @@ import { formatAmount } from "@sofinance/engine/amount";
 import type { TokenMetadata } from "@sofinance/engine/token-metadata";
 import type { WalletAsset } from "@sofinance/engine/wallet-discovery";
 import { TokenIcon } from "./token-icon";
+import { shortAddress } from "@/lib/format/address";
 
-const short = (mint: string) => `${mint.slice(0, 5)}…${mint.slice(-5)}`;
+const short = shortAddress;
 const displayBalance = (asset: WalletAsset) => {
   const balance = formatAmount(asset.balance, asset.decimals);
   return balance === "0" && BigInt(asset.balance) > 0n ? "<0.000001" : balance;

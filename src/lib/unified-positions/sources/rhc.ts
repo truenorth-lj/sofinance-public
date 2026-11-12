@@ -4,6 +4,7 @@ import type { ScannedPosition } from "@sofinance/engine/protocols/uniswap-v4/pos
 import { rhcPairLabel } from "@/lib/unified-pools/rows";
 import { NOT_AVAILABLE_MESSAGE, positionKey, unsupported, type PositionSource, type SourceCapabilities, type UnifiedPosition } from "../model";
 import { formatTickPriceRange, type PriceRange } from "../range";
+import { shortAddress } from "@/lib/format/address";
 
 /** One Robinhood Chain row: a wallet holding from the scan, or an NFT id opened in this browser / added by hand. */
 export type RhcNative = { lookup: PositionLookup; held: ScannedPosition | null; priceRange: PriceRange | null };
@@ -11,7 +12,7 @@ export type RhcDiscovery = { scanned: readonly ScannedPosition[]; lookups: reado
 
 const specFor = (poolId: string | null | undefined) =>
   poolId ? UNIV4_RHC_ALLOWLISTED_POOLS.find((spec) => spec.poolId.toLowerCase() === poolId.toLowerCase()) ?? null : null;
-const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+const short = shortAddress;
 
 /** Why this position cannot be closed here (same wording as the pools-page positions panel), or null. */
 export function rhcCloseBlockReason(native: RhcNative): string | null {

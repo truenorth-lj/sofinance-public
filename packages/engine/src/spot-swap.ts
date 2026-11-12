@@ -28,6 +28,7 @@ import { assertNoDirectFeeWalletInstructions, computeSwapFee, readSwapFeeConfig,
 import { rejectUnselectedWalletTokenWrites, swapRouteInstructions, verifyIntermediateAccounts, type IntermediateAccount } from "./swap/instructions";
 import { JupiterNoRouteError, type BuildRoute } from "./swap/jupiter";
 import { feeSwapLeg } from "./swap/leg";
+import { shortAddress } from "./address";
 
 export const USDC_DECIMALS = 6;
 /** Base network fee for one signature; a wallet-added priority fee comes on top. */
@@ -146,9 +147,7 @@ export type SpotSwapSummary = {
   expiresAt: number;
 };
 
-export function shortAddress(address: string): string {
-  return address.length > 8 ? `${address.slice(0, 4)}…${address.slice(-2)}` : address;
-}
+export { shortAddress };
 
 function canonicalMint(value: string): string | null {
   try {

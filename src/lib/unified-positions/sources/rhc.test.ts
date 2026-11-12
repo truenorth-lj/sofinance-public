@@ -46,7 +46,7 @@ describe("rhcPositionSource", () => {
     const native = (l: PositionLookup, held: ScannedPosition | null = null) => ({ lookup: l, held, priceRange: null });
     expect(rhcCloseBlockReason(native({ tokenId: "1", position: null, error: "rpc" }))).toBe("Could not read this position right now.");
     expect(rhcCloseBlockReason(native({ tokenId: "1", position: null, error: "not-found" }))).toBe("Closed (or never existed).");
-    expect(rhcCloseBlockReason(native(lookup("1", { ownedByUser: false, owner: "0x1234567890abcdef1234567890abcdef12345678" })))).toBe("Owned by another wallet (0x1234…5678).");
+    expect(rhcCloseBlockReason(native(lookup("1", { ownedByUser: false, owner: "0x1234567890abcdef1234567890abcdef12345678" })))).toBe("Owned by another wallet (0x12…5678).");
     expect(rhcCloseBlockReason(native(lookup("1", { poolId: "0xdead" }), scanned("1"))))
       .toBe("StablePair pool that SoFinance does not list yet: view only.");
     expect(rhcCloseBlockReason(native(lookup("1", { poolId: "0xdead" }), { ...scanned("1"), stablePair: false })))
@@ -74,7 +74,7 @@ describe("capabilitiesFor(position): per-position override (PM requirement)", ()
     // Everything else is untouched: the UI shape is identical.
     expect(Object.keys(b)).toEqual(Object.keys(a));
     for (const key of ["compound", "performance", "deposit", "rangeDisplay", "manualAdd", "signer"] as const) expect(b[key]).toEqual(a[key]);
-    expect(toolUnavailableReason(capabilitiesFor(rhcPositionSource, otherWallet), "withdraw")).toBe("Owned by another wallet (0x1234…5678).");
+    expect(toolUnavailableReason(capabilitiesFor(rhcPositionSource, otherWallet), "withdraw")).toBe("Owned by another wallet (0x12…5678).");
   });
 
   it("a custom source can turn a tool ON for one pool only", () => {

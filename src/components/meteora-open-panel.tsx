@@ -12,6 +12,7 @@ import { meteoraFailedOnChainMessage, meteoraPlainError, solscanTxUrl } from "@/
 import {
   assertMeteoraPending, METEORA_HISTORY_ERROR, parseMeteoraPending, readMeteoraPendingRaw, subscribeMeteoraPending, writeMeteoraPending, type MeteoraPending,
 } from "@/lib/meteora-wallet/pending";
+import { shortAddress } from "@/lib/format/address";
 
 /**
  * Meteora DLMM open flow (design PR12 + signing), behind `METEORA_DLMM_TX_BUILD_ENABLED`; sign buttons need
@@ -329,7 +330,7 @@ export function MeteoraOpenPanel({ view, signingEnabled }: { view: MeteoraOpenPo
     <div className="rounded-xl border border-white/12 p-4 text-sm text-cream">
       <p>{view.symbolX} / {view.symbolY} · bin step {view.binStep} · active bin {view.activeId}</p>
       <p className="text-xs text-smoke">v1 opens only inside existing bin arrays: bins {view.allowedLowerBinId} to {view.allowedUpperBinId}, at most {MAX_WIDTH} bins.</p>
-      {!connected ? <button type="button" className={button} onClick={() => void connect()}>Connect wallet</button> : <p className="mt-2 text-xs text-smoke">Wallet {wallet.slice(0, 4)}…{wallet.slice(-4)}</p>}
+      {!connected ? <button type="button" className={button} onClick={() => void connect()}>Connect wallet</button> : <p className="mt-2 text-xs text-smoke">Wallet {shortAddress(wallet)}</p>}
       {balances ? <p className="mt-1 text-xs text-smoke" data-testid="meteora-balances">
         Balances: {sol(balances.solLamports)} SOL · {units(balances.usdc, 6)} USDC · {units(balances.x, view.decimals)} {view.symbolX} · {units(balances.y, view.decimals)} {view.symbolY}
       </p> : null}
@@ -354,7 +355,7 @@ export function MeteoraOpenPanel({ view, signingEnabled }: { view: MeteoraOpenPo
 
     {historyInvalid ? <p role="alert" className="text-sm text-red-300">{METEORA_HISTORY_ERROR}</p> : null}
     {pending ? <div className="rounded-xl border border-amber-300/40 p-3 text-sm text-cream" data-testid="meteora-pending">
-      <p>Unfinished open: position {pending.position.slice(0, 4)}…{pending.position.slice(-4)} (bins {pending.lowerBinId} to {pending.upperBinId}).</p>
+      <p>Unfinished open: position {shortAddress(pending.position)} (bins {pending.lowerBinId} to {pending.upperBinId}).</p>
       {!samePool ? <p>Return to pool {pending.poolId} to continue this position.</p> : null}
       {pending.stage !== "setup_confirmed" ? <button type="button" className={button} disabled={anyBusy || !connected} onClick={() => void recheck(pending)}>Check original transaction</button> : null}
       <p className="text-xs text-smoke">{pending.stage === "setup_confirmed" ? "Step 1/2 is done. Retry 2/2 to add liquidity, or close the empty position to get its rent back." : "A transaction is being confirmed…"}</p>

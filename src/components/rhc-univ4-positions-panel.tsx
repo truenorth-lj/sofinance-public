@@ -10,6 +10,7 @@ import { rhcPairLabel } from "@/lib/unified-pools/rows";
 import {
   fetchPositions, fetchScan, poolOf, useRhcClose, type RhcCloseReady, type RhcCloseSent, type RhcWalletRef, type Scan,
 } from "./rhc-close";
+import { shortAddress } from "@/lib/format/address";
 
 /**
  * Robinhood Chain (4663) Uniswap v4 positions + Close (PR7), inside the `/app/rhc` panel (same flags: page behind
@@ -30,7 +31,7 @@ const fmt = (raw: string | bigint, decimals = 18, digits = 6) => {
   const frac = f.slice(0, digits).replace(/0+$/, "");
   return frac ? `${i}.${frac}` : i!;
 };
-const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+const short = shortAddress;
 
 export function ClosePreview({ ready }: { ready: Ready }) {
   const pool = poolOf(ready.position)!;

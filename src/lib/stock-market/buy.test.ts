@@ -41,7 +41,7 @@ describe("computeStockBuyEligibility", () => {
   it("gives a Buy to the engine's selection (xStocks first) and keeps the allowlist with Jupiter metadata", async () => {
     const result = await computeStockBuyEligibility(market, [["TSLA"]], { readMints, checkRoute: async () => "ok", isUnavailable: () => false });
     expect(result.options.TSLA).toMatchObject({ mint: TSLAX, issuerName: "xStocks", company: "Tesla", symbol: "TSLAx" });
-    expect(result.options.TSLA!.mintShort).toBe("XsDo…oB");
+    expect(result.options.TSLA!.mintShort).toBe("XsDo…HzoB");
     expect(spotSwapAllowlistFor(result.candidates.TSLA!)[1]).toEqual({ mint: TSLA_BP, symbol: "TSLA", underlying: "TSLA", xstocks: false,
       jupiter: { name: "Tesla - Backpack Securities", tags: ["verified", "stocks", "backpack"] } });
     expect(result.candidates.TSLA![0]).toMatchObject({ decimals: 8, program: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" });

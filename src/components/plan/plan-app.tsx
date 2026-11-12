@@ -22,10 +22,11 @@ import { OutcomePanel } from "./outcome-panel";
 import { PoolSelect } from "./pool-select";
 import { usePoolYield } from "./use-pool-yield";
 import { useRwaPairs } from "./use-rwa-pairs";
+import { shortAddress } from "@/lib/format/address";
 
 const FIELDS: readonly IntentField[] = ["amount", "days", "lossAlert", "exitAsset"];
 const DEFAULT_FIELD: IntentField = "amount";
-const shortId = (value: string) => `${value.slice(0, 4)}…${value.slice(-4)}`;
+const shortId = shortAddress;
 
 /** `?edit=` picks the open editor. Retired values from the goal-first layout fall back to the default. */
 function fieldFromParam(raw: string | null): IntentField {

@@ -12,7 +12,7 @@ vi.mock("@/lib/rhc-univ4-exit", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/rhc-univ4-exit")>();
   return { ...actual, runRhcUniv4Exit: vi.fn(async (input: { action: string }) => (input.action === "positions"
     ? { state: "positions", positions: [] }
-    : { state: "failed", code: "not-owner", message: "Position #1 belongs to another wallet (0x2222…2222), not the connected one." })) };
+    : { state: "failed", code: "not-owner", message: "Position #1 belongs to another wallet (0x22…2222), not the connected one." })) };
 });
 import { runRhcUniv4Exit } from "@/lib/rhc-univ4-exit";
 import { isRhcUniv4TxBuildEnabled } from "@/lib/protocol-flags";

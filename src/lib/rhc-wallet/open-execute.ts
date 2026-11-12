@@ -9,8 +9,7 @@ import { currentChainId, type Eip1193Provider, ensureRobinhoodChain, RHC_CHAIN_I
  * router, sender or a non-zero value never reaches the wallet.
  */
 
-export const RHC_EXPLORER_TX = "https://robinhoodchain.blockscout.com/tx/";
-export const explorerTxUrl = (hash: string) => `${RHC_EXPLORER_TX}${hash}`;
+export { RHC_EXPLORER_TX, blockscoutTxUrl as explorerTxUrl } from "@/lib/format/explorer";
 
 export const SIGNATURE_EXPIRED_MESSAGE = "The Permit2 signature expired. Preview again to get a fresh quote and signature.";
 

@@ -29,11 +29,11 @@ vi.mock("@/lib/stock-market/spot-swap-client", async (importOriginal) => ({
 const { SpotSwapModal, QUOTE_REFRESH_MS } = await import("./spot-swap-modal");
 const { resetTxNotices } = await import("@/lib/tx-pipeline");
 
-const option = { underlying: "TSLA", company: "Tesla", mint: "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB", mintShort: "XsDo…oB", issuerName: "xStocks", symbol: "TSLAx" };
+const option = { underlying: "TSLA", company: "Tesla", mint: "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB", mintShort: "XsDo…HzoB", issuerName: "xStocks", symbol: "TSLAx" };
 const FUNDED = { walletLamports: "50000000", outputAccountExists: true, requiredLamports: "5000", solSufficient: true, usdcBalance: "5000000", usdcSufficient: true };
 const quoteWith = (quotedOut: string, minOut: string): SpotSwapQuoteResult => ({
   underlying: "TSLA", wallet: FUNDED,
-  quote: { outputMint: option.mint, outputMintShort: "XsDo…oB", outputSymbol: "TSLAx", issuerName: "xStocks", xstocks: true, amount: "2000000", feeBps: 10,
+  quote: { outputMint: option.mint, outputMintShort: "XsDo…HzoB", outputSymbol: "TSLAx", issuerName: "xStocks", xstocks: true, amount: "2000000", feeBps: 10,
     feeAmount: "2000", feeWalletShort: "CS5C…AK", quotedOut, minOut, priceImpactPct: "0.0012", newAccountRentLamports: 2_039_280, baseNetworkFeeLamports: 5000,
     outputDecimals: 8, slippageBps: 100 },
 });

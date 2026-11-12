@@ -6,8 +6,9 @@ import {
   dismissTxNotice, findTxNotice, loadTxAttempts, noticeIdFor, showTxNotice, solscanTxUrl,
   useTxNotices, watchTxNotice, type TxNotice,
 } from "@/lib/tx-pipeline";
+import { shortAddress } from "@/lib/format/address";
 
-const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
+const short = shortAddress;
 
 function NoticeIcon({ state }: { state: TxNotice["state"] }) {
   if (state === "loading") return <LoaderCircle aria-hidden className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-lemon" />;

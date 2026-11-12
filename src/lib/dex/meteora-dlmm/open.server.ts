@@ -17,6 +17,7 @@ import { feeSwapLeg } from "@sofinance/engine/swap/leg";
 import { swapRouteInstructions } from "@sofinance/engine/swap/instructions";
 import type { BuildRoute } from "@sofinance/engine/swap/jupiter";
 import { JUPITER_ROUTE_ATTEMPTS, isTxOversizeError, type JupiterRouteConstraints } from "@sofinance/engine/jupiter-route-retry";
+import { shortAddress as short } from "@/lib/format/address";
 import { assertOpenTransactionSize, compactAtaInstructions, compileCompactOpenTransaction, openLookupTableReader } from "@sofinance/engine/open-transaction";
 import { ATOMIC_COMPUTE_UNIT_LIMIT, measuredComputeUnitLimit } from "@sofinance/engine/transaction-limits";
 import { withContextSlotRetry } from "@sofinance/engine/rpc/context-slot";
@@ -91,7 +92,7 @@ export type MeteoraOpenPlan = {
   platformFeeRaw: bigint;
 };
 
-export const short = (address: string) => `${address.slice(0, 4)}…${address.slice(-4)}`;
+export { short };
 export const sol = (lamports: bigint) => (Number(lamports) / 1e9).toFixed(4);
 
 export function publicKey(value: string, what: string) {
