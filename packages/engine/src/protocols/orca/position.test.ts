@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { PublicKey } from "@solana/web3.js";
-import * as core from "@orca-so/whirlpools-core";
 import { describe, expect, it } from "vitest";
 import fixture from "../../fixtures/orca-positions-cbbtc-wbtc.json";
+import golden from "../../fixtures/orca-whirlpools-core-parity.json";
 import { DYNAMIC_TICK_ARRAY_DISCRIMINATOR, decodeWhirlpool, orcaTickArrayAddress, orcaTickArrayStartIndex } from "./accounts";
 import { ORCA_ALLOWLISTED_POOLS } from "./constants";
 import {
@@ -17,6 +17,12 @@ const POOL = fixture.pool;
 const pool = decodeWhirlpool(bytes(POOL));
 const growth = decodeWhirlpoolFeeGrowth(bytes(POOL));
 const arrayFor = (tick: number) => bytes(fixture.tickArrays[String(orcaTickArrayStartIndex(tick, 1)) as "0"]);
+
+const expectedSqrtPrice = new Map<number, bigint>(
+  (golden.tickIndexToSqrtPrice as [number, string][]).map(([tick, sqrt]) => [tick, BigInt(sqrt)]),
+);
+const expectedPosition = new Map(golden.positions.map((row) => [row.address, row]));
+const expectedEdge = new Map(golden.rangeEdgeAmounts.map((row) => [row.sqrtPrice, row]));
 
 function snapshot(address: string) {
   const position = decodeOrcaPosition(bytes(address));
@@ -58,14 +64,21 @@ describe("Orca position account (mainnet cbBTC/WBTC capture)", () => {
   });
 });
 
-describe("parity with @orca-so/whirlpools-core", () => {
+/**
+ * Golden values recorded once from @orca-so/whirlpools-core@3.1.1 on main
+ * c04bbd7d61d4c961f86fc01bf9b69f15d8fb765d (2026-11-12, Asia/Taipei). Assertions stay
+ * exact (`toBe` / `toEqual`); none were loosened to toBeCloseTo or a wider epsilon.
+ */
+describe("parity with recorded @orca-so/whirlpools-core@3.1.1 fixtures", () => {
   it("tickIndexToSqrtPrice matches across the full tick range", () => {
     const ticks = [ORCA_MIN_TICK, ORCA_MAX_TICK, 0, 1, -1];
     for (let tick = ORCA_MIN_TICK; tick <= ORCA_MAX_TICK; tick += 997) ticks.push(tick);
     for (let tick = -1500; tick <= 1500; tick++) ticks.push(tick);
     for (let bit = 0; bit < 19; bit++) ticks.push(1 << bit, -(1 << bit), (1 << bit) - 1, -((1 << bit) - 1));
-    for (const tick of ticks.filter((t) => t >= ORCA_MIN_TICK && t <= ORCA_MAX_TICK)) {
-      expect(orcaTickIndexToSqrtPrice(tick), String(tick)).toBe(core.tickIndexToSqrtPrice(tick));
+    const used = ticks.filter((t) => t >= ORCA_MIN_TICK && t <= ORCA_MAX_TICK);
+    expect(new Set(used).size).toBe(golden.tickIndexToSqrtPrice.length);
+    for (const tick of used) {
+      expect(orcaTickIndexToSqrtPrice(tick), String(tick)).toBe(expectedSqrtPrice.get(tick));
     }
     expect(() => orcaTickIndexToSqrtPrice(ORCA_MAX_TICK + 1)).toThrow("out of range");
   });
@@ -74,30 +87,23 @@ describe("parity with @orca-so/whirlpools-core", () => {
     const { position, lower, upper } = snapshot(address);
     expect(lower.initialized && upper.initialized).toBe(true);
     const ours = orcaUncollectedFees({ tickCurrentIndex: pool.tickCurrentIndex, feeGrowth: growth, position, lower, upper });
-    const reward = { emissionsPerSecondX64: 0n, growthGlobalX64: 0n };
-    const tick = (t: typeof lower) => ({ initialized: t.initialized, liquidityNet: 0n, liquidityGross: 0n, feeGrowthOutsideA: t.feeGrowthOutsideA, feeGrowthOutsideB: t.feeGrowthOutsideB, rewardGrowthsOutside: [0n, 0n, 0n] });
-    const quote = core.collectFeesQuote(
-      { feeTierIndexSeed: new Uint8Array(2), tickSpacing: pool.tickSpacing, feeRate: pool.feeRate, protocolFeeRate: pool.protocolFeeRate, liquidity: pool.liquidity, sqrtPrice: pool.sqrtPriceX64, tickCurrentIndex: pool.tickCurrentIndex, feeGrowthGlobalA: growth.feeGrowthGlobalA, feeGrowthGlobalB: growth.feeGrowthGlobalB, rewardLastUpdatedTimestamp: 0n, rewardInfos: [reward, reward, reward] },
-      { ...position, rewardInfos: [0, 1, 2].map(() => ({ growthInsideCheckpoint: 0n, amountOwed: 0n })) },
-      tick(lower),
-      tick(upper),
-    );
-    expect(ours).toEqual({ feeA: quote.feeOwedA, feeB: quote.feeOwedB });
+    const recorded = expectedPosition.get(address);
+    expect(recorded, address).toBeDefined();
+    expect(ours).toEqual({ feeA: BigInt(recorded!.feeOwedA), feeB: BigInt(recorded!.feeOwedB) });
     expect(ours.feeA).toBeGreaterThanOrEqual(position.feeOwedA);
 
     const amounts = orcaAmountsForLiquidity(position.liquidity, pool.sqrtPriceX64, position.tickLowerIndex, position.tickUpperIndex);
-    const decrease = core.decreaseLiquidityQuote(position.liquidity, 0, pool.sqrtPriceX64, position.tickLowerIndex, position.tickUpperIndex);
-    expect(amounts).toEqual({ amountA: decrease.tokenEstA, amountB: decrease.tokenEstB });
+    expect(amounts).toEqual({ amountA: BigInt(recorded!.tokenEstA), amountB: BigInt(recorded!.tokenEstB) });
 
-    const status = core.positionStatus(pool.sqrtPriceX64, position.tickLowerIndex, position.tickUpperIndex);
     expect(orcaRangeSide(pool.sqrtPriceX64, position.tickLowerIndex, position.tickUpperIndex))
-      .toBe({ priceBelowRange: "below", priceInRange: "inside", priceAboveRange: "above" }[status as string]);
+      .toBe({ priceBelowRange: "below", priceInRange: "inside", priceAboveRange: "above" }[recorded!.status]);
   });
 
   it("amount and status boundaries match at the range edges", () => {
     for (const sqrt of [orcaTickIndexToSqrtPrice(9), orcaTickIndexToSqrtPrice(29), orcaTickIndexToSqrtPrice(9) + 1n, orcaTickIndexToSqrtPrice(29) - 1n]) {
-      const decrease = core.decreaseLiquidityQuote(123456789012345n, 0, sqrt, 9, 29);
-      expect(orcaAmountsForLiquidity(123456789012345n, sqrt, 9, 29)).toEqual({ amountA: decrease.tokenEstA, amountB: decrease.tokenEstB });
+      const recorded = expectedEdge.get(sqrt.toString());
+      expect(recorded, sqrt.toString()).toBeDefined();
+      expect(orcaAmountsForLiquidity(123456789012345n, sqrt, 9, 29)).toEqual({ amountA: BigInt(recorded!.tokenEstA), amountB: BigInt(recorded!.tokenEstB) });
     }
     expect(orcaAmountsForLiquidity(0n, pool.sqrtPriceX64, 9, 29)).toEqual({ amountA: 0n, amountB: 0n });
   });
