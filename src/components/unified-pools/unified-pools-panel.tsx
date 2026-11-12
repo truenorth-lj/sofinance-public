@@ -3,25 +3,13 @@ import "@/lib/engine-host";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ArrowDownUp, ChevronDown, LayoutGrid, List, LoaderCircle, RefreshCw, Search } from "lucide-react";
-import { CARD_RANGE_APR_7D_HELP } from "@/lib/apr-labels/copy";
 import { cn } from "@/lib/cn";
 import { dexDescriptors, fetchOpenRanges, type OpenRanges } from "@/lib/dex/client";
-import { SUPPORTED } from "@/lib/unified-positions/model";
-import { pairLabelSymbols, planShareSymbol } from "@/lib/lp-plan-shares";
-import { volumeDivergenceNote } from "@/lib/apr-labels/volume-divergence";
-import { HIGHEST_RANGE_COLUMN_LABEL, HIGHEST_RANGE_HELP } from "@/lib/range-apr/copy";
-import { unavailableReasonText } from "@/lib/range-apr/format";
-import { pairIssuerLabel } from "@/lib/rwa-pair-names";
-import type { TokenIconMap } from "@/lib/token-icons/map";
-import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
-import type { SnapshotSourceTime } from "@/lib/snapshot-updated";
 import {
-  CHAIN_LABELS, DEFAULT_FILTERS, DEFAULT_SORT, FIRST_CLICK_DIR, isLowTvl, PROTOCOL_LABELS, selectPools, TVL_FILTER_PRESETS, unsupportedTokenReason,
+  CHAIN_LABELS, DEFAULT_FILTERS, DEFAULT_SORT, FIRST_CLICK_DIR, PROTOCOL_LABELS, selectPools, TVL_FILTER_PRESETS, unsupportedTokenReason,
   type PoolChain, type PoolFilters, type SortKey, type UnifiedPool, type UnifiedProtocol,
 } from "@/lib/unified-pools/model";
 import { rhcPool, rhcPoolView, solanaPool, type RhcPoolSummary, type SolanaPoolRow } from "@/lib/unified-pools/rows";
-import { InfoTip } from "../info-tip";
-import { PairTokenIcons } from "../pair-token-icons";
 import { OpenPositionModal } from "../open-position-modal";
 import { clearPoolRangeAprClientCache, loadPoolRangeApr, type RangeAprProtocol } from "../range-apr/pool-range-apr-client";
 import type { PoolRangeAprPayload } from "@/lib/range-apr/types";
@@ -30,142 +18,13 @@ import { ShareCalcDialog } from "./share-calc-dialog";
 import type { RhcPoolView } from "../rhc-univ4-open-panel";
 import type { OpenPositionPair } from "../use-open-position-controller";
 import { useWalletConnection } from "../wallet-connection";
-import { usePoolsApr7d, type Apr7dState } from "./use-pools-apr7d";
-import { APR7D_SHORT, Apr7dValue, newPoolTitle, rangeApr7dLabel, ChainBadge, chip, COLUMNS, iconPair, LowTvlTag, money, OpenButton, PoolTable, type OpenAction } from "./pool-list";
-import { dataDaysLabel, MIN_DATA_DAYS } from "@/lib/min-data-days";
+import { usePoolsApr7d } from "./use-pools-apr7d";
+import { COLUMNS, PoolTable, type OpenAction } from "./pool-list";
 import { rankGroupLookup } from "@/lib/unified-pools/apr7d";
-import { shortAddress } from "@/lib/format/address";
+import { PoolCard } from "./pool-card";
+import { chainMeta, protocolMeta, usePoolSources, type UnifiedPoolFlags } from "./use-pool-sources";
 
-/** Which sources this deployment may show; computed from the code flags on the server and passed down. */
-export type UnifiedPoolFlags = {
-  orca: boolean;
-  meteora: boolean;
-  /** Meteora open flow page (`/app/meteora`) exists on this deployment. */
-  meteoraOpen: boolean;
-  rhc: boolean;
-};
-
-type Source = "raydium" | "orca" | "meteora" | "rhc";
-const SOURCE_ERROR: Record<Source, string> = {
-  raydium: "Raydium pools could not be loaded right now. Refresh to try again.",
-  orca: "Orca pools could not be loaded right now.",
-  meteora: "Meteora pools could not be loaded right now.",
-  rhc: "Robinhood Chain pools could not be loaded right now. SoFinance could not reach the chain or its price source.",
-};
-
-/** `icons`: token icon links stored by the daily refresh, served with `/api/rwa-pairs` (`tokenIcons`). */
-/** `updated`: when each chain's saved list was written (`fetchedAt`), for the "Updated … UTC" line. */
-/** `rwaList`: pool keys from `/api/rwa-pairs` (its Meteora rows are feed `meteora-dlmm-rwa-v1`, with a saved APR snapshot). */
-type Loaded = { rows: SolanaPoolRow[]; rhc: RhcPoolSummary[]; icons?: TokenIconMap; updated: SnapshotSourceTime[]; rwaList?: string[] };
-
-async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(url, { signal, headers: { Accept: "application/json" } });
-  const body = await response.json().catch(() => null) as (T & { error?: string }) | null;
-  if (!response.ok || !body) throw new Error(body?.error || `Request failed (${response.status})`);
-  return body;
-}
-
-const raydiumPoolUrl = (poolId: string) => `https://raydium.io/clmm/create-position/?pool_id=${poolId}`;
-/**
- * The card APR's ⓘ: what the number is ("Standard-range APR · 7d", or the new-pool / missing wording) on its first line,
- * then how it is estimated. The card shows no label line under the APR any more (Sophie, 2026-11-10); this is where it went.
- */
-function AprTip({ label, children }: { label: string; children?: ReactNode }) {
-  return <InfoTip label="About Est. highest range APR" tone="light">
-    <span data-testid="apr7d-label" className="block font-semibold">{label}</span>
-    {children ? <span className="mt-1 block">{children}</span> : null}
-  </InfoTip>;
-}
-
-const cardEyebrow = "font-data text-[10px] uppercase tracking-[0.12em] text-ink/60";
-
-/**
- * One pool as a cream card (the `/app/rwa-pairs` card fields, now for both chains): token icons and issuer names, the
- * estimated highest range APR (7-day) with the range it comes from ("Highest range", the same range the Create position
- * modal calls Best), when the data was updated, confidence and volume notes in the tooltip, then TVL, volume, fee and
- * fee tier (no 24h APR: the 7-day estimate is the only APR shown). "Plan this pool" follows the DEX's `plan` capability (greyed with its reason when unsupported;
- * Raydium, not in the DEX registry yet, keeps its link); Raydium pools also link the pool on Raydium.
- */
-/**
- * Card pair name: always one line ("INTCx/INTC", never "INTCx/" over "INTC"), cut with "…" if it is ever too wide (the
- * full name is the title). The narrowest cards (phones, and the three-column grid below 2xl) use a smaller name and icons.
- */
-
-function PoolCard({ pool, apr, action, icons, onCalculate }: {
-  pool: UnifiedPool; apr: Apr7dState | undefined; action: OpenAction; icons: TokenIconMap | undefined;
-  /** Opens the share calculator over the list (only offered where the DEX's `plan` capability is supported). */
-  onCalculate: () => void;
-}) {
-  const ready = apr?.status === "ready" ? apr : null;
-  const volumeNote = ready ? volumeDivergenceNote(pool.volume24hUsd, ready.avgDailyVolumeUsd) : null;
-  const withVolumeNote = (text: string) => (volumeNote ? `${text} ${volumeNote}` : text);
-  const freshness = apr && apr.status !== "loading" ? apr.freshness : undefined;
-  const raydium = pool.protocol === "raydium-clmm";
-  // Registered DEXes say through their `plan` capability; Raydium (not in the DEX registry yet) keeps its link.
-  const plan = dexDescriptors.descriptorFor(pool.protocol)?.capabilities.plan ?? (raydium ? SUPPORTED : null);
-  // Stock pools count shares; the stablecoin pool has no stock, so its button just says Calculate.
-  const calcLabel = planShareSymbol(pairLabelSymbols(pool.pairLabel)) ? "Calculate shares" : "Calculate";
-  return <li className="flex min-w-0 flex-col rounded-[28px] bg-cream p-6 text-ink" data-pool={pool.key}>
-    <div className="flex flex-wrap items-center gap-1.5"><ChainBadge chain={pool.chain} /><span className={cn(chip, "border border-ink/25")}>{PROTOCOL_LABELS[pool.protocol]}</span>
-      {isLowTvl(pool) && apr?.status !== "new" && <LowTvlTag tone="light" />}</div>
-    <div className="mt-4 flex items-start justify-between gap-3">
-      <div className="flex min-w-0 items-center gap-3 max-sm:gap-2 xl:max-2xl:gap-2">
-        <PairTokenIcons pair={iconPair(pool)} icons={icons} chain={pool.chain} iconClassName="h-10 w-10 max-sm:h-8 max-sm:w-8 xl:max-2xl:h-8 xl:max-2xl:w-8" />
-        <div className="min-w-0">
-          <h3 className="truncate whitespace-nowrap text-xl font-medium max-sm:text-lg xl:max-2xl:text-lg leading-tight tracking-[-0.02em]" title={pool.pairLabel} data-testid="pool-card-name">{pool.pairLabel}</h3>
-          <p className="truncate text-xs text-ink/65" title={`${pool.nameA} / ${pool.nameB}`}>{pairIssuerLabel(pool.nameA, pool.nameB)}</p>
-        </div>
-      </div>
-      {/* The APR pill with its ⓘ beside it on one row; what the number is lives in the ⓘ, not in a label line. */}
-      <div className="flex shrink-0 items-center gap-1.5" data-testid="apr7d-row">
-        <Apr7dValue state={apr} />
-        {ready ? <AprTip label={rangeApr7dLabel(ready.rangeLabel)}>
-          {withVolumeNote(CARD_RANGE_APR_7D_HELP)}{ready.lowConfidence ? " Low confidence for this pool: thin or patchy recent trading." : ""}
-        </AprTip>
-          : apr?.status === "new" ? <AprTip label={dataDaysLabel(apr.days)}>{newPoolTitle(apr.days)}</AprTip>
-          : apr?.status === "missing" ? <AprTip label={APR7D_SHORT}>{apr.degraded ? `${unavailableReasonText("degraded-data")}.` : apr.reason}</AprTip>
-          : <AprTip label={APR7D_SHORT} />}
-      </div>
-    </div>
-    {apr?.status === "missing" && <p className="mt-2 text-xs text-ink/60">{apr.reason}</p>}
-    {apr?.status === "new" && <p className="mt-2 text-xs text-ink/60" data-testid="apr7d-new-note">
-      Too new for an APR: it shows once the pool has {MIN_DATA_DAYS} days of data.</p>}
-    {/* No "Updated …" time on the card; only a late snapshot says so (its time in the title, like the table). */}
-    {freshness?.delayed && <p className="mt-2 text-xs text-ink/60" data-testid="apr-delayed"
-      title={`Snapshot from ${new Date(freshness.snapshotAt).toLocaleString()}`}>Data delayed</p>}
-    {pool.chain === "solana" && <div className="mt-4">
-      <p className={cn("flex items-center gap-1", cardEyebrow)}>
-        {HIGHEST_RANGE_COLUMN_LABEL}
-        {ready && <InfoTip label="About Highest range" placement="above" tone="light">{HIGHEST_RANGE_HELP}</InfoTip>}
-      </p>
-      <span data-testid="highest-range" className={cn("mt-1.5 inline-block max-w-full truncate rounded-full px-3 py-1 align-top text-sm font-medium", ready ? "bg-lilac" : "bg-ink/10")}>
-        {ready ? ready.rangeLabel : apr?.status === "missing" || apr?.status === "new" ? "—" : "…"}
-      </span>
-    </div>}
-    <dl className="mt-5 grid grid-cols-3 gap-x-4 gap-y-4 border-t border-ink/20 pt-4">
-      <div><dt className={cardEyebrow}>TVL</dt><dd className="mt-1 font-semibold tabular-nums">{money(pool.tvlUsd)}</dd></div>
-      <div><dt className={cardEyebrow}>24h vol</dt><dd className="mt-1 font-semibold tabular-nums">{money(pool.volume24hUsd)}</dd></div>
-      <div><dt className={cardEyebrow}>Fee</dt><dd className="mt-1 font-semibold tabular-nums">{pool.feeTierBps === null ? pool.chain === "robinhood" ? "Dynamic" : "—" : `${pool.feeTierBps} bps`}</dd></div>
-    </dl>
-    <div className="mt-auto flex flex-wrap items-center gap-3 pt-5">
-      <OpenButton action={action} label={pool.pairLabel} />
-      {/* `border-beam` (globals.css): a quiet streak of light circling the border; still for reduced motion. */}
-      {plan?.supported && <button type="button" onClick={onCalculate} aria-haspopup="dialog" aria-label={`${calcLabel} for ${pool.pairLabel}`}
-        className="border-beam inline-flex h-11 items-center rounded-full border border-ink/25 px-4 text-sm font-semibold outline-none transition-colors hover:border-ink/60 focus-visible:shadow-[0_0_0_3px_var(--color-lilac)]">
-        {calcLabel}
-      </button>}
-      {plan && !plan.supported && <span aria-disabled="true" title={plan.reason} data-testid="plan-unavailable"
-        className="inline-flex h-11 cursor-not-allowed items-center rounded-full border border-ink/15 px-4 text-sm font-semibold text-ink/40">
-        {calcLabel}<span className="sr-only">: {plan.reason}</span>
-      </span>}
-      {raydium
-        ? <a href={raydiumPoolUrl(pool.poolAddress)} target="_blank" rel="noreferrer" title={`Open pool ${pool.poolAddress} on Raydium`}
-          className="ml-auto font-data text-[10px] tracking-[0.08em] text-ink/60 underline underline-offset-2 outline-none hover:text-ink focus-visible:text-ink">
-          {shortAddress(pool.poolAddress)}</a>
-        : <span className="ml-auto font-data text-[10px] tracking-[0.08em] text-ink/55" title={pool.poolAddress}>{shortAddress(pool.poolAddress)}</span>}
-    </div>
-  </li>;
-}
+export type { UnifiedPoolFlags };
 
 /** Filter-bar pills (11/4 redesign): a rounded dropdown; lemon border once it narrows the list. */
 const pillBase = "h-10 rounded-full border bg-white/[0.06] text-base font-semibold sm:text-[13px] text-cream outline-none transition-colors focus-visible:border-white/60";
@@ -237,70 +96,20 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
   header?: ReactNode;
 }) {
   const { connected, connect } = useWalletConnection();
-  const [loaded, setLoaded] = useState<Loaded>({ rows: [], rhc: [], updated: [] });
-  const [errors, setErrors] = useState<Partial<Record<Source, string>>>({});
-  const [loading, setLoading] = useState(true);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const { loaded, errors, loading, refreshKey, refresh: reloadSources } = usePoolSources(flags);
   const [view, setView] = useState<"cards" | "list">("cards");
   const [filters, setFilters] = useState<PoolFilters>(DEFAULT_FILTERS);
   const [showAll, setShowAll] = useState(false);
   const [sort, setSort] = useState(DEFAULT_SORT);
   const [openPair, setOpenPair] = useState<OpenPositionPair | null>(null);
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    const sources: { source: Source; run: () => Promise<Partial<Loaded>> }[] = [
-      { source: "raydium", run: async () => {
-        const body = await fetchRwaPairsList<{ pairs: SolanaPoolRow[]; tokenIcons?: TokenIconMap; fetchedAt?: string; freshness?: { stale?: boolean } }>(signal);
-        return { rows: body.pairs, icons: body.tokenIcons,
-          rwaList: (Array.isArray(body.pairs) ? body.pairs : []).map((row) => `solana:${row.poolAddress}`),
-          updated: body.fetchedAt ? [{ chain: "solana" as const, fetchedAt: body.fetchedAt, stale: body.freshness?.stale ?? false }] : [] };
-      } },
-      ...(flags.orca ? [{ source: "orca" as const, run: async () => ({ rows: (await getJson<{ pairs: SolanaPoolRow[] }>("/api/protocol-pools?protocol=orca-whirlpool", signal)).pairs }) }] : []),
-      ...(flags.meteora ? [{ source: "meteora" as const, run: async () => ({ rows: (await getJson<{ pairs: SolanaPoolRow[] }>("/api/protocol-pools?protocol=meteora-dlmm", signal)).pairs }) }] : []),
-      ...(flags.rhc ? [{ source: "rhc" as const, run: async () => {
-        const body = await getJson<{ pools: RhcPoolSummary[]; fetchedAt?: string; snapshot?: { stale?: boolean } }>("/api/protocol-pools?protocol=uniswap-v4-rhc", signal);
-        return { rhc: body.pools,
-          updated: body.fetchedAt ? [{ chain: "robinhood" as const, fetchedAt: body.fetchedAt, stale: body.snapshot?.stale ?? false }] : [] };
-      } }] : []),
-    ];
-    const results = await Promise.allSettled(sources.map((entry) => entry.run()));
-    if (signal?.aborted) return;
-    const next: Loaded = { rows: [], rhc: [], updated: [] };
-    const nextErrors: Partial<Record<Source, string>> = {};
-    results.forEach((result, index) => {
-      if (result.status === "fulfilled") {
-        next.rows.push(...(Array.isArray(result.value.rows) ? result.value.rows : []));
-        next.rhc.push(...(Array.isArray(result.value.rhc) ? result.value.rhc : []));
-        if (result.value.icons) next.icons = result.value.icons;
-        if (result.value.rwaList) next.rwaList = result.value.rwaList;
-        next.updated.push(...(result.value.updated ?? []));
-      } else nextErrors[sources[index]!.source] = SOURCE_ERROR[sources[index]!.source];
-    });
-    setLoaded(next); setErrors(nextErrors); setLoading(false);
-  }, [flags.orca, flags.meteora, flags.rhc]);
-
-  useEffect(() => {
-    const aborter = new AbortController();
-    const timer = window.setTimeout(() => { void load(aborter.signal); }, 0);
-    return () => { window.clearTimeout(timer); aborter.abort(); };
-  }, [load]);
-
-  // Same cadence as the old RWA pairs list: re-read the saved lists and APR every minute while the tab is visible.
-  useEffect(() => {
-    const aborter = new AbortController();
-    const timer = window.setInterval(() => {
-      if (!document.hidden) { setRefreshKey((key) => key + 1); void load(aborter.signal); }
-    }, 60_000);
-    return () => { window.clearInterval(timer); aborter.abort(); };
-  }, [load]);
-
   const pools = useMemo(() => {
     const seen = new Set<string>();
-    const all = [...loaded.rows.map(solanaPool), ...loaded.rhc.map(rhcPool).filter((pool): pool is UnifiedPool => pool !== null)];
+    const all = [...loaded.rows.map((row) => solanaPool(row as SolanaPoolRow)), ...loaded.rhc.map((summary) => rhcPool(summary as RhcPoolSummary)).filter((pool): pool is UnifiedPool => pool !== null)];
     return all.filter((pool) => (seen.has(pool.key) ? false : (seen.add(pool.key), true)));
   }, [loaded]);
-  const rowsByKey = useMemo(() => new Map(loaded.rows.map((row) => [`solana:${row.poolAddress}`, row])), [loaded.rows]);
-  const rhcByKey = useMemo(() => new Map(loaded.rhc.map((summary) => [`robinhood:${summary.poolId.toLowerCase()}`, summary])), [loaded.rhc]);
+  const rowsByKey = useMemo(() => new Map(loaded.rows.map((row) => [`solana:${row.poolAddress}`, row as SolanaPoolRow])), [loaded.rows]);
+  const rhcByKey = useMemo(() => new Map(loaded.rhc.map((summary) => [`robinhood:${summary.poolId.toLowerCase()}`, summary as RhcPoolSummary])), [loaded.rhc]);
 
   const rwaListKeys = useMemo(() => new Set(loaded.rwaList ?? []), [loaded.rwaList]);
   const apr = usePoolsApr7d(pools, refreshKey, rwaListKeys);
@@ -311,9 +120,9 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
 
   /** `connectWallet: false` for deep links: the Create position dialog opens with its own Connect wallet button. */
   const openPool = useCallback((pool: UnifiedPool, connectWallet = true) => {
-    if (pool.chain === "robinhood") {
+    if (chainMeta(pool.chain)?.opensRhcDialog) {
       const summary = rhcByKey.get(pool.key);
-      const view = summary ? rhcPoolView(summary) : null;
+      const view = summary ? rhcPoolView(summary as RhcPoolSummary) : null;
       if (view) onOpenRhc({ pool: view });
       return;
     }
@@ -337,7 +146,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
       if (!open.supported) return { kind: "none", reason: open.reason };
       return { kind: "open", onOpen: () => { if (!connected) connect(); setRegistryOpen(pool); } };
     }
-    if (pool.protocol === "raydium-clmm" || pool.protocol === "uniswap-v4-rhc") return { kind: "open", onOpen: () => openPool(pool) };
+    if (protocolMeta(pool.protocol)?.opensNativeModal) return { kind: "open", onOpen: () => openPool(pool) };
     return { kind: "none", reason: "Opening is not available yet" };
   }, [openPool, connected, connect]);
 
@@ -358,9 +167,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
 
   const refresh = () => {
     clearPoolRangeAprClientCache();
-    setRefreshKey((key) => key + 1);
-    setLoading(true);
-    void load();
+    reloadSources();
   };
   const onSort = (key: SortKey) => setSort((current) => current.key === key
     ? { key, dir: current.dir === "asc" ? "desc" : "asc" } : { key, dir: FIRST_CLICK_DIR[key] });
