@@ -126,6 +126,31 @@ export type DexCapabilities = SourceCapabilities & {
   plan: Capability;
 };
 
+/**
+ * Which open shell the pools page / deep link uses. Data on `DexUi`, never a `protocol === "…"` at the call site.
+ */
+export type DexOpenUi = "registry" | "native-modal" | "rhc-dialog" | "none";
+
+/**
+ * Client-safe UI record (Phase E, docs/refactor/phase-e-dex-registry.md §2.2).
+ * Does not include `showHighestRange` or `nullFeeLabel` (those stay on `CHAIN_META`).
+ * No invented `feePolicy`.
+ */
+export type DexUi = {
+  /** Which open shell the pools page / deep link uses. */
+  openUi: DexOpenUi;
+  /** Off-site venue URL, if any. */
+  externalPoolUrl?: (poolAddress: string) => string;
+  /**
+   * When true, `/app/plan` and the share calculator use descriptor fee/rent terms.
+   * When false, they keep `LEGACY_*` in `lp-plan-pool-terms.ts`.
+   * Explicit data: true only on Meteora's `descriptor.ui`; unregistered venues are false.
+   */
+  useDescriptorPlanTerms: boolean;
+  /** Plan link when this venue has no descriptor yet (Raydium). Ignored when `capabilities.plan` exists. */
+  planFallback?: Capability;
+};
+
 /** UI-safe description of one DEX: the registry element the UI reads (extends the unified-positions source). */
 export type DexDescriptor<N = unknown> = {
   id: DexId;
@@ -133,6 +158,8 @@ export type DexDescriptor<N = unknown> = {
   displayName: string;
   meta: DexMeta;
   capabilities: DexCapabilities;
+  /** Client-safe UI record. Present on registered venues that have shipped these flags (Meteora today). */
+  ui?: DexUi;
   /** Per-position overrides, merged over `capabilities` by `capabilitiesFor` (same rule as unified positions). */
   positionCapabilities?(position: UnifiedPosition<N>): Partial<DexCapabilities>;
 };

@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { CARD_RANGE_APR_7D_HELP } from "@/lib/apr-labels/copy";
 import { cn } from "@/lib/cn";
-import { dexDescriptors } from "@/lib/dex/client";
+import { dexDescriptors, uiFor } from "@/lib/dex/client";
 import { volumeDivergenceNote } from "@/lib/apr-labels/volume-divergence";
 import { HIGHEST_RANGE_COLUMN_LABEL, HIGHEST_RANGE_HELP } from "@/lib/range-apr/copy";
 import { unavailableReasonText } from "@/lib/range-apr/format";
@@ -17,7 +17,7 @@ import { dataDaysLabel, MIN_DATA_DAYS } from "@/lib/min-data-days";
 import { shortAddress } from "@/lib/format/address";
 import { APR7D_SHORT, Apr7dValue, newPoolTitle, rangeApr7dLabel, ChainBadge, chip, iconPair, LowTvlTag, money, OpenButton, type OpenAction } from "./pool-list";
 import type { Apr7dState } from "./use-pools-apr7d";
-import { chainMeta, protocolMeta } from "./use-pool-sources";
+import { chainMeta } from "./use-pool-sources";
 
 /**
  * The card APR's ⓘ: what the number is ("Standard-range APR · 7d", or the new-pool / missing wording) on its first line,
@@ -53,11 +53,11 @@ export function PoolCard({ pool, apr, action, icons, onCalculate }: {
   const volumeNote = ready ? volumeDivergenceNote(pool.volume24hUsd, ready.avgDailyVolumeUsd) : null;
   const withVolumeNote = (text: string) => (volumeNote ? `${text} ${volumeNote}` : text);
   const freshness = apr && apr.status !== "loading" ? apr.freshness : undefined;
-  const meta = protocolMeta(pool.protocol);
+  const ui = uiFor(pool.protocol);
   const chain = chainMeta(pool.chain);
-  const externalUrl = meta?.externalPoolUrl?.(pool.poolAddress);
+  const externalUrl = ui.externalPoolUrl?.(pool.poolAddress);
   // Registered DEXes say through their `plan` capability; Raydium (not in the DEX registry yet) keeps its link.
-  const plan = dexDescriptors.descriptorFor(pool.protocol)?.capabilities.plan ?? (meta?.planFallback ?? null);
+  const plan = dexDescriptors.descriptorFor(pool.protocol)?.capabilities.plan ?? (ui.planFallback ?? null);
   // Stock pools count shares; the stablecoin pool has no stock, so its button just says Calculate.
   const calcLabel = planShareSymbol(pairLabelSymbols(pool.pairLabel)) ? "Calculate shares" : "Calculate";
   return <li className="flex min-w-0 flex-col rounded-[28px] bg-cream p-6 text-ink" data-pool={pool.key}>
