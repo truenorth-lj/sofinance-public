@@ -82,11 +82,11 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
   const terms = useMemo(
     () => planPoolTerms({
       descriptor: dexDescriptors.descriptorFor(pool.protocol),
-      useDescriptorPlanTerms: uiFor(pool.protocol, pool.chain).useDescriptorPlanTerms,
+      useDescriptorPlanTerms: uiFor(pool.protocol).useDescriptorPlanTerms,
       listOpenReason: null,
       symbols: symbols ? [symbols.wrappedSymbol, symbols.plainSymbol] : undefined,
     }),
-    [pool.protocol, pool.chain, symbols],
+    [pool.protocol, symbols],
   );
 
   // No exit picker here, so the projection takes the conservative one: swapping back to USDC.
