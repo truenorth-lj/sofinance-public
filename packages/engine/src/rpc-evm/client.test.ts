@@ -140,9 +140,8 @@ describe("rpc-evm client", () => {
   });
 
   it("skips a provider that does not support the method, does not count it as a failure, and does not start a 429 cooldown", async () => {
-    let t = 0;
     const env = { RHC_RPC_URL: "https://dedicated.example/v2/KEY" };
-    const { hits, events, make } = harness({ drpc: { eth_simulateV1: "unsupported" } }, env, () => t);
+    const { hits, events, make } = harness({ drpc: { eth_simulateV1: "unsupported" } }, env);
     const client = make("state");
     expect(await client.request({ method: "eth_simulateV1" as never, params: [] as never })).toEqual([{ calls: [] }]);
     expect(hits.map(hit => `${hit.method}@${hit.id}`)).toEqual(["eth_simulateV1@drpc", "eth_simulateV1@publicnode"]);
