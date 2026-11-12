@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 vi.mock("server-only", () => ({}));
 import { createRoutedStore, isAllowedGatewayUrl } from "./routed-store";
 
@@ -76,5 +77,12 @@ describe("createRoutedStore gateway validation", () => {
     vi.stubGlobal("fetch", fetcher);
     await expect(makeStore()().request({ op: "ping" } as never)).resolves.toEqual({ ok: true });
     expect(String(posted)).toBe("https://rwa.example.com/v1/test");
+  });
+  it("maps a schema parse failure to the store unavailable code", async () => {
+    gatewayEnv();
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ ok: true })));
+    const getStore = makeStore({ schema: z.object({ op: z.literal("ping") }) });
+    await expect(getStore().request({ op: "other" } as never)).rejects.toThrow("STORE_UNAVAILABLE");
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

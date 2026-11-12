@@ -49,11 +49,11 @@ export function createRoutedStore<TStore extends StoreRequest>(options: RoutedSt
       const secret = config.secret;
       const store = {
         async request(input: unknown) {
-          const body = JSON.stringify(options.schema ? options.schema.parse(input) : input);
-          if (options.maxBodyBytes !== undefined && Buffer.byteLength(body) > options.maxBodyBytes) {
-            throw fail(options.oversizedCode ?? options.unavailableCode);
-          }
           try {
+            const body = JSON.stringify(options.schema ? options.schema.parse(input) : input);
+            if (options.maxBodyBytes !== undefined && Buffer.byteLength(body) > options.maxBodyBytes) {
+              throw fail(options.oversizedCode ?? options.unavailableCode);
+            }
             const response = await fetch(new URL(options.path, base), {
               method: "POST",
               cache: "no-store",
