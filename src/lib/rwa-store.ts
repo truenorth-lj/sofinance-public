@@ -6,7 +6,6 @@ import { listedSolanaFeedKeys } from "./rwa-listed-feeds";
 import { fetchPoolRangeApr } from "./pool-range-apr";
 import { NotRaydiumClmmPoolError, POOL_NOT_TRACKED_MESSAGE } from "./range-apr/not-clmm-pool";
 import { PostgresRwaStore } from "./rwa-postgres-store";
-import { getRwaDatabase, runRwaDatabaseRequest } from "./rwa-database";
 import { tokenIconMap } from "./token-icons/map";
 import {
   FEED_KEY,
@@ -14,83 +13,18 @@ import {
   type PairOptions,
   type SolanaFeedKey,
   type RwaStore,
-  type StoreRequest,
-  type StoreOperation,
-  type StoreResultMap,
 } from "./rwa-store-types";
 import { NO_STORE_HEADERS } from "@/lib/http/no-store";
+import { createRoutedStore } from "./routed-store";
 
-let direct: { db: ReturnType<typeof getRwaDatabase>; store: RwaStore } | undefined;
-export function getRwaStore(): RwaStore {
-  const config = getRwaConfig();
-  if (config.storeMode === "gateway" && config.gatewayUrl) {
-    const base = new URL(config.gatewayUrl);
-    if (
-      base.username ||
-      base.password ||
-      base.hash ||
-      (base.protocol !== "https:" &&
-        !(
-          base.protocol === "http:" &&
-          !config.isVercel &&
-          ["localhost", "127.0.0.1"].includes(base.hostname)
-        ))
-    ) {
-      throw new RwaStoreError("INVALID_GATEWAY_URL");
-    }
-    if (!config.secret || config.secret.length < 32)
-      throw new RwaStoreError("RWA_STORE_UNAVAILABLE");
-    return {
-      async request<K extends StoreOperation>(input: StoreRequest<K>) {
-        try {
-          const response = await fetch(new URL("/v1/rwa", base), {
-            method: "POST",
-            cache: "no-store",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${config.secret}`,
-            },
-            body: JSON.stringify(input),
-            signal: AbortSignal.timeout(10_000),
-          });
-          const body = await response.json();
-          if (!response.ok)
-            throw new RwaStoreError(
-              typeof body.code === "string"
-                ? body.code
-                : "RWA_STORE_UNAVAILABLE",
-            );
-          // Trusted internal gateway wire boundary; the service uses the same checked handlers.
-          // This annotation is not runtime response-schema validation.
-          return body as StoreResultMap[K];
-        } catch (error) {
-          throw error instanceof RwaStoreError
-            ? error
-            : new RwaStoreError("RWA_STORE_UNAVAILABLE");
-        }
-      },
-    };
-  }
-  // Gateway mode preserves the private-network service/local path, never Vercel plaintext PG.
-  if ((config.storeMode === "gateway" && config.isVercel) || !config.databaseUrl)
-    throw new RwaStoreError("RWA_STORE_UNAVAILABLE");
-  try {
-    const db = getRwaDatabase();
-    if (!direct || direct.db !== db) {
-      const store = new PostgresRwaStore(db);
-      direct = { db, store: { async request(input) {
-        try {
-          // A caller may retain this wrapper across pool retirement. Select a
-          // fresh pool before starting work; never retry a started operation.
-          if (getRwaDatabase() !== db) return await getRwaStore().request(input);
-          return await runRwaDatabaseRequest(db, () => store.request(input));
-        }
-        catch (error) { throw error instanceof RwaStoreError ? error : new RwaStoreError("RWA_STORE_UNAVAILABLE"); }
-      } } };
-    }
-  } catch { throw new RwaStoreError("RWA_STORE_UNAVAILABLE"); }
-  return direct.store;
-}
+export const getRwaStore = createRoutedStore<RwaStore>({
+  path: "/v1/rwa",
+  ErrorClass: RwaStoreError,
+  unavailableCode: "RWA_STORE_UNAVAILABLE",
+  makePostgres: (db) => new PostgresRwaStore(db),
+  timeoutMs: 10_000,
+  refreshDirectIfPoolRetired: true,
+});
 
 /** Listed pairs (list page and home top-5): scan-blocked pools (paused / transfer fee / frozen mint) are dropped. */
 export async function getRwaPairs(input: PairOptions & {
