@@ -167,7 +167,7 @@ export function PositionPerformancePanel({
     } finally {
       if (attempt.current()) { attempt.finish(); setLoadingContext(null); }
     }
-  }, [context, positionMint, wallet]);
+  }, [context, positionMint, wallet, onResultRef]);
 
   useEffect(() => subscribePositionHistoryRefresh(positionMint.trim(), () => {
     lookup.current.cancel();

@@ -37,7 +37,7 @@ export function RegistryPerformancePanel({ position, descriptor, capabilities, o
         onPerformanceRef.current?.(position.key, { report: null, error: true });
       });
     return () => controller.abort();
-  }, [descriptor, position.key, attempt]);
+  }, [descriptor, position.key, attempt, onPerformanceRef]);
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
   const current = loaded && loaded.key === position.key && loaded.attempt === attempt ? loaded : null;
   const report = current?.data?.report ?? null;
