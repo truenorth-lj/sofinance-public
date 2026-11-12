@@ -1,33 +1,37 @@
 "use client";
 import "@/lib/engine-host";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef } from "react";
 import { VersionedTransaction } from "@solana/web3.js";
-import { clearsSubmitError, mayStartAnotherAttempt, type AtomicStatus } from "@/lib/attempt-status";
+import { apiErrorCode, post } from "./transactions/compound/compound-client";
+import type { AtomicStatus } from "@/lib/attempt-status";
 import { sendAndTrack, TxNotSentError, useCancelCheckPending } from "@/lib/tx-pipeline";
-import { ApiRequestError, resolveCompoundBroadcastFailure } from "@/lib/public-error";
-import { abandonUnsentCompoundAttempt, compoundAttemptKey, compoundReceiptsKey, loadCompoundAttempt, loadCompoundReceipts, persistCompoundAttempt, persistCompoundReceipt,
+import { ApiRequestError, INSUFFICIENT_SOL_CODE, resolveCompoundBroadcastFailure } from "@/lib/public-error";
+import { abandonUnsentCompoundAttempt, compoundAttemptKey, compoundReceiptsKey, loadCompoundAttempt, loadCompoundReceipts, persistCompoundAttempt,
   type CompoundAttempt, type CompoundPrepared, type CompoundReceipt, type RecoveryPrepared } from "@sofinance/engine/compound-attempt";
-import type { CompoundChainStatus, CompoundPositionState, CompoundSummary } from "@sofinance/engine/compound-types";
+import type { CompoundChainStatus, CompoundSummary } from "@sofinance/engine/compound-types";
 import type { CompoundRecoverySummary } from "@sofinance/engine/compound-recovery-types";
 import { useWalletConnection } from "./wallet-connection";
 import { useCleanupBatchController } from "./use-cleanup-batch-controller";
 import { loadCleanupBatch, cleanupBatchKey } from "@/lib/compound-cleanup-batch-attempt";
-import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
-import { apiErrorCode, post } from "./transactions/compound/compound-client";
-import { INSUFFICIENT_SOL_CODE } from "@/lib/public-error";
 import { useCompoundPositionSnapshot } from "./transactions/compound/use-compound-position-snapshot";
+import {
+  compoundControllerReducer, emptyCompoundScan, initialCompoundControllerState,
+  type CompoundSubmitFeedback,
+} from "./transactions/compound/compound-controller-state";
+import { useCompoundAttempt } from "./transactions/compound/use-compound-attempt";
+import { useCompoundConfirmation } from "./transactions/compound/use-compound-confirmation";
+import { useCompoundRecovery } from "./transactions/compound/use-compound-recovery";
+import { useCleanupScan } from "./transactions/compound/use-cleanup-scan";
 
-import { useCompoundAttempt, type CompoundConfirmation } from "./transactions/compound/use-compound-attempt";
 export type { CompoundConfirmation } from "./transactions/compound/use-compound-attempt";
+export type { CompoundSubmitFeedback };
+export { confirmedStateFor } from "./transactions/compound/compound-controller-state";
+export { COMPOUND_STATE_RPC_RETRY_DELAYS_MS } from "./transactions/compound/use-compound-position-snapshot";
 
 type Options = { wallet?: string; positionMint?: string; externalBlocked: boolean; onConfirmed?: () => void };
-type CompoundErrorState = { message: string; identity: string | null; signature: string | null; receiptSignature: string | null };
-/** Submit feedback for a signed one-click compound: shown as a dialog until the user dismisses it. */
-export type CompoundSubmitFeedback = { phase: "submitting" | "confirming" | "success" | "failed"; signature: string; message: string };
-const CLEANUP_RENT_HINT = "Tip: \u201cClean up all balances\u201d below returns SOL rent held by earlier harvest accounts.";
-const emptyError: CompoundErrorState = { message: "", identity: null, signature: null, receiptSignature: null };
 type AlreadyClosedRecovery = { alreadyClosed: true; wallet: string; accounts: string[] };
+const CLEANUP_RENT_HINT = "Tip: \u201cClean up all balances\u201d below returns SOL rent held by earlier harvest accounts.";
 const recoveryConfirmationMs = 90_000;
 function abortableDelay(ms: number, signal: AbortSignal) {
   return new Promise<void>(resolve => {
@@ -38,37 +42,18 @@ function abortableDelay(ms: number, signal: AbortSignal) {
   });
 }
 type RecoveryOutcome = "success" | "stopped";
-type DiscoveryPage = { wallet: string; receipts: CompoundReceipt[]; nextCursor: string | null; scanned: number;
-  totalCandidates: number; incomplete: boolean; errors: number };
-type CleanupProgress = { completed: number; total: number; running: boolean; message: string; compoundSignature?: string };
 function recoveryMayProceed(value: { status: AtomicStatus; chainStatus?: CompoundChainStatus } | null) {
   return !!value && ["success", "failed", "expired"].includes(value.status) &&
     (value.chainStatus === undefined || value.chainStatus === value.status);
 }
-const emptyScan = { started: false, scanning: false, cursor: null as string | null, scanned: 0, total: 0, incomplete: false, error: "" };
-
-export { COMPOUND_STATE_RPC_RETRY_DELAYS_MS } from "./transactions/compound/use-compound-position-snapshot";
-
-/** The fresh position read a finalized compound confirmation carries, when it is for the selection on screen. */
-export function confirmedStateFor(confirmation: Pick<CompoundConfirmation, "state">, identity: string): CompoundPositionState | null {
-  const state = confirmation.state;
-  return state && `${state.wallet}:${state.positionMint}` === identity ? state : null;
-}
 
 export function useCompoundController({ wallet, positionMint, externalBlocked, onConfirmed }: Options) {
   const connection = useWalletConnection();
-  const [preview, setPreview] = useState<CompoundSummary | null>(null);
-  const [attempt, setAttempt] = useState<CompoundAttempt | null>(null);
-  const [attemptStatus, setAttemptStatus] = useState<AtomicStatus | null>(null);
-  const [chainStatus, setChainStatus] = useState<CompoundChainStatus | null>(null);
-  const [confirmationSlow, setConfirmationSlow] = useState(false);
-  const [confirmation, setConfirmation] = useState<CompoundConfirmation | null>(null);
-  const [receipts, setReceipts] = useState<CompoundReceipt[]>([]);
-  const [loadedWallet, setLoadedWallet] = useState<string | null>(null);
-  const [storageInvalid, setStorageInvalid] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [scan, setScan] = useState(emptyScan);
-  const [cleanup, setCleanup] = useState<CleanupProgress | null>(null);
+  const [controller, dispatch] = useReducer(compoundControllerReducer, initialCompoundControllerState);
+  const {
+    preview, attempt, attemptStatus, chainStatus, confirmationSlow, confirmation, receipts, loadedWallet,
+    storageInvalid, importing, scan, cleanup, error: errorState, stage, feedback,
+  } = controller;
   const mounted = useRef(true);
   const lifecycle = useRef(0);
   const operationLifecycle = useRef(0);
@@ -79,15 +64,12 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
   const autoCleanup = useRef<{ wallet: string; signature: string; identity: string } | null>(null);
   const resolvedAttempt = useRef<{ signature: string; status: AtomicStatus; chainStatus?: CompoundChainStatus } | null>(null);
   const runRecoveryRef = useRef<(items: CompoundReceipt[], signature?: string) => Promise<void>>(async () => {});
-  const [errorState, setErrorState] = useState<CompoundErrorState>(emptyError);
   const setError = useCallback((message: string, identity: string | null = null, signature: string | null = null, receiptSignature: string | null = null) =>
-    setErrorState({ message, identity, signature, receiptSignature }), []);
-  const clearError = useCallback((identity: string, signature: string | null = null) => setErrorState(previous =>
-    previous.identity === identity && previous.signature === signature ? emptyError : previous), []);
-  const [stage, setStage] = useState<"preparing" | "wallet" | "checking" | "broadcasting" | null>(null);
-  const [feedback, setFeedback] = useState<CompoundSubmitFeedback | null>(null);
+    dispatch({ type: "error/set", error: { message, identity, signature, receiptSignature } }), []);
+  const clearError = useCallback((identity: string, signature: string | null = null) =>
+    dispatch({ type: "error/clear", identity, signature }), []);
   const updateFeedback = useCallback((signature: string, next: Omit<CompoundSubmitFeedback, "signature">) =>
-    setFeedback(previous => previous?.signature === signature ? { ...next, signature } : previous), []);
+    dispatch({ type: "feedback/update", signature, next }), []);
   const identity = `${wallet || ""}:${positionMint || ""}`;
   const identityRef = useRef(identity);
   const walletRef = useRef(wallet);
@@ -99,6 +81,8 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
   const operationRequest = useRef(0);
   const attemptSignatureRef = useRef<string | null>(null);
   const keepSubmitErrorRef = useRef(false);
+  // Mirror refs stay on layout effects (not useLatest): submit, recovery, and confirmation
+  // read them on the money path, and useLatest would write during render.
   useLayoutEffect(() => {
     if (walletRef.current !== wallet) scanRequest.current++;
     if (identityRef.current !== identity) { lifecycle.current++; autoCleanup.current = null; recoveryWait.current?.controller.abort(); }
@@ -116,7 +100,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
     const selectedLifecycle = lifecycle.current;
     const timer = window.setTimeout(() => {
       if (lifecycle.current === selectedLifecycle && operationLifecycle.current !== selectedLifecycle) {
-        setStage(null); setCleanup(null);
+        dispatch({ type: "operation/clear-stage-cleanup" });
       }
     }, 0);
     return () => window.clearTimeout(timer);
@@ -125,29 +109,27 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
   useEffect(() => {
     let cancelled = false;
     const timer = window.setTimeout(() => {
-      setStage(null); setScan(emptyScan); setCleanup(null); scanRequest.current++; resolvedAttempt.current = null;
-      setPreview(null); setConfirmation(null); setChainStatus(null); setConfirmationSlow(false); setError(""); keepSubmitErrorRef.current = false;
-      setFeedback(null);
-      if (!wallet) { setAttempt(null); setAttemptStatus(null); setReceipts([]); setLoadedWallet(null); setStorageInvalid(false); attemptSignatureRef.current = null; return; }
+      dispatch({ type: "wallet/reset-session" });
+      scanRequest.current++; resolvedAttempt.current = null;
+      keepSubmitErrorRef.current = false;
+      if (!wallet) {
+        attemptSignatureRef.current = null;
+        dispatch({ type: "wallet/cleared" });
+        return;
+      }
       try {
         const saved = loadCompoundAttempt(window.localStorage, wallet);
         const savedReceipts = loadCompoundReceipts(window.localStorage, wallet);
         if (cancelled || walletRef.current !== wallet) return;
-        setAttempt(saved.attempt); setReceipts(savedReceipts.receipts);
         attemptSignatureRef.current = saved.attempt?.signature || null;
-        setStorageInvalid(saved.invalid || savedReceipts.invalid);
-        setAttemptStatus(saved.invalid || savedReceipts.invalid ? "manual-review" : saved.attempt ? "pending" : null);
-        if (saved.invalid || savedReceipts.invalid) setError("Local compound history cannot be verified. Check the original transaction and balance accounts before repeating an earlier operation.");
-        setLoadedWallet(wallet);
+        dispatch({ type: "wallet/loaded", wallet, attempt: saved.attempt, receipts: savedReceipts.receipts,
+          invalid: saved.invalid || savedReceipts.invalid });
       } catch {
-        if (!cancelled && walletRef.current === wallet) {
-          setAttempt(null); setAttemptStatus("manual-review"); setReceipts([]); setLoadedWallet(wallet); setStorageInvalid(true);
-          setError("Unable to read local compound history. Check previous signatures before repeating an earlier operation.");
-        }
+        if (!cancelled && walletRef.current === wallet) dispatch({ type: "wallet/load-failed", wallet });
       }
     }, 0);
     return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [wallet, setError]);
+  }, [wallet]);
 
   const isSnapshotCurrent = useCallback((requestedIdentity: string) =>
     mounted.current && identityRef.current === requestedIdentity, []);
@@ -166,66 +148,27 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
   useLayoutEffect(() => { refreshStateRef.current = refreshState; adoptStateRef.current = adoptState; });
   useEffect(() => {
     invalidateState();
-    const timer = window.setTimeout(() => { clearState(); setPreview(null); void refreshState(); }, 0);
+    const timer = window.setTimeout(() => { clearState(); dispatch({ type: "preview/set", preview: null }); void refreshState(); }, 0);
     return () => window.clearTimeout(timer);
   }, [refreshState, invalidateState, clearState]);
 
-  const onObservation = useCallback((current: CompoundAttempt, checked: CompoundConfirmation) => {
-    // The chain result belongs to the stored attempt, regardless of the currently selected NFT.
-    resolvedAttempt.current = { signature: current.signature, status: checked.status, chainStatus: checked.chainStatus };
-    setAttemptStatus(checked.status); setConfirmation(checked);
-    setChainStatus(checked.chainStatus ?? null);
-    if (checked.status === "success" || checked.status === "failed" || checked.status === "expired") {
-      if (clearsSubmitError(checked.status)) {
-        keepSubmitErrorRef.current = false;
-        clearError(`${current.wallet}:${current.positionMint}`, current.signature);
-      }
-    }
-  }, [clearError]);
-  const onTerminal = useCallback((current: CompoundAttempt, checked: CompoundConfirmation, executed: boolean) => {
-    // The simulation describes the yield before this transaction. Once it executes,
-    // show the refreshed balance even while the follow-up cleanup awaits a signature.
-    if (executed && current.kind === "compound" && identityRef.current === `${current.wallet}:${current.positionMint}`) {
-      setPreview(null);
-    }
-    if (checked.status === "success" && current.kind === "recovery") {
-      setCleanup(previous => previous && !previous.running ? { ...previous,
-        completed: Math.min(previous.total, previous.completed + 1),
-        message: "Balance merged and account rent recovered. The saved transaction is confirmed on-chain." } : previous);
-    }
-    if (current.kind === "compound") {
-      if (executed) updateFeedback(current.signature, { phase: "success", message: "" });
-      else updateFeedback(current.signature, { phase: "failed", message: checked.status === "expired"
-        ? "The transaction did not land before it expired. No fees were moved; you can try again."
-        : "The transaction reached the chain but failed. Check it on Solscan before trying again." });
-    }
-    if (executed) notifyPositionHistoryChange(current.positionMint, current.kind === "compound" ? current.signature : undefined);
-    const fresh = confirmedStateFor(checked, identityRef.current);
-    if (fresh) adoptStateRef.current(fresh); else void refreshStateRef.current();
-    onConfirmedRef.current?.();
-  }, [updateFeedback]);
-  const onConfirmationReadFailure = useCallback((current: CompoundAttempt, message: string) => {
-    // Keep the chain observation, but revoke recovery admission until its local cleanup is verified.
-    if (current.kind === "recovery" && resolvedAttempt.current?.signature === current.signature) {
-      resolvedAttempt.current = null;
-    }
-    setAttemptStatus("pending");
-    if (message) setError(message, `${current.wallet}:${current.positionMint}`, current.signature);
-    else setError("");
-  }, [setError]);
-  const onSlowConfirmation = useCallback(() => setConfirmationSlow(true), []);
-  const chainSettled = chainStatus === "success" || chainStatus === "failed" || chainStatus === "expired";
-  const transactionUnresolved = !!attempt && attempt.wallet === wallet && (!chainSettled || attemptStatus === "pending") && !mayStartAnotherAttempt(attemptStatus);
-  const reconcile = useCompoundAttempt({ wallet, attempt, unresolved: transactionUnresolved,
+  const onBatchReceipts = useCallback((next: CompoundReceipt[]) => dispatch({ type: "receipts/set", receipts: next }), []);
+    const { onObservation, onReceipts, onTerminal, onReadFailure, onSlow, transactionUnresolved } = useCompoundConfirmation({
+    wallet, attempt, attemptStatus, chainStatus, dispatch, identityRef, resolvedAttemptRef: resolvedAttempt,
+    keepSubmitErrorRef, adoptStateRef, refreshStateRef, onConfirmedRef,
+  });
+  const reconcile = useCompoundAttempt({
+    wallet, attempt, unresolved: transactionUnresolved,
     ownership: { mounted, wallet: walletRef, signature: attemptSignatureRef, request: confirmationRequest, recoveryWait, keepSubmitError: keepSubmitErrorRef },
-    onObservation, onReceipts: setReceipts, onTerminal, onReadFailure: onConfirmationReadFailure, onSlow: onSlowConfirmation });
+    onObservation, onReceipts, onTerminal, onReadFailure, onSlow,
+  });
 
   const visibleState = state && state.wallet === wallet && state.positionMint === positionMint ? state : null;
   const visiblePreview = preview && preview.state.wallet === wallet && preview.positionMint === positionMint ? preview : null;
   const visibleAttempt = attempt?.wallet === wallet ? attempt : null;
   const batchCleanup = useCleanupBatchController({ wallet, identity, connection, blocked: externalBlocked || stage !== null || !!cleanup?.running,
     canStart: () => !storageInvalid && !submitting.current && (!attempt || resolvedAttempt.current?.signature === attempt.signature && recoveryMayProceed(resolvedAttempt.current)),
-    onReceipts: setReceipts, onConfirmed: () => { void refreshState(); onConfirmedRef.current?.(); } });
+    onReceipts: onBatchReceipts, onConfirmed: () => { void refreshState(); onConfirmedRef.current?.(); } });
   const busy = stage !== null || !!cleanup?.running || batchCleanup.busy;
   const walletBlocked = busy;
   const receiptReviewRequired = chainStatus === "success" && attemptStatus !== "success";
@@ -256,8 +199,8 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       const saved = loadCompoundAttempt(window.localStorage, wallet);
       if (saved.invalid || saved.attempt && (resolvedAttempt.current?.signature !== saved.attempt.signature ||
         !recoveryMayProceed(resolvedAttempt.current))) {
-        setCleanup(previous => ({ completed: previous?.completed ?? 0, total: previous?.total ?? 1, running: false,
-          message: "Cleanup paused. Verify the previous transaction before continuing.", compoundSignature: previous?.compoundSignature }));
+        dispatch({ type: "cleanup/patch", updater: (previous) => ({ completed: previous?.completed ?? 0, total: previous?.total ?? 1, running: false,
+          message: "Cleanup paused. Verify the previous transaction before continuing.", compoundSignature: previous?.compoundSignature }) });
         return "stopped";
       }
     }
@@ -278,7 +221,8 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
     const submittedIdentity = identity;
     const current = () => mounted.current && lifecycle.current === submittedLifecycle && identityRef.current === submittedIdentity && walletRef.current === submittedWallet &&
       connectionRef.current.address === submittedWallet && connectionRef.current.connected;
-    setStage("preparing"); setError(""); setConfirmation(null); keepSubmitErrorRef.current = false;
+    dispatch({ type: "submit/prepare" });
+    keepSubmitErrorRef.current = false;
     let persisted = false;
     let next: CompoundAttempt | undefined;
     try {
@@ -314,17 +258,17 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
           item.compoundAccounts.map(account => account.address).sort().join(":") !== [...response.accounts].sort().join(":")));
         window.localStorage.setItem(key, serialized);
         if (window.localStorage.getItem(key) !== serialized) throw new Error("Unable to save the cleaned account record");
-        setReceipts(loadCompoundReceipts(window.localStorage, submittedWallet).receipts);
+        dispatch({ type: "receipts/set", receipts: loadCompoundReceipts(window.localStorage, submittedWallet).receipts });
         return true;
       };
       const response = await requestPrepare();
       if (acceptClosed(response)) return "success";
       const loaded = acceptPrepared(response as CompoundPrepared | RecoveryPrepared);
-      if (!receipt) setPreview(loaded.summary as CompoundSummary);
+      if (!receipt) dispatch({ type: "preview/set", preview: loaded.summary as CompoundSummary });
       const { summary, unsigned } = loaded;
       if (window.localStorage.getItem(cleanupBatchKey(wallet)) !== cleanupBatchRecord) throw new Error("Cleanup transaction changed in another tab; verify original signatures before continuing.");
       verifyRecoveryAttempt();
-      setStage("wallet");
+      dispatch({ type: "stage/set", stage: "wallet" });
       // Shared pipeline send stage: the wallet sends (or signs and we relay once). The
       // compound record is saved right after send, keyed by the returned signature.
       const { signature } = await sendAndTrack({
@@ -335,7 +279,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
           sendPermit: (loaded.prepared as { sendPermit?: string }).sendPermit,
           landedPermit: (loaded.prepared as { landedPermit?: string }).landedPermit },
         scope: receipt?.positionMint || submittedMint,
-        onStage: (pipelineStage) => { if (pipelineStage === "checking" && current()) setStage("checking"); },
+        onStage: (pipelineStage) => { if (pipelineStage === "checking" && current()) dispatch({ type: "stage/set", stage: "checking" }); },
         isCurrent: () => current() && !externalBlockedRef.current && (() => {
           try { verifyRecoveryAttempt(); } catch (error) {
             throw new TxNotSentError(error instanceof Error ? error.message : "Transaction record changed, so nothing was sent.");
@@ -358,12 +302,12 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       persisted = true;
       confirmationRequest.current++;
       attemptSignatureRef.current = created.signature;
-      setAttempt(created); setAttemptStatus("pending"); setChainStatus("pending"); setConfirmationSlow(false);
-      setReceipts(loadCompoundReceipts(window.localStorage, submittedWallet).receipts);
-      setStage("broadcasting");
-      if (!receipt) setFeedback({ phase: "submitting", signature: created.signature, message: "" });
+      dispatch({
+        type: "submit/persisted", attempt: created,
+        receipts: loadCompoundReceipts(window.localStorage, submittedWallet).receipts,
+        ...(!receipt ? { feedback: { phase: "confirming" as const, signature: created.signature, message: "" } } : {}),
+      });
       if (receipt) recoveryWait.current = { signature: created.signature, controller: new AbortController() };
-      if (!receipt) updateFeedback(created.signature, { phase: "confirming", message: "" });
       if (receipt) {
         const waiting = recoveryWait.current!;
         const timeout = window.setTimeout(() => waiting.controller.abort(), recoveryConfirmationMs);
@@ -399,8 +343,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
           confirmationRequest.current++;
           attemptSignatureRef.current = null;
           abandonUnsentCompoundAttempt(window.localStorage, next);
-          setAttempt(null); setAttemptStatus(null); setConfirmation(null); setChainStatus(null); setConfirmationSlow(false);
-          setReceipts(loadCompoundReceipts(window.localStorage, submittedWallet).receipts);
+          dispatch({ type: "submit/abandoned", receipts: loadCompoundReceipts(window.localStorage, submittedWallet).receipts });
           keepSubmitErrorRef.current = true;
           setError(outcome.error, `${submittedWallet}:${submittedMint}`, next.signature, receipt?.sourceSignature ?? null);
           if (!receipt) updateFeedback(next.signature, { phase: "failed", message: outcome.error });
@@ -421,95 +364,19 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       if (!persisted && walletRef.current === submittedWallet && attemptSignatureRef.current === null) {
         attemptSignatureRef.current = attempt?.signature ?? null;
       }
-      if (mounted.current && lifecycle.current === submittedLifecycle) setStage(null);
+      if (mounted.current && lifecycle.current === submittedLifecycle) dispatch({ type: "stage/set", stage: null });
     }
     return "stopped";
   }
 
-
-  async function scanWallet(restart = false) {
-    if (!wallet || scanRunning.current || busy || submitting.current) return;
-    const requestedWallet = wallet;
-    const requestId = ++scanRequest.current;
-    let cursor = restart ? null : scan.cursor;
-    let scanned = restart ? 0 : scan.scanned;
-    scanRunning.current = true;
-    setScan(previous => ({ ...(restart ? emptyScan : previous), started: true, scanning: true, error: "" }));
-    try {
-      for (let page = 0; page < 20; page++) {
-        const response = await post<DiscoveryPage>("/api/compound-recover-discover", { wallet: requestedWallet, ...(cursor ? { cursor } : {}) });
-        if (!mounted.current || walletRef.current !== requestedWallet || requestId !== scanRequest.current) return;
-        if (response.wallet !== requestedWallet || !Array.isArray(response.receipts) || response.receipts.some(item => item.wallet !== requestedWallet)) {
-          throw new Error("Harvest account query does not match connected wallet");
-        }
-        for (const receipt of response.receipts) persistCompoundReceipt(window.localStorage, receipt);
-        setReceipts(loadCompoundReceipts(window.localStorage, requestedWallet).receipts);
-        const incomplete = response.incomplete || response.errors > 0;
-        scanned += response.scanned;
-        const nextCursor = response.nextCursor;
-        setScan({ started: true, scanning: !incomplete && !!nextCursor && page < 19, cursor: nextCursor,
-          scanned, total: response.totalCandidates, incomplete,
-          error: incomplete ? "Some accounts could not be verified. Retry the scan before treating it as complete." : "" });
-        if (incomplete || !nextCursor) return;
-        if (nextCursor === cursor) throw new Error("Account scan did not advance. Please retry.");
-        cursor = nextCursor;
-      }
-    } catch (caught) {
-      if (mounted.current && walletRef.current === requestedWallet && requestId === scanRequest.current) {
-        setScan(previous => ({ ...previous, scanning: false, incomplete: true,
-          error: caught instanceof Error ? caught.message : "Unable to scan harvest accounts. Please retry." }));
-      }
-    } finally { scanRunning.current = false; }
-  }
-
-  async function runRecovery(items: CompoundReceipt[], compoundSignature?: string) {
-    if (!wallet || cleanupRunning.current || submitting.current || externalBlockedRef.current || !connectionRef.current.connected) return;
-    const requestedWallet = wallet;
-    const requestedLifecycle = lifecycle.current;
-    const current = () => mounted.current && lifecycle.current === requestedLifecycle && walletRef.current === requestedWallet;
-    cleanupRunning.current = true; operationLifecycle.current = lifecycle.current;
-    let completed = 0;
-    setCleanup({ completed, total: items.length, running: true, message: "Approve each cleanup transaction in your wallet.", compoundSignature });
-    try {
-      for (const receipt of items) {
-        if (!current() || externalBlockedRef.current) return;
-        const outcome = await submit(receipt, true);
-        if (!current()) return;
-        if (outcome !== "success") {
-          setCleanup({ completed, total: items.length, running: false, compoundSignature,
-            message: "Cleanup paused. Remaining balances are saved below. Verify the last transaction, then retry cleanup." });
-          return;
-        }
-        completed++;
-        setCleanup({ completed, total: items.length, running: true, compoundSignature, message: "Balance merged and account rent recovered." });
-      }
-      if (current()) setCleanup({ completed, total: items.length, running: false, compoundSignature,
-        message: "All selected harvest accounts cleaned up. Balances were merged into your wallet and account rent returned." });
-    } catch (caught) {
-      if (current()) setCleanup({ completed, total: items.length, running: false, compoundSignature,
-        message: caught instanceof Error ? caught.message : "Cleanup paused. Check the last transaction before retrying." });
-    } finally {
-      cleanupRunning.current = false;
-      if (current()) setCleanup(previous => previous ? { ...previous, running: false } : previous);
-    }
-  }
-  useLayoutEffect(() => { runRecoveryRef.current = runRecovery; });
-  useEffect(() => {
-    const approved = autoCleanup.current;
-    if (!approved || approved.wallet !== wallet || approved.identity !== identity || approved.signature !== visibleAttempt?.signature ||
-      visibleAttempt.kind !== "compound" || attemptStatus !== "success" || chainStatus !== null && chainStatus !== "success" || stage !== null || cleanupRunning.current) return;
-    const receipt = receipts.find(item => item.sourceSignature === approved.signature);
-    if (!receipt) return;
-    // Keep the approval until the callback actually starts. A receipt refresh
-    // may replace this effect and timer without revoking the user's action.
-    const timer = window.setTimeout(() => {
-      if (!mounted.current || identityRef.current !== approved.identity || autoCleanup.current !== approved ||
-        cleanupRunning.current || submitting.current || externalBlockedRef.current || !connectionRef.current.connected) return;
-      autoCleanup.current = null;
-      void runRecoveryRef.current([receipt], approved.signature);
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [wallet, identity, visibleAttempt, attemptStatus, chainStatus, stage, receipts, externalBlocked]);
+  const { recover } = useCompoundRecovery({
+    wallet, identity, visibleAttempt, attemptStatus, chainStatus, stage, receipts, externalBlocked,
+    submit, dispatch, mounted, lifecycle, walletRef, identityRef, connectionRef, externalBlockedRef,
+    cleanupRunningRef: cleanupRunning, submitting, autoCleanup, runRecoveryRef, operationLifecycleRef: operationLifecycle,
+  });
+  const { scanWallet, importReceipt, canImport } = useCleanupScan({
+    wallet, identity, busy, importing, scan, dispatch, mounted, walletRef, scanRequest, scanRunning, submitting, operationRequest,
+  });
 
   const retryReconcile = () => {
     if (busy) return;
@@ -518,28 +385,6 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
     attemptSignatureRef.current = visibleAttempt.signature;
     void reconcile(visibleAttempt);
   };
-  const canImport = !!wallet && !busy && !importing;
-  async function importReceipt(signature: string) {
-    if (!wallet || !canImport || submitting.current) return;
-    const requestedWallet = wallet;
-    const requestedOperation = operationRequest.current;
-    const requestedSignature = signature.trim();
-    const requestedIdentity = identity;
-    setImporting(true); setError("");
-    try {
-      const response = await post<{ receipt: CompoundReceipt }>("/api/compound-recover-import", {
-        wallet: requestedWallet, signature: requestedSignature,
-      });
-      if (!mounted.current || walletRef.current !== requestedWallet || operationRequest.current !== requestedOperation) return;
-      if (response.receipt.wallet !== requestedWallet || response.receipt.sourceSignature !== requestedSignature) {
-        throw new Error("Harvest account and query wallet or transaction signature mismatch");
-      }
-      persistCompoundReceipt(window.localStorage, response.receipt);
-      setReceipts(loadCompoundReceipts(window.localStorage, requestedWallet).receipts);
-    } catch (caught) {
-      if (mounted.current && walletRef.current === requestedWallet && operationRequest.current === requestedOperation) setError(caught instanceof Error ? caught.message : "Harvest account query failed", requestedIdentity);
-    } finally { if (mounted.current && walletRef.current === requestedWallet) setImporting(false); }
-  }
   return { wallet, positionMint, state: visibleState, preview: visiblePreview, attempt: visibleAttempt, attemptStatus,
     confirmation: visibleAttempt && confirmation?.signature === visibleAttempt.signature ? confirmation : null,
     receipts: loadedWallet === wallet ? receipts : [],
@@ -554,24 +399,24 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       : receiptReviewRequired ? "A previous compound transaction finalized, but its harvest details need verification. New transactions are available." : "",
     receiptReviewRequired, confirmationSlow: confirmationSlow && transactionUnresolved,
     canCompound, cancelPending, hasFees, priorReceipts, importing, canImport, importReceipt,
-    scan: loadedWallet === wallet ? scan : emptyScan, scanWallet, cleanup: (loadedWallet === wallet ? cleanup : null) || batchCleanup.progress,
+    scan: loadedWallet === wallet ? scan : emptyCompoundScan, scanWallet, cleanup: (loadedWallet === wallet ? cleanup : null) || batchCleanup.progress,
     cleanupBatch: batchCleanup.attempt, cleanupAll: async () => {
       if (cleanupRunning.current || submitting.current || busy) return;
-      setCleanup(null);
+      dispatch({ type: "cleanup/set", cleanup: null });
       await batchCleanup.start(receipts);
     },
     canCleanup: !!wallet && connection.connected && loadedWallet === wallet && !busy && !externalBlocked && !storageInvalid && batchCleanup.loaded && !batchCleanup.unresolved && !batchCleanup.invalid &&
-      (!visibleAttempt || resolvedAttempt.current?.signature === visibleAttempt.signature && recoveryMayProceed(resolvedAttempt.current)) && receipts.length > 0,
+      (!visibleAttempt || recoveryMayProceed({ status: attemptStatus ?? "pending", chainStatus: chainStatus ?? undefined })) && receipts.length > 0,
     ready: !!wallet && connection.connected && !walletBlocked && !externalBlocked && !batchCleanup.unresolved && !batchCleanup.invalid,
     refreshState, compound: () => { void submit(); },
     feedback,
     feedbackSlow: confirmationSlow,
     dismissFeedback: () => {
       const done = feedback?.phase === "success";
-      setFeedback(null);
+      dispatch({ type: "feedback/set", feedback: null });
       // OK on success re-reads the position so the remaining Harvest shows without a page reload.
       if (done) { void refreshState(); onConfirmedRef.current?.(); }
-    }, recover: (receipt: CompoundReceipt) => runRecovery([receipt]), retryReconcile,
+    }, recover, retryReconcile,
     storageKey: wallet ? compoundAttemptKey(wallet) : null };
 }
 
