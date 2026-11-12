@@ -494,6 +494,26 @@ describe("homepage pools: Top Pools card and the full list", () => {
     );
   });
 
+  it("keeps an Orca pool's Open disabled (openUi none) and an RHC pool a deep link", async () => {
+    mocks.aprFor.mockImplementation((poolId) => (
+      poolId === "orca-pool" ? ready({ micro: 5, tight: 22, standard: 8, wide: 2 }) : { status: "loading" }
+    ));
+    jsonOk(
+      { pairs: [pair({ poolAddress: "orca-pool", protocol: "orca-whirlpool" })] },
+      { pools: [rhcSummary(0, 52_000)], fetchedAt: "2026-10-29T11:05:00.000Z", snapshot: { stale: false } },
+    );
+    await mount();
+    const orca = rowsOf().find((row) => row.getAttribute("data-pool") === sol("orca-pool"));
+    expect(orca).toBeTruthy();
+    expect(orca!.querySelector("[data-testid='protocol-badge']")!.textContent).toBe("Orca");
+    expect(orca!.querySelector("[data-testid=open-disabled]")).not.toBeNull();
+    expect(orca!.querySelector("a[href^='/app/rwa-pairs']")).toBeNull();
+    const rhc = rowsOf().find((row) => row.getAttribute("data-pool") === rhcKey(0));
+    expect(rhc).toBeTruthy();
+    expect(rhc!.querySelector("a[href^='/app/rwa-pairs']")!.getAttribute("href")).toBe(`/app/rwa-pairs?openPool=${UNIV4_RHC_ALLOWLISTED_POOLS[0]!.poolId}`);
+    expect(rhc!.querySelector("[data-testid=open-disabled]")).toBeNull();
+  });
+
   it("keeps showing the Solana rows when only the Robinhood Chain request fails", async () => {
     fetchMock.mockImplementation(async (url: string) => url === RHC_URL
       ? { ok: false, json: async () => ({ error: "down" }) }

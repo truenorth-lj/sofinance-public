@@ -53,17 +53,19 @@ function openPoolHref(pool: Pick<HomepagePool, "poolAddress">) {
 }
 
 /**
- * Open as on `/app/rwa-pairs`: tokens not supported yet say so; a registry DEX (`openUi: "registry"`, today Meteora)
- * is disabled when its `open` capability is unsupported; every other pool is a deep link, and the app page uses the
- * same `openUi` path (native modal, RHC dialog, or not available). No DEX-name checks here.
+ * Open as on `/app/rwa-pairs`: tokens not supported yet say so; a registry or hidden registry DEX
+ * (`openUi: "registry"` or `"none"`, today Meteora and Orca) is disabled when its `open` capability is
+ * unsupported; every other pool is a deep link, and the app page uses the same `openUi` path (native
+ * modal, RHC dialog, or not available). No DEX-name checks here.
  */
 const openAction = (pool: UnifiedPool): OpenAction => {
   const unsupported = unsupportedTokenReason(pool);
   if (unsupported) return { kind: "unsupported", reason: unsupported };
-  // Only a registry-dispatched Open (`openUi: "registry"`) consults `capabilities.open`. RHC
-  // (`rhc-dialog`) and Raydium (`native-modal`) stay deep links even if a descriptor marks the
-  // generic StepResult open path unsupported.
-  if (uiFor(pool.protocol).openUi === "registry") {
+  // Registry-dispatched Open (`openUi: "registry"`) and hidden registry venues (`openUi: "none"`,
+  // today Orca) consult `capabilities.open`. RHC (`rhc-dialog`) and Raydium (`native-modal`) stay
+  // deep links even if a descriptor marks the generic StepResult open path unsupported.
+  const openUi = uiFor(pool.protocol).openUi;
+  if (openUi === "registry" || openUi === "none") {
     const open = dexDescriptors.descriptorFor(pool.protocol)?.capabilities.open;
     if (open && !open.supported) return { kind: "disabled", reason: open.reason };
   }
