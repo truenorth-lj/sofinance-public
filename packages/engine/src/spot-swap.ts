@@ -290,7 +290,7 @@ export async function selectSpotSwapToken(allowlist: SpotSwapAllowlist, underlyi
 }
 
 /** Why this mint cannot be bought now (empty = ok). Same Token-2022 rules as open:
- * paused, transfer fee, default-frozen, active hook, ScaledUiAmount multiplier not 1,
+ * paused, transfer fee, default-frozen, active hook, ScaledUiAmount multiplier more than 1% from 1,
  * unsupported extensions. */
 export function spotSwapMintIssues(mintAddress: PublicKey, info: AccountInfo<Buffer> | null): { program: PublicKey; decimals: number; issues: string[] } {
   if (!info || !(info.owner.equals(TOKEN_PROGRAM_ID) || info.owner.equals(TOKEN_2022_PROGRAM_ID))) {

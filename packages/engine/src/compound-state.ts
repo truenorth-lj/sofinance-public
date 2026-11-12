@@ -1,6 +1,6 @@
 import BN from "bn.js";
 import { getPdaTickArrayAddress, LiquidityMathUtil, PersonalPositionLayout, PoolInfoLayout, PositionUtils, TickArrayLayout, TickArrayUtil, TickUtil } from "@raydium-io/raydium-sdk-v2";
-import { AccountState, ExtensionType, getAssociatedTokenAddressSync, getDefaultAccountState, getExtensionTypes, getPausableConfig, getScaledUiAmountConfig, getTransferFeeConfig, getTransferHook, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, unpackAccount, unpackMint } from "@solana/spl-token";
+import { AccountState, ExtensionType, getAssociatedTokenAddressSync, getDefaultAccountState, getExtensionTypes, getPausableConfig, getTransferFeeConfig, getTransferHook, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, unpackAccount, unpackMint } from "@solana/spl-token";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { NATIVE_SOL_MINT } from "./ids";
 import { readRecentBlockTime } from "./block-time";
@@ -8,6 +8,7 @@ import { rpcConnection } from "./rpc";
 import { readSelectedPositionState } from "./selected-state";
 import { accruedFee, MAX_U64, wrappingSub128 } from "./compound-math";
 import { positionSide } from "./quote-math";
+import { scaledUiAmountOutOfTolerance } from "./token-safety";
 import type { CompoundPositionState, CompoundReward } from "./compound-types";
 
 const supported = new Set([
@@ -94,12 +95,11 @@ export async function readCompoundPositionState(wallet: string, positionMint: st
     const extensions = getExtensionTypes(mint.tlvData);
     const feeConfig = getTransferFeeConfig(mint);
     const hook = getTransferHook(mint);
-    const scaled = getScaledUiAmountConfig(mint);
     if (vault.isFrozen || getPausableConfig(mint)?.paused ||
       extensions.some((extension) => !supported.has(extension)) ||
       feeConfig && (feeConfig.olderTransferFee.transferFeeBasisPoints || feeConfig.newerTransferFee.transferFeeBasisPoints) ||
       hook && !hook.programId.equals(PublicKey.default) ||
-      scaled && (scaled.multiplier !== 1 || scaled.newMultiplier !== 1) ||
+      scaledUiAmountOutOfTolerance(mint) ||
       extensions.includes(ExtensionType.DefaultAccountState) && getDefaultAccountState(mint)?.state !== AccountState.Initialized) issues.push(`Reward ${reward.mint.toBase58()} contains unsupported or disabled token features`);
     const estimated = estimatedRewards[index]!;
     if (estimated.gt(new BN(MAX_U64.toString()))) throw new Error("Reward harvest exceeds u64 range");

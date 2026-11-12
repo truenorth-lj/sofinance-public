@@ -143,4 +143,15 @@ describe("raw Token-2022 selected state", () => {
     accounts.set(ata.toBase58(), info(extendedToken(token(input, wallet, 1000n)), TOKEN_2022_PROGRAM_ID));
     await expect(state()).rejects.toThrow(reason);
   });
+  it("allows a ScaledUiAmount multiplier within 1% of 1 on a pool asset and as the input mint", async () => {
+    const payload = Buffer.alloc(getTypeLen(ExtensionType.ScaledUiAmountConfig));
+    payload.writeDoubleLE(1.0009, 32); payload.writeDoubleLE(1.0017, 48);
+    accounts.set(mintA.toBase58(), info(extendedMint(mint(), ExtensionType.ScaledUiAmountConfig, payload), TOKEN_2022_PROGRAM_ID));
+    accounts.set(vaultA.toBase58(), info(extendedToken(token(mintA, pool, 1000000n)), TOKEN_2022_PROGRAM_ID));
+    expect((await state()).unsupportedExtensions).toEqual([]);
+    accounts.set(input.toBase58(), info(extendedMint(mint(), ExtensionType.ScaledUiAmountConfig, payload), TOKEN_2022_PROGRAM_ID));
+    const ata = getAssociatedTokenAddressSync(input, wallet, false, TOKEN_2022_PROGRAM_ID);
+    accounts.set(ata.toBase58(), info(extendedToken(token(input, wallet, 1000n)), TOKEN_2022_PROGRAM_ID));
+    await expect(state()).resolves.toMatchObject({ unsupportedExtensions: [] });
+  });
 });
