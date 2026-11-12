@@ -203,12 +203,10 @@ describe("/app shared detail panel for a Robinhood Chain position (PM review of 
     expect([...assets.querySelectorAll("dd")].map((dd) => dd.textContent)).toEqual(["— Token 0", "—", "— Token 0", "—", "— Token 1", "—", "— Token 1", "—"]);
   });
 
-  it("a leftover rhc-uniswap-v4:<id> URL still selects the same canonical row", async () => {
+  it("a leftover rhc-uniswap-v4:<id> URL no longer selects the canonical row", async () => {
     await render({ initialPositionKey: "rhc-uniswap-v4:8", initialView: "compound" });
-    expect(selectedKey()).toBe("uniswap-v4-rhc:8");
-    await choose("uniswap-v4-rhc:7");
-    expect(selectedKey()).toBe("uniswap-v4-rhc:7");
-    expect(new URL(window.location.href).searchParams.get("position")).toBe("uniswap-v4-rhc:7");
+    expect(selectedKey()).toBeUndefined();
+    expect(new URL(window.location.href).searchParams.get("position")).toBeNull();
   });
 
   it("makes exactly one positions scan network call per page load for an EVM wallet (dedicated route only)", async () => {

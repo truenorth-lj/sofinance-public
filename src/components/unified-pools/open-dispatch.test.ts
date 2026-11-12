@@ -11,7 +11,6 @@ const protocols = [
   { protocol: "orca-whirlpool", chain: "solana" },
   { protocol: "meteora-dlmm", chain: "solana" },
   { protocol: "uniswap-v4-rhc", chain: "robinhood" },
-  { protocol: "rhc-uniswap-v4", chain: "robinhood" },
 ] as const;
 
 const pool = (protocol: string, chain: string, over: Partial<PoolOpenRef> = {}): PoolOpenRef => ({ protocol, chain, ...over });
@@ -42,8 +41,10 @@ describe("open dispatch handler matrix (button and deep link)", () => {
     expect(resolveOpenDispatch(pool("uniswap-v4-rhc", "robinhood"))).toEqual(same({ handler: "rhc-dialog" }));
   });
 
-  it("legacy rhc-uniswap-v4 alias inherits the RHC dialog (same handler as the canonical id)", () => {
-    expect(resolveOpenDispatch(pool("rhc-uniswap-v4", "robinhood"))).toEqual(same({ handler: "rhc-dialog" }));
+  it("the retired rhc-uniswap-v4 spelling no longer opens the RHC dialog", () => {
+    expect(resolveOpenDispatch(pool("rhc-uniswap-v4", "robinhood"))).toEqual(
+      same({ handler: "none", reason: "Opening is not available yet" }),
+    );
   });
 
   it("Orca is not available yet: button and deep link call the same handler", () => {

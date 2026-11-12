@@ -11,11 +11,10 @@ const MATRIX: Record<string, Pick<DexUi, "openUi" | "useDescriptorPlanTerms">> =
   "raydium-clmm": { openUi: "native-modal", useDescriptorPlanTerms: false },
   "uniswap-v4-rhc": { openUi: "rhc-dialog", useDescriptorPlanTerms: false },
   "orca-whirlpool": { openUi: "none", useDescriptorPlanTerms: false },
-  "rhc-uniswap-v4": { openUi: "rhc-dialog", useDescriptorPlanTerms: false },
 };
 
 describe("uiFor (E-move registry UI)", () => {
-  it("matches the §2.2 matrix for every shipped protocol and the legacy alias", () => {
+  it("matches the §2.2 matrix for every shipped protocol", () => {
     for (const [id, expected] of Object.entries(MATRIX)) {
       expect(uiFor(id), id).toMatchObject(expected);
     }
@@ -31,6 +30,7 @@ describe("uiFor (E-move registry UI)", () => {
 
   it("unknown ids default to none / legacy plan terms", () => {
     expect(uiFor("not-a-dex")).toEqual({ openUi: "none", useDescriptorPlanTerms: false });
+    expect(uiFor("rhc-uniswap-v4")).toEqual({ openUi: "none", useDescriptorPlanTerms: false });
   });
 
   it("a descriptor with ui.useDescriptorPlanTerms false keeps LEGACY terms", () => {
