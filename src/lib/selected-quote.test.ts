@@ -137,7 +137,7 @@ describe("bounded selected allocation", () => {
       new BN(snapshot.upperSqrtX64), new BN(quote.liquidity), true);
     expect(quote.requiredA).toBe(amounts.amountA.toString());
     expect(quote.requiredB).toBe(amounts.amountB.toString());
-    expect(vi.mocked(quoteRoute).mock.calls.every(call => call[3]?.onlyDirectRoutes === true)).toBe(true);
+    expect(vi.mocked(quoteRoute).mock.calls.every(call => call[3]?.constraints?.onlyDirectRoutes === true)).toBe(true);
   });
   describe("own-pool projection on a wide tick spacing", () => {
     async function quoteWithLiquidity(poolLiquidity: string) {
@@ -177,21 +177,21 @@ describe("bounded selected allocation", () => {
     // Two sizing quotes + two resale quotes; swap-instructions only for the two final legs.
     expect(buildRoute).toHaveBeenCalledTimes(2); expect(quoteRoute).toHaveBeenCalledTimes(4);
     const sizing = await Promise.all(vi.mocked(quoteRoute).mock.results.slice(0, 2).map(result => result.value));
-    expect(vi.mocked(buildRoute).mock.calls.map(call => call[11])).toEqual(sizing);
+    expect(vi.mocked(buildRoute).mock.calls.map(call => call[4]?.quoted)).toEqual(sizing);
     expect(result.quote.resaleInput).not.toBeNull(); expect(result.quote.passesFloor).toBe(true);
   });
   it("retries compact no-route with a wider account budget for a cross-asset input", async () => {
     insideState();
-    vi.mocked(quoteRoute).mockImplementation(async (input, output, amount, constraints) => {
-      if ((constraints?.maxAccounts ?? 24) < 32) throw new JupiterNoRouteError();
+    vi.mocked(quoteRoute).mockImplementation(async (input, output, amount, options) => {
+      if ((options?.constraints?.maxAccounts ?? 24) < 32) throw new JupiterNoRouteError();
       return route(input, output, amount);
     });
     const { quote } = await searchSelectedQuoteBundle(wallet, { positionMint, inputMint: source, inputKind: "token" }, "100",
       9900, 100, { buildTransactions: false, includeResale: false });
     expect(BigInt(quote.spendA) + BigInt(quote.spendB)).toBe(100000000n);
-    expect(vi.mocked(quoteRoute).mock.calls.some((call) => call[3]?.maxAccounts === 24)).toBe(true);
-    expect(vi.mocked(quoteRoute).mock.calls.some((call) => call[3]?.maxAccounts === 32)).toBe(true);
-    expect(vi.mocked(quoteRoute).mock.calls.every((call) => (call[3]?.maxAccounts ?? 0) <= 32)).toBe(true);
+    expect(vi.mocked(quoteRoute).mock.calls.some((call) => call[3]?.constraints?.maxAccounts === 24)).toBe(true);
+    expect(vi.mocked(quoteRoute).mock.calls.some((call) => call[3]?.constraints?.maxAccounts === 32)).toBe(true);
+    expect(vi.mocked(quoteRoute).mock.calls.every((call) => (call[3]?.constraints?.maxAccounts ?? 0) <= 32)).toBe(true);
   });
   it("maps exhausted cross-asset no-route to a coded user-facing error", async () => {
     insideState();
@@ -261,5 +261,5 @@ it.each(["native", "token"] as const)("selected add charges the configured fee o
   expect(result.legs[0]!.feeInRoute).toBe(true);
   expect(result.legs[0]!.route!.inAmount).toBe("100000000");
   const call = vi.mocked(buildRoute).mock.calls[0]!;
-  expect([call[1], call[3], call[9], call[12]]).toEqual([mintB, 100000000n, 10, mintB]);
+  expect([call[1], call[3], call[4]?.platformFeeBps, call[4]?.feeMint]).toEqual([mintB, 100000000n, 10, mintB]);
 });

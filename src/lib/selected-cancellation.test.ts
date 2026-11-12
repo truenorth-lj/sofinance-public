@@ -18,8 +18,8 @@ it("cancels actual RPC, lightweight quote and build fetches with the same reques
   const keys = [Keypair.generate().publicKey, Keypair.generate().publicKey];
   const work = [
     connection.getMultipleAccountsInfoAndContext(keys, "confirmed"),
-    quoteRoute(keys[0]!.toBase58(), keys[1]!.toBase58(), 100n, { maxAccounts: 24 }, controller.signal),
-    buildRoute(keys[0]!.toBase58(), keys[0]!.toBase58(), keys[1]!.toBase58(), 100n, false, { maxAccounts: 24 }, controller.signal),
+    quoteRoute(keys[0]!.toBase58(), keys[1]!.toBase58(), 100n, { constraints: { maxAccounts: 24 }, signal: controller.signal }),
+    buildRoute(keys[0]!.toBase58(), keys[0]!.toBase58(), keys[1]!.toBase58(), 100n, { wrapAndUnwrapSol: false, constraints: { maxAccounts: 24 }, signal: controller.signal }),
   ];
   // web3.js schedules the underlying fetch on the next microtask.
   await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
