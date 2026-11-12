@@ -17,6 +17,7 @@ import { CANCEL_CHECK_PENDING_COPY, CHECKING_SOLANA_COPY, solscanTxUrl, TX_WAITI
 import type { ToolId, TokenRef, UnifiedPosition, WithdrawOutput } from "@/lib/unified-positions/model";
 import { useTxPipeline } from "../transactions/use-tx-pipeline";
 import { useWalletConnection } from "../wallet-connection";
+import { useTxWallet } from "../use-tx-wallet";
 import { RegistryPerformancePanel } from "./registry-performance";
 import type { PositionPerformanceReport } from "@/lib/position-performance-report";
 import { beginPositionOp, trackPositionSignature, usePositionOpLock } from "./position-op-lock";
@@ -120,9 +121,8 @@ export function openRentLines(rent: RentQuote | null | undefined): { lines: stri
  * checked or confirming, all panels of that position are locked, and a tab switch does not release it.
  */
 function usePositionTx<Op extends DexStepOp>(op: Op, position: UnifiedPosition, onConfirmed: () => void) {
-  const { address: wallet, signTransaction, signAndSendTransaction } = useWalletConnection();
-  const txWallet = useMemo(() => wallet ? { address: wallet, signTransaction, signAndSendTransaction } : null,
-    [wallet, signTransaction, signAndSendTransaction]);
+  const { address: wallet } = useWalletConnection();
+  const txWallet = useTxWallet();
   const adapter = useMemo(() => dexTxAdapter(op), [op]);
   // Errors show inline under the panel's button (with Try again), so no failure toast covers that button at 375 px.
   const tx = useTxPipeline(adapter, txWallet, { scope: position.key, inlineErrors: true });

@@ -1,7 +1,7 @@
 "use client";
 import "@/lib/engine-host";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { formatAmount, parseTokenAmount, toleranceFromPercent } from "@sofinance/engine/amount";
 import { addAmountGuidance, CLOSED_POSITION_ADD_MESSAGE } from "@/lib/selected-amount-guidance";
 import type { PositionSelection, SelectedPositionState } from "@sofinance/engine/selected-state";
@@ -9,6 +9,7 @@ import type { WalletDiscovery } from "@sofinance/engine/wallet-discovery";
 import { DEFAULT_RESALE_FLOOR_BPS, USDC_MINT } from "@sofinance/engine/ids";
 import { INPUT_ASSET_NOT_HELD_CODE, INPUT_ASSET_NOT_HELD_MESSAGE } from "@/lib/selected-input-asset-not-held";
 import { useWalletConnection } from "./wallet-connection";
+import { useTxWallet } from "./use-tx-wallet";
 import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { useSelectedPreview, useSelectedPreviewEffect } from "./transactions/selected/use-selected-preview";
 import { selectionKey } from "./transactions/selected/selected-preview-model";
@@ -25,7 +26,7 @@ export const QUOTE_ERROR_STATUS = "Preview unavailable. See the message below.";
 
 export function useSelectedController() {
   const { address: wallet, connected, connect, disconnect, isMobile, walletsCount,
-    connectionError, signTransaction, signAndSendTransaction } = useWalletConnection();
+    connectionError } = useWalletConnection();
   const [discovery, setDiscovery] = useState<WalletDiscovery | null>(null);
   const [selection, setSelection] = useState<PositionSelection | null>(null);
   const [selectedState, setSelectedState] = useState<SelectedPositionState | null>(null);
@@ -36,8 +37,7 @@ export function useSelectedController() {
     invalidate: invalidatePreview, invalidateForInput: invalidateInputPreview,
     clear: clearPreview, clearErrors: clearQuoteErrors,
     retryCalculation, showQuoteRecalculate } = previewController;
-  const txWallet = useMemo(() => wallet ? { address: wallet, signTransaction, signAndSendTransaction } : null,
-    [wallet, signTransaction, signAndSendTransaction]);
+  const txWallet = useTxWallet();
   const tx = useTxPipeline(addLiquidityAdapter, txWallet, { scope: selection?.positionMint });
   // `locked` also covers checking Solana after a wallet error and confirming: no second send, no re-quote.
   const { locked: busy, reset: clearError } = tx;
