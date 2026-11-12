@@ -11,6 +11,7 @@ import { planPoolTerms, projectPoolPlan } from "@/lib/lp-plan-pool-terms";
 import { lowPlanApr, pairLabelSymbols, planShareSymbol } from "@/lib/lp-plan-shares";
 import { PLAN_HIDDEN_RISK_LINE, planDataNotice } from "@/lib/lp-plan-notice";
 import { dexDescriptors } from "@/lib/dex/client";
+import { uiFor } from "./use-pool-sources";
 import { cn } from "@/lib/cn";
 import { HodlVsPool } from "../plan/hodl-vs-pool";
 import { formatCents, formatCostUsd, formatPct, formatSignedPct, formatSignedUsd } from "../plan/format";
@@ -81,10 +82,11 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
   const terms = useMemo(
     () => planPoolTerms({
       descriptor: dexDescriptors.descriptorFor(pool.protocol),
+      useDescriptorPlanTerms: uiFor(pool.protocol, pool.chain).useDescriptorPlanTerms,
       listOpenReason: null,
       symbols: symbols ? [symbols.wrappedSymbol, symbols.plainSymbol] : undefined,
     }),
-    [pool.protocol, symbols],
+    [pool.protocol, pool.chain, symbols],
   );
 
   // No exit picker here, so the projection takes the conservative one: swapping back to USDC.

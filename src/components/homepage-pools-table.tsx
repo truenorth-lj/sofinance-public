@@ -53,8 +53,9 @@ function openPoolHref(pool: Pick<HomepagePool, "poolAddress">) {
 }
 
 /**
- * Open as on `/app/rwa-pairs`: tokens not supported yet say so; a registry DEX (Meteora) opens only when its `open`
- * capability is supported and the DEX route is on (`@/lib/dex` registry, no DEX-name checks here); other pools open.
+ * Open as on `/app/rwa-pairs`: tokens not supported yet say so; a registry DEX (`openUi: "registry"`, today Meteora)
+ * is disabled when its `open` capability is unsupported; every other pool is a deep link, and the app page uses the
+ * same `openUi` path (native modal, RHC dialog, or not available). No DEX-name checks here.
  */
 const openAction = (pool: UnifiedPool): OpenAction => {
   const unsupported = unsupportedTokenReason(pool);

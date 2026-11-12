@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { SUPPORTED } from "@/lib/unified-positions/model";
+import { dexDescriptors } from "@/lib/dex/client";
 import { RWA_PAIRS_LIST_PATH, fetchRwaPairsList } from "@/lib/rwa-pairs-list";
 import type { SnapshotSourceTime } from "@/lib/snapshot-updated";
 import type { TokenIconMap } from "@/lib/token-icons/map";
@@ -149,6 +150,47 @@ export const protocolMeta = (protocol: string): ProtocolMeta | undefined =>
 
 export const chainMeta = (chain: string): ChainMeta | undefined =>
   CHAIN_META[chain as PoolChain];
+
+/** Which open shell the pools page / deep link uses. Temporary E-dispatch shape; E-move keeps this and drops PROTOCOL_META. */
+export type DexOpenUi = "registry" | "native-modal" | "rhc-dialog" | "none";
+
+export type DexUi = {
+  openUi: DexOpenUi;
+  externalPoolUrl?: (poolAddress: string) => string;
+  /**
+   * When true, Plan / share-calc use descriptor fee/rent terms. Must stay exactly as today:
+   * true only when a descriptor is already registered (Meteora).
+   */
+  useDescriptorPlanTerms: boolean;
+  planFallback?: typeof SUPPORTED;
+};
+
+export type UiForDeps = {
+  descriptorFor?: (id: string) => { capabilities: { open: { supported: boolean } } } | null;
+};
+
+/**
+ * Temporary mapper: reads existing `PROTOCOL_META` and `CHAIN_META.opensRhcDialog`.
+ * Not a new protocol-keyed table (the table ceiling must stay 3). Does not invent a
+ * `feePolicy`. Does not normalize the `rhc-uniswap-v4` alias into `PROTOCOL_META`
+ * (today that alias has no meta row, so open stays "not available").
+ */
+export function uiFor(protocol: string, chain?: string, deps: UiForDeps = {}): DexUi {
+  const descriptorFor = deps.descriptorFor ?? ((id) => dexDescriptors.descriptorFor(id));
+  const descriptor = descriptorFor(protocol);
+  const meta = protocolMeta(protocol);
+  const openUi: DexOpenUi = descriptor?.capabilities.open
+    ? "registry"
+    : meta?.opensNativeModal
+      ? (chain && chainMeta(chain)?.opensRhcDialog ? "rhc-dialog" : "native-modal")
+      : "none";
+  return {
+    openUi,
+    externalPoolUrl: meta?.externalPoolUrl,
+    useDescriptorPlanTerms: Boolean(descriptor),
+    planFallback: meta?.planFallback,
+  };
+}
 
 const emptyLoaded = (): Loaded => ({ rows: [], rhc: [], updated: [] });
 

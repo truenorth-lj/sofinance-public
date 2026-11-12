@@ -6,7 +6,7 @@ import { ArrowDownUp, ChevronDown, LayoutGrid, List, LoaderCircle, RefreshCw, Se
 import { cn } from "@/lib/cn";
 import { dexDescriptors, fetchOpenRanges, type OpenRanges } from "@/lib/dex/client";
 import {
-  CHAIN_LABELS, DEFAULT_FILTERS, DEFAULT_SORT, FIRST_CLICK_DIR, PROTOCOL_LABELS, selectPools, TVL_FILTER_PRESETS, unsupportedTokenReason,
+  CHAIN_LABELS, DEFAULT_FILTERS, DEFAULT_SORT, FIRST_CLICK_DIR, PROTOCOL_LABELS, selectPools, TVL_FILTER_PRESETS,
   type PoolChain, type PoolFilters, type SortKey, type UnifiedPool, type UnifiedProtocol,
 } from "@/lib/unified-pools/model";
 import { rhcPool, rhcPoolView, solanaPool, type RhcPoolSummary, type SolanaPoolRow } from "@/lib/unified-pools/rows";
@@ -22,7 +22,8 @@ import { usePoolsApr7d } from "./use-pools-apr7d";
 import { COLUMNS, PoolTable, type OpenAction } from "./pool-list";
 import { rankGroupLookup } from "@/lib/unified-pools/apr7d";
 import { PoolCard } from "./pool-card";
-import { chainMeta, protocolMeta, usePoolSources, type UnifiedPoolFlags } from "./use-pool-sources";
+import { usePoolSources, type UnifiedPoolFlags } from "./use-pool-sources";
+import { resolveOpenDispatch } from "./open-dispatch";
 
 export type { UnifiedPoolFlags };
 
@@ -120,7 +121,8 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
 
   /** `connectWallet: false` for deep links: the Create position dialog opens with its own Connect wallet button. */
   const openPool = useCallback((pool: UnifiedPool, connectWallet = true) => {
-    if (chainMeta(pool.chain)?.opensRhcDialog) {
+    // E-dispatch: `openUi`, not `chainMeta.opensRhcDialog` / descriptor presence.
+    if (resolveOpenDispatch(pool).button.handler === "rhc-dialog") {
       const summary = rhcByKey.get(pool.key);
       const view = summary ? rhcPoolView(summary as RhcPoolSummary) : null;
       if (view) onOpenRhc({ pool: view });
@@ -138,16 +140,11 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
   const [calcPool, setCalcPool] = useState<UnifiedPool | null>(null);
   const closeCalc = useCallback(() => setCalcPool(null), []);
   const actionFor = useCallback((pool: UnifiedPool): OpenAction => {
-    const unsupported = unsupportedTokenReason(pool);
-    if (unsupported) return { kind: "unsupported", reason: unsupported };
-    // Registered DEXes say through their `open` capability and open in the registry dialog (PR10).
-    const open = dexDescriptors.descriptorFor(pool.protocol)?.capabilities.open;
-    if (open) {
-      if (!open.supported) return { kind: "none", reason: open.reason };
-      return { kind: "open", onOpen: () => { if (!connected) connect(); setRegistryOpen(pool); } };
-    }
-    if (protocolMeta(pool.protocol)?.opensNativeModal) return { kind: "open", onOpen: () => openPool(pool) };
-    return { kind: "none", reason: "Opening is not available yet" };
+    const { button } = resolveOpenDispatch(pool);
+    if (button.handler === "unsupported") return { kind: "unsupported", reason: button.reason! };
+    if (button.handler === "none") return { kind: "none", reason: button.reason! };
+    if (button.handler === "registry") return { kind: "open", onOpen: () => { if (!connected) connect(); setRegistryOpen(pool); } };
+    return { kind: "open", onOpen: () => openPool(pool) };
   }, [openPool, connected, connect]);
 
   // Deep link (`/app/rwa-pairs?openPool=…`, where `/app/rhc` and old `/app?openPool=` links redirect): open that pool once it is listed.
@@ -157,13 +154,14 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
     const pool = pools.find((item) => item.poolAddress === deepLinkPool || item.poolAddress.toLowerCase() === deepLinkPool.toLowerCase());
     const timer = window.setTimeout(() => {
       setDeepLinked(true);
-      if (!pool || actionFor(pool).kind !== "open") return;
+      if (!pool) return;
+      const { deepLink } = resolveOpenDispatch(pool);
       // No auto-connect for a deep link: each dialog shows its own Connect wallet button.
-      if (dexDescriptors.descriptorFor(pool.protocol)) setRegistryOpen(pool);
-      else openPool(pool, false);
+      if (deepLink.handler === "registry") setRegistryOpen(pool);
+      else if (deepLink.handler === "native-modal" || deepLink.handler === "rhc-dialog") openPool(pool, false);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [deepLinkPool, deepLinked, loading, pools, actionFor, openPool]);
+  }, [deepLinkPool, deepLinked, loading, pools, openPool]);
 
   const refresh = () => {
     clearPoolRangeAprClientCache();
