@@ -4,6 +4,7 @@
  * A day with missing volume or TVL is a gap (`aprPct: null`) — never interpolated.
  */
 
+
 export const SECONDS_PER_DAY = 86_400;
 
 export type AprRangeDays = 7 | 30 | 90;
@@ -44,10 +45,7 @@ export function isIncompleteUtcDay(time: number, nowSeconds: number): boolean {
   return utcDayStart(time) >= utcDayStart(nowSeconds);
 }
 
-export function formatAprPct(value: number): string {
-  const digits = Math.abs(value) >= 100 ? 1 : 2;
-  return `${value.toFixed(digits)}%`;
-}
+export { formatChartAprPct as formatAprPct } from "@/lib/format/apr";
 
 export function calendarRange(endTime: number, days: AprRangeDays): number[] {
   const end = utcDayStart(endTime);

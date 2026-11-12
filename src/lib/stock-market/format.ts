@@ -1,26 +1,10 @@
 /** Display formatting for the stock cards and the Buy modal (client-safe). */
 import { formatAmount } from "@sofinance/engine/amount";
 
+export { formatCompactUsd, formatStockPrice } from "@/lib/format/usd";
+export { formatSignedChangePct as formatChangePct } from "@/lib/format/pct";
+
 export const STOCK_NOTICE_TEXT = "Not available to US persons or restricted regions. Tokens are issued by third parties.";
-
-export function formatStockPrice(value: number): string {
-  if (!Number.isFinite(value)) return "–";
-  const digits = value >= 1 ? 2 : value >= 0.01 ? 4 : 6;
-  return `$${value.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
-}
-
-export function formatChangePct(value: number): string {
-  if (!Number.isFinite(value)) return "–";
-  const sign = value > 0 ? "+" : value < 0 ? "−" : "";
-  return `${sign}${Math.abs(value).toFixed(2)}%`;
-}
-
-export function formatCompactUsd(value: number): string {
-  if (!Number.isFinite(value)) return "–";
-  const units: [number, string][] = [[1e12, "T"], [1e9, "B"], [1e6, "M"], [1e3, "k"]];
-  for (const [size, suffix] of units) if (Math.abs(value) >= size) return `$${(value / size).toFixed(1)}${suffix}`;
-  return `$${value.toFixed(0)}`;
-}
 
 export const LAMPORTS_PER_SOL = 1_000_000_000;
 export function formatSol(lamports: number | string | bigint): string {

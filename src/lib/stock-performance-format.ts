@@ -1,27 +1,9 @@
 /** Display formats for the Performance stock view (pure). A missing number is "—", never 0. */
 
-const MINUS = "−";
-const usdFormat = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+import { MINUS, finite, round } from "@/lib/format/helpers";
 
-const finite = (value: number | null | undefined): value is number => value !== null && value !== undefined && Number.isFinite(value);
-/** Round half away from zero (Math.round sends −27.125 to −27.12). */
-const round = (value: number, precision: number) => Math.sign(value) * Math.round(Math.abs(value) * precision) / precision;
-
-/** "$1,234.56"; "−$27.13" / "+$18.37" when signed. Rounds to cents first, so −0.004 reads "$0.00", not "−$0.00". */
-export function formatUsd(value: number | null | undefined, options: { signed?: boolean } = {}): string {
-  if (!finite(value)) return "—";
-  const cents = round(value, 100);
-  const body = `$${usdFormat.format(Math.abs(cents))}`;
-  if (cents < 0) return `${MINUS}${body}`;
-  return options.signed && cents > 0 ? `+${body}` : body;
-}
-
-/** "↑ 3.86%" / "↓ 5.80%" (direction only; colour is the caller's). */
-export function formatChangePct(value: number | null | undefined): string {
-  if (!finite(value)) return "—";
-  const rounded = round(value, 100);
-  return `${rounded < 0 ? "↓" : "↑"} ${Math.abs(rounded).toFixed(2)}%`;
-}
+export { formatUsd } from "@/lib/format/usd";
+export { formatArrowChangePct as formatChangePct } from "@/lib/format/pct";
 
 /** Share counts: up to 4 decimals at 1 share or more ("2.5"), 3 significant digits below ("0.0312"). */
 export function formatShares(value: number | null | undefined): string {
