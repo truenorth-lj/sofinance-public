@@ -9,8 +9,9 @@ import { ORCA_WHIRLPOOL_PROGRAM_ID } from "./constants";
  * the position NFT, uncollected fees, token amounts and range side. Pure
  * bigint ports of `rust-sdk/core` (`collect_fees_quote`,
  * `try_get_token_estimates_from_liquidity`, `tick_index_to_sqrt_price`,
- * `position_status`); parity with `@orca-so/whirlpools-core` is asserted in
- * tests on mainnet captures. No transaction building or signing.
+ * `position_status`); parity with recorded `@orca-so/whirlpools-core@3.1.1`
+ * golden fixtures (`orca-whirlpools-core-parity.json`) is asserted in tests
+ * on mainnet captures. No transaction building or signing.
  */
 
 /** sha256("account:Position")[0..8] */
