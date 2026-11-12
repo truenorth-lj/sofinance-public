@@ -79,11 +79,27 @@ export type MeteoraPositionSnapshot = {
  * Live state of a position account, or null when the address is not a Meteora position. Throws
  * `METEORA_POOL_NOT_SUPPORTED` for a pool `listedPool` does not list (default: the static allowlist).
  */
-export async function readMeteoraPositionSnapshot(positionAccount: string, connection: MeteoraConnection,
-  listedPool?: MeteoraPoolListingLookup): Promise<MeteoraPositionSnapshot | null> {
+async function loadMeteoraPositionAccount(positionAccount: string, connection: MeteoraConnection) {
   const address = new PublicKey(positionAccount).toBase58();
   const info = await connection.getAccountInfo(new PublicKey(address), "confirmed");
   if (!info || info.owner.toBase58() !== METEORA_DLMM_PROGRAM_ID || !isMeteoraPositionAccount(info.data)) return null;
+  return { address, info };
+}
+
+/**
+ * True when the address is a Meteora DLMM position account. Does not check the
+ * pool listing (an unsupported pool still looks like Meteora and later reads throw).
+ */
+export async function positionAccountLooksLikeMeteora(positionAccount: string, options: MeteoraReadOptions = {}): Promise<boolean> {
+  const connection = options.connection ?? rpcConnection();
+  return (await loadMeteoraPositionAccount(positionAccount, connection)) !== null;
+}
+
+export async function readMeteoraPositionSnapshot(positionAccount: string, connection: MeteoraConnection,
+  listedPool?: MeteoraPoolListingLookup): Promise<MeteoraPositionSnapshot | null> {
+  const loaded = await loadMeteoraPositionAccount(positionAccount, connection);
+  if (!loaded) return null;
+  const { address, info } = loaded;
   const listing = listedPool ? await listedPool(decodeMeteoraPosition(info.data).lbPair) : undefined;
   return snapshotFromData(address, info.data, connection, listing);
 }

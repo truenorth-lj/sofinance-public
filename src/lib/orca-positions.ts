@@ -60,11 +60,27 @@ export type OrcaPositionSnapshot = {
   stateFingerprint: string;
 };
 
-/** Live position state, or null when the mint has no Orca position account. Throws for non-allowlisted pools. */
-async function readOrcaPositionSnapshot(positionMint: string, connection: OrcaConnection): Promise<OrcaPositionSnapshot | null> {
+async function loadOrcaPositionAccount(positionMint: string, connection: OrcaConnection) {
   const positionAccount = orcaPositionAddress(new PublicKey(positionMint).toBase58());
   const info = await connection.getAccountInfo(new PublicKey(positionAccount), "confirmed");
   if (!info || info.owner.toBase58() !== ORCA_WHIRLPOOL_PROGRAM_ID || !isOrcaPositionAccount(info.data)) return null;
+  return { positionAccount, info };
+}
+
+/**
+ * True when the mint has an Orca whirlpool position account. Does not check the
+ * pool allowlist (an unsupported pool still looks like Orca and later reads throw).
+ */
+export async function positionMintLooksLikeOrca(positionMint: string, options: OrcaReadOptions = {}): Promise<boolean> {
+  const connection = options.connection ?? rpcConnection();
+  return (await loadOrcaPositionAccount(positionMint, connection)) !== null;
+}
+
+/** Live position state, or null when the mint has no Orca position account. Throws for non-allowlisted pools. */
+async function readOrcaPositionSnapshot(positionMint: string, connection: OrcaConnection): Promise<OrcaPositionSnapshot | null> {
+  const loaded = await loadOrcaPositionAccount(positionMint, connection);
+  if (!loaded) return null;
+  const { positionAccount, info } = loaded;
   const position = decodeOrcaPosition(info.data);
   if (position.positionMint !== positionMint) throw new Error("Orca position NFT mint mismatch");
   const allow = allowlisted(position.whirlpool);
