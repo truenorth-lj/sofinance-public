@@ -79,7 +79,7 @@ describe("prepareExit", () => {
   });
   it.each([
     ["not-found", { owner: null }, /does not exist or is already closed/],
-    ["not-owner", { owner: OTHER }, /belongs to another wallet \(0x22…2222\)/],
+    ["not-owner", { owner: OTHER }, /belongs to another wallet \(0x2222…2222\)/],
     ["pool-not-allowlisted", { key: { currency0: pool.currency0.address, currency1: pool.currency1.address, fee: 3000, tickSpacing: 60, hooks: pool.hooks } }, /not in a pool SoFinance supports/],
     ["rpc", { rpcDown: true }, /Could not read Robinhood Chain/],
     ["insufficient-gas", { balance: 1000n }, /Not enough ETH on Robinhood Chain to pay the gas for closing .*Add some ETH/],

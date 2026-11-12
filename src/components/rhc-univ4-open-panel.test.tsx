@@ -114,7 +114,7 @@ describe("RhcUniv4OpenPanel", () => {
     expect(button("Preview open (simulated)")).toBeUndefined();
     await act(async () => { button("Connect wallet").click(); await new Promise(r => setTimeout(r, 300)); });
     expect(button("Preview open (simulated)")).toBeTruthy();
-    expect(container.querySelector("[data-testid=wallet-address]")!.textContent).toContain("0x22…2222");
+    expect(container.querySelector("[data-testid=wallet-address]")!.textContent).toContain("0x2222…2222");
     await act(async () => { button("Preview open (simulated)").click(); await new Promise(r => setTimeout(r, 0)); });
     const [, init] = (fetchMock.mock.calls as unknown as [string, RequestInit][]).find(c => !c[0].startsWith("/api/rhc-univ4-positions"))!;
     expect(JSON.parse(init.body as string)).toMatchObject({ action: "prepare", user: USER, depositToken: SPCX, amount: "1000000000000000000", tickLower: -11, tickUpper: 9 });

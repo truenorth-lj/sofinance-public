@@ -63,8 +63,8 @@ describe("InkNav wallets", () => {
     localStorage.setItem("sofi:evm-wallet:v1", JSON.stringify({ disconnected: true }));
     await render();
     await click(evm()!);
-    expect(evm()!.textContent).toBe("0xb9…1b04RHC");
-    expect(evm()!.getAttribute("aria-label")).toBe("EVM wallet 0xb9…1b04 on Robinhood Chain, connected. Disconnect");
+    expect(evm()!.textContent).toBe("0xb95b…1b04RHC");
+    expect(evm()!.getAttribute("aria-label")).toBe("EVM wallet 0xb95b…1b04 on Robinhood Chain, connected. Disconnect");
     expect(sol().dataset.connected).toBe("false");
     expect(solana.connect).not.toHaveBeenCalled();
 
@@ -96,7 +96,7 @@ describe("InkNav wallets", () => {
   it("follows wallet events: another network shows a Wrong network button, an emptied account list disconnects only EVM", async () => {
     await render({ initialSolana: SOL });
     await act(async () => { listeners.get("chainChanged")!("0x1"); });
-    expect(evm()!.textContent).toBe("0xb9…1b04");
+    expect(evm()!.textContent).toBe("0xb95b…1b04");
     expect(container.querySelector("[data-testid=nav-evm-switch]")!.textContent).toBe("Wrong network");
     expect(evm()!.getAttribute("aria-label")).toContain("another network");
     expect(sol().dataset.connected).toBe("true");

@@ -172,12 +172,12 @@ describe("wrong network", () => {
     await onOtherNetwork(nav());
     const switchButton = q("[data-testid=nav-evm-switch]")!;
     expect(switchButton.textContent).toBe("Wrong network");
-    expect(q("[data-testid=nav-evm-wallet]")!.textContent).toBe("0xb9…1b04");
+    expect(q("[data-testid=nav-evm-wallet]")!.textContent).toBe("0xb95b…1b04");
     expect(q("[data-testid=nav-evm-group]")!.textContent).not.toMatch(/RHC|EVM$/);
     await click(switchButton);
     expect(wallet.calls).toContain("wallet_switchEthereumChain");
     expect(q("[data-testid=nav-evm-switch]")).toBeNull();
-    expect(q("[data-testid=nav-evm-wallet]")!.textContent).toBe("0xb9…1b04RHC");
+    expect(q("[data-testid=nav-evm-wallet]")!.textContent).toBe("0xb95b…1b04RHC");
     expect(live.evm.chainId).toBe(4663);
     noWalletPrompt();
   });
