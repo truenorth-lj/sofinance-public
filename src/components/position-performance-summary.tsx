@@ -6,6 +6,8 @@
  * APR chart with the position's realized fee APR overlaid. Both read the same report shape (`PerformanceResponse`, the
  * `/api/position-performance` body, which a registry DEX returns as `PositionPerformance.report`).
  */
+import { formatPct2dp } from "@/lib/format/pct";
+import { formatUsd4dp } from "@/lib/format/usd";
 import { PositionAssetRow } from "./position-asset-row";
 import { PoolDailyAprChart } from "./pool-daily-apr-panel";
 import { StockPerformanceTiles } from "./stock-performance-tiles";
@@ -15,15 +17,8 @@ import type { PositionPerformanceReport } from "../lib/position-performance-repo
 /** The report shape both panels draw (see `@/lib/position-performance-report`). */
 export type PerformanceResponse = PositionPerformanceReport;
 
-export const pct = (value: number | null | undefined) => {
-  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
-  return `${value.toFixed(2)}%`;
-};
-
-export const money = (value: number | null | undefined) => {
-  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
-  return `$${value.toFixed(4)}`;
-};
+export const pct = formatPct2dp;
+export const money = formatUsd4dp;
 
 const tok = (value: number | null | undefined, digits = 6) => {
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";

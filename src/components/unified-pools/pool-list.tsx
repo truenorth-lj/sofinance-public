@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { ArrowDown, ArrowUp, ArrowUpDown, ArrowUpRight } from "lucide-react";
 import { HIGHEST_RANGE_APR_7D_HELP } from "@/lib/apr-labels/copy";
-import { formatAprPct } from "@/lib/apr-labels/format-apr";
 import { cn } from "@/lib/cn";
+import { formatAprPct2dp } from "@/lib/format/apr";
+import { formatPoolUsd } from "@/lib/format/usd";
 import type { TokenIconMap } from "@/lib/token-icons/map";
 import type { Apr7dState } from "@/lib/unified-pools/apr7d";
 import { CHAIN_LABELS, isLowTvl, LOW_TVL_LABEL, LOW_TVL_USD, NOT_SUPPORTED_LABEL, PROTOCOL_LABELS, type PoolChain, type SortDir, type SortKey, type UnifiedPool } from "@/lib/unified-pools/model";
@@ -14,14 +15,9 @@ import { dataDaysLabel, MIN_DATA_DAYS } from "@/lib/min-data-days";
 
 /* Pool list pieces shared by `/app/rwa-pairs` and the homepage, so both render pools with the same component. */
 
-export const money = (value: number | null) => {
-  if (value === null || !Number.isFinite(value)) return "—";
-  if (Math.abs(value) >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
-  if (Math.abs(value) >= 1_000) return `$${(value / 1_000).toFixed(1)}k`;
-  return `$${value.toFixed(2)}`;
-};
+export const money = formatPoolUsd;
 /** Missing APR is "—"; a real but tiny APR is "<0.01%" (never a misleading "0.00%"). */
-export const pct = formatAprPct;
+export const pct = formatAprPct2dp;
 
 export const APR7D_SHORT = "Est. APR · 7d";
 /**
