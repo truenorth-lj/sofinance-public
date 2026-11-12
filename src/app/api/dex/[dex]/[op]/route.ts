@@ -211,6 +211,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ dex
     return Response.json({ error: "Too many requests. Please wait a minute.", code: "RATE_LIMITED" }, { status: 429, headers: { ...NO_STORE, "Retry-After": "60" } });
   }
   if (!isOp(op)) return notFound();
+  // A registered module may opt out of being served (`DexModule.enabled`). The route never names a DEX id:
+  // a disabled module 404s here, before `adapterFor`, so no adapter I/O runs.
+  if (dexRegistry.isDisabled(dex, op)) return notFound();
   const adapter = await dexRegistry.adapterFor(dex);
   if (!adapter) return notFound();
   return withJupiterRelay(request, async () => {

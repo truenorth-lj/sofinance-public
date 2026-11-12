@@ -10,7 +10,12 @@ import type { DexDescriptor, DexSigner } from "./types";
 
 /** DEXes whose positions this wallet type can list, minus sources the page already reads another way (`exclude`). */
 export function positionDescriptorsFor(descriptors: readonly DexDescriptor[], signer: DexSigner, exclude: readonly string[] = []): DexDescriptor[] {
-  return descriptors.filter((descriptor) => descriptor.capabilities.signer === signer && !exclude.includes(descriptor.id));
+  return descriptors.filter((descriptor) => (
+    descriptor.capabilities.signer === signer
+    && !exclude.includes(descriptor.id)
+    // Omitted or true keeps today's behavior (Meteora is fetched). Explicit false opts a DEX out.
+    && descriptor.ui?.listPositions !== false
+  ));
 }
 
 const isRawPair = (value: unknown) => value === null

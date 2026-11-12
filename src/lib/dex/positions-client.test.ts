@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { dexDescriptors } from "./client";
-import { fetchDexPerformance, fetchDexPositions } from "./positions-client";
+import { fetchDexPerformance, fetchDexPositions, positionDescriptorsFor } from "./positions-client";
 
 const descriptor = dexDescriptors.descriptorFor("meteora-dlmm")!;
 const row = { key: "meteora-dlmm:P", source: descriptor.id, chain: descriptor.chain, nativeId: "P", poolId: "L", liquidity: "5",
@@ -72,3 +72,39 @@ describe("fetchDexPerformance", () => {
     }
   });
 });
+
+describe("positionDescriptorsFor and Meteora client requests", () => {
+  it("still lists Meteora for Solana wallets and never lists Orca", () => {
+    const listed = positionDescriptorsFor(dexDescriptors.descriptors, "solana-wallet").map((entry) => entry.id);
+    expect(listed).toContain("meteora-dlmm");
+    expect(listed).not.toContain("orca-whirlpool");
+    expect(dexDescriptors.descriptorFor("meteora-dlmm")!.ui?.listPositions).not.toBe(false);
+    expect(dexDescriptors.descriptorFor("orca-whirlpool")!.ui?.listPositions).toBe(false);
+  });
+
+  it("Meteora positions and performance client requests are identical to before", async () => {
+    const seen: { url: unknown; init: RequestInit | undefined }[] = [];
+    const holdingsOk = { positions: [row] };
+    const performanceBody = {
+      key: "meteora-dlmm:P", depositedUsd: 0, withdrawnUsd: 0, feesClaimedUsd: 0, feesUnclaimedUsd: 0,
+      currentValueUsd: 0, pnlUsd: 0, partial: false,
+    };
+    const fetch = vi.fn(async (url: unknown, init?: RequestInit) => {
+      seen.push({ url, init });
+      return Response.json(String(url).includes("/performance") ? performanceBody : holdingsOk);
+    });
+    await expect(fetchDexPositions(descriptor, "W", { fetch })).resolves.toEqual([row]);
+    await expect(fetchDexPerformance(descriptor, "meteora-dlmm:P", { fetch })).resolves.toMatchObject({ key: "meteora-dlmm:P", partial: false });
+    expect(seen).toEqual([
+      {
+        url: "/api/dex/meteora-dlmm/positions",
+        init: { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ owner: "W" }), signal: undefined, cache: "no-store" },
+      },
+      {
+        url: "/api/dex/meteora-dlmm/performance",
+        init: { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ positionKey: "meteora-dlmm:P" }), signal: undefined, cache: "no-store" },
+      },
+    ]);
+  });
+});
+

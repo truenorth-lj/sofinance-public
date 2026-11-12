@@ -39,12 +39,26 @@ describe("DEX registry", () => {
     expect(DEX_DESCRIPTORS.map((descriptor) => descriptor.id)).toEqual(DEX_MODULES.map((entry) => entry.descriptor.id));
   });
 
+  it("Meteora stays served by default; Orca is registered but the generic route is disabled", () => {
+    const meteora = DEX_MODULES.find((entry) => entry.descriptor.id === "meteora-dlmm");
+    const orca = DEX_MODULES.find((entry) => entry.descriptor.id === "orca-whirlpool");
+    expect(meteora?.enabled).toBeUndefined();
+    expect(orca?.enabled?.("positions")).toBe(false);
+    expect(orca?.enabled?.("performance")).toBe(false);
+    const registry = createDexRegistry(DEX_MODULES);
+    expect(registry.isDisabled("meteora-dlmm", "positions")).toBe(false);
+    expect(registry.isDisabled("meteora-dlmm", "performance")).toBe(false);
+    expect(registry.isDisabled("orca-whirlpool", "positions")).toBe(true);
+    expect(registry.isDisabled("orca-whirlpool", "performance")).toBe(true);
+    expect(registry.isDisabled("orca-whirlpool", "quote-open")).toBe(true);
+  });
+
   it("runs the shared contract suite for every registered DEX", () => {
     expect(missingContractSuites(DEX_MODULES.map((entry) => entry.descriptor.id))).toEqual([]);
   });
 
   it("reports a registered DEX without a contract suite", () => {
-    expect(missingContractSuites(["orca-whirlpool"])).toEqual(["orca-whirlpool: missing src/lib/dex/orca-whirlpool/orca-whirlpool.contract.test.ts"]);
+    expect(missingContractSuites(["raydium-clmm"])).toEqual(["raydium-clmm: missing src/lib/dex/raydium-clmm/raydium-clmm.contract.test.ts"]);
     const dir = mkdtempSync(join(tmpdir(), "dex-contract-"));
     try {
       mkdirSync(join(dir, "meteora-dlmm"));
@@ -85,6 +99,20 @@ describe("DEX registry", () => {
       failures: [{ dex: fakeEvmDescriptor.id, displayName: fakeEvmDescriptor.displayName, error: down }],
     });
     expect(await createDexRegistry([fakeSolanaModule]).recordDailyTvl(input)).toEqual({ stats: {}, issues: [], failures: [] });
+  });
+
+
+  it("isDisabled is false by default (Meteora has no enabled hook) and true only when a hook returns false", () => {
+    const alwaysOn = createDexRegistry([fakeSolanaModule]);
+    expect(alwaysOn.isDisabled("meteora-dlmm", "positions")).toBe(false);
+    expect(alwaysOn.isDisabled("meteora-dlmm", "performance")).toBe(false);
+    expect(alwaysOn.isDisabled("nope", "positions")).toBe(false);
+    const gated = createDexRegistry([{ ...fakeSolanaModule, enabled: () => false }]);
+    expect(gated.isDisabled("meteora-dlmm", "positions")).toBe(true);
+    expect(gated.isDisabled("meteora-dlmm", "performance")).toBe(true);
+    const byOp = createDexRegistry([{ ...fakeSolanaModule, enabled: (op) => op === "positions" }]);
+    expect(byOp.isDisabled("meteora-dlmm", "positions")).toBe(false);
+    expect(byOp.isDisabled("meteora-dlmm", "performance")).toBe(true);
   });
 
   it("refuses duplicate ids, invalid fee policies and mismatched pool sources", () => {
