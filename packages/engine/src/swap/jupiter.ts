@@ -25,6 +25,8 @@ export type BuildRoute = {
   addressesByLookupTableAddress: Record<string, string[]> | null;
 };
 
+export type QuoteRoute = Pick<BuildRoute, "platformFee" | "inputMint" | "outputMint" | "inAmount" | "outAmount" | "otherAmountThreshold" | "swapMode" | "slippageBps" | "priceImpactPct" | "routePlan">;
+
 export class JupiterNoRouteError extends Error {
   readonly code = JUPITER_NO_ROUTE_CODE;
   constructor() {
@@ -50,26 +52,41 @@ function resolveConstraints(constraints?: JupiterRouteConstraints | number): Jup
   return constraints ?? { maxAccounts: JUPITER_MAX_ACCOUNTS.wide };
 }
 
-export async function buildRoute(
-  wallet: string,
-  inputMint: string,
-  outputMint: string,
-  amount: bigint,
-  wrapAndUnwrapSol?: boolean,
-  constraints: JupiterRouteConstraints | number = { maxAccounts: JUPITER_MAX_ACCOUNTS.wide },
-  signal?: AbortSignal,
-  budget?: JupiterRetryBudget,
-  destinationTokenAccount?: string,
-  platformFeeBps = 0,
-  maxPriceImpactBps = MAX_PRICE_IMPACT_BPS,
-  quoted?: QuoteRoute,
+/** Options for `buildRoute`. The Jupiter request shape is unchanged; the
+ * planned `/swap/v2/build` migration is a separate PR. */
+export type BuildRouteOptions = {
+  wrapAndUnwrapSol?: boolean;
+  constraints?: JupiterRouteConstraints | number;
+  signal?: AbortSignal;
+  budget?: JupiterRetryBudget;
+  destinationTokenAccount?: string;
+  platformFeeBps?: number;
+  maxPriceImpactBps?: number;
+  quoted?: QuoteRoute;
   /** Mint of the fee wallet ATA that receives `platformFeeBps`. USDC output
    * (default; withdraw) is created in-transaction when missing. When it equals
    * `inputMint` (deposits: SOL, USDC, stock tokens) the fee is charged in the
    * input mint into the operator's pre-created ATA and fails closed when it is
    * missing. */
-  feeMint: string = USDC_MINT,
+  feeMint?: string;
+};
+
+export async function buildRoute(
+  wallet: string,
+  inputMint: string,
+  outputMint: string,
+  amount: bigint,
+  options: BuildRouteOptions = {},
 ): Promise<BuildRoute> {
+  const wrapAndUnwrapSol = options.wrapAndUnwrapSol;
+  const constraints = options.constraints ?? { maxAccounts: JUPITER_MAX_ACCOUNTS.wide };
+  const signal = options.signal;
+  const budget = options.budget;
+  const destinationTokenAccount = options.destinationTokenAccount;
+  const platformFeeBps = options.platformFeeBps ?? 0;
+  const maxPriceImpactBps = options.maxPriceImpactBps ?? MAX_PRICE_IMPACT_BPS;
+  const quoted = options.quoted;
+  const feeMint = options.feeMint ?? USDC_MINT;
   const key = getJupiterApiKey();
   if (!key && !jupiterRelayActive() && engineEnv().E2E_KEYLESS_JUPITER !== "1") throw new Error("Server-side JUPITER_API_KEY not set, cannot obtain real-time quotes");
   if (amount <= 0n) throw new Error("Route amount must be greater than zero");
@@ -92,7 +109,9 @@ export async function buildRoute(
   try {
     // Without a caller-supplied quote (one the caller just validated in this
     // request), the route that gets built and signed is quoted fresh.
-    const quote = quoted ?? await quoteRoute(inputMint, outputMint, amount, resolved, signal, budget, platformFeeBps, maxPriceImpactBps, false);
+    const quote = quoted ?? await quoteRoute(inputMint, outputMint, amount, {
+      constraints: resolved, signal, budget, platformFeeBps, maxPriceImpactBps, previewCache: false,
+    });
     const instructions = await jupiterSwapInstructions<BuildRoute & { addressLookupTableAddresses: string[] }>({
       ...(feeAccount ? { feeAccount } : {}),
       destinationTokenAccount, userPublicKey: wallet, quoteResponse: quote, wrapAndUnwrapSol: wrapAndUnwrapSol ?? false,
@@ -151,13 +170,23 @@ export function assertAllowedSwapPrograms(route: Pick<BuildRoute, "setupInstruct
   }
 }
 
-export type QuoteRoute = Pick<BuildRoute, "platformFee" | "inputMint" | "outputMint" | "inAmount" | "outAmount" | "otherAmountThreshold" | "swapMode" | "slippageBps" | "priceImpactPct" | "routePlan">;
-
 /** Lightweight execution estimate; no transaction instructions. Briefly shared (preview cache) unless building. */
-export async function quoteRoute(inputMint: string, outputMint: string, amount: bigint,
-  constraints: JupiterRouteConstraints = { maxAccounts: JUPITER_MAX_ACCOUNTS.compact }, signal?: AbortSignal,
-  budget?: JupiterRetryBudget, platformFeeBps = 0, maxPriceImpactBps = MAX_PRICE_IMPACT_BPS,
-  previewCache = true): Promise<QuoteRoute> {
+export type QuoteRouteOptions = {
+  constraints?: JupiterRouteConstraints;
+  signal?: AbortSignal;
+  budget?: JupiterRetryBudget;
+  platformFeeBps?: number;
+  maxPriceImpactBps?: number;
+  previewCache?: boolean;
+};
+
+export async function quoteRoute(inputMint: string, outputMint: string, amount: bigint, options: QuoteRouteOptions = {}): Promise<QuoteRoute> {
+  const constraints = options.constraints ?? { maxAccounts: JUPITER_MAX_ACCOUNTS.compact };
+  const signal = options.signal;
+  const budget = options.budget;
+  const platformFeeBps = options.platformFeeBps ?? 0;
+  const maxPriceImpactBps = options.maxPriceImpactBps ?? MAX_PRICE_IMPACT_BPS;
+  const previewCache = options.previewCache ?? true;
   const key = getJupiterApiKey();
   if (!key && !jupiterRelayActive() && engineEnv().E2E_KEYLESS_JUPITER !== "1") throw new Error("Server-side JUPITER_API_KEY not set, cannot obtain real-time quotes");
   try {

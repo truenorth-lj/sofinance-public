@@ -4,6 +4,7 @@ import type { ScannedPosition } from "@sofinance/engine/protocols/uniswap-v4/pos
 import { rhcPairLabel } from "@/lib/unified-pools/rows";
 import { NOT_AVAILABLE_MESSAGE, positionKey, unsupported, type PositionSource, type SourceCapabilities, type UnifiedPosition } from "../model";
 import { formatTickPriceRange, type PriceRange } from "../range";
+import { mergeRhcPositionLookups } from "@/lib/unified-positions/rhc-list";
 import { shortAddress } from "@/lib/format/address";
 
 /** One Robinhood Chain row: a wallet holding from the scan, or an NFT id opened in this browser / added by hand. */
@@ -74,8 +75,8 @@ export const rhcPositionSource: PositionSource<RhcNative, RhcDiscovery> = Object
   /** Wallet holdings first (scan order, newest NFT first), then local ids the scan did not find (deduped by NFT id). */
   fromDiscovery: (discovery) => {
     const scanned = discovery?.scanned ?? [];
-    const seen = new Set(scanned.map((s) => s.tokenId));
-    return [...scanned.map((s) => rhcUnifiedPosition(s, s)), ...(discovery?.lookups ?? []).filter((l) => !seen.has(l.tokenId)).map((l) => rhcUnifiedPosition(l, null))];
+    const { rows, scannedById } = mergeRhcPositionLookups(scanned, discovery?.lookups ?? []);
+    return rows.map((row) => rhcUnifiedPosition(row, scannedById.get(row.tokenId) ?? null));
   },
   label: (position) => {
     const { lookup, priceRange } = position.native;

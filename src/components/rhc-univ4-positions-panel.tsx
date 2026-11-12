@@ -1,16 +1,17 @@
 "use client";
 
-import type { PositionLookup, RhcPositionView } from "@sofinance/engine/protocols/uniswap-v4/exit-flow";
+import type { RhcPositionView } from "@sofinance/engine/protocols/uniswap-v4/exit-flow";
 import type { ScannedPosition } from "@sofinance/engine/protocols/uniswap-v4/position-scan";
-import { useEffect, useState } from "react";
 import { formatUnits } from "viem";
 import { trackedPositionIds, trackPositionId, untrackPositionId } from "@/lib/rhc-wallet/exit-execute";
 import { explorerTxUrl } from "@/lib/rhc-wallet/open-execute";
 import { rhcPairLabel } from "@/lib/unified-pools/rows";
 import {
-  fetchPositions, fetchScan, poolOf, useRhcClose, type RhcCloseReady, type RhcCloseSent, type RhcWalletRef, type Scan,
+  poolOf, useRhcClose, type RhcCloseReady, type RhcCloseSent, type RhcWalletRef,
 } from "./rhc-close";
 import { shortAddress } from "@/lib/format/address";
+import { RhcPositionsToolbar } from "./rhc-positions-toolbar";
+import { useRhcPositionList } from "./use-rhc-position-list";
 
 /**
  * Robinhood Chain (4663) Uniswap v4 positions + Close (PR7), inside the `/app/rhc` panel (same flags: page behind
@@ -56,6 +57,26 @@ export function CloseStatus({ sent, symbols }: { sent: CloseSent; symbols: [stri
   </p>;
 }
 
+/** Preview, confirm, error and sent status after the caller shows Close. Shared with `/app` My positions. */
+export function RhcCloseFollowup({ tokenId, signingEnabled, ready, busy, error, sent, confirm, symbols }: {
+  tokenId: string; signingEnabled: boolean; ready: Ready | null; busy: string | null;
+  error: { tokenId: string; message: string } | null; sent: CloseSent | null; confirm: () => void; symbols: [string, string];
+}) {
+  const mine = ready && ready.position.tokenId === tokenId ? ready : null;
+  return <>
+    {mine ? <>
+      <ClosePreview ready={mine} />
+      <button type="button" disabled={!signingEnabled || busy !== null} onClick={confirm}
+        className="mt-2 rounded-lg border border-white/25 px-3 py-1.5 text-xs font-semibold text-cream disabled:cursor-not-allowed disabled:opacity-40">
+        {busy === tokenId ? "Waiting for wallet…" : "Confirm close in wallet"}
+      </button>
+      {!signingEnabled ? <p className="text-xs text-amber-200/80">Wallet signing is off on this deployment. Nothing will be sent.</p> : null}
+    </> : null}
+    {error && error.tokenId === tokenId ? <p role="alert" className="mt-2 text-xs text-red-200">{error.message}</p> : null}
+    {sent && sent.tokenId === tokenId ? <CloseStatus sent={sent} symbols={symbols} /> : null}
+  </>;
+}
+
 /** A held position outside SoFinance's allowlist: labelled, view only. */
 const otherPoolNote = (s: ScannedPosition | undefined) => s?.stablePair
   ? "StablePair pool that SoFinance does not list yet: view only."
@@ -64,63 +85,27 @@ const otherPoolNote = (s: ScannedPosition | undefined) => s?.stablePair
 export function RhcUniv4PositionsPanel({ wallet, signingEnabled, refreshKey = 0, onChanged, receiptPoll }: {
   wallet: Wallet | null; signingEnabled: boolean; refreshKey?: number; onChanged?: () => void; receiptPoll?: { intervalMs?: number; timeoutMs?: number };
 }) {
-  const [lookups, setLookups] = useState<PositionLookup[]>([]);
-  const [scan, setScan] = useState<Scan | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [addId, setAddId] = useState("");
   const address = wallet?.address ?? null;
-
-  /** User-triggered refresh (add / remove / after a close). */
-  const load = async (ids?: string[]) => {
-    if (!address) return;
-    setLoading(true);
-    const [r, s] = await Promise.all([fetchPositions(address, ids ?? trackedPositionIds(address)), ids ? Promise.resolve(null) : fetchScan(address, true)]);
-    setLookups(r.lookups); setLoadError(r.error); if (s) setScan(s); setLoading(false);
-  };
-
-  useEffect(() => {
-    if (!address) return;
-    let live = true;
-    void fetchPositions(address, trackedPositionIds(address)).then(r => { if (live) { setLookups(r.lookups); setLoadError(r.error); } });
-    void fetchScan(address, refreshKey > 0).then(s => { if (live) setScan(s); });
-    return () => { live = false; setScan(null); };
-  }, [address, refreshKey]);
-
+  const list = useRhcPositionList({ address, refreshKey, trackedIds: trackedPositionIds });
   const { busy, ready, setReady, error, sent, preview, confirm } = useRhcClose({ wallet, receiptPoll,
-    onClosed: async () => { onChanged?.(); await load(); } });
+    onClosed: async () => { onChanged?.(); await list.load(); } });
 
   if (!wallet) return null;
 
-  const add = () => {
-    const id = addId.trim();
-    if (!/^[0-9]{1,30}$/.test(id)) { setLoadError("Enter the position NFT number, for example 4077059."); return; }
-    setAddId("");
-    void load(trackPositionId(wallet.address, id));
-  };
-  const remove = (id: string) => { void load(untrackPositionId(wallet.address, id)); if (ready?.position.tokenId === id) setReady(null); };
+  const add = () => list.submitAdd(trackPositionId);
+  const remove = (id: string) => { list.submitRemove(id, untrackPositionId); if (ready?.position.tokenId === id) setReady(null); };
+  const { rows, scannedById, loading, scanning, scan, loadError, addId, setAddId } = list;
 
   const symbols = (p: RhcPositionView | null): [string, string] => { const pool = p && poolOf(p); return pool ? [pool.currency0.symbol, pool.currency1.symbol] : ["token0", "token1"]; };
 
-  // Wallet holdings first (newest NFT first), then local records the scan did not find (deduped by NFT id).
-  const scanned = scan?.positions ?? [];
-  const scannedById = new Map(scanned.map(s => [s.tokenId, s]));
-  const rows: PositionLookup[] = [...scanned, ...lookups.filter(l => !scannedById.has(l.tokenId))];
-  const scanning = scan === null;
-
   return <section className="mt-6 border-t border-white/12 pt-4" aria-label="Your Robinhood Chain positions" data-testid="positions-panel">
     <p className="text-sm font-semibold text-cream">Your positions</p>
-    <p className="text-xs text-smoke">Uniswap v4 positions this wallet holds on Robinhood Chain show up here automatically. Missing one? Add its position NFT number.</p>
-    <div className="mt-2 flex flex-wrap gap-2">
-      <input inputMode="numeric" value={addId} onChange={e => setAddId(e.target.value)} placeholder="Position NFT #" aria-label="Position NFT number"
-        className="w-40 rounded-lg bg-black/30 p-2 text-base sm:text-sm text-cream" />
-      <button type="button" onClick={add} className="rounded-lg border border-white/25 px-3 py-1.5 text-xs font-semibold text-cream">Add</button>
-    </div>
-    {loading ? <p role="status" className="mt-2 text-xs text-smoke">Loading positions…</p> : null}
-    {scanning && !loading ? <p role="status" className="mt-2 text-xs text-smoke" data-testid="positions-scanning">Checking this wallet&apos;s Robinhood Chain positions…</p> : null}
-    {scan?.error ? <p className="mt-2 text-xs text-amber-200/90" data-testid="positions-scan-error">{scan.error}</p> : null}
-    {loadError ? <p className="mt-2 text-xs text-red-200" data-testid="positions-error">{loadError}</p> : null}
-    {!loading && !scanning && !rows.length && !loadError && !scan?.error ? <p className="mt-2 text-xs text-smoke" data-testid="positions-empty">No Robinhood Chain positions in this wallet.</p> : null}
+    <RhcPositionsToolbar
+      intro={<p className="text-xs text-smoke">Uniswap v4 positions this wallet holds on Robinhood Chain show up here automatically. Missing one? Add its position NFT number.</p>}
+      addId={addId} onAddId={setAddId} onAdd={add} loading={loading} scanning={scanning}
+      scanError={scan?.error} loadError={loadError}
+      empty={!loading && !scanning && !rows.length && !loadError && !scan?.error
+        ? <p className="mt-2 text-xs text-smoke" data-testid="positions-empty">No Robinhood Chain positions in this wallet.</p> : null} />
     <ul className="mt-3 space-y-2">
       {rows.map(l => {
         const p = l.position;
@@ -141,16 +126,7 @@ export function RhcUniv4PositionsPanel({ wallet, signingEnabled, refreshKey = 0,
           </div>
           {note ? <p className="text-xs text-smoke">{note}</p> : null}
           {p && p.ownedByUser && p.liquidity === "0" ? <p className="text-xs text-smoke">No liquidity left; closing burns the NFT and collects any remaining fees.</p> : null}
-          {ready && ready.position.tokenId === l.tokenId ? <>
-            <ClosePreview ready={ready} />
-            <button type="button" disabled={!signingEnabled || busy !== null} onClick={confirm}
-              className="mt-2 rounded-lg border border-white/25 px-3 py-1.5 text-xs font-semibold text-cream disabled:cursor-not-allowed disabled:opacity-40">
-              {busy === l.tokenId ? "Waiting for wallet…" : "Confirm close in wallet"}
-            </button>
-            {!signingEnabled ? <p className="text-xs text-amber-200/80">Wallet signing is off on this deployment. Nothing will be sent.</p> : null}
-          </> : null}
-          {error && error.tokenId === l.tokenId ? <p role="alert" className="mt-2 text-xs text-red-200">{error.message}</p> : null}
-          {sent && sent.tokenId === l.tokenId ? <CloseStatus sent={sent} symbols={symbols(p)} /> : null}
+          <RhcCloseFollowup tokenId={l.tokenId} signingEnabled={signingEnabled} ready={ready} busy={busy} error={error} sent={sent} confirm={confirm} symbols={symbols(p)} />
         </li>;
       })}
       {sent && !rows.some(l => l.tokenId === sent.tokenId) ? <li><CloseStatus sent={sent} symbols={["SPCX", "SPCXon"]} /></li> : null}

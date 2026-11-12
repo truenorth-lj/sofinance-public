@@ -62,3 +62,9 @@ it.each(["Fetch is aborted", "429 Too Many Requests", "RPC timeout"])("preserves
   const f = await fixture(); mocks.send.mockRejectedValue(new Error(error));
   const result = await (await POST(f.request())).json(); expect(result.sent).toBeUndefined(); expect(mocks.send).toHaveBeenCalledOnce();
 });
+it("does not claim not-sent when the RPC returns a different signature", async () => {
+  const f = await fixture(); mocks.send.mockResolvedValue(bs58.encode(new Uint8Array(64).fill(8)));
+  const result = await (await POST(f.request())).json();
+  expect(result.sent).toBeUndefined(); expect(mocks.send).toHaveBeenCalledOnce();
+});
+

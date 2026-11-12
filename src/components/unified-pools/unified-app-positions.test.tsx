@@ -53,7 +53,7 @@ const settle = async () => { for (let i = 0; i < 6; i++) await act(async () => {
 async function render(selected: Record<string, unknown> = {}) {
   const session = createEvmSession({ discover });
   await act(async () => { root.render(createElement(EvmWalletProvider, { enabled: true, session },
-    createElement(UnifiedApp, { selected, flags: { orca: false, meteora: false, meteoraOpen: false, rhc: true }, rhcSigningEnabled: false }))); });
+    createElement(UnifiedApp, { selected, flags: { orca: false, meteora: false, rhc: true }, rhcSigningEnabled: false }))); });
   await settle();
 }
 const rows = () => [...container.querySelectorAll<HTMLButtonElement>('[data-testid="position-fallback-select"]')];

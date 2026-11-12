@@ -1,6 +1,5 @@
 import "@/lib/engine-host";
 import { VersionedTransaction } from "@solana/web3.js";
-import bs58 from "bs58";
 import nacl from "tweetnacl";
 import { apiError } from "@/lib/api-response";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
@@ -10,6 +9,7 @@ import { assertWalletReturnedTransaction } from "@sofinance/engine/wallet-return
 import { verifyTxSendPermit } from "@/lib/tx-send/permit";
 import { clientIp, txSendRateLimited } from "@/lib/tx-send/rate-limit";
 import { assertStrictRelayMatch, rpcLookupResolver } from "@/lib/tx-send/strict-match";
+import { broadcastSignedTransaction } from "@/lib/broadcast-signed-transaction";
 
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 const MAX_BASE64 = 2_500;
@@ -71,10 +71,10 @@ export async function POST(request: Request) {
     return apiError(error, "Transaction submission failed", 400, { sent: false });
   }
   try {
-    const signature = await rpcConnection().sendRawTransaction(transaction.serialize(), {
-      skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3,
+    const signature = await broadcastSignedTransaction({
+      connection: rpcConnection(), transaction,
+      mismatchMessage: "RPC returned a different signature",
     });
-    if (signature !== bs58.encode(transaction.signatures[0]!)) throw new Error("RPC returned a different signature");
     return Response.json({ signature }, { headers: NO_STORE });
   } catch (error) {
     // Preflight (simulation / blockhash) refusals are returned before the network sees the bytes: a plain 4xx.

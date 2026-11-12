@@ -134,10 +134,9 @@ export function isMeteoraDlmmDiscoveryEnabled(target: DeployTarget = deployTarge
 }
 
 /**
- * Meteora DLMM open flow: build + simulate the 1/2 setup (position account, user ATAs) and 2/2 deposit
- * (Jupiter legs with the 10 bps platform fee on the swapped portion + add_liquidity_by_strategy2), and
- * the close-and-refund transaction (`/api/meteora-open`, `/app/meteora`). OFF in production.
- * Building never signs or sends.
+ * Legacy Meteora DLMM preview-open flag. The `/app/meteora` and `/api/meteora-open` route were retired;
+ * registry open/manage does not read this flag. Left in place so existing Vercel env vars are not
+ * touched here (LJ can remove them later). OFF in production.
  */
 export const METEORA_DLMM_TX_BUILD_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
   production: false,
@@ -150,8 +149,8 @@ export function isMeteoraDlmmTxBuildEnabled(target: DeployTarget = deployTarget(
 }
 
 /**
- * Wallet signing for the Meteora open flow (Phantom / Jupiter Wallet sign buttons, server broadcast of the
- * wallet-signed tx after permit + fee-guard checks, and status).
+ * Legacy wallet-signing flag for the retired `/app/meteora` open flow. Registry flows do not read it.
+ * Left in place so existing Vercel env vars are not touched here (LJ can remove them later).
  * Preview + development only; OFF in production.
  */
 export const METEORA_DLMM_WALLET_SIGNING_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
