@@ -1,9 +1,11 @@
+import { createPublicClient } from "viem";
 import { beforeEach, describe, expect, it } from "vitest";
 import dexScreenerCapture from "../../fixtures/univ4-rhc-spcx-dexscreener.json";
+import { robinhoodChain } from "../../chains/robinhood";
 import { createRhcClients, resetEvmRpcGuards } from "../../rpc-evm";
 import { mockRhcChain, mockRhcTransport, upgradedLog, type MockRhcChain } from "../../test-support/rhc-mock-rpc";
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "./constants";
-import { discoverUniv4RhcPools, evaluatePool, readPoolState } from "./discovery";
+import { discoverUniv4RhcPools, evaluatePool, readPoolState, readPoolStates, type RawPoolState } from "./discovery";
 import { parseDexScreenerPair } from "./market-data";
 
 const SPCX = UNIV4_RHC_ALLOWLISTED_POOLS[0]!;
@@ -75,5 +77,38 @@ describe("uniswap-v4-rhc discovery (mock RPC replaying the 2026-10-29 capture)",
     expect(evaluatePool(SPCX, state, market).tokenPricesUsd).toEqual({ token0: 140.32, token1: 140.33 });
     expect(evaluatePool(SPCX, state, { ...market, priceUsd: null }).tokenPricesUsd).toBeNull();
     expect(evaluatePool(SPCX, state, null).tokenPricesUsd).toBeNull();
+  });
+});
+
+describe("readPoolStates (batched) matches per-pool readPoolState on the pinned 2026-10-29 fixture", () => {
+  it("returns identical values for all 11 allowlisted pools and uses 3 RPC requests instead of 33", async () => {
+    const chain = mockRhcChain();
+    // Distinct per-pool ticks and liquidity so a crossed result cannot pass by accident.
+    chain.poolState = Object.fromEntries(UNIV4_RHC_ALLOWLISTED_POOLS.map((spec, index) => [spec.poolId.toLowerCase(), {
+      tick: spec.baseSymbol === "SPCX" ? chain.tick : index + 2,
+      liquidity: chain.liquidity + BigInt(index) * 10n ** 15n,
+      dynamicFee: [50 + index, 51 + index] as [number, number],
+    }]));
+    // Raw viem clients (no process-local token bucket): 33 sequential reads would overflow official's burst of 6.
+    const raw = (target: typeof chain) => createPublicClient({ chain: robinhoodChain, transport: mockRhcTransport(target), batch: { multicall: false } });
+    const expected: RawPoolState[] = [];
+    for (const spec of UNIV4_RHC_ALLOWLISTED_POOLS) expected.push(await readPoolState(raw(chain), spec));
+    const perPoolCalls = chain.calls.length;
+    expect(perPoolCalls).toBe(UNIV4_RHC_ALLOWLISTED_POOLS.length * 3);
+
+    const batchedChain = mockRhcChain();
+    batchedChain.poolState = chain.poolState;
+    const { states, rpcRequests } = await readPoolStates(raw(batchedChain), UNIV4_RHC_ALLOWLISTED_POOLS);
+    expect(states).toEqual(expected);
+    expect(rpcRequests).toBe(3);
+    expect(batchedChain.calls.map(call => call.method).sort()).toEqual(["eth_call", "eth_getBlockByNumber", "eth_getStorageAt"]);
+    expect(batchedChain.calls).toHaveLength(3);
+    expect(states[0]!.slot0!.tick).toBe(chain.tick);
+    expect(states[1]!.slot0!.tick).toBe(3);
+    expect(states.every(state => state.blockNumber === expected[0]!.blockNumber)).toBe(true);
+
+    const stats: { rpcRequests: number; pools: number }[] = [];
+    await discoverUniv4RhcPools({ pools: UNIV4_RHC_ALLOWLISTED_POOLS, clients: createRhcClients({ env: {}, transportFor: () => mockRhcTransport(mockRhcChain()) }), onStateRpc: s => stats.push(s) });
+    expect(stats).toEqual([{ rpcRequests: 3, pools: 11 }]);
   });
 });

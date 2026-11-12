@@ -6,6 +6,7 @@ import fixture from "../fixtures/univ4-rhc-spcx-live.json";
 import { MULTICALL3_ADDRESS } from "../chains/robinhood";
 import { ERC20_METADATA_ABI, FEE_CONFIG_UPDATED_EVENT, MODIFY_LIQUIDITY_EVENT, STABLE_PAIR_HOOK_ABI, STATE_VIEW_ABI, SWAP_EVENT, UPGRADED_EVENT } from "../protocols/uniswap-v4/abi";
 import { ERC1967_IMPLEMENTATION_SLOT, STABLE_PAIR_HOOK, UNIV4_RHC, UNIV4_RHC_ALLOWLISTED_POOLS } from "../protocols/uniswap-v4/constants";
+import { poolIdOf } from "../protocols/uniswap-v4/pool-key";
 
 /**
  * Mock Robinhood Chain JSON-RPC (EIP-1193) replaying the recorded SPCX/SPCXon capture
@@ -40,6 +41,8 @@ export type MockRhcChain = {
   /** Methods that fail outright (provider outage). */
   failing?: Set<string>;
   calls: { method: string; params: unknown }[];
+  /** Optional per-pool overrides (poolId lowercase). Unset fields fall back to the chain-wide snapshot. */
+  poolState?: Record<string, Partial<Pick<MockRhcChain, "sqrtPriceX96" | "tick" | "protocolFee" | "liquidity" | "dynamicFee" | "feeConfig">>>;
 };
 
 const s = fixture.state, h = fixture.history;
@@ -109,18 +112,37 @@ export function mockRhcChain(): MockRhcChain {
 
 type Call = { target: Address; callData: Hex };
 
+function stateFor(chain: MockRhcChain, poolId?: Hex) {
+  const extra = poolId ? chain.poolState?.[poolId.toLowerCase()] : undefined;
+  return {
+    sqrtPriceX96: extra?.sqrtPriceX96 ?? chain.sqrtPriceX96,
+    tick: extra?.tick ?? chain.tick,
+    protocolFee: extra?.protocolFee ?? chain.protocolFee,
+    liquidity: extra?.liquidity ?? chain.liquidity,
+    dynamicFee: extra?.dynamicFee ?? chain.dynamicFee,
+    feeConfig: extra?.feeConfig ?? chain.feeConfig,
+  };
+}
+
 function answer(chain: MockRhcChain, call: Call): Hex | null {
   const target = call.target.toLowerCase();
   const tryDecode = (abi: Abi) => { try { return decodeFunctionData({ abi, data: call.callData }); } catch { return null; } };
   if (target === UNIV4_RHC.stateView.toLowerCase()) {
     const decoded = tryDecode(STATE_VIEW_ABI);
-    if (decoded?.functionName === "getSlot0") return encodeFunctionResult({ abi: STATE_VIEW_ABI, functionName: "getSlot0", result: [chain.sqrtPriceX96, chain.tick, chain.protocolFee, 0] });
-    if (decoded?.functionName === "getLiquidity") return encodeFunctionResult({ abi: STATE_VIEW_ABI, functionName: "getLiquidity", result: chain.liquidity });
+    const poolId = decoded?.args?.[0] as Hex | undefined;
+    const state = stateFor(chain, poolId);
+    if (decoded?.functionName === "getSlot0") return encodeFunctionResult({ abi: STATE_VIEW_ABI, functionName: "getSlot0", result: [state.sqrtPriceX96, state.tick, state.protocolFee, 0] });
+    if (decoded?.functionName === "getLiquidity") return encodeFunctionResult({ abi: STATE_VIEW_ABI, functionName: "getLiquidity", result: state.liquidity });
   }
   if (target === STABLE_PAIR_HOOK.proxy.toLowerCase()) {
     const decoded = tryDecode(STABLE_PAIR_HOOK_ABI);
-    if (decoded?.functionName === "getFee") return encodeFunctionResult({ abi: STABLE_PAIR_HOOK_ABI, functionName: "getFee", result: chain.dynamicFee });
-    if (decoded?.functionName === "feeConfig") return encodeFunctionResult({ abi: STABLE_PAIR_HOOK_ABI, functionName: "feeConfig", result: chain.feeConfig });
+    const arg = decoded?.args?.[0];
+    const poolId = decoded?.functionName === "getFee" && arg && typeof arg === "object"
+      ? poolIdOf(arg as { currency0: Address; currency1: Address; fee: number; tickSpacing: number; hooks: Address })
+      : arg as Hex | undefined;
+    const state = stateFor(chain, poolId);
+    if (decoded?.functionName === "getFee") return encodeFunctionResult({ abi: STABLE_PAIR_HOOK_ABI, functionName: "getFee", result: state.dynamicFee });
+    if (decoded?.functionName === "feeConfig") return encodeFunctionResult({ abi: STABLE_PAIR_HOOK_ABI, functionName: "feeConfig", result: state.feeConfig });
   }
   const token = chain.tokens[target];
   if (token) {

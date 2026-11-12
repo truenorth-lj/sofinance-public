@@ -31,27 +31,33 @@ export const poolKeyOf = (spec: Univ4AllowlistedPool): PoolKey => ({
 
 const ok = <T>(entry: { status: "success"; result: unknown } | { status: "failure" }) => (entry.status === "success" ? entry.result as T : null);
 
-/** Current pool state: 1 block header + 1 multicall + 1 storage read (all at `latest`). */
-export async function readPoolState(client: PublicClient, spec: Univ4AllowlistedPool): Promise<RawPoolState> {
-  const block = await client.getBlock({ blockTag: "latest" });
+const tokenContracts = (address: Address) => [
+  { address, abi: ERC20_METADATA_ABI, functionName: "name" },
+  { address, abi: ERC20_METADATA_ABI, functionName: "symbol" },
+  { address, abi: ERC20_METADATA_ABI, functionName: "decimals" },
+] as const;
+
+/** StateView + hook + ERC-20 metadata calls for one pool (10 eth_calls, decoded in this order). */
+export const POOL_STATE_CONTRACTS_PER_POOL = 10;
+
+function poolStateContracts(spec: Univ4AllowlistedPool) {
   const key = poolKeyOf(spec);
-  const token = (address: Address) => [
-    { address, abi: ERC20_METADATA_ABI, functionName: "name" },
-    { address, abi: ERC20_METADATA_ABI, functionName: "symbol" },
-    { address, abi: ERC20_METADATA_ABI, functionName: "decimals" },
+  return [
+    { address: UNIV4_RHC.stateView, abi: STATE_VIEW_ABI, functionName: "getSlot0", args: [spec.poolId] },
+    { address: UNIV4_RHC.stateView, abi: STATE_VIEW_ABI, functionName: "getLiquidity", args: [spec.poolId] },
+    { address: spec.hooks, abi: STABLE_PAIR_HOOK_ABI, functionName: "getFee", args: [key] },
+    { address: spec.hooks, abi: STABLE_PAIR_HOOK_ABI, functionName: "feeConfig", args: [spec.poolId] },
+    ...tokenContracts(spec.currency0.address),
+    ...tokenContracts(spec.currency1.address),
   ] as const;
-  const results = await client.multicall({
-    allowFailure: true,
-    contracts: [
-      { address: UNIV4_RHC.stateView, abi: STATE_VIEW_ABI, functionName: "getSlot0", args: [spec.poolId] },
-      { address: UNIV4_RHC.stateView, abi: STATE_VIEW_ABI, functionName: "getLiquidity", args: [spec.poolId] },
-      { address: spec.hooks, abi: STABLE_PAIR_HOOK_ABI, functionName: "getFee", args: [key] },
-      { address: spec.hooks, abi: STABLE_PAIR_HOOK_ABI, functionName: "feeConfig", args: [spec.poolId] },
-      ...token(spec.currency0.address),
-      ...token(spec.currency1.address),
-    ],
-  });
-  const implementationWord = await client.getStorageAt({ address: spec.hooks, slot: ERC1967_IMPLEMENTATION_SLOT });
+}
+
+function rawPoolStateFrom(
+  block: { number: bigint; timestamp: number | bigint },
+  spec: Univ4AllowlistedPool,
+  results: readonly ({ status: "success"; result: unknown } | { status: "failure" })[],
+  implementationWord: Hex | undefined,
+): RawPoolState {
   const slot0 = ok<readonly [bigint, number, number, number]>(results[0]!);
   const fee = ok<readonly [number, number]>(results[2]!);
   const config = ok<readonly [number, number, number, bigint]>(results[3]!);
@@ -70,6 +76,44 @@ export async function readPoolState(client: PublicClient, spec: Univ4Allowlisted
     token0: meta(spec.currency0.address, 4),
     token1: meta(spec.currency1.address, 7),
   };
+}
+
+export const unreadPoolState = (): RawPoolState => ({
+  blockNumber: 0n, blockTimestamp: 0, slot0: null, liquidity: null, dynamicFee: null, feeConfig: null, implementation: null, token0: null, token1: null,
+});
+
+/** Current pool state: 1 block header + 1 multicall + 1 storage read (all at `latest`). Used for a single pool at transaction time. */
+export async function readPoolState(client: PublicClient, spec: Univ4AllowlistedPool): Promise<RawPoolState> {
+  const block = await client.getBlock({ blockTag: "latest" });
+  const results = await client.multicall({ allowFailure: true, contracts: poolStateContracts(spec) });
+  const implementationWord = await client.getStorageAt({ address: spec.hooks, slot: ERC1967_IMPLEMENTATION_SLOT });
+  return rawPoolStateFrom(block, spec, results, implementationWord);
+}
+
+/**
+ * Current state of many allowlisted pools at one latest block: 1 getBlock, 1 Multicall3
+ * (`batchSize: 0` so it is a single eth_call), and 1 getStorageAt per distinct hook
+ * (the allowlist shares StablePairHook, so typically 3 JSON-RPC requests vs 3 per pool).
+ * Storage cannot go through Multicall3; values match `readPoolState` at the same block.
+ */
+export async function readPoolStates(
+  client: PublicClient, specs: readonly Univ4AllowlistedPool[],
+): Promise<{ states: RawPoolState[]; rpcRequests: number }> {
+  if (specs.length === 0) return { states: [], rpcRequests: 0 };
+  const block = await client.getBlock({ blockTag: "latest" });
+  const results = await client.multicall({
+    allowFailure: true, contracts: specs.flatMap(spec => [...poolStateContracts(spec)]), batchSize: 0,
+  });
+  const hooks = [...new Map(specs.map(spec => [spec.hooks.toLowerCase(), spec.hooks])).values()];
+  const words = new Map<string, Hex | undefined>();
+  for (const hooksAddress of hooks) {
+    words.set(hooksAddress.toLowerCase(), await client.getStorageAt({ address: hooksAddress, slot: ERC1967_IMPLEMENTATION_SLOT }));
+  }
+  const states = specs.map((spec, index) => {
+    const start = index * POOL_STATE_CONTRACTS_PER_POOL;
+    return rawPoolStateFrom(block, spec, results.slice(start, start + POOL_STATE_CONTRACTS_PER_POOL), words.get(spec.hooks.toLowerCase()));
+  });
+  return { states, rpcRequests: 2 + hooks.length };
 }
 
 export type Univ4CheckId =
@@ -199,23 +243,27 @@ export type DiscoverUniv4Options = {
   pools?: readonly Univ4AllowlistedPool[];
   /** 24h volume / TVL per pool (host-cached public indexers); omitted or failing → `estimatedApr: null`. */
   marketData?: (spec: Univ4AllowlistedPool) => Promise<Univ4MarketData | null>;
+  /** Called once with the JSON-RPC request count of the batched state read (cron logs this). */
+  onStateRpc?: (stats: { rpcRequests: number; pools: number }) => void;
 };
 
 /**
  * One summary per allowlisted pool. A pool whose state cannot be read is reported delisted (fail
- * closed); market-data failures only drop APR.
+ * closed); market-data failures only drop APR. State is one getBlock + one multicall + one
+ * storage read per distinct hook, not one trio per pool.
  */
 export async function discoverUniv4RhcPools(options: DiscoverUniv4Options): Promise<Univ4PoolSummary[]> {
   const pools = options.pools ?? UNIV4_RHC_ALLOWLISTED_POOLS;
-  const out: Univ4PoolSummary[] = [];
-  for (const spec of pools) {
-    const [state, market] = await Promise.all([
-      readPoolState(options.clients.state, spec).catch((): RawPoolState => ({
-        blockNumber: 0n, blockTimestamp: 0, slot0: null, liquidity: null, dynamicFee: null, feeConfig: null, implementation: null, token0: null, token1: null,
-      })),
-      options.marketData ? options.marketData(spec).catch(() => null) : Promise.resolve(null),
-    ]);
-    out.push(evaluatePool(spec, state, market));
+  let states: RawPoolState[] = pools.map(() => unreadPoolState());
+  let rpcRequests = 0;
+  try {
+    const batch = await readPoolStates(options.clients.state, pools);
+    states = batch.states;
+    rpcRequests = batch.rpcRequests;
+  } catch {
+    rpcRequests = 0;
   }
-  return out;
+  options.onStateRpc?.({ rpcRequests, pools: pools.length });
+  const markets = await Promise.all(pools.map(spec => options.marketData ? options.marketData(spec).catch(() => null) : Promise.resolve(null)));
+  return pools.map((spec, index) => evaluatePool(spec, states[index]!, markets[index] ?? null));
 }
