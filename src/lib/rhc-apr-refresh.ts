@@ -251,16 +251,17 @@ export async function prepareRhcRun(input: {
   const pools = UNIV4_RHC_ALLOWLISTED_POOLS;
   const issues: string[] = [];
   const stats: RhcAprRunStats = { fetched: 0, rolledForward: 0, reused: 0, deferred: 0, failedFetches: 0, stateRpcRequests: 0 };
+  let stateRpcFallback = false;
 
   const { market, issues: marketIssues } = await fetchRhcMarketBatch({ fetcher, gate, signal, pools });
   issues.push(...marketIssues.map((issue) => `RHC market: ${issue}`));
   signal.throwIfAborted();
   const summaries = await discoverUniv4RhcPools({
     clients: { state: client }, pools, marketData: async (spec) => market.get(spec.poolId.toLowerCase()) ?? null,
-    onStateRpc: ({ rpcRequests }) => { stats.stateRpcRequests = rpcRequests; },
+    onStateRpc: (stateRpc) => { stats.stateRpcRequests = stateRpc.rpcRequests; stateRpcFallback = stateRpc.fallback === true; },
   });
-  // eslint-disable-next-line no-console -- cron run metric: batched state-read RPC count (no URLs or keys)
-  console.info(JSON.stringify({ event: "rhc-pool-state", rpcRequests: stats.stateRpcRequests, pools: pools.length }));
+  // eslint-disable-next-line no-console -- cron run metric: state-read RPC count (no URLs or keys)
+  console.info(JSON.stringify({ event: "rhc-pool-state", rpcRequests: stats.stateRpcRequests, pools: pools.length, ...(stateRpcFallback ? { fallback: true } : {}) }));
   signal.throwIfAborted();
   const roster = await store.request({
     op: "ensureRhcRoster", lease,

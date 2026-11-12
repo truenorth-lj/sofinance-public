@@ -5,7 +5,7 @@ import { robinhoodChain } from "../../chains/robinhood";
 import { createRhcClients, resetEvmRpcGuards } from "../../rpc-evm";
 import { mockRhcChain, mockRhcTransport, upgradedLog, type MockRhcChain } from "../../test-support/rhc-mock-rpc";
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "./constants";
-import { discoverUniv4RhcPools, evaluatePool, readPoolState, readPoolStates, type RawPoolState } from "./discovery";
+import { discoverUniv4RhcPools, evaluatePool, readPoolState, readPoolStates, type RawPoolState, type Univ4PoolSummary } from "./discovery";
 import { parseDexScreenerPair } from "./market-data";
 
 const SPCX = UNIV4_RHC_ALLOWLISTED_POOLS[0]!;
@@ -107,8 +107,70 @@ describe("readPoolStates (batched) matches per-pool readPoolState on the pinned 
     expect(states[1]!.slot0!.tick).toBe(3);
     expect(states.every(state => state.blockNumber === expected[0]!.blockNumber)).toBe(true);
 
-    const stats: { rpcRequests: number; pools: number }[] = [];
+    const stats: { rpcRequests: number; pools: number; fallback?: true }[] = [];
     await discoverUniv4RhcPools({ pools: UNIV4_RHC_ALLOWLISTED_POOLS, clients: createRhcClients({ env: {}, transportFor: () => mockRhcTransport(mockRhcChain()) }), onStateRpc: s => stats.push(s) });
     expect(stats).toEqual([{ rpcRequests: 3, pools: 11 }]);
+  });
+
+  it("falls back to the per-pool loop when the batch throws: same summaries as the old path, and one failed pool delists only itself", async () => {
+    const chain = mockRhcChain();
+    chain.poolState = Object.fromEntries(UNIV4_RHC_ALLOWLISTED_POOLS.map((spec, index) => [spec.poolId.toLowerCase(), {
+      tick: spec.baseSymbol === "SPCX" ? chain.tick : index + 2,
+      liquidity: chain.liquidity + BigInt(index) * 10n ** 15n,
+      dynamicFee: [50 + index, 51 + index] as [number, number],
+    }]));
+    const inner = createPublicClient({ chain: robinhoodChain, transport: mockRhcTransport(chain), batch: { multicall: false } });
+    const expectedAll: Univ4PoolSummary[] = [];
+    for (const spec of UNIV4_RHC_ALLOWLISTED_POOLS) {
+      expectedAll.push(evaluatePool(spec, await readPoolState(inner, spec), null));
+    }
+
+    const wrap = (base: typeof inner, hooks: {
+      getBlock?: typeof inner.getBlock;
+      multicall?: typeof inner.multicall;
+    }) => ({
+      ...base,
+      getBlock: hooks.getBlock ?? ((args: Parameters<typeof base.getBlock>[0]) => base.getBlock(args)),
+      multicall: hooks.multicall ?? ((args: Parameters<typeof base.multicall>[0]) => base.multicall(args)),
+      getStorageAt: (args: Parameters<typeof base.getStorageAt>[0]) => base.getStorageAt(args),
+    });
+
+    let once = false;
+    const statsRecovered: { rpcRequests: number; pools: number; fallback?: true }[] = [];
+    const recovered = await discoverUniv4RhcPools({
+      pools: UNIV4_RHC_ALLOWLISTED_POOLS,
+      clients: { state: wrap(inner, { getBlock: async (args) => {
+        if (!once) { once = true; throw new Error("batch getBlock failed"); }
+        return inner.getBlock(args);
+      } }) as typeof inner },
+      onStateRpc: s => statsRecovered.push(s),
+    });
+    expect(recovered).toEqual(expectedAll);
+    expect(statsRecovered).toEqual([{ rpcRequests: 1 + UNIV4_RHC_ALLOWLISTED_POOLS.length * 3, pools: 11, fallback: true }]);
+
+    const failedIndex = 0; // SPCX is the only pool this fixture lists
+    let batchFailed = false;
+    let fallbackReads = 0;
+    const stats: { rpcRequests: number; pools: number; fallback?: true }[] = [];
+    const summaries = await discoverUniv4RhcPools({
+      pools: UNIV4_RHC_ALLOWLISTED_POOLS,
+      clients: { state: wrap(inner, {
+        getBlock: async (args) => {
+          if (!batchFailed) { batchFailed = true; throw new Error("batch getBlock failed"); }
+          return inner.getBlock(args);
+        },
+        multicall: async (args) => {
+          fallbackReads++;
+          if (fallbackReads === failedIndex + 1) throw new Error("single pool multicall failed");
+          return inner.multicall(args);
+        },
+      }) as typeof inner },
+      onStateRpc: s => stats.push(s),
+    });
+    expect(summaries[failedIndex]).toMatchObject({
+      status: "delisted", poolId: UNIV4_RHC_ALLOWLISTED_POOLS[failedIndex]!.poolId,
+    });
+    expect(summaries.filter((_, index) => index !== failedIndex)).toEqual(expectedAll.filter((_, index) => index !== failedIndex));
+    expect(stats).toEqual([{ rpcRequests: 1 + (UNIV4_RHC_ALLOWLISTED_POOLS.length - 1) * 3 + 2, pools: 11, fallback: true }]);
   });
 });

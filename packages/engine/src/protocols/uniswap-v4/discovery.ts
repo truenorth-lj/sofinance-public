@@ -82,11 +82,22 @@ export const unreadPoolState = (): RawPoolState => ({
   blockNumber: 0n, blockTimestamp: 0, slot0: null, liquidity: null, dynamicFee: null, feeConfig: null, implementation: null, token0: null, token1: null,
 });
 
+/** Count a JSON-RPC attempt, including one that throws, so cron logs match the requests actually sent. */
+async function counted<T>(stats: { rpcRequests: number } | undefined, work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } finally {
+    if (stats) stats.rpcRequests++;
+  }
+}
+
 /** Current pool state: 1 block header + 1 multicall + 1 storage read (all at `latest`). Used for a single pool at transaction time. */
-export async function readPoolState(client: PublicClient, spec: Univ4AllowlistedPool): Promise<RawPoolState> {
-  const block = await client.getBlock({ blockTag: "latest" });
-  const results = await client.multicall({ allowFailure: true, contracts: poolStateContracts(spec) });
-  const implementationWord = await client.getStorageAt({ address: spec.hooks, slot: ERC1967_IMPLEMENTATION_SLOT });
+export async function readPoolState(
+  client: PublicClient, spec: Univ4AllowlistedPool, stats?: { rpcRequests: number },
+): Promise<RawPoolState> {
+  const block = await counted(stats, () => client.getBlock({ blockTag: "latest" }));
+  const results = await counted(stats, () => client.multicall({ allowFailure: true, contracts: poolStateContracts(spec) }));
+  const implementationWord = await counted(stats, () => client.getStorageAt({ address: spec.hooks, slot: ERC1967_IMPLEMENTATION_SLOT }));
   return rawPoolStateFrom(block, spec, results, implementationWord);
 }
 
@@ -97,23 +108,25 @@ export async function readPoolState(client: PublicClient, spec: Univ4Allowlisted
  * Storage cannot go through Multicall3; values match `readPoolState` at the same block.
  */
 export async function readPoolStates(
-  client: PublicClient, specs: readonly Univ4AllowlistedPool[],
+  client: PublicClient, specs: readonly Univ4AllowlistedPool[], stats?: { rpcRequests: number },
 ): Promise<{ states: RawPoolState[]; rpcRequests: number }> {
   if (specs.length === 0) return { states: [], rpcRequests: 0 };
-  const block = await client.getBlock({ blockTag: "latest" });
-  const results = await client.multicall({
+  const local = stats ?? { rpcRequests: 0 };
+  const before = local.rpcRequests;
+  const block = await counted(local, () => client.getBlock({ blockTag: "latest" }));
+  const results = await counted(local, () => client.multicall({
     allowFailure: true, contracts: specs.flatMap(spec => [...poolStateContracts(spec)]), batchSize: 0,
-  });
+  }));
   const hooks = [...new Map(specs.map(spec => [spec.hooks.toLowerCase(), spec.hooks])).values()];
   const words = new Map<string, Hex | undefined>();
   for (const hooksAddress of hooks) {
-    words.set(hooksAddress.toLowerCase(), await client.getStorageAt({ address: hooksAddress, slot: ERC1967_IMPLEMENTATION_SLOT }));
+    words.set(hooksAddress.toLowerCase(), await counted(local, () => client.getStorageAt({ address: hooksAddress, slot: ERC1967_IMPLEMENTATION_SLOT })));
   }
   const states = specs.map((spec, index) => {
     const start = index * POOL_STATE_CONTRACTS_PER_POOL;
     return rawPoolStateFrom(block, spec, results.slice(start, start + POOL_STATE_CONTRACTS_PER_POOL), words.get(spec.hooks.toLowerCase()));
   });
-  return { states, rpcRequests: 2 + hooks.length };
+  return { states, rpcRequests: local.rpcRequests - before };
 }
 
 export type Univ4CheckId =
@@ -243,27 +256,35 @@ export type DiscoverUniv4Options = {
   pools?: readonly Univ4AllowlistedPool[];
   /** 24h volume / TVL per pool (host-cached public indexers); omitted or failing → `estimatedApr: null`. */
   marketData?: (spec: Univ4AllowlistedPool) => Promise<Univ4MarketData | null>;
-  /** Called once with the JSON-RPC request count of the batched state read (cron logs this). */
-  onStateRpc?: (stats: { rpcRequests: number; pools: number }) => void;
+  /** Called once with the JSON-RPC request count of the state read (cron logs this). `fallback: true` when the batch threw and the per-pool loop ran. */
+  onStateRpc?: (stats: { rpcRequests: number; pools: number; fallback?: true }) => void;
 };
 
 /**
  * One summary per allowlisted pool. A pool whose state cannot be read is reported delisted (fail
  * closed); market-data failures only drop APR. State is one getBlock + one multicall + one
- * storage read per distinct hook, not one trio per pool.
+ * storage read per distinct hook, not one trio per pool. If that batch throws, fall back to the
+ * per-pool `readPoolState` loop (per-pool catch → unread) so one failed request does not delist every pool.
  */
 export async function discoverUniv4RhcPools(options: DiscoverUniv4Options): Promise<Univ4PoolSummary[]> {
   const pools = options.pools ?? UNIV4_RHC_ALLOWLISTED_POOLS;
-  let states: RawPoolState[] = pools.map(() => unreadPoolState());
-  let rpcRequests = 0;
+  const rpc = { rpcRequests: 0 };
+  let fallback = false;
+  let states: RawPoolState[];
   try {
-    const batch = await readPoolStates(options.clients.state, pools);
-    states = batch.states;
-    rpcRequests = batch.rpcRequests;
+    states = (await readPoolStates(options.clients.state, pools, rpc)).states;
   } catch {
-    rpcRequests = 0;
+    fallback = true;
+    states = [];
+    for (const spec of pools) {
+      try {
+        states.push(await readPoolState(options.clients.state, spec, rpc));
+      } catch {
+        states.push(unreadPoolState());
+      }
+    }
   }
-  options.onStateRpc?.({ rpcRequests, pools: pools.length });
+  options.onStateRpc?.({ rpcRequests: rpc.rpcRequests, pools: pools.length, ...(fallback ? { fallback: true as const } : {}) });
   const markets = await Promise.all(pools.map(spec => options.marketData ? options.marketData(spec).catch(() => null) : Promise.resolve(null)));
   return pools.map((spec, index) => evaluatePool(spec, states[index]!, markets[index] ?? null));
 }
