@@ -163,7 +163,7 @@ describe("APR queue: one oldest-first queue, one pool at a time", () => {
     });
     rhcRun.prepare.mockResolvedValue({
       pools: [["0xr1", hours(5)], ["0xr2", null], ["0xr3", hours(1)]].map(([poolId, refreshedAt]) => ({ spec: { poolId }, poolId, refreshedAt })),
-      refreshPool, issues: [], stats: { fetched: 0, rolledForward: 0, reused: 0, deferred: 0, failedFetches: 0 },
+      refreshPool, issues: [], stats: { fetched: 0, rolledForward: 0, reused: 0, deferred: 0, failedFetches: 0, stateRpcRequests: 0 },
     });
     const { store } = memoryStore(solanaPools([["solA", hours(3)], ["solB", hours(7)]]));
     loadProfile.mockImplementation(async (poolId: string) => {
@@ -204,7 +204,7 @@ describe("APR queue: one oldest-first queue, one pool at a time", () => {
     rhcRun.prepare.mockImplementation(async () => {
       gate.block(20_000);
       return { pools: [{ spec: { poolId: "0xr1" }, poolId: "0xr1", refreshedAt: null }], refreshPool,
-        issues: ["RHC market: GeckoTerminal pools/multi: HTTP 429"], stats: { fetched: 0, rolledForward: 0, reused: 0, deferred: 0, failedFetches: 0 } };
+        issues: ["RHC market: GeckoTerminal pools/multi: HTTP 429"], stats: { fetched: 0, rolledForward: 0, reused: 0, deferred: 0, failedFetches: 0, stateRpcRequests: 0 } };
     });
     const { store, saved } = memoryStore(solanaPools([["poolA", hours(9)]]));
     const result = await run(store, { geckoGate: gate });

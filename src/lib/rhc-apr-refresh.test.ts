@@ -347,7 +347,7 @@ describe("RHC pools in the APR queue (prepareRhcRun + refreshPool)", () => {
     const result = await h.run();
     expect(h.ohlcv()).toHaveLength(POOLS.length);
     expect(h.ohlcv().every((url) => url.includes("/ohlcv/hour"))).toBe(true);
-    expect(result.stats).toEqual({ fetched: POOLS.length, rolledForward: 0, reused: 0, deferred: 0, failedFetches: 0 });
+    expect(result.stats).toEqual({ fetched: POOLS.length, rolledForward: 0, reused: 0, deferred: 0, failedFetches: 0, stateRpcRequests: 0 });
     expect(h.saves).toHaveLength(POOLS.length);
     expect(h.saves.every((save) => save.payload)).toBe(true);
     const saved = h.saves.find((save) => save.payload)!;
