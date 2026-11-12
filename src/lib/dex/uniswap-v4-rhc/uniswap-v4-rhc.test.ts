@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { OPEN_FEE_BPS } from "@sofinance/engine/protocols/uniswap-v4/open-constants";
 import { NO_FEE } from "../types";
 import { bpsFeeStrategy, feePolicyProblems } from "../fees";
 import { uiFor } from "../ui";
@@ -15,6 +16,8 @@ describe("uniswap-v4-rhc descriptor (E2-register)", () => {
       withdrawPoolTokens: NO_FEE,
       withdrawUsdc: NO_FEE,
     });
+    expect(UNISWAP_V4_RHC_FEE_POLICY.open.kind).toBe("swap-output-bps");
+    expect(UNISWAP_V4_RHC_FEE_POLICY.open.bps).toBe(Number(OPEN_FEE_BPS));
     expect(feePolicyProblems(UNISWAP_V4_RHC_FEE_POLICY)).toEqual([]);
     const fees = bpsFeeStrategy(UNISWAP_V4_RHC_FEE_POLICY);
     expect(fees.feeFor("open", 10_000n)).toBe(10n);
