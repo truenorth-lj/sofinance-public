@@ -132,6 +132,17 @@ describe("sendMeteoraTransaction", () => {
     const conn = connection({ sendRawTransaction: vi.fn(async () => { throw new Error("timeout"); }) });
     await expect(sendMeteoraTransaction({ ...p, signedTransaction: b64(signed) }, { connection: conn as never, feeConfig })).rejects.toMatchObject({ sent: true, signature: bs58.encode(signed.signatures[0]!) });
   });
+
+  it("reports sent=true with the expected signature when the RPC returns a different signature", async () => {
+    const { sendMeteoraTransaction } = await load();
+    const p = await prepared();
+    const signed = signBoth(p.tx);
+    const expected = bs58.encode(signed.signatures[0]!);
+    const conn = connection({ sendRawTransaction: vi.fn(async () => bs58.encode(new Uint8Array(64).fill(8))) });
+    await expect(sendMeteoraTransaction({ ...p, signedTransaction: b64(signed) }, { connection: conn as never, feeConfig })).rejects.toMatchObject({
+      sent: true, message: "RPC returned a different signature", signature: expected,
+    });
+  });
 });
 
 describe("meteoraTransactionStatus", () => {
