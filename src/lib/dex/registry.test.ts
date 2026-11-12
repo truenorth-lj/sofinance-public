@@ -39,10 +39,11 @@ describe("DEX registry", () => {
     expect(DEX_DESCRIPTORS.map((descriptor) => descriptor.id)).toEqual(DEX_MODULES.map((entry) => entry.descriptor.id));
   });
 
-  it("Meteora stays served; Orca stays fully disabled; Uniswap v4 RHC serves only generic positions", () => {
+  it("Meteora stays served; Orca stays fully disabled; Uniswap v4 RHC serves only generic positions; Raydium generic ops stay off", () => {
     const meteora = DEX_MODULES.find((entry) => entry.descriptor.id === "meteora-dlmm");
     const orca = DEX_MODULES.find((entry) => entry.descriptor.id === "orca-whirlpool");
     const rhc = DEX_MODULES.find((entry) => entry.descriptor.id === "uniswap-v4-rhc");
+    const raydium = DEX_MODULES.find((entry) => entry.descriptor.id === "raydium-clmm");
     expect(meteora?.enabled).toBeUndefined();
     expect(orca?.enabled?.("positions")).toBe(false);
     expect(orca?.enabled?.("performance")).toBe(false);
@@ -52,6 +53,10 @@ describe("DEX registry", () => {
     expect(rhc?.enabled?.("performance")).toBe(false);
     expect(rhc?.enabled?.("quote-open")).toBe(false);
     expect(rhc?.rateLimited).toEqual(expect.any(Function));
+    expect(raydium?.enabled?.("positions")).toBe(false);
+    expect(raydium?.enabled?.("open")).toBe(false);
+    expect(raydium?.enabled?.("withdraw")).toBe(false);
+    expect(raydium?.enabled?.("compound")).toBe(false);
     const registry = createDexRegistry(DEX_MODULES);
     expect(registry.isDisabled("meteora-dlmm", "positions")).toBe(false);
     expect(registry.isDisabled("meteora-dlmm", "performance")).toBe(false);
@@ -63,6 +68,10 @@ describe("DEX registry", () => {
     expect(registry.isDisabled("uniswap-v4-rhc", "positions")).toBe(false);
     expect(registry.isDisabled("uniswap-v4-rhc", "performance")).toBe(true);
     expect(registry.isDisabled("uniswap-v4-rhc", "quote-open")).toBe(true);
+    expect(registry.isDisabled("raydium-clmm", "positions")).toBe(true);
+    expect(registry.isDisabled("raydium-clmm", "open")).toBe(true);
+    expect(registry.isDisabled("raydium-clmm", "withdraw")).toBe(true);
+    expect(registry.isDisabled("raydium-clmm", "compound")).toBe(true);
   });
 
   it("runs the shared contract suite for every registered DEX", () => {
@@ -70,7 +79,7 @@ describe("DEX registry", () => {
   });
 
   it("reports a registered DEX without a contract suite", () => {
-    expect(missingContractSuites(["raydium-clmm"])).toEqual(["raydium-clmm: missing src/lib/dex/raydium-clmm/raydium-clmm.contract.test.ts"]);
+    expect(missingContractSuites(["not-yet-registered"])).toEqual(["not-yet-registered: missing src/lib/dex/not-yet-registered/not-yet-registered.contract.test.ts"]);
     const dir = mkdtempSync(join(tmpdir(), "dex-contract-"));
     try {
       mkdirSync(join(dir, "meteora-dlmm"));
