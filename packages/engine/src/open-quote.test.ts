@@ -72,8 +72,8 @@ beforeEach(() => {
   }) } as never);
   vi.mocked(readOpenPoolState).mockResolvedValue(state());
   // Sizing and resale are quote-only; each test's route fixture lives on the buildRoute mock.
-  vi.mocked(quoteRoute).mockImplementation(async (inputMint, outputMint, amount, constraints, _signal, _budget, platformFeeBps) =>
-    await vi.mocked(buildRoute).getMockImplementation()!(wallet, inputMint, outputMint, amount, false, constraints, undefined, undefined, undefined, platformFeeBps) as never);
+  vi.mocked(quoteRoute).mockImplementation(async (inputMint, outputMint, amount, options) =>
+    await vi.mocked(buildRoute).getMockImplementation()!(wallet, inputMint, outputMint, amount, { wrapAndUnwrapSol: false, constraints: options?.constraints, platformFeeBps: options?.platformFeeBps }) as never);
 });
 
 const quotedAmounts = (inputMint: string, outputMint: string) =>
@@ -194,7 +194,7 @@ describe("open-position quote validation", () => {
     expect(quotedAmounts(mintB, mintA)).toEqual([100_000_000n, 100_000_000n]);
     expect(builtAmounts(mintB, mintA)).toEqual([100_000_000n]);
     const quoted = await vi.mocked(quoteRoute).mock.results[1]!.value;
-    expect(vi.mocked(buildRoute).mock.calls[0]![11]).toBe(quoted);
+    expect(vi.mocked(buildRoute).mock.calls[0]![4]?.quoted).toBe(quoted);
     expect(legs[0]!.minOut).toBe(100_000n);
   });
 
@@ -291,11 +291,14 @@ describe("open-position quote validation", () => {
     expect(legs[0]!.minOut + legs[1]!.spend).toBe(99000n);
     expect(BigInt(quote.amountMaxA)).toBeLessThanOrEqual(legs.find(leg => leg.outputMint === firstMint)!.minOut);
     expect(BigInt(quote.amountMaxB)).toBeLessThanOrEqual(legs.find(leg => leg.outputMint === secondMint)!.minOut);
-    expect(quoteRoute).toHaveBeenCalledWith(primaryMint, secondaryMint, expect.any(BigInt), { maxAccounts: 20, onlyDirectRoutes: true, dexes: "Raydium CLMM" }, undefined, undefined, 0);
-    expect(vi.mocked(quoteRoute).mock.calls.every(call => [20, 24].includes(call[3]!.maxAccounts))).toBe(true);
+    expect(quoteRoute).toHaveBeenCalledWith(primaryMint, secondaryMint, expect.any(BigInt), {
+      constraints: { maxAccounts: 20, onlyDirectRoutes: true, dexes: "Raydium CLMM" },
+      signal: undefined, budget: undefined, platformFeeBps: 0,
+    });
+    expect(vi.mocked(quoteRoute).mock.calls.every(call => [20, 24].includes(call[3]?.constraints?.maxAccounts ?? -1))).toBe(true);
     // Exactly the two converged legs are built, each from its own sizing quote.
     expect(buildRoute).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(buildRoute).mock.calls.every(call => call[4] === false && call[11] !== undefined)).toBe(true);
+    expect(vi.mocked(buildRoute).mock.calls.every(call => call[4]?.wrapAndUnwrapSol === false && call[4]?.quoted !== undefined)).toBe(true);
     const sqrt = SqrtPriceMath.getNextSqrtPriceFromInput(new BN(snapshot.sqrtPriceX64),
       new BN(snapshot.poolLiquidity), new BN(legs[1]!.route!.inAmount), strategy === "sequential");
     expect(quote.routeTouchesTargetPool).toBe(true);
@@ -416,8 +419,8 @@ describe("open-position quote validation", () => {
       expect(quotedAmounts(mintA, mintB)).toEqual([100_000n]);
       expect(builtAmounts(mintA, mintB)).toEqual([]);
       // Deposit quotes carry the 10 bps Jupiter platform fee; resale quotes stay uncharged.
-      expect(vi.mocked(quoteRoute).mock.calls.find(call => call[0] === mintB)![6]).toBe(10);
-      expect(vi.mocked(quoteRoute).mock.calls.find(call => call[0] === mintA)![6]).toBe(0);
+      expect(vi.mocked(quoteRoute).mock.calls.find(call => call[0] === mintB)![3]?.platformFeeBps).toBe(10);
+      expect(vi.mocked(quoteRoute).mock.calls.find(call => call[0] === mintA)![3]?.platformFeeBps).toBe(0);
     });
 
     it("does not charge the unswapped part of a same-mint USDC open", async () => {

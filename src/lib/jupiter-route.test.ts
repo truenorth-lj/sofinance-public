@@ -36,7 +36,7 @@ it("does not replace a transport or parent cancellation cause with no-route", as
   await expect(buildRoute("wallet", "A", "B", 10n)).rejects.toBe(failure);
   const controller = new AbortController(); const reason = new DOMException("cancelled", "AbortError");
   controller.abort(reason);
-  await expect(buildRoute("wallet", "A", "B", 10n, false, { maxAccounts: 24 }, controller.signal)).rejects.toBe(reason);
+  await expect(buildRoute("wallet", "A", "B", 10n, { wrapAndUnwrapSol: false, constraints: { maxAccounts: 24 }, signal: controller.signal })).rejects.toBe(reason);
 });
 
 it("builds only with the shared v1 quote and swap-instructions client", async () => {
@@ -48,8 +48,9 @@ it("builds only with the shared v1 quote and swap-instructions client", async ()
     swapInstruction: { programId: "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4", data: "AQ==", accounts: [] }, addressLookupTableAddresses: ["table"],
   }));
   vi.stubGlobal("fetch", fetcher);
-  const route = await buildRoute("wallet", "A", "B", 100n, false, {
-    maxAccounts: 20, onlyDirectRoutes: true, excludeDexes: "OpenBook,Phoenix",
+  const route = await buildRoute("wallet", "A", "B", 100n, {
+    wrapAndUnwrapSol: false,
+    constraints: { maxAccounts: 20, onlyDirectRoutes: true, excludeDexes: "OpenBook,Phoenix" },
   });
   expect(fetcher).toHaveBeenCalledTimes(2);
   const quoteUrl = new URL(String(fetcher.mock.calls[0]![0]));
