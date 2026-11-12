@@ -3,8 +3,8 @@ import "@/lib/engine-host";
 import { notEnoughBalanceMessage } from "@sofinance/engine/balance-message";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ArrowUpRight, ChartNoAxesCombined, CircleAlert, LoaderCircle, Sprout } from "lucide-react";
-import { assetMetadata, assetSymbol, TokenPicker } from "./token-picker";
+import { ArrowDown, ArrowUpRight, LoaderCircle } from "lucide-react";
+import { assetMetadata, assetSymbol } from "./token-picker";
 import { formatAmount } from "@sofinance/engine/amount";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import { PositionAssetRow } from "./position-asset-row";
@@ -12,14 +12,14 @@ import { resolveNftAccountLookup } from "@/lib/exit-account-lookup";
 import { useTokenMetadata } from "./use-token-metadata";
 import { useSelectedController } from "./use-selected-controller";
 import { TransactionStatusDialog } from "./transaction-status-dialog";
-import { CompoundPanel } from "./compound-panel";
 import { useCompoundController } from "./use-compound-controller";
 import { InkFooter, InkHero, InkNav } from "./ink";
-import { PositionPerformancePanel } from "./position-performance-panel";
 import { ConnectWalletPrompt } from "./connect-wallet-prompt";
-import { WithdrawPanel } from "./withdraw-panel";
 import { useNoticeBottomOffset } from "./transactions/notice-offset";
-import { ActionSelector } from "./action-selector";
+import { AddLiquiditySection } from "./add-liquidity-section";
+import { PositionToolsSection } from "./position-tools-section";
+import { StocksSection } from "./stocks-section";
+import { useInlinePositionSelection } from "./use-inline-position-selection";
 import { AssetRisksDialog } from "./asset-risks-dialog";
 import { APP_ROUTES, DOCS_ROUTES } from "@/lib/public-urls";
 import { formatSelectedNoRouteMessage, JUPITER_NO_ROUTE_CODE } from "@/lib/selected-no-route";
@@ -28,7 +28,6 @@ import Link from "next/link";
 import { captureGrowthEvent } from "@/lib/analytics/client";
 import { GROWTH_EVENTS } from "@/lib/analytics/events";
 import { raydiumPositionSource as positionSource } from "@/lib/unified-positions/sources/raydium";
-import { toolOptions, type ToolMeta } from "@/lib/unified-positions/capabilities";
 import { capabilitiesFor, firstSupportedTool, parsePositionKey, positionKey, toolUnavailableReason, type ToolId, type UnifiedPosition } from "@/lib/unified-positions/model";
 import { CLOSED_LABEL, groupPositions, isClosed, positionOptionLabel, SOLANA_CONNECT_EMPTY_OPTION, type PositionGroup } from "@/lib/unified-positions/rows";
 import type { ExternalPositions } from "./unified-positions/external-positions";
@@ -37,38 +36,17 @@ import { RegistryPositionDetails, RegistryPositionHeader, useRegistryPositions }
 import { RegistryPositionTool, type ToolBalance } from "./unified-positions/registry-tools";
 import { useStoredTokenIcons } from "./use-stored-token-icons";
 import { tokenSymbol } from "@/lib/position-label";
-import { UnavailableTool } from "./unified-positions/unavailable-tool";
-import { StocksOverview, type OverviewPosition } from "./stocks-overview";
+import { type OverviewPosition } from "./stocks-overview";
 import { Collapsible } from "./collapsible";
 import { fetchDexPerformance } from "@/lib/dex/client";
 import type { PositionPerformanceReport } from "@/lib/position-performance-report";
 import { shortAddress } from "@/lib/format/address";
-import { solscanTxUrl, solscanAccountUrl } from "@/lib/format/explorer";
-
-const TOOL_META: Readonly<Record<ToolId, ToolMeta>> = Object.freeze({
-  compound: { label: "Compound fees", icon: Sprout, controls: "compound-view" },
-  performance: { label: "Performance", icon: ChartNoAxesCombined, controls: "performance-view" },
-  deposit: { label: "Add to position", icon: ArrowDown, controls: "deposit-view" },
-  withdraw: { label: "Withdraw", icon: ArrowUp, controls: "withdraw-view" },
-});
+import { solscanAccountUrl } from "@/lib/format/explorer";
 
 const short = shortAddress;
 const money = (value: string, decimals: number, digits = 6) => formatAmount(value, decimals, digits);
 const tokenLabel = (mint: string, kind?: "native" | "token") =>
   kind === "native" ? "SOL" : mint === USDC_MINT ? "USDC" : mint === NATIVE_SOL_MINT ? "WSOL" : short(mint);
-
-function calculateInputUsd(amount: string, priceUsd: number | null): string | null {
-  if (!amount || priceUsd === null || !Number.isFinite(priceUsd) || priceUsd < 0) return null;
-  try {
-    const parsed = Number(amount);
-    if (!Number.isFinite(parsed) || parsed <= 0) return null;
-    const usdValue = parsed * priceUsd;
-    if (!Number.isFinite(usdValue)) return null;
-    return usdValue < 0.01 ? "< $0.01" : `≈ $${usdValue.toFixed(2)}`;
-  } catch {
-    return null;
-  }
-}
 
 export function SelectedApp({ initialView = "compound", initialMint: initialMintProp = "", initialWallet = "", previewPoolId = "", initialPositionKey: initialKeyProp = "", external, onRescan }: {
   initialView?: "compound" | "performance" | "deposit" | "withdraw";
@@ -104,19 +82,9 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
     : null;
   // Read-only picks survive missing Add inputs, but never survive a wallet commit or removal.
   // Reconcile the controller before exposing any operation target, including the render before effects run.
-  const [pickWallet, setPickWallet] = useState(wallet);
-  const [inlinePick, setInlinePick] = useState<{ wallet: string; mint: string } | null>(null);
-  if (pickWallet !== wallet) {
-    setPickWallet(wallet);
-    setInlinePick(null);
-  }
-  const ownedPick = pickWallet === wallet && inlinePick && inlinePick.wallet === wallet
-    && discovery?.positions.some((item) => item.positionMint === inlinePick.mint) ? inlinePick : null;
-  if (inlinePick && !ownedPick) setInlinePick(null);
-  const inlineMint = ownedPick?.mint || selection?.positionMint
-    || (discovery?.positions.some((item) => item.positionMint === initialMint) ? initialMint : discovery?.positions[0]?.positionMint) || "";
-  const selectionAligned = Boolean(connected && wallet && pickWallet === wallet
-    && selection?.positionMint === inlineMint);
+  const { ownedPick, inlineMint, selectionAligned, setInlinePick } = useInlinePositionSelection({
+    wallet, connected, discovery, selection, initialMint,
+  });
   const pickPosition = (positionMint: string) => { setPickedPosition(true); setInlinePick({ wallet: wallet || "", mint: positionMint }); choosePosition(positionMint); };
   const compound = useCompoundController({ wallet: wallet || undefined, positionMint: selectionAligned ? selection?.positionMint : undefined,
     // Selection alignment gates positionMint above, not wallet-wide leftover recovery.
@@ -347,14 +315,79 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
 
       <InkHero stacked className="mt-3 border border-transparent" label="Positions" title="Manage my liquidity positions">Add fees back to original position, or invest new capital.</InkHero>
 
-      <ActionSelector value={activeView} onChange={changeView} options={toolOptions(capabilities, TOOL_META,
-        otherSelected ? {} : { withdraw: !state || !wallet || (busy && activeView !== "withdraw") })} />
+      <PositionToolsSection
+        activeView={activeView}
+        onChangeView={changeView}
+        capabilities={capabilities}
+        otherSelected={otherSelected}
+        state={state}
+        wallet={wallet || ""}
+        busy={busy}
+        unavailableReason={unavailableReason}
+        otherBinding={otherBinding}
+        shownWithdraw={shownWithdraw}
+        poolLabel={poolLabel}
+        onCloseWithdraw={() => setActiveView("compound")}
+        onWithdrawBusy={onWithdrawBusy}
+        onWithdrawConfirmed={() => { void refreshState(); void refreshDiscovery(); }}
+        compound={compound}
+        onConnect={connect}
+        compoundPicker={compoundPicker}
+        linkedForeignPosition={Boolean(linkedForeignPosition)}
+        initialMint={initialMint}
+        performanceMint={performanceMint}
+        selectedNftAccount={nftAccountLookup.account}
+        nftAccountPending={nftAccountLookup.pending}
+        initialWallet={initialWallet}
+        previewPoolId={previewPoolId}
+        stockShownInOverview={stockShownInOverview}
+        onPerformanceResult={(mint, result) => setPanelResult({ key: positionKey(positionSource.id, mint), ...result })}
+        addLiquidity={<AddLiquiditySection
+          hidden={activeView !== "deposit"}
+          assetOptions={assetOptions}
+          selectedAsset={selectedAsset}
+          metadata={metadata}
+          busy={busy}
+          onSelectAsset={chooseAsset}
+          inputPriceUsd={state?.pricing?.priceUsdInput}
+          amount={amount}
+          onChangeAmount={changeAmount}
+          onFillMax={fillMax}
+          inputLabel={inputLabel}
+          state={state}
+          tolerancePercent={tolerancePercent}
+          onChangeTolerance={changeTolerance}
+          actionDisabled={actionDisabled}
+          actionLoading={actionLoading}
+          buttonClass={buttonClass}
+          buttonLabel={buttonLabel}
+          onPrimaryAction={primaryAction}
+          addStatus={addStatus}
+          connected={connected}
+          connectionError={connectionError || ""}
+          displayError={displayError}
+          showQuoteRecalculate={showQuoteRecalculate}
+          onRetryCalculation={retryCalculation}
+          reprepare={Boolean(reprepare)}
+          calculating={calculating}
+          quote={quote}
+          fresh={fresh}
+          now={now}
+          result={result}
+          totalCostPercent={totalCostPercent}
+          poolLabel={poolLabel}
+          attempt={attempt}
+          visibleAttempt={visibleAttempt}
+          attemptStatus={attemptStatus || ""}
+          onOpenStatus={() => setStatusDialogOpen(true)}
+        />}
+      >
       {showAllPositions && <section aria-labelledby="all-positions-heading" className="mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-7">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <h2 id="all-positions-heading" className="text-base font-semibold text-cream">All positions</h2>
           <button type="button" disabled={(!wallet && !(external && onRescan)) || anyBusy} onClick={rescan} className="text-xs font-semibold text-cream/80 transition-opacity hover:opacity-70 disabled:opacity-40">Rescan wallet</button>
         </div>
-        {activeView === "performance" ? <StocksOverview embedded positions={overviewPositions} selectedPositionKey={selectedKey} onSelectPosition={pickKey} selectionDisabled={anyBusy} renderRemainingPositions={renderPositionRows} /> : renderPositionRows(new Set())}
+        {activeView === "performance" ? <StocksSection positions={overviewPositions} selectedPositionKey={selectedKey} onSelectPosition={pickKey} selectionDisabled={anyBusy} renderRemainingPositions={renderPositionRows} /> : renderPositionRows(new Set())}
         <div className="mt-5 border-t border-white/10 pt-4" data-testid="selected-position-detail">
         {(otherSelected ?? selectedSolana) && <p className="mb-3 break-all text-xs text-smoke">Selected position · {(otherSelected ?? selectedSolana)!.key}</p>}
         {/* The Solana connect prompt belongs to Solana: with another chain's position selected it lives in the empty Solana group instead. */}
@@ -387,55 +420,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
         </div>}
         </div>
       </section>}
-      {unavailableReason ? <UnavailableTool id={`${activeView}-view`} reason={unavailableReason} />
-        : otherSelected && otherBinding ? <div id={`${activeView}-view`}>{otherBinding.tool(otherSelected, activeView)}</div> : <>
-      {activeView === "withdraw" && <div id="withdraw-view">{shownWithdraw ? <WithdrawPanel key={`${shownWithdraw.wallet}:${shownWithdraw.positionMint}`} wallet={shownWithdraw.wallet} positionMint={shownWithdraw.positionMint} mintA={shownWithdraw.mintA} mintB={shownWithdraw.mintB} label={poolLabel} outputs={capabilities.withdrawOutputs} onClose={()=>setActiveView("compound")} onBusyChange={onWithdrawBusy} onConfirmed={()=>{void refreshState();void refreshDiscovery();}} /> : <p className="mt-4 text-sm text-smoke">Connect your wallet and choose a position to withdraw.</p>}</div>}
-      {compound.historyWarning && <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80"><span>{compound.historyWarning}</span><button type="button" className="font-semibold underline" onClick={() => setActiveView("compound")}>View compound status</button></div>}
-      <main>
-        <div id="compound-view" hidden={activeView !== "compound"}>
-          <CompoundPanel controller={compound} tokenLabel={poolLabel} onConnect={connect} positionPicker={compoundPicker} />
-        </div>
-        <div id="performance-view" hidden={activeView !== "performance"} className="mt-3 space-y-3">
-          {activeView === "performance" && linkedForeignPosition && <p role="status" className="rounded-2xl border border-white/15 bg-white/[0.04] px-4 py-3 text-xs leading-5 text-smoke">
-            Showing the linked position {shortAddress(initialMint)}. It is not held by the connected wallet, so only public data is shown.
-          </p>}
-          {activeView === "performance" && <PositionPerformancePanel embedded showStockPerformance={!stockShownInOverview} selectedMint={performanceMint} selectedNftAccount={nftAccountLookup.account}
-            onResult={(mint, result) => setPanelResult({ key: positionKey(positionSource.id, mint), ...result })}
-            nftAccountPending={nftAccountLookup.pending} initialWallet={initialWallet} previewPoolId={previewPoolId} />}
-        </div>
-        <div id="deposit-view" hidden={activeView !== "deposit"}>
-        <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
-        <section className="min-w-0 rounded-[28px] border border-white/12 bg-char p-5 sm:p-8">
-          <h2 className="text-lg font-semibold text-cream">Add to existing position</h2><p className="mt-2 text-xs leading-5 text-smoke">Choose an asset from your wallet. We swap it into the pool tokens as needed, then add liquidity to the existing LP position selected above in one transaction. Your position keeps its current price range.</p>
-          <span id="asset-label" className="mt-6 block text-xs font-medium uppercase tracking-[0.16em] text-smoke">Asset to add from wallet</span>
-          <TokenPicker assets={assetOptions} selectedAsset={selectedAsset} metadata={metadata} disabled={!assetOptions.length || busy} onSelect={chooseAsset} inputPriceUsd={state?.pricing?.priceUsdInput} />
-          {selectedAsset && <details className="mt-2 text-[11px] leading-5 text-smoke/70"><summary className="cursor-pointer">Asset address and balance source</summary><p className="mt-2 break-all">Mint {selectedAsset.mint} · Available for input ATA/SOL balance {money(selectedAsset.balance, selectedAsset.decimals, selectedAsset.decimals)}{selectedAsset.totalBalance !== selectedAsset.balance ? `; wallet total holdings ${money(selectedAsset.totalBalance, selectedAsset.decimals, selectedAsset.decimals)}` : ""}</p></details>}
-          <label htmlFor="amount" className="mt-7 block text-xs font-medium uppercase tracking-[0.16em] text-smoke">Input limit</label>
-          <div className="mt-2 flex items-center gap-2 rounded-2xl border border-white/20 bg-white/[0.06] px-4 py-3 focus-within:border-white/40"><input id="amount" disabled={busy || !state} inputMode="decimal" placeholder="0.00" value={amount} onChange={(event) => changeAmount(event.target.value)} className="min-w-0 flex-1 bg-transparent text-3xl font-semibold text-cream outline-none placeholder:text-smoke/50" /><span className="text-sm font-semibold text-cream/80">{inputLabel}</span></div>
-          {state?.pricing?.priceUsdInput !== undefined && state.pricing.priceUsdInput !== null && amount && (() => {
-            const inputUsd = calculateInputUsd(amount, state.pricing.priceUsdInput);
-            return inputUsd ? <div className="mt-2 text-center text-sm text-smoke/70">{inputUsd}</div> : null;
-          })()}
-          <div className="mt-3 flex items-center justify-between text-xs text-smoke"><span>Available for input balance: {state ? `${money(state.inputBalance, state.inputDecimals, state.inputDecimals)} ${inputLabel}` : "—"}</span><button type="button" className="font-semibold text-cream/80 hover:text-cream disabled:opacity-40" onClick={fillMax} disabled={busy || !state}>MAX</button></div>
-          <details className="mt-5 text-xs text-smoke"><summary className="cursor-pointer font-semibold">Advanced settings · Price tolerance {tolerancePercent}%</summary>
-          <div className="mt-3 flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3"><div><label htmlFor="tolerance" className="text-sm font-medium text-cream/80">Add-liquidity price tolerance</label><p className="mt-1 text-xs leading-5 text-smoke">Room for the pool price to move before execution; 0–5%, by 0.1%. The unused reserve stays in your wallet as pool assets.</p></div><div className="flex shrink-0 items-center gap-1"><input id="tolerance" disabled={busy} type="number" inputMode="decimal" min="0" max="5" step="0.1" value={tolerancePercent} onChange={(event) => changeTolerance(event.target.value)} className="w-16 rounded-lg border border-white/20 bg-white/10 px-2 py-1.5 text-right text-base sm:text-sm font-semibold text-cream outline-none focus:border-white/40" /><span className="text-sm text-cream/80">%</span></div></div>
-          </details>
-          <p className="mt-5 text-xs leading-5 text-smoke">Preview updates after entering an amount. Add liquidity runs the final checks before wallet confirmation.</p>
-          <div className="mt-6 hidden sm:block"><button className={buttonClass} disabled={actionDisabled} aria-busy={actionLoading} onClick={primaryAction}>{actionLoading ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <ArrowDown aria-hidden="true" className="h-4 w-4" />}{buttonLabel}</button></div>
-          {connected && <div role="status" className="mt-3 min-h-5 text-xs text-smoke">{addStatus}</div>}
-          {connectionError && <div role="alert" className="mt-4 flex gap-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />{connectionError}</div>}
-          {displayError && <div role="alert" className="mt-4 flex gap-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" /><span className="flex-1">{displayError}</span>{showQuoteRecalculate && <button type="button" onClick={retryCalculation} data-testid="add-recalculate" className="shrink-0 font-semibold underline">Recalculate</button>}{reprepare && !showQuoteRecalculate && <button type="button" onClick={primaryAction} disabled={actionDisabled} data-testid="add-reprepare" className="shrink-0 font-semibold underline disabled:opacity-40">{actionDisabled ? "Getting a fresh quote…" : "Try again"}</button>}</div>}
-        </section>
-
-        <aside className="min-w-0 space-y-3"><section className="rounded-[28px] border border-white/12 bg-char p-5 sm:p-7"><h2 className="text-lg font-semibold text-cream">Add liquidity preview</h2><p className="mt-2 text-xs leading-5 text-smoke">{calculating ? <span role="status" className="inline-flex items-center gap-2 text-cream/80"><LoaderCircle className="h-3.5 w-3.5 animate-spin" />Estimating liquidity…</span> : quote ? fresh ? `Preview valid for approximately ${Math.max(0, Math.ceil(((result?.expiresAt ?? quote.expiresAt) - now) / 1000))} seconds` : "Preview expired, updating" : "Auto-calculate after selecting position and asset, entering amount"}</p>{quote && <>{totalCostPercent !== null && <p className="mt-2 text-xs leading-5 text-smoke/70">Total cost uses the conservative swap outputs (liquidity added plus the price-tolerance reserve left in your wallet), estimates immediate swap back to original input asset; not actual sale, also does not represent dollar value.</p>}<div className="mt-7 space-y-4 text-sm"><Row title="Input limit" value={quote ? `${money(quote.requested, quote.inputDecimals)} ${inputLabel}` : "—"} />{quote.feeBps > 0 && <Row title={`Protocol fee (${(quote.feeBps / 100).toFixed(2)}%)`} value={`${money(quote.feeAmount, quote.inputDecimals)} ${inputLabel}`} />}<div className="border-t border-white/10" /><Row title={`Swap to ${state ? poolLabel(state.mintA) : "Pool A"} · minOut`} value={quote ? quote.spendA === "0" ? "no swap needed" : money(quote.minOutA, quote.decimalsA) : "—"} /><Row title={`Swap to ${state ? poolLabel(state.mintB) : "Pool B"} · minOut`} value={quote ? quote.spendB === "0" ? "no swap needed" : money(quote.minOutB, quote.decimalsB) : "—"} /><Row title="Estimated liquidity added" value={quote?.liquidity || "—"} /><div className="border-t border-white/10" />{totalCostPercent !== null && <Row title="Total cost" value={`~${totalCostPercent}%`} emphasize />}<Row title="Jupiter transaction slippage" value="0.5%(fixed)" /><Row title="Simulated SOL total debit" value={result?.simulatedSolDebitLamports ? `${money(result.simulatedSolDebitLamports, 9, 9)} SOL(including input and possible rent)` : "Checked when you add liquidity"} /></div>{totalCostPercent !== null && <p className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-xs leading-5 text-smoke">Estimated round-trip cost: about {totalCostPercent ?? "—"}% (assuming you add liquidity, immediately withdraw, and swap back to {inputLabel}). This conservative estimate includes swap fees, price impact, and slippage tolerance. It does not block signing. Network fees and account rent are separate. This value is not a promise of execution or future value.</p>}</>}</section>
-          {(attempt || result?.simulated) && <section className="rounded-[28px] border border-white/12 bg-char p-5"><h2 className="font-semibold text-cream">Add liquidity transaction</h2><p role="status" className="mt-2 text-xs leading-5 text-smoke">{attemptStatus ? `Transaction status: ${attemptStatus}` : addStatus}</p>{attempt && <p className="mt-3 text-xs text-cream/80"><a href={solscanTxUrl(attempt.signature)} target="_blank" rel="noreferrer" className="underline">View transaction {short(attempt.signature)}</a> · NFT {short(attempt.positionMint)}</p>}</section>}
-          {visibleAttempt && <button type="button" onClick={() => setStatusDialogOpen(true)}
-            className="w-full rounded-full bg-lemon px-5 py-3 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f]/80 transition-colors hover:bg-white/[0.04]">View transaction status and tx hash</button>}
-        </aside>
-        </div>
-        </div>
-      </main>
-      </>}
+      </PositionToolsSection>
       {connectionError && activeView === "compound" && !otherSelected && <div role="alert" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{connectionError}</div>}
       {error && !quoteError && activeView === "compound" && !otherSelected && <div role="alert" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{error}</div>}
       <InkFooter />
@@ -449,8 +434,4 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
       onRetry={selectionAligned && !busy && retryAdd ? () => { if (!selectionAligned || busy) return; setStatusDialogOpen(false); retryAdd(); } : undefined} />
     {activeView === "deposit" && !otherSelected && !unavailableReason && <div ref={actionBarRef} data-testid="mobile-action-bar" className="fixed inset-x-0 bottom-0 z-10 border-t border-white/12 bg-canvas/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] backdrop-blur sm:hidden"><button className={buttonClass} disabled={actionDisabled} aria-busy={actionLoading} onClick={primaryAction}>{actionLoading ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <ArrowDown aria-hidden="true" className="h-4 w-4" />}{buttonLabel}</button></div>}
   </div>;
-}
-
-function Row({ title, value, emphasize = false }: { title: string; value: string; emphasize?: boolean }) {
-  return <div className="flex items-start justify-between gap-4"><span className="text-smoke">{title}</span><span className={`max-w-[55%] text-right font-medium tabular-nums ${emphasize ? "text-cream" : "text-cream/80"}`}>{value}</span></div>;
 }
