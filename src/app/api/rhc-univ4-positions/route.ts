@@ -1,6 +1,6 @@
 import { getAddress, isAddress } from "viem";
 import { isRhcUniv4TradingEnabled } from "@/lib/protocol-flags";
-import { RHC_SCAN_FAILED_MESSAGE, rhcScanRateLimited, RhcScanBusyError, scanRhcPositions } from "@/lib/rhc-position-scan";
+import { RHC_SCAN_FAILED_MESSAGE, rhcScanClientIp, rhcScanRateLimited, RhcScanBusyError, scanRhcPositions } from "@/lib/rhc-position-scan";
 import { logSafeError } from "@/lib/safe-error-log";
 import { gated, json } from "@/lib/api/route";
 
@@ -11,16 +11,13 @@ import { gated, json } from "@/lib/api/route";
  * Per-IP limit on this instance; a failed scan answers 503 with a plain message (the page still shows its local
  * records and the manual NFT entry).
  */
-const clientIp = (request: Request) => request.headers.get("x-real-ip")?.trim()
-  || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-
 export const GET = gated(isRhcUniv4TradingEnabled, async (request) => {
   const url = new URL(request.url);
   const raw = url.searchParams.get("wallet") ?? "";
   if (raw.length !== 42 || !isAddress(raw, { strict: false })) {
     return json({ error: "Invalid wallet address" }, 400);
   }
-  if (rhcScanRateLimited(clientIp(request))) {
+  if (rhcScanRateLimited(rhcScanClientIp(request))) {
     return json({ error: "Too many requests. Please wait a minute." }, 429, { "Retry-After": "60" });
   }
   const fresh = url.searchParams.get("fresh") === "1";

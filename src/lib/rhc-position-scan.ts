@@ -7,6 +7,9 @@ import {
 } from "@sofinance/engine/protocols/uniswap-v4/position-scan";
 import { type Address, createPublicClient, http, type PublicClient, type Transport } from "viem";
 import { ThrottleGate } from "@/lib/range-apr/throttle-gate";
+import { resetRhcScanRateLimit } from "@/lib/rhc-scan-rate-limit";
+
+export { REQUESTS_PER_IP_PER_MINUTE, rhcScanClientIp, rhcScanRateLimited, resetRhcScanRateLimit } from "@/lib/rhc-scan-rate-limit";
 
 /**
  * Server side of "find the Robinhood Chain v4 positions this wallet holds" (`GET /api/rhc-univ4-positions`).
@@ -123,25 +126,10 @@ export async function scanRhcPositions(wallet: Address, options: { fresh?: boole
   try { return await task; } finally { inflight.delete(key); }
 }
 
-/* ---- request limit ---- */
-const WINDOW_MS = 60_000;
-export const REQUESTS_PER_IP_PER_MINUTE = 20;
-const hits = new Map<string, number[]>();
-
 export const RHC_SCAN_FAILED_MESSAGE = "Couldn't check this wallet's Robinhood Chain positions right now. Positions saved in this browser and added by number are still shown.";
-
-/** Per-IP request limit (sliding minute, per instance). */
-export function rhcScanRateLimited(ip: string, now = Date.now()): boolean {
-  const recent = (hits.get(ip) ?? []).filter(t => now - t < WINDOW_MS);
-  if (recent.length >= REQUESTS_PER_IP_PER_MINUTE) { hits.set(ip, recent); return true; }
-  recent.push(now);
-  hits.delete(ip); hits.set(ip, recent);
-  while (hits.size > 5_000) hits.delete(hits.keys().next().value!);
-  return false;
-}
 
 /** Test hook. */
 export function resetRhcScanCache(gateOptions: ConstructorParameters<typeof ThrottleGate>[0] = { minSpacingMs: SCAN_CALL_SPACING_MS, defaultCooldownMs: 30_000 }): void {
-  entries.clear(); inflight.clear(); client = null; calls = 0; hits.clear();
+  entries.clear(); inflight.clear(); client = null; calls = 0; resetRhcScanRateLimit();
   gate = new ThrottleGate(gateOptions);
 }

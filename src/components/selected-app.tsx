@@ -28,7 +28,7 @@ import Link from "next/link";
 import { captureGrowthEvent } from "@/lib/analytics/client";
 import { GROWTH_EVENTS } from "@/lib/analytics/events";
 import { raydiumPositionSource as positionSource } from "@/lib/unified-positions/sources/raydium";
-import { capabilitiesFor, firstSupportedTool, parsePositionKey, positionKey, toolUnavailableReason, type ToolId, type UnifiedPosition } from "@/lib/unified-positions/model";
+import { capabilitiesFor, firstSupportedTool, parsePositionKey, positionKey, positionKeysEqual, toolUnavailableReason, type ToolId, type UnifiedPosition } from "@/lib/unified-positions/model";
 import { CLOSED_LABEL, groupPositions, isClosed, positionOptionLabel, SOLANA_CONNECT_EMPTY_OPTION, type PositionGroup } from "@/lib/unified-positions/rows";
 import type { ExternalPositions } from "./unified-positions/external-positions";
 import { GroupedPositionSelect } from "./unified-positions/grouped-position-select";
@@ -187,7 +187,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   const [otherKey, setOtherKey] = useState(initialPositionKey);
   const solanaEmpty = !connected || (discovery !== null && !loadingDiscovery && positionOptions.length === 0);
   // A picked (or linked) non-inline position; without one, the first of them when the inline scan has none.
-  const otherSelected = otherPositions.find((item) => item.key === otherKey)
+  const otherSelected = otherPositions.find((item) => positionKeysEqual(item.key, otherKey) || item.key === otherKey)
     ?? (!otherKey && solanaEmpty && !initialMint ? otherPositions[0] ?? null : null);
   const otherBinding = otherSelected && registry.owns(otherSelected)
     ? { header: (item: UnifiedPosition) => <RegistryPositionHeader position={item} metadata={metadata} icons={storedIcons} showAssets={activeView !== "performance"} />, details: (item: UnifiedPosition) => <RegistryPositionDetails position={item} />,
@@ -219,7 +219,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
     window.history.replaceState(window.history.state, "", url);
   };
   const pickKey = (key: string) => {
-    const found = allPositions.find((item) => item.key === key);
+    const found = allPositions.find((item) => item.key === key || positionKeysEqual(item.key, key));
     if (!found) return;
     if (found.source === positionSource.id) { setOtherKey(""); pickPosition(found.nativeId); } else setOtherKey(found.key);
     writeUrl(found.key, activeView);

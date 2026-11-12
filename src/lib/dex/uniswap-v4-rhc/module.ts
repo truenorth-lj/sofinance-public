@@ -1,18 +1,21 @@
 import type { DexModule } from "../registry";
+import { isRhcUniv4TradingEnabled } from "@/lib/protocol-flags";
+import { rhcScanClientIp, rhcScanRateLimited } from "@/lib/rhc-scan-rate-limit";
 import { uniswapV4RhcDescriptor } from "./descriptor";
 
 /**
- * Server registration of Uniswap v4 on Robinhood Chain (E2-register). Lazy adapter so other routes
- * do not bundle it. Discovery, positions listing, and the live open/close path stay on the existing
- * dedicated routes and sources.
+ * Server registration of Uniswap v4 on Robinhood Chain (E2-alias). Lazy adapter so other routes
+ * do not bundle it. Listing is served on the module (`listPositions`) when trading is on; the live
+ * open/close path stays on the dedicated `/api/rhc-univ4-open` and `/api/rhc-univ4-exit` routes.
  *
- * `enabled` is always false: the generic `/api/dex/[dex]/[op]` route 404s for every op, in every
- * deploy target, without loading the adapter. Dedicated `POST /api/rhc-univ4-open` and
- * `POST /api/rhc-univ4-exit` are not gated by this hook. Production `RHC_UNIV4_*` flags are not
- * touched.
+ * `enabled("positions")` follows `isRhcUniv4TradingEnabled` (same gate as GET `/api/rhc-univ4-positions`).
+ * Flag values and definitions are not changed. Every generic write op (and `performance`) 404s, in
+ * every deploy target, without loading the adapter. The positions op also shares the dedicated
+ * route's `rhcScanRateLimited` per-IP bucket and 429s (Retry-After 60) without loading the adapter.
  */
 export const uniswapV4RhcModule: DexModule = Object.freeze({
   descriptor: uniswapV4RhcDescriptor,
   adapter: async () => (await import("./adapter.server")).createUniswapV4RhcAdapter(),
-  enabled: () => false,
+  enabled: (op) => op === "positions" && isRhcUniv4TradingEnabled(),
+  rateLimited: (op, request) => op === "positions" && rhcScanRateLimited(rhcScanClientIp(request)),
 });

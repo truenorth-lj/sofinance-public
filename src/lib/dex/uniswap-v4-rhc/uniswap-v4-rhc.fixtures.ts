@@ -1,6 +1,7 @@
 /**
  * Hermetic E2-register fixtures: no live API or RPC. Money capabilities on the generic adapter
- * are unsupported and listing returns no rows, so there is nothing to replay. `setup` / `fetch`
+ * are unsupported and this suite stubs the holdings scan to an empty list, so there is nothing
+ * to replay. `setup` / `fetch`
  * are omitted; any fetch that reached the offline guard would fail the contract suite.
  *
  * Owner is a fixed dummy EVM address (not a user wallet, not the fee wallet). Used only as the

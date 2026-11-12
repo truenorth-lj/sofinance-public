@@ -11,8 +11,7 @@ const MATRIX: Record<string, Pick<DexUi, "openUi" | "useDescriptorPlanTerms">> =
   "raydium-clmm": { openUi: "native-modal", useDescriptorPlanTerms: false },
   "uniswap-v4-rhc": { openUi: "rhc-dialog", useDescriptorPlanTerms: false },
   "orca-whirlpool": { openUi: "none", useDescriptorPlanTerms: false },
-  // TODO(PR11): retire/normalize this alias in E2; until then it stays none, not rhc-dialog.
-  "rhc-uniswap-v4": { openUi: "none", useDescriptorPlanTerms: false },
+  "rhc-uniswap-v4": { openUi: "rhc-dialog", useDescriptorPlanTerms: false },
 };
 
 describe("uiFor (E-move registry UI)", () => {

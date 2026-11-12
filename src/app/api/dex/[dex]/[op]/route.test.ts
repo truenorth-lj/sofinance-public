@@ -413,11 +413,11 @@ describe("POST /api/dex/[dex]/[op]", () => {
     }
   });
 
-  it("404s every Uniswap v4 RHC generic op, including open and withdraw, without loading the adapter, in production, preview and development", async () => {
+  it("serves Uniswap v4 RHC generic positions and 404s every write op without loading the adapter, in production, preview and development", async () => {
     const positionKey = "uniswap-v4-rhc:1";
     const evmOwner = "0x2222222222222222222222222222222222222222";
-    const ops: { op: string; body: unknown }[] = [
-      { op: "positions", body: { owner: evmOwner } },
+    const listed = [{ key: "uniswap-v4-rhc:4072237", source: "uniswap-v4-rhc", nativeId: "4072237" }];
+    const writeOps: { op: string; body: unknown }[] = [
       { op: "performance", body: { positionKey } },
       { op: "quote-open", body: { request: openRequest } },
       { op: "open-ranges", body: { poolId: openRequest.poolId } },
@@ -430,17 +430,27 @@ describe("POST /api/dex/[dex]/[op]", () => {
       { op: "recovery", body: { wallet: evmOwner, positionKey, step: 1, priorSignatures: [] } },
     ];
     fake.ids = ["uniswap-v4-rhc"];
-    fake.adapter = { descriptor: dexDescriptors.descriptorFor("uniswap-v4-rhc"), listPositions: vi.fn(), performance: vi.fn(), quoteOpen: vi.fn(), prepareOpen: vi.fn(), prepareWithdraw: vi.fn() };
+    fake.adapter = {
+      descriptor: dexDescriptors.descriptorFor("uniswap-v4-rhc"),
+      listPositions: vi.fn(async () => listed),
+      performance: vi.fn(), quoteOpen: vi.fn(), prepareOpen: vi.fn(), prepareWithdraw: vi.fn(),
+    };
     for (const env of ["production", "preview", "development", ""]) {
       vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", env);
       vi.stubEnv("VERCEL_ENV", env);
-      for (const { op, body } of ops) {
+      fake.adapterFor.mockClear();
+      (fake.adapter.listPositions as ReturnType<typeof vi.fn>).mockClear();
+      const positions = await call("positions", { owner: evmOwner }, "uniswap-v4-rhc");
+      expect(positions.status, `${env} positions`).toBe(200);
+      expect(await positions.json()).toEqual({ positions: listed });
+      expect(fake.adapterFor, `${env} positions loads the adapter`).toHaveBeenCalled();
+      expect(fake.adapter.listPositions).toHaveBeenCalledWith(evmOwner);
+      for (const { op, body } of writeOps) {
         fake.adapterFor.mockClear();
         const response = await call(op, body, "uniswap-v4-rhc");
         expect(response.status, `${env} ${op}`).toBe(404);
         expect(await response.json()).toEqual({ error: "Not found" });
         expect(fake.adapterFor, `${env} ${op} must not load the adapter`).not.toHaveBeenCalled();
-        expect(fake.adapter.listPositions).not.toHaveBeenCalled();
         expect(fake.adapter.performance).not.toHaveBeenCalled();
         expect(fake.adapter.quoteOpen).not.toHaveBeenCalled();
         expect(fake.adapter.prepareOpen).not.toHaveBeenCalled();

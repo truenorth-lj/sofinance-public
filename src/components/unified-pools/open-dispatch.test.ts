@@ -42,10 +42,8 @@ describe("open dispatch handler matrix (button and deep link)", () => {
     expect(resolveOpenDispatch(pool("uniswap-v4-rhc", "robinhood"))).toEqual(same({ handler: "rhc-dialog" }));
   });
 
-  it("legacy rhc-uniswap-v4 alias stays none (not the RHC dialog; TODO(PR11) in E2)", () => {
-    expect(resolveOpenDispatch(pool("rhc-uniswap-v4", "robinhood"))).toEqual(
-      same({ handler: "none", reason: ORCA_NONE }),
-    );
+  it("legacy rhc-uniswap-v4 alias inherits the RHC dialog (same handler as the canonical id)", () => {
+    expect(resolveOpenDispatch(pool("rhc-uniswap-v4", "robinhood"))).toEqual(same({ handler: "rhc-dialog" }));
   });
 
   it("Orca is not available yet: button and deep link call the same handler", () => {
