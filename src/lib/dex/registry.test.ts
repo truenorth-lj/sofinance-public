@@ -39,18 +39,26 @@ describe("DEX registry", () => {
     expect(DEX_DESCRIPTORS.map((descriptor) => descriptor.id)).toEqual(DEX_MODULES.map((entry) => entry.descriptor.id));
   });
 
-  it("Meteora stays served by default; Orca is registered but the generic route is disabled", () => {
+  it("Meteora stays served by default; Orca and Uniswap v4 RHC are registered but the generic route is disabled", () => {
     const meteora = DEX_MODULES.find((entry) => entry.descriptor.id === "meteora-dlmm");
     const orca = DEX_MODULES.find((entry) => entry.descriptor.id === "orca-whirlpool");
+    const rhc = DEX_MODULES.find((entry) => entry.descriptor.id === "uniswap-v4-rhc");
     expect(meteora?.enabled).toBeUndefined();
     expect(orca?.enabled?.("positions")).toBe(false);
     expect(orca?.enabled?.("performance")).toBe(false);
+    expect(rhc?.enabled?.("open")).toBe(false);
+    expect(rhc?.enabled?.("withdraw")).toBe(false);
+    expect(rhc?.enabled?.("positions")).toBe(false);
     const registry = createDexRegistry(DEX_MODULES);
     expect(registry.isDisabled("meteora-dlmm", "positions")).toBe(false);
     expect(registry.isDisabled("meteora-dlmm", "performance")).toBe(false);
     expect(registry.isDisabled("orca-whirlpool", "positions")).toBe(true);
     expect(registry.isDisabled("orca-whirlpool", "performance")).toBe(true);
     expect(registry.isDisabled("orca-whirlpool", "quote-open")).toBe(true);
+    expect(registry.isDisabled("uniswap-v4-rhc", "open")).toBe(true);
+    expect(registry.isDisabled("uniswap-v4-rhc", "withdraw")).toBe(true);
+    expect(registry.isDisabled("uniswap-v4-rhc", "positions")).toBe(true);
+    expect(registry.isDisabled("uniswap-v4-rhc", "quote-open")).toBe(true);
   });
 
   it("runs the shared contract suite for every registered DEX", () => {

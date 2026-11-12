@@ -412,4 +412,40 @@ describe("POST /api/dex/[dex]/[op]", () => {
       }
     }
   });
+
+  it("404s every Uniswap v4 RHC generic op, including open and withdraw, without loading the adapter, in production, preview and development", async () => {
+    const positionKey = "uniswap-v4-rhc:1";
+    const evmOwner = "0x2222222222222222222222222222222222222222";
+    const ops: { op: string; body: unknown }[] = [
+      { op: "positions", body: { owner: evmOwner } },
+      { op: "performance", body: { positionKey } },
+      { op: "quote-open", body: { request: openRequest } },
+      { op: "open-ranges", body: { poolId: openRequest.poolId } },
+      { op: "open", body: { request: openRequest, step: 1, priorSignatures: [] } },
+      { op: "quote-add", body: { owner: evmOwner, positionKey, input: { token: evmOwner, amountRaw: "100" } } },
+      { op: "add", body: { owner: evmOwner, positionKey, input: { token: evmOwner, amountRaw: "100" }, step: 1, priorSignatures: [] } },
+      { op: "withdraw", body: { owner: evmOwner, positionKey, fraction: 1, output: "pool-tokens", step: 1, priorSignatures: [] } },
+      { op: "claim", body: { owner: evmOwner, positionKey, step: 1, priorSignatures: [] } },
+      { op: "compound", body: { owner: evmOwner, positionKey, step: 1, priorSignatures: [] } },
+      { op: "recovery", body: { wallet: evmOwner, positionKey, step: 1, priorSignatures: [] } },
+    ];
+    fake.ids = ["uniswap-v4-rhc"];
+    fake.adapter = { descriptor: dexDescriptors.descriptorFor("uniswap-v4-rhc"), listPositions: vi.fn(), performance: vi.fn(), quoteOpen: vi.fn(), prepareOpen: vi.fn(), prepareWithdraw: vi.fn() };
+    for (const env of ["production", "preview", "development", ""]) {
+      vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", env);
+      vi.stubEnv("VERCEL_ENV", env);
+      for (const { op, body } of ops) {
+        fake.adapterFor.mockClear();
+        const response = await call(op, body, "uniswap-v4-rhc");
+        expect(response.status, `${env} ${op}`).toBe(404);
+        expect(await response.json()).toEqual({ error: "Not found" });
+        expect(fake.adapterFor, `${env} ${op} must not load the adapter`).not.toHaveBeenCalled();
+        expect(fake.adapter.listPositions).not.toHaveBeenCalled();
+        expect(fake.adapter.performance).not.toHaveBeenCalled();
+        expect(fake.adapter.quoteOpen).not.toHaveBeenCalled();
+        expect(fake.adapter.prepareOpen).not.toHaveBeenCalled();
+        expect(fake.adapter.prepareWithdraw).not.toHaveBeenCalled();
+      }
+    }
+  });
 });
