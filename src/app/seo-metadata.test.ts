@@ -43,6 +43,7 @@ describe("SEO metadata routes", () => {
     expect(blogPaths).toContain("/blog");
     expect(blogPaths).toContain("/blog/dex-evolution");
     expect(blogPaths).toContain("/blog/xstocks-xpoints");
+    expect(blogPaths).toContain("/blog/competitor-comparison");
 
     const urls = sitemap().map((entry) => entry.url);
     expect(urls).toEqual([
