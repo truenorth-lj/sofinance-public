@@ -43,6 +43,7 @@ describe("blog content", () => {
     const blob = [
       readFileSync(resolve("src/lib/blog.ts"), "utf8"),
       readFileSync(resolve("content/blog/dex-evolution.md"), "utf8"),
+      readFileSync(resolve("content/blog/competitor-comparison.md"), "utf8"),
       readFileSync(resolve("src/components/blog/blog-article-view.tsx"), "utf8"),
     ].join("\n");
     expect(blob).not.toMatch(/author:\s*["'][^"']+["']/i);
@@ -93,6 +94,20 @@ describe("blog content", () => {
     expect(html).toContain("liquidity-behavior.png");
     expect(html).toContain("comparison-table.png");
     expect(html).toContain('href="/app/rwa-pairs?ref=x-article"');
+  });
+
+  it("publishes competitor-comparison with crawlable title, hero PNG, and an honest swap-fee disclosure", () => {
+    const article = getBlogArticle("competitor-comparison");
+    expect(article).not.toBeNull();
+    expect(article?.title).toMatch(/Zero performance fee/);
+    expect(article?.datePublished).toBe("2026-11-13");
+    expect(article?.dateModified).toBe("2026-11-13");
+    expect(article?.hero.src).toBe("/blog/competitor-comparison/comparison-table.png");
+    expect(article?.hero.alt).toMatch(/Comparison table/);
+    expect(article?.body).toContain("10 basis points (0.10%)");
+    expect(article?.body).toContain("We also do not auto-rebalance");
+    expect(getPublicPngSize(article!.hero.src)).toEqual({ width: 1600, height: 772 });
+    expect(articles.map((item) => item.slug)).toContain("competitor-comparison");
   });
 
   it("reads PNG dimensions from public files and formats dates without locale drift", () => {
