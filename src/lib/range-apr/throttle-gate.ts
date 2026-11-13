@@ -1,4 +1,3 @@
-import "@/lib/engine-host";
 import { sleep } from "@sofinance/engine/async";
 /**
  * Per-instance gate in front of a rate-limited upstream (GeckoTerminal allows ~30 calls/min per egress IP and

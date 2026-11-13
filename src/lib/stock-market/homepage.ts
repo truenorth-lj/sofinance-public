@@ -1,4 +1,3 @@
-import "@/lib/engine-host";
 import "server-only";
 import { withTimeout as withTimeoutMs } from "@sofinance/engine/async";
 import { loadStockBuyEligibility, loadStockMarket } from "./source";
