@@ -6,8 +6,6 @@ import type { OpenRangeInput } from "@sofinance/engine/open-range";
 import { issueOpenPositionPermit } from "@/lib/open-permit";
 import { withFeeEstimateRetry } from "@/lib/rpc-fee-estimate";
 import { assertSolInputAllowed } from "@/lib/sol-input-policy";
-import { runWithSwapFeePaidUpstream } from "@sofinance/engine/fee-waiver";
-import { assertSolSwapFeeCredit } from "./sol-swap-step";
 import { APP_OPEN_PREPARE, MCP_OPEN_PREPARE } from "./surface-policy";
 import { txPermitsFor } from "@/lib/tx-send/permit";
 
@@ -19,7 +17,7 @@ export type OpenPrepareCommand = {
   floorBps: number;
   toleranceBps?: number;
   nftMint: string;
-  /** Step 2/2 of a SOL deposit: the confirmed step-1 swap that already paid the fee. App only. */
+  /** Accepted for backward compatibility with the step-2 resume client; ignored. Does not waive the fee. */
   solSwapSignature?: string;
 };
 
@@ -32,18 +30,12 @@ export async function prepareOpen(command: OpenPrepareCommand, readSigningSecret
   // Covers both the app route and MCP prepare_open_position (and so /sign links).
   assertSolInputAllowed(selection);
   if (selection.inputKind === "native") throw new Error(SINGLE_TX_SOL_OPEN_MESSAGE);
-  const feePaidUpstream = profile === APP_OPEN_PREPARE && command.solSwapSignature !== undefined;
-  let minContextSlot: number | undefined;
-  if (feePaidUpstream) {
-    // Checked before entering the waiver scope, which hides the fee wallet.
-    ({ slot: minContextSlot } = await assertSolSwapFeeCredit(wallet, command.solSwapSignature!, selection.inputMint, amount));
-  }
   const build = () => profile === APP_OPEN_PREPARE
     ? withFeeEstimateRetry(() => getProtocolAdapter().buildAndSimulateOpenPosition(
-      wallet, selection, amount, range, floorBps, toleranceBps, { enforceResaleFloor: false, nftMint, ...(minContextSlot ? { minContextSlot } : {}) },
+      wallet, selection, amount, range, floorBps, toleranceBps, { enforceResaleFloor: false, nftMint },
     ))
     : getProtocolAdapter().buildAndSimulateOpenPosition(wallet, selection, amount, range, floorBps, toleranceBps, { nftMint });
-  const { summary, transaction } = feePaidUpstream ? await runWithSwapFeePaidUpstream(build) : await build();
+  const { summary, transaction } = await build();
   const secret = readSigningSecret();
   const permit = issueOpenPositionPermit(secret, {
     wallet, message: Buffer.from(transaction.message.serialize()).toString("base64"), summary,

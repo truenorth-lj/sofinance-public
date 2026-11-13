@@ -155,7 +155,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   }, [wallet, poolAddress, setSwapReceipt, submittingRef]);
   useEffect(() => {
     if (!swapReceipt) return;
-    // The two-step deposit is complete once ITS step-2 open confirms; the receipt also lapses with the fee credit.
+    // The two-step deposit is complete once ITS step-2 open confirms; the receipt also lapses when it expires.
     const consumed = open.status === "confirmed" && Boolean(swapReceipt.openSignature) &&
       open.attempt?.signature === swapReceipt.openSignature;
     if (consumed || (now > 0 && isSolSwapReceiptExpired(swapReceipt, now))) setSwapReceipt(null);

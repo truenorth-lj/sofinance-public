@@ -157,7 +157,7 @@ describe("step 1/2 receipt persistence", () => {
     expect(bodyOf(calls("/api/open-prepare")[0]!)).toMatchObject({ amount: "0.000695", solSwapSignature: swapSignature, inputKind: "token" });
   });
 
-  it("expires with the 30-minute fee credit", async () => {
+  it("expires after the 30-minute resume window", async () => {
     window.localStorage.setItem(solSwapReceiptKey(wallet, poolId), JSON.stringify(receipt()));
     await mount();
     expect(controller.pendingSwap).not.toBeNull();
