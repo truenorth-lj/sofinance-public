@@ -47,7 +47,7 @@ async function render(rhc = true) {
   const session = createEvmSession({ discover });
   await act(async () => { root.render(createElement(EvmWalletProvider, { enabled: true, session },
     // Rescan wallet lives in All positions, which the Compound fees tab hides once a Solana wallet is connected.
-    createElement(UnifiedApp, { selected: { initialView: "deposit" }, flags: { orca: false, meteora: false, meteoraOpen: false, rhc }, rhcSigningEnabled: false }))); });
+    createElement(UnifiedApp, { selected: { initialView: "deposit" }, flags: { orca: false, meteora: false, rhc }, rhcSigningEnabled: false }))); });
   await settle();
 }
 const rescanButton = () => [...container.querySelectorAll("button")].find((b) => b.textContent === "Rescan wallet")!;

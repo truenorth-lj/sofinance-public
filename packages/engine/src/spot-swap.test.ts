@@ -140,7 +140,7 @@ describe("issuer selection (PM rule)", () => {
     const hasRoute = vi.fn(async (): Promise<SpotSwapRouteCheck> => "ok");
     const selection = await selectSpotSwapToken(list, "tsla", { checkRoute: hasRoute });
     expect(selection).toMatchObject({ status: "selected", mint: tsla.toBase58(), issuerName: "xStocks", xstocks: true, skipped: [] });
-    expect(selection.status === "selected" && selection.mintShort).toMatch(/^.{4}….{2}$/);
+    expect(selection.status === "selected" && selection.mintShort).toMatch(/^.{4}….{4}$/);
     expect(hasRoute).toHaveBeenCalledTimes(1);
   });
   it("falls back to the next verified issuer when xStocks has no route", async () => {
@@ -190,8 +190,10 @@ describe("Token-2022 mint rules (same as open)", () => {
   it("rejects a paused mint", () => {
     expect(issues(extendedMint(ExtensionType.PausableConfig, (p) => { p[32] = 1; }))).toContain("paused");
   });
-  it("rejects a ScaledUiAmount multiplier other than 1", () => {
-    expect(issues(extendedMint(ExtensionType.ScaledUiAmountConfig, (p) => { p.writeDoubleLE(2, 32); p.writeDoubleLE(2, 48); }))).toContain("ScaledUiAmount multiplier not 1");
+  it("accepts a finite ScaledUiAmount multiplier, including 2×, and rejects a non-finite one", () => {
+    expect(issues(extendedMint(ExtensionType.ScaledUiAmountConfig, (p) => { p.writeDoubleLE(1.0009, 32); p.writeDoubleLE(1.0017, 48); }))).toEqual([]);
+    expect(issues(extendedMint(ExtensionType.ScaledUiAmountConfig, (p) => { p.writeDoubleLE(2, 32); p.writeDoubleLE(2, 48); }))).toEqual([]);
+    expect(issues(extendedMint(ExtensionType.ScaledUiAmountConfig, (p) => { p.writeDoubleLE(Number.NaN, 32); p.writeDoubleLE(1, 48); }))).toContain("ScaledUiAmount multiplier not 1");
   });
   it("rejects a transfer fee and a non-token owner", () => {
     expect(issues(extendedMint(ExtensionType.TransferFeeConfig, (p) => { p.writeUInt16LE(1, 88); p.writeUInt16LE(1, 106); }))).toContain("transfer_fee");
@@ -226,11 +228,11 @@ describe("buildAndSimulateSpotSwap", () => {
     expect(transaction.message.header.numRequiredSignatures).toBe(1);
     expect(transaction.message.staticAccountKeys[0]!.equals(wallet)).toBe(true);
     expect(summary).toMatchObject({
-      operation: "spot-swap", outputMint: tsla.toBase58(), outputMintShort: expect.stringMatching(/^.{4}….{2}$/), outputSymbol: "TSLAx", issuerName: "xStocks", xstocks: true,
+      operation: "spot-swap", outputMint: tsla.toBase58(), outputMintShort: expect.stringMatching(/^.{4}….{4}$/), outputSymbol: "TSLAx", issuerName: "xStocks", xstocks: true,
       amount: "2000000", feeBps: 10, feeAmount: "2000", quotedOut: "522844", minOut: "520230", simulatedOut: "522844",
       outputProgram: TOKEN_2022_PROGRAM_ID.toBase58(), outputAccount: outputAta.toBase58(),
     });
-    expect(summary.feeWalletShort).toMatch(/^.{4}….{2}$/);
+    expect(summary.feeWalletShort).toMatch(/^.{4}….{4}$/);
     expect(JSON.stringify(summary)).not.toContain(feeWallet.toBase58());
     // The simulated debit (rent + fee) already includes the network fee: counted once.
     expect(summary.solRequirement).toEqual({
@@ -326,10 +328,10 @@ describe("buildAndSimulateSpotSwap", () => {
     expect(connection.getMultipleAccountsInfo).not.toHaveBeenCalled();
     expect(feeSwapLeg).not.toHaveBeenCalled();
   });
-  it("refuses paused and re-scaled mints before quoting", async () => {
+  it("refuses paused and non-finite ScaledUiAmount mints before quoting", async () => {
     accounts.set(tsla.toBase58(), info(extendedMint(ExtensionType.PausableConfig, (p) => { p[32] = 1; }), TOKEN_2022_PROGRAM_ID));
     expect(await code(build())).toBe("spot_swap_token_unavailable");
-    accounts.set(tsla.toBase58(), info(extendedMint(ExtensionType.ScaledUiAmountConfig, (p) => { p.writeDoubleLE(1, 32); p.writeDoubleLE(1.5, 48); }), TOKEN_2022_PROGRAM_ID));
+    accounts.set(tsla.toBase58(), info(extendedMint(ExtensionType.ScaledUiAmountConfig, (p) => { p.writeDoubleLE(1, 32); p.writeDoubleLE(Number.POSITIVE_INFINITY, 48); }), TOKEN_2022_PROGRAM_ID));
     expect(await code(build())).toBe("spot_swap_token_unavailable");
     expect(feeSwapLeg).not.toHaveBeenCalled();
   });
@@ -467,10 +469,12 @@ describe("real mainnet stock-token mints (fixtures/spot-swap-mints-mainnet.json)
     const m = mainnetMints.mints.find((item) => item.symbol === symbol && (!issuer || item.issuer === issuer))!;
     return spotSwapMintIssues(new PublicKey(m.mint), info(Buffer.from(m.data, "base64"), new PublicKey(m.owner))).issues;
   };
-  it("refuses exactly the five tokens whose ScaledUiAmount multiplier is not 1", () => {
+  it("accepts every fixture mint, including the five whose ScaledUiAmount multiplier is a small dividend factor", () => {
     const refused = mainnetMints.mints.filter((m) => issuesFor(m.symbol, m.issuer).length).map((m) => `${m.issuer} ${m.symbol}`);
-    expect(refused).toEqual(["xStocks NVDAx", "xStocks SPYx", "Backpack MU", "Ondo NVDAon", "Ondo SPYon"]);
-    for (const name of refused) expect(issuesFor(name.split(" ")[1]!, name.split(" ")[0])).toEqual(["ScaledUiAmount multiplier not 1"]);
+    expect(refused).toEqual([]);
+    for (const name of ["xStocks NVDAx", "xStocks SPYx", "Backpack MU", "Ondo NVDAon", "Ondo SPYon"]) {
+      expect(issuesFor(name.split(" ")[1]!, name.split(" ")[0])).toEqual([]);
+    }
   });
   it("accepts permanent delegate and confidential transfer (every xStocks and Backpack token has them)", () => {
     for (const m of mainnetMints.mints.filter((item) => item.issuer !== "Ondo")) {

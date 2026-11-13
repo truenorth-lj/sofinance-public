@@ -2,6 +2,7 @@
 
 import { ConnectWalletPrompt } from "./connect-wallet-prompt";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useLatest } from "./use-latest";
 import { ArrowUpRight, LoaderCircle, Search } from "lucide-react";
 import { useWalletConnection } from "./wallet-connection";
 import {
@@ -54,8 +55,7 @@ export function PositionPerformancePanel({
   } | null>(null);
   const [loadedData, setLoadedData] = useState<{ body: PerformanceResponse; context: string } | null>(null);
   const lookup = useRef(new DecisionSession());
-  const onResultRef = useRef(onResult);
-  useEffect(() => { onResultRef.current = onResult; });
+  const onResultRef = useLatest(onResult);
   const [error, setError] = useState<string | null>(null);
   const [loadingContext, setLoadingContext] = useState<string | null>(null);
   const walletField = resolveWalletField({
@@ -167,7 +167,7 @@ export function PositionPerformancePanel({
     } finally {
       if (attempt.current()) { attempt.finish(); setLoadingContext(null); }
     }
-  }, [context, positionMint, wallet]);
+  }, [context, positionMint, wallet, onResultRef]);
 
   useEffect(() => subscribePositionHistoryRefresh(positionMint.trim(), () => {
     lookup.current.cancel();

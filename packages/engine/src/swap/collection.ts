@@ -50,8 +50,11 @@ export async function collectSwapFee(connection: Connection, input: SwapFeeTrans
   }
   const setup = await feeAccountSetup(connection, input.payer, input.recipient);
   const mint = input.mint.toBase58();
-  let route = await buildRoute(input.owner.toBase58(), mint, USDC_MINT, input.amount,
-    false, { maxAccounts: JUPITER_MAX_ACCOUNTS.feeRoute, onlyDirectRoutes: true }, undefined, undefined, setup.address.toBase58());
+  let route = await buildRoute(input.owner.toBase58(), mint, USDC_MINT, input.amount, {
+    wrapAndUnwrapSol: false,
+    constraints: { maxAccounts: JUPITER_MAX_ACCOUNTS.feeRoute, onlyDirectRoutes: true },
+    destinationTokenAccount: setup.address.toBase58(),
+  });
   const sourceAta=getAssociatedTokenAddressSync(input.mint,input.owner,true,input.program).toBase58();
   if(input.source.toBase58()!==sourceAta)route=retargetSwapSource(route,sourceAta,input.source.toBase58());
   const userUsdc = getAssociatedTokenAddressSync(usdc, input.owner, true, TOKEN_PROGRAM_ID).toBase58();

@@ -12,10 +12,10 @@ import { createDexDescriptorRegistry, createDexRegistry } from "./registry";
 import { DEX_IDS, normalizeDexId } from "./types";
 
 describe("DEX ids", () => {
-  it("has one canonical spelling and accepts the legacy RHC alias", () => {
+  it("has one canonical spelling for each DEX id and rejects the retired RHC alias", () => {
     expect(DEX_IDS).toEqual(["raydium-clmm", "orca-whirlpool", "meteora-dlmm", "uniswap-v4-rhc"]);
     expect(normalizeDexId("uniswap-v4-rhc")).toBe("uniswap-v4-rhc");
-    expect(normalizeDexId("rhc-uniswap-v4")).toBe("uniswap-v4-rhc");
+    expect(normalizeDexId("rhc-uniswap-v4")).toBeNull();
     expect(normalizeDexId("toString")).toBeNull();
     expect(normalizeDexId("")).toBeNull();
   });
@@ -39,12 +39,47 @@ describe("DEX registry", () => {
     expect(DEX_DESCRIPTORS.map((descriptor) => descriptor.id)).toEqual(DEX_MODULES.map((entry) => entry.descriptor.id));
   });
 
+  it("Meteora stays served; Orca stays fully disabled; Uniswap v4 RHC serves only generic positions; Raydium generic ops stay off", () => {
+    const meteora = DEX_MODULES.find((entry) => entry.descriptor.id === "meteora-dlmm");
+    const orca = DEX_MODULES.find((entry) => entry.descriptor.id === "orca-whirlpool");
+    const rhc = DEX_MODULES.find((entry) => entry.descriptor.id === "uniswap-v4-rhc");
+    const raydium = DEX_MODULES.find((entry) => entry.descriptor.id === "raydium-clmm");
+    expect(meteora?.enabled).toBeUndefined();
+    expect(orca?.enabled?.("positions")).toBe(false);
+    expect(orca?.enabled?.("performance")).toBe(false);
+    expect(rhc?.enabled?.("open")).toBe(false);
+    expect(rhc?.enabled?.("withdraw")).toBe(false);
+    expect(rhc?.enabled?.("positions")).toBe(true);
+    expect(rhc?.enabled?.("performance")).toBe(false);
+    expect(rhc?.enabled?.("quote-open")).toBe(false);
+    expect(rhc?.rateLimited).toEqual(expect.any(Function));
+    expect(raydium?.enabled?.("positions")).toBe(false);
+    expect(raydium?.enabled?.("open")).toBe(false);
+    expect(raydium?.enabled?.("withdraw")).toBe(false);
+    expect(raydium?.enabled?.("compound")).toBe(false);
+    const registry = createDexRegistry(DEX_MODULES);
+    expect(registry.isDisabled("meteora-dlmm", "positions")).toBe(false);
+    expect(registry.isDisabled("meteora-dlmm", "performance")).toBe(false);
+    expect(registry.isDisabled("orca-whirlpool", "positions")).toBe(true);
+    expect(registry.isDisabled("orca-whirlpool", "performance")).toBe(true);
+    expect(registry.isDisabled("orca-whirlpool", "quote-open")).toBe(true);
+    expect(registry.isDisabled("uniswap-v4-rhc", "open")).toBe(true);
+    expect(registry.isDisabled("uniswap-v4-rhc", "withdraw")).toBe(true);
+    expect(registry.isDisabled("uniswap-v4-rhc", "positions")).toBe(false);
+    expect(registry.isDisabled("uniswap-v4-rhc", "performance")).toBe(true);
+    expect(registry.isDisabled("uniswap-v4-rhc", "quote-open")).toBe(true);
+    expect(registry.isDisabled("raydium-clmm", "positions")).toBe(true);
+    expect(registry.isDisabled("raydium-clmm", "open")).toBe(true);
+    expect(registry.isDisabled("raydium-clmm", "withdraw")).toBe(true);
+    expect(registry.isDisabled("raydium-clmm", "compound")).toBe(true);
+  });
+
   it("runs the shared contract suite for every registered DEX", () => {
     expect(missingContractSuites(DEX_MODULES.map((entry) => entry.descriptor.id))).toEqual([]);
   });
 
   it("reports a registered DEX without a contract suite", () => {
-    expect(missingContractSuites(["orca-whirlpool"])).toEqual(["orca-whirlpool: missing src/lib/dex/orca-whirlpool/orca-whirlpool.contract.test.ts"]);
+    expect(missingContractSuites(["not-yet-registered"])).toEqual(["not-yet-registered: missing src/lib/dex/not-yet-registered/not-yet-registered.contract.test.ts"]);
     const dir = mkdtempSync(join(tmpdir(), "dex-contract-"));
     try {
       mkdirSync(join(dir, "meteora-dlmm"));
@@ -57,15 +92,16 @@ describe("DEX registry", () => {
     }
   });
 
-  it("looks DEXes up by canonical or legacy id and merges per-position overrides", async () => {
+  it("looks DEXes up by canonical id and merges per-position overrides", async () => {
     const blocked = { supported: false, reason: "Only the owner can close this position" } as const;
     const evm = { ...fakeEvmDescriptor, positionCapabilities: (position: UnifiedPosition) => (position.nativeId === "7" ? { withdraw: blocked } : {}) };
     const registry = createDexRegistry([fakeSolanaModule, { ...fakeEvmModule, descriptor: evm }]);
-    expect(registry.descriptorFor("rhc-uniswap-v4")).toBe(evm);
+    expect(registry.descriptorFor("uniswap-v4-rhc")).toBe(evm);
+    expect(registry.descriptorFor("rhc-uniswap-v4")).toBeNull();
     expect(registry.descriptorFor("orca-whirlpool")).toBeNull();
     expect(await registry.adapterFor("orca-whirlpool")).toBeNull();
     expect((await registry.adapterFor("meteora-dlmm"))?.descriptor).toBe(fakeSolanaDescriptor);
-    const position = { source: "rhc-uniswap-v4", nativeId: "7" } as UnifiedPosition;
+    const position = { source: "uniswap-v4-rhc", nativeId: "7" } as UnifiedPosition;
     expect(registry.capabilitiesFor(position)?.withdraw).toBe(blocked);
     expect(registry.capabilitiesFor({ ...position, nativeId: "8" })).toBe(evm.capabilities);
     expect(registry.capabilitiesFor({ ...position, source: "orca-whirlpool" })).toBeNull();
@@ -85,6 +121,20 @@ describe("DEX registry", () => {
       failures: [{ dex: fakeEvmDescriptor.id, displayName: fakeEvmDescriptor.displayName, error: down }],
     });
     expect(await createDexRegistry([fakeSolanaModule]).recordDailyTvl(input)).toEqual({ stats: {}, issues: [], failures: [] });
+  });
+
+
+  it("isDisabled is false by default (Meteora has no enabled hook) and true only when a hook returns false", () => {
+    const alwaysOn = createDexRegistry([fakeSolanaModule]);
+    expect(alwaysOn.isDisabled("meteora-dlmm", "positions")).toBe(false);
+    expect(alwaysOn.isDisabled("meteora-dlmm", "performance")).toBe(false);
+    expect(alwaysOn.isDisabled("nope", "positions")).toBe(false);
+    const gated = createDexRegistry([{ ...fakeSolanaModule, enabled: () => false }]);
+    expect(gated.isDisabled("meteora-dlmm", "positions")).toBe(true);
+    expect(gated.isDisabled("meteora-dlmm", "performance")).toBe(true);
+    const byOp = createDexRegistry([{ ...fakeSolanaModule, enabled: (op) => op === "positions" }]);
+    expect(byOp.isDisabled("meteora-dlmm", "positions")).toBe(false);
+    expect(byOp.isDisabled("meteora-dlmm", "performance")).toBe(true);
   });
 
   it("refuses duplicate ids, invalid fee policies and mismatched pool sources", () => {

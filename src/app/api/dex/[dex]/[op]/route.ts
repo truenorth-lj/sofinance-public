@@ -5,7 +5,6 @@ import { apiError } from "@/lib/api-response";
 import { dexRegistry, DexError, publicDexMessage, type DexAdapter, type DexErrorCode, type DexSigner, type OpenRequest, type StepContext, type StepResult } from "@/lib/dex";
 import { dexRouteRateLimited } from "@/lib/dex-route-rate-limit";
 import { withJupiterRelay } from "@/lib/jupiter-relay-route";
-import { isDexTxRouteEnabled } from "@/lib/protocol-flags";
 import { txPermitsFor } from "@/lib/tx-send/permit";
 import { WITHDRAW_OUTPUTS, type PositionKey } from "@/lib/unified-positions/model";
 
@@ -26,7 +25,7 @@ import { WITHDRAW_OUTPUTS, type PositionKey } from "@/lib/unified-positions/mode
  * the adapter (a stranger gets 404 POSITION_NOT_FOUND).
  * Solana steps come back with the tx-send permits for the requesting wallet (relay send + on-chain check after a
  * wallet error). Jupiter goes through the browser relay when the body carries `jupiterRelay`. Nothing is signed or
- * sent here. Behind DEX_TX_ROUTE_ENABLED (off in production → 404). Per-IP rate limited (all ops, plus a tighter
+ * sent here. Per-IP rate limited (all ops, plus a tighter
  * `positions` limit; in-memory per instance, see dex-route-rate-limit.ts) → 429.
  */
 const NO_STORE = { "Cache-Control": "no-store" } as const;
@@ -207,12 +206,18 @@ async function run(adapter: DexAdapter, op: Op, body: unknown): Promise<Response
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ dex: string; op: string }> }) {
-  if (!isDexTxRouteEnabled()) return notFound();
   const { dex, op } = await params;
   if (dexRouteRateLimited(request, op)) {
     return Response.json({ error: "Too many requests. Please wait a minute.", code: "RATE_LIMITED" }, { status: 429, headers: { ...NO_STORE, "Retry-After": "60" } });
   }
   if (!isOp(op)) return notFound();
+  // A registered module may opt out of being served (`DexModule.enabled`). The route never names a DEX id:
+  // a disabled module 404s here, before `adapterFor`, so no adapter I/O runs.
+  if (dexRegistry.isDisabled(dex, op)) return notFound();
+  // Module hook (e.g. RHC shares the dedicated scan's per-IP bucket). 429s here, before adapterFor, so no I/O.
+  if (dexRegistry.isRateLimited(dex, op, request)) {
+    return Response.json({ error: "Too many requests. Please wait a minute." }, { status: 429, headers: { ...NO_STORE, "Retry-After": "60" } });
+  }
   const adapter = await dexRegistry.adapterFor(dex);
   if (!adapter) return notFound();
   return withJupiterRelay(request, async () => {

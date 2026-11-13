@@ -11,7 +11,7 @@ import {
 import { parsePairLabel, parseSolanaAddress, resolvePlanSelection } from "@/lib/lp-plan-selection";
 import { effectiveExit, planPoolTerms, projectPoolPlan } from "@/lib/lp-plan-pool-terms";
 import { lowPlanApr, pairLabelSymbols, planShareSymbol } from "@/lib/lp-plan-shares";
-import { dexDescriptors } from "@/lib/dex/client";
+import { dexDescriptors, uiFor } from "@/lib/dex/client";
 import { openUnavailableReason, type UnifiedProtocol } from "@/lib/unified-pools/model";
 import { APP_ROUTES } from "@/lib/public-urls";
 import { InkNav } from "@/components/ink";
@@ -22,10 +22,11 @@ import { OutcomePanel } from "./outcome-panel";
 import { PoolSelect } from "./pool-select";
 import { usePoolYield } from "./use-pool-yield";
 import { useRwaPairs } from "./use-rwa-pairs";
+import { shortAddress } from "@/lib/format/address";
 
 const FIELDS: readonly IntentField[] = ["amount", "days", "lossAlert", "exitAsset"];
 const DEFAULT_FIELD: IntentField = "amount";
-const shortId = (value: string) => `${value.slice(0, 4)}…${value.slice(-4)}`;
+const shortId = shortAddress;
 
 /** `?edit=` picks the open editor. Retired values from the goal-first layout fall back to the default. */
 function fieldFromParam(raw: string | null): IntentField {
@@ -75,6 +76,7 @@ export function PlanApp() {
   // Only a pool on the loaded list opens from here.
   const terms = useMemo(() => planPoolTerms({
     descriptor: protocol ? dexDescriptors.descriptorFor(protocol) : null,
+    useDescriptorPlanTerms: protocol ? uiFor(protocol).useDescriptorPlanTerms : false,
     listOpenReason: row
       ? (row.protocol ? openUnavailableReason({ protocol: row.protocol as UnifiedProtocol }) : null)
       : pairs.status === "loading"

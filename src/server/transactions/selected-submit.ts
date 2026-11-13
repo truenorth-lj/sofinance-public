@@ -8,6 +8,7 @@ import type { SelectedPermitInput } from "@/lib/selected-permit";
 import { simulateAndVerifySelectedTransaction } from "@/lib/selected-simulation";
 import { invalidatePositionHistoryCache } from "@/lib/position-history-cache";
 import { APP_SELECTED_SUBMIT, MCP_SELECTED_SUBMIT } from "./surface-policy";
+import { broadcastSignedTransaction } from "@/lib/broadcast-signed-transaction";
 
 type SelectedSubmitCommand = {
   transaction: VersionedTransaction;
@@ -55,18 +56,14 @@ export async function submitSelected(
     prepared,
     ...(app ? { useStateSnapshot: true } : {}),
   });
-  if (Date.now() >= input.expiresAt || await connection.getBlockHeight("confirmed") > input.lastValidBlockHeight) {
-    throw new Error("Signed transaction expired before broadcast");
-  }
-  const expectedSignature = bs58.encode(walletSignature);
-  const signature = await connection.sendRawTransaction(transaction.serialize(), {
-    skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3,
-  });
-  if (signature !== expectedSignature) {
-    throw new Error(app
+  const signature = await broadcastSignedTransaction({
+    connection, transaction, expectedSignature: bs58.encode(walletSignature),
+    expiry: { lastValidBlockHeight: input.lastValidBlockHeight, expiresAt: input.expiresAt },
+    expiredMessage: "Signed transaction expired before broadcast",
+    mismatchMessage: app
       ? "Dedicated RPC returned transaction signature mismatch"
-      : "RPC returned transaction signature mismatch");
-  }
+      : "RPC returned transaction signature mismatch",
+  });
   invalidatePositionHistoryCache(input.selection.positionMint);
   return signature;
 }

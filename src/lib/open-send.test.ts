@@ -184,7 +184,7 @@ describe("sendSignedOpenPosition", () => {
     connection.sendRawTransaction.mockResolvedValue("1".repeat(64));
     const mismatch = await failure(sendSignedOpenPosition(wallet, transaction, summaryFor()));
     expect(connection.sendRawTransaction).toHaveBeenCalledOnce();
-    expect(mismatch.cause).toEqual(new Error("RPC returned transaction signature mismatch"));
+    expect(mismatch.cause).toMatchObject({ name: "BroadcastSignatureMismatchError", message: "RPC returned transaction signature mismatch" });
     expect(mismatch.sent).toBeUndefined();
 
     connection.sendRawTransaction.mockRejectedValue(new Error("socket hang up"));

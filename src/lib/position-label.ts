@@ -1,6 +1,7 @@
 import "@/lib/engine-host";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import { uiPriceBPerAFromTick } from "@sofinance/engine/position-performance-math";
+import { shortAddress } from "@/lib/format/address";
 
 export type PositionLabelInput = {
   positionMint: string;
@@ -21,11 +22,7 @@ export type PositionLabelMetadata = Record<string, { symbol?: string | null } | 
 const EN_DASH = "–";
 
 /** Short mint for secondary text, e.g. `4PUe…bhEU`. */
-export function shortMint(mint: string): string {
-  const value = mint.trim();
-  if (value.length <= 8) return value;
-  return `${value.slice(0, 4)}…${value.slice(-4)}`;
-}
+export const shortMint = shortAddress;
 
 export function tokenSymbol(
   mint: string,

@@ -19,11 +19,9 @@ const POOL = "8k2c9Kiavx5pbWc2dmzhL7vFp11sLgMcKFfSueq8haAh";
 const POSITION = testKeypair(94).publicKey.toBase58();
 const MINT_A = "TSLAqBbv4CNCnzWFeB7LmydAyEiNMJtve7DYKLpdK4S";
 const MINT_B = "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB";
-const state = vi.hoisted(() => ({ dex: { status: 200, body: {} as unknown }, op: { status: 422, body: {} as unknown }, raydium: [] as unknown[], dexCalls: [] as [string, unknown][], routeOn: true, icons: null as unknown, hold: null as Promise<void> | null,
+const state = vi.hoisted(() => ({ dex: { status: 200, body: {} as unknown }, op: { status: 422, body: {} as unknown }, raydium: [] as unknown[], dexCalls: [] as [string, unknown][], icons: null as unknown, hold: null as Promise<void> | null,
   performance: { status: 200, body: {} as unknown }, walletHold: null as Promise<void> | null, positionsHold: null as Promise<void> | null, quoteAdd: { status: 200, body: {} as unknown } }));
 
-vi.mock("@/lib/protocol-flags", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/protocol-flags")>(),
-  isDexTxRouteEnabled: () => state.routeOn }));
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/app" }));
 vi.mock("../use-sol-usdc-price", () => ({ useSolUsdcPrices: () => ({ rate: null, usdcUsd: null }) }));
@@ -58,7 +56,7 @@ const raydiumRow = { positionMint: RAYDIUM_MINT, positionAccount: "p", poolId: P
 let container: HTMLDivElement; let root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); localStorage.clear(); resetTxNotices();
-  state.dex = { status: 200, body: { positions: [meteoraRow()] } }; state.raydium = []; state.dexCalls = []; state.routeOn = true; state.icons = null; state.hold = null; resetPositionOpLocks();
+  state.dex = { status: 200, body: { positions: [meteoraRow()] } }; state.raydium = []; state.dexCalls = []; state.icons = null; state.hold = null; resetPositionOpLocks();
   state.performance = { status: 200, body: performanceBody() }; state.walletHold = null; state.positionsHold = null;
   state.quoteAdd = { status: 200, body: {} };
   state.op = { status: 422, body: { error: "This pool pays farming rewards, and claiming them isn't available here yet.", code: "UNSUPPORTED" } };
@@ -474,16 +472,6 @@ describe("/app My positions with registry DEXes", () => {
     await render(LISTED);
     const [[label, options]] = groups() as [[string, string[]]];
     expect(label).toBe("Solana");
-    expect(options).toHaveLength(1);
-    expect(options[0]).not.toMatch(/Raydium|Meteora/);
-    expect(container.textContent).not.toContain("Meteora");
-  });
-
-  it("where the dex route is off (production today) nothing is requested and the page is the Raydium-only page", async () => {
-    state.routeOn = false; state.raydium = [raydiumRow];
-    await render(LISTED);
-    expect(state.dexCalls).toEqual([]);
-    const [[, options]] = groups() as [[string, string[]]];
     expect(options).toHaveLength(1);
     expect(options[0]).not.toMatch(/Raydium|Meteora/);
     expect(container.textContent).not.toContain("Meteora");

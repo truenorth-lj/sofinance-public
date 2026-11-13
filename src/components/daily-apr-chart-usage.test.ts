@@ -14,9 +14,14 @@ describe("daily APR chart wiring", () => {
   });
 
   it("keeps daily APR off the RWA pair cards (no per-card sparkline requests)", () => {
-    const src = readFileSync(resolve("src/components/unified-pools/unified-pools-panel.tsx"), "utf8");
-    expect(src).not.toContain("PoolAprSparkline");
-    expect(src).not.toContain("Daily APR");
+    for (const file of [
+      "src/components/unified-pools/unified-pools-panel.tsx",
+      "src/components/unified-pools/pool-card.tsx",
+    ]) {
+      const src = readFileSync(resolve(file), "utf8");
+      expect(src, file).not.toContain("PoolAprSparkline");
+      expect(src, file).not.toContain("Daily APR");
+    }
   });
 
   it("plans a pool from its daily APR series instead of synthetic sample paths", () => {
@@ -43,7 +48,7 @@ describe("daily APR chart wiring", () => {
   });
 
   it("exposes the sparse realized series on get_position_performance MCP output", () => {
-    const src = readFileSync(resolve("src/mcp/tools.ts"), "utf8");
+    const src = readFileSync(resolve("src/mcp/tools/positions.ts"), "utf8");
     expect(src).toContain("realizedFeeAprSeries: result.realizedFeeAprSeries");
   });
 });

@@ -29,4 +29,4 @@ export function meteoraFailedOnChainMessage(kind: "setup" | "deposit" | "close")
   return "Closing failed on chain. The position is still yours; please try again.";
 }
 
-export const solscanTxUrl = (signature: string) => `https://solscan.io/tx/${signature}`;
+export { solscanTxUrl } from "@/lib/format/explorer";

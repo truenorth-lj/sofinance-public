@@ -380,8 +380,8 @@ describe("automatic cleanup after a new compound", () => {
     mocks.sign.mockImplementationOnce(async (tx: VersionedTransaction) => { tx.sign([testKeypair(1)]); return tx; })
       .mockImplementationOnce(() => new Promise<VersionedTransaction>((_resolve, reject) => { rejectCleanup = reject; }));
     const harvest = () => container.querySelector('section[aria-label="Harvest"]')!;
-    const freshAmounts = "0 " + fixture.state.mintA.slice(0, 5) + "…" + fixture.state.mintA.slice(-5) +
-      " + 0.000002 " + fixture.state.mintB.slice(0, 5) + "…" + fixture.state.mintB.slice(-5);
+    const freshAmounts = "0 " + fixture.state.mintA.slice(0, 4) + "…" + fixture.state.mintA.slice(-4) +
+      " + 0.000002 " + fixture.state.mintB.slice(0, 4) + "…" + fixture.state.mintB.slice(-4);
     await render();
     const previousHarvest = harvest().textContent;
     await act(async () => { controller.compound(); });

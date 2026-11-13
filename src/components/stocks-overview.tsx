@@ -15,6 +15,7 @@ import type { PositionPerformanceReport } from "@/lib/position-performance-repor
 import { changeTone, formatChangePct, formatShares, formatShortDate, formatUsd } from "@/lib/stock-performance-format";
 import { groupByStock, portfolioTotals, type StockRow } from "@/lib/stock-portfolio";
 import { StockFootnote, StockPerformanceTiles, StockTile, StockTotalRow } from "./stock-performance-tiles";
+import { shortAddress } from "@/lib/format/address";
 
 type Loaded = { report: PositionPerformanceReport | null; error: boolean };
 
@@ -145,7 +146,7 @@ export function StocksOverview({ positions, selectedPositionKey, onSelectPositio
 
 type LoadedPosition = { position: OverviewPosition; report: PositionPerformanceReport };
 
-const shortId = (id: string) => id.length > 12 ? `${id.slice(0, 6)}…${id.slice(-4)}` : id;
+const shortId = shortAddress;
 
 function StockPools({ positions, selectedPositionKey, onSelectPosition, selectionDisabled }: { positions: LoadedPosition[] } & PositionSelection) {
   const groups = new Map<string, { id: string; label: string; source: string; positions: LoadedPosition[] }>();

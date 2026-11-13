@@ -81,12 +81,14 @@ describe("readMintSafety: settings opening does not handle yet (the engine's poo
     data.writeDoubleLE(newMultiplier, 170 + 48);
     return connection(meteoraAccounts({ [WBTC]: { ...accounts[WBTC]!, owner: TOKEN_2022_PROGRAM_ID.toBase58(), data: data.toString("base64") } })).conn;
   };
-  it("flags a balance multiplier other than 1, in the same read", async () => {
-    const result = await readMintSafety(scaled(1.02, 1.02), [WBTC]);
+  it("flags a non-finite balance multiplier, in the same read", async () => {
+    const result = await readMintSafety(scaled(Number.POSITIVE_INFINITY, 1), [WBTC]);
     expect(result.get(WBTC)).toEqual({ freezeAuthority: false, blockReasons: [], unsupported: ["ScaledUiAmount multiplier not 1"] });
   });
-  it("a multiplier of exactly 1 is fine", async () => {
+  it("a finite multiplier, including values other than 1, is fine", async () => {
     expect((await readMintSafety(scaled(1, 1), [WBTC])).get(WBTC)?.unsupported).toEqual([]);
+    expect((await readMintSafety(scaled(1.0009, 1.0017), [WBTC])).get(WBTC)?.unsupported).toEqual([]);
+    expect((await readMintSafety(scaled(1.02, 1.02), [WBTC])).get(WBTC)?.unsupported).toEqual([]);
   });
 });
 

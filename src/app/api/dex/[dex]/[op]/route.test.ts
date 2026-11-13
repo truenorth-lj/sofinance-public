@@ -2,13 +2,20 @@ import { ComputeBudgetProgram, Keypair, TransactionMessage, VersionedTransaction
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
-const fake = vi.hoisted(() => ({ adapter: null as null | Record<string, unknown>, ids: [] as string[] }));
+const fake = vi.hoisted(() => {
+  const box = {
+    adapter: null as null | Record<string, unknown>,
+    ids: [] as string[],
+    adapterFor: vi.fn(async (id: string) => (box.ids.includes(id) ? box.adapter : null)),
+  };
+  return box;
+});
 vi.mock("@/lib/dex", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/dex")>();
-  return { ...original, dexRegistry: { ...original.dexRegistry, adapterFor: async (id: string) => (fake.ids.includes(id) ? fake.adapter : null) } };
+  return { ...original, dexRegistry: { ...original.dexRegistry, adapterFor: (id: string) => fake.adapterFor(id) } };
 });
 
-import { DexError } from "@/lib/dex";
+import { DexError, dexRegistry } from "@/lib/dex";
 import { dexDescriptors } from "@/lib/dex/client";
 import { DEX_POSITIONS_REQUESTS_PER_IP_PER_MINUTE, DEX_ROUTE_REQUESTS_PER_IP_PER_MINUTE, resetDexRouteRateLimit } from "@/lib/dex-route-rate-limit";
 import { POST } from "./route";
@@ -28,6 +35,7 @@ const call = (op: string, body: unknown, dex = "some-dex", ip = "203.0.113.1") =
 describe("POST /api/dex/[dex]/[op]", () => {
   beforeEach(() => {
     resetDexRouteRateLimit();
+    fake.adapterFor.mockClear();
     vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", "development");
     vi.stubEnv("JUPITER_API_KEY", "route-test-secret");
     fake.ids = ["some-dex"];
@@ -345,5 +353,109 @@ describe("POST /api/dex/[dex]/[op]", () => {
     fake.adapter = { ...fake.adapter, listPositions: vi.fn(async () => []) };
     expect((await call("positions", { owner: owner.toBase58() })).status).toBe(200);
     expect((await call("positions", { owner: owner.toBase58() }, "nope")).status).toBe(404);
+  });
+
+  it("Meteora positions and performance requests are identical to before the enabled gate", async () => {
+    expect(dexRegistry.isDisabled("meteora-dlmm", "positions")).toBe(false);
+    expect(dexRegistry.isDisabled("meteora-dlmm", "performance")).toBe(false);
+    const listPositions = vi.fn(async (wallet: string) => [{ key: `meteora-dlmm:${wallet}` }]);
+    const performance = vi.fn(async (positionKey: string) => ({
+      key: positionKey, depositedUsd: 1, withdrawnUsd: 0, feesClaimedUsd: 0, feesUnclaimedUsd: 0,
+      currentValueUsd: 1, pnlUsd: 1, partial: false,
+    }));
+    fake.ids = ["meteora-dlmm"];
+    fake.adapter = { descriptor: dexDescriptors.descriptorFor("meteora-dlmm"), listPositions, performance };
+    const ownerAddress = owner.toBase58();
+    const positionsResponse = await call("positions", { owner: ownerAddress }, "meteora-dlmm");
+    expect(positionsResponse.status).toBe(200);
+    expect(await positionsResponse.json()).toEqual({ positions: [{ key: `meteora-dlmm:${ownerAddress}` }] });
+    expect(listPositions).toHaveBeenCalledTimes(1);
+    expect(listPositions).toHaveBeenCalledWith(ownerAddress);
+    expect(fake.adapterFor).toHaveBeenCalledWith("meteora-dlmm");
+    const performanceResponse = await call("performance", { positionKey: "meteora-dlmm:P" }, "meteora-dlmm");
+    expect(performanceResponse.status).toBe(200);
+    expect(await performanceResponse.json()).toMatchObject({ key: "meteora-dlmm:P", partial: false });
+    expect(performance).toHaveBeenCalledTimes(1);
+    expect(performance).toHaveBeenCalledWith("meteora-dlmm:P");
+  });
+
+  it("404s every Orca op without loading the adapter, in production, preview and development", async () => {
+    const ops: { op: string; body: unknown }[] = [
+      { op: "positions", body: { owner: owner.toBase58() } },
+      { op: "performance", body: { positionKey: "orca-whirlpool:P" } },
+      { op: "quote-open", body: { request: openRequest } },
+      { op: "open-ranges", body: { poolId: openRequest.poolId } },
+      { op: "open", body: { request: openRequest, step: 1, priorSignatures: [] } },
+      { op: "quote-add", body: { owner: owner.toBase58(), positionKey: "orca-whirlpool:P", input: { token: "Mint111111111111111111111111111111111111111", amountRaw: "100" } } },
+      { op: "add", body: { owner: owner.toBase58(), positionKey: "orca-whirlpool:P", input: { token: "Mint111111111111111111111111111111111111111", amountRaw: "100" }, step: 1, priorSignatures: [] } },
+      { op: "withdraw", body: { owner: owner.toBase58(), positionKey: "orca-whirlpool:P", fraction: 1, output: "pool-tokens", step: 1, priorSignatures: [] } },
+      { op: "claim", body: { owner: owner.toBase58(), positionKey: "orca-whirlpool:P", step: 1, priorSignatures: [] } },
+      { op: "compound", body: { owner: owner.toBase58(), positionKey: "orca-whirlpool:P", step: 1, priorSignatures: [] } },
+      { op: "recovery", body: { wallet: owner.toBase58(), positionKey: "orca-whirlpool:P", step: 1, priorSignatures: [] } },
+    ];
+    // Even if a test double is registered, a disabled module must 404 before adapterFor.
+    fake.ids = ["orca-whirlpool"];
+    fake.adapter = { descriptor: dexDescriptors.descriptorFor("orca-whirlpool"), listPositions: vi.fn(), performance: vi.fn(), quoteOpen: vi.fn(), prepareOpen: vi.fn() };
+    for (const env of ["production", "preview", "development", ""]) {
+      vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", env);
+      vi.stubEnv("VERCEL_ENV", env);
+      for (const { op, body } of ops) {
+        fake.adapterFor.mockClear();
+        const response = await call(op, body, "orca-whirlpool");
+        expect(response.status, `${env} ${op}`).toBe(404);
+        expect(await response.json()).toEqual({ error: "Not found" });
+        expect(fake.adapterFor, `${env} ${op} must not load the adapter`).not.toHaveBeenCalled();
+        expect(fake.adapter.listPositions).not.toHaveBeenCalled();
+        expect(fake.adapter.performance).not.toHaveBeenCalled();
+        expect(fake.adapter.quoteOpen).not.toHaveBeenCalled();
+        expect(fake.adapter.prepareOpen).not.toHaveBeenCalled();
+      }
+    }
+  });
+
+  it("serves Uniswap v4 RHC generic positions and 404s every write op without loading the adapter, in production, preview and development", async () => {
+    const positionKey = "uniswap-v4-rhc:1";
+    const evmOwner = "0x2222222222222222222222222222222222222222";
+    const listed = [{ key: "uniswap-v4-rhc:4072237", source: "uniswap-v4-rhc", nativeId: "4072237" }];
+    const writeOps: { op: string; body: unknown }[] = [
+      { op: "performance", body: { positionKey } },
+      { op: "quote-open", body: { request: openRequest } },
+      { op: "open-ranges", body: { poolId: openRequest.poolId } },
+      { op: "open", body: { request: openRequest, step: 1, priorSignatures: [] } },
+      { op: "quote-add", body: { owner: evmOwner, positionKey, input: { token: evmOwner, amountRaw: "100" } } },
+      { op: "add", body: { owner: evmOwner, positionKey, input: { token: evmOwner, amountRaw: "100" }, step: 1, priorSignatures: [] } },
+      { op: "withdraw", body: { owner: evmOwner, positionKey, fraction: 1, output: "pool-tokens", step: 1, priorSignatures: [] } },
+      { op: "claim", body: { owner: evmOwner, positionKey, step: 1, priorSignatures: [] } },
+      { op: "compound", body: { owner: evmOwner, positionKey, step: 1, priorSignatures: [] } },
+      { op: "recovery", body: { wallet: evmOwner, positionKey, step: 1, priorSignatures: [] } },
+    ];
+    fake.ids = ["uniswap-v4-rhc"];
+    fake.adapter = {
+      descriptor: dexDescriptors.descriptorFor("uniswap-v4-rhc"),
+      listPositions: vi.fn(async () => listed),
+      performance: vi.fn(), quoteOpen: vi.fn(), prepareOpen: vi.fn(), prepareWithdraw: vi.fn(),
+    };
+    for (const env of ["production", "preview", "development", ""]) {
+      vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", env);
+      vi.stubEnv("VERCEL_ENV", env);
+      fake.adapterFor.mockClear();
+      (fake.adapter.listPositions as ReturnType<typeof vi.fn>).mockClear();
+      const positions = await call("positions", { owner: evmOwner }, "uniswap-v4-rhc");
+      expect(positions.status, `${env} positions`).toBe(200);
+      expect(await positions.json()).toEqual({ positions: listed });
+      expect(fake.adapterFor, `${env} positions loads the adapter`).toHaveBeenCalled();
+      expect(fake.adapter.listPositions).toHaveBeenCalledWith(evmOwner);
+      for (const { op, body } of writeOps) {
+        fake.adapterFor.mockClear();
+        const response = await call(op, body, "uniswap-v4-rhc");
+        expect(response.status, `${env} ${op}`).toBe(404);
+        expect(await response.json()).toEqual({ error: "Not found" });
+        expect(fake.adapterFor, `${env} ${op} must not load the adapter`).not.toHaveBeenCalled();
+        expect(fake.adapter.performance).not.toHaveBeenCalled();
+        expect(fake.adapter.quoteOpen).not.toHaveBeenCalled();
+        expect(fake.adapter.prepareOpen).not.toHaveBeenCalled();
+        expect(fake.adapter.prepareWithdraw).not.toHaveBeenCalled();
+      }
+    }
   });
 });

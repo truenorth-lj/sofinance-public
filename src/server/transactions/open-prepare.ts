@@ -1,6 +1,6 @@
 import "@/lib/engine-host";
 import "server-only";
-import { buildAndSimulateOpenPosition } from "@sofinance/engine/open-atomic";
+import { getProtocolAdapter } from "@sofinance/engine/protocols/registry";
 import type { OpenPositionSelection } from "@sofinance/engine/open-state";
 import type { OpenRangeInput } from "@sofinance/engine/open-range";
 import { issueOpenPositionPermit } from "@/lib/open-permit";
@@ -40,10 +40,10 @@ export async function prepareOpen(command: OpenPrepareCommand, readSigningSecret
   }
   const minContextSlot = credit?.slot;
   const build = () => profile === APP_OPEN_PREPARE
-    ? withFeeEstimateRetry(() => buildAndSimulateOpenPosition(
+    ? withFeeEstimateRetry(() => getProtocolAdapter().buildAndSimulateOpenPosition(
       wallet, selection, amount, range, floorBps, toleranceBps, { enforceResaleFloor: false, nftMint, ...(minContextSlot ? { minContextSlot } : {}) },
     ))
-    : buildAndSimulateOpenPosition(wallet, selection, amount, range, floorBps, toleranceBps, { nftMint });
+    : getProtocolAdapter().buildAndSimulateOpenPosition(wallet, selection, amount, range, floorBps, toleranceBps, { nftMint });
   const { summary, transaction } = feePaidUpstream ? await runWithSwapFeePaidUpstream(build) : await build();
   if (credit) {
     // Single use: recorded against this open's blockhash before the fee-free transaction leaves the server.

@@ -29,6 +29,7 @@ import { OpenPositionForm } from "../open-position/open-position-form";
 import { useTxPipeline } from "../transactions/use-tx-pipeline";
 import { feeLine, openRentLines, TxStatus, tokenAccountRentLine } from "../unified-positions/registry-tools";
 import { useWalletConnection } from "../wallet-connection";
+import { useTxWallet } from "../use-tx-wallet";
 
 /** Slippage for the swap legs of an open (code constant; PR10 rule: no new env flags). */
 const OPEN_SLIPPAGE_BPS = 50;
@@ -145,8 +146,8 @@ export type RegistryOpenModalProps = {
 };
 
 export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClose }: RegistryOpenModalProps) {
-  const { address: wallet, connected, connect, signTransaction, signAndSendTransaction } = useWalletConnection();
-  const txWallet = useMemo(() => (wallet ? { address: wallet, signTransaction, signAndSendTransaction } : null), [wallet, signTransaction, signAndSendTransaction]);
+  const { address: wallet, connected, connect } = useWalletConnection();
+  const txWallet = useTxWallet();
   const adapter = useMemo(() => dexTxAdapter("open"), []);
   const tx = useTxPipeline(adapter, txWallet, { scope: `open:${pool.key}`, inlineErrors: true });
   const relayStore = useRef(createJupiterRelayStore());

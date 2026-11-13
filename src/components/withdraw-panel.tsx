@@ -12,6 +12,7 @@ import type { WithdrawPrepared, WithdrawSummary, WithdrawRequest } from "@sofina
 import { assertWithdrawHistory, readWithdrawHistory, writeWithdrawHistory, withdrawCheckpointKey, WithdrawHistoryError, WITHDRAW_HISTORY_ERROR, type WithdrawHistory, type WithdrawCheckpoint as Checkpoint } from "@/lib/withdraw-checkpoint";
 import { CANCEL_CHECK_PENDING_COPY, CHECKING_SOLANA_COPY, sendAndTrack, solscanTxUrl, TxRunError, useCancelCheckPending } from "@/lib/tx-pipeline";
 import { WITHDRAW_OUTPUTS, type WithdrawOutput } from "@/lib/unified-positions/model";
+import { shortAddress } from "@/lib/format/address";
 
 export const WITHDRAW_EXPIRED_MESSAGE = "This withdrawal expired before Solana included it, so nothing moved. Tap Try again to sign a fresh one.";
 
@@ -306,7 +307,7 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   </div>}
   {(historyError || error) && <p role="alert" className="mt-3 rounded-2xl border border-lemon/60 bg-lemon/10 p-3 text-sm text-lemon">{historyError || error}</p>}
   <p role="status" aria-live="polite" className="mt-3 text-sm text-smoke">{busy && <LoaderCircle aria-hidden className="mr-2 inline h-4 w-4 animate-spin" />}{!busy && cancelPending ? CANCEL_CHECK_PENDING_COPY : progress}</p>
-  {!busy && completed.length>0 && <p data-testid="withdraw-solscan" className="mt-1 flex flex-wrap gap-x-3 text-sm text-cream/80">{completed.map((signature,i)=><a key={signature} href={solscanTxUrl(signature)} target="_blank" rel="noreferrer" className="underline">{completed.length>1?`View step ${i+1} on Solscan`:"View on Solscan"} ({signature.slice(0,5)}…{signature.slice(-5)})</a>)}</p>}
+  {!busy && completed.length>0 && <p data-testid="withdraw-solscan" className="mt-1 flex flex-wrap gap-x-3 text-sm text-cream/80">{completed.map((signature,i)=><a key={signature} href={solscanTxUrl(signature)} target="_blank" rel="noreferrer" className="underline">{completed.length>1?`View step ${i+1} on Solscan`:"View on Solscan"} ({shortAddress(signature)})</a>)}</p>}
   {checkpoint && !busy && <p data-testid="withdraw-interrupted" role="status" className="mt-3 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{interruptedWithdrawMessage(checkpoint.prepared.summary.stage)}</p>}
   {checkpoint ? <button disabled={busy || !!historyError || !historyRead} onClick={()=>{if(checkpoint.prepared.summary.requiresSecondConfirmation)setConfirmation(true);else void run();}} className="mt-3 rounded-full bg-lemon px-5 py-3 text-ink">Resume withdrawal</button> : error===WITHDRAW_EXPIRED_MESSAGE ? <button disabled={busy || !!historyError || !historyRead} onClick={()=>void run()} className="mt-3 rounded-full bg-lemon px-5 py-3 text-ink">Try again</button> : <>
    <button type="button" disabled={busy || !!historyError || !historyRead} aria-busy={previewing} onClick={()=>void showPreview()} className="mt-3 rounded-full border px-5 py-3 disabled:opacity-50">{previewing?"Calculating…":"Preview"}</button>

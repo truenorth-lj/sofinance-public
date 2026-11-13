@@ -16,11 +16,8 @@
 import { createHash } from "node:crypto";
 import { PublicKey, type ParsedTransactionWithMeta } from "@solana/web3.js";
 import bs58 from "bs58";
-import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { ORCA_WHIRLPOOL_PROGRAM_ID } from "@sofinance/engine/protocols/orca/constants";
-import type { PositionCashflowEvent, PositionEventContext } from "./position-performance-events";
-
-type HistoryInstruction = ParsedTransactionWithMeta["transaction"]["message"]["instructions"][number];
+import { actualTransferAmount, type HistoryInstruction, type PositionCashflowEvent, type PositionEventContext } from "./position-performance-events";
 
 const disc = (name: string) => createHash("sha256").update(`global:${name}`).digest().subarray(0, 8).toString("hex");
 const eventDisc = (name: string) => createHash("sha256").update(`event:${name}`).digest().subarray(0, 8).toString("hex");
@@ -80,25 +77,6 @@ function instructionDisc(instruction: HistoryInstruction): { disc: string; data:
   }
 }
 
-/** Sum of SPL / Token-2022 transfers source → destination, or null when a matching receipt is malformed. */
-function transferred(instructions: readonly HistoryInstruction[], source: string | undefined, destination: string | undefined,
-  mint: string, authority: string | undefined): bigint | null {
-  if (!source || !destination || !authority) return null;
-  let total = 0n;
-  for (const instruction of instructions) {
-    if (![TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58()].includes(instruction.programId.toBase58())) continue;
-    if (!("parsed" in instruction)) return null;
-    const { type, info } = instruction.parsed;
-    if (info?.source !== source || info?.destination !== destination) continue;
-    if (type !== "transferChecked" && type !== "transfer") return null;
-    if (info.authority !== authority) return null;
-    if (type === "transferChecked" && info.mint !== mint) return null;
-    const amount = type === "transferChecked" ? info.tokenAmount?.amount : info.amount;
-    if (typeof amount !== "string" || !/^\d+$/.test(amount)) return null;
-    total += BigInt(amount);
-  }
-  return total;
-}
 
 type LiquidityEvent = { kind: "increase" | "decrease"; liquidity: bigint; amountA: bigint; amountB: bigint };
 
@@ -173,10 +151,10 @@ export function parseOrcaPositionCashflowEvents(
     const receipts = inner ?? (Array.isArray(transaction.meta.innerInstructions) ? [] : undefined);
     if (!receipts) unsupported("transfer receipts are unavailable");
     const deposit = flow.kind === "increase";
-    const amountA = deposit ? transferred(receipts, account(layout.ownerA), context.vaultA, context.mintA, account(layout.authority))
-      : transferred(receipts, context.vaultA, account(layout.ownerA), context.mintA, context.poolId);
-    const amountB = deposit ? transferred(receipts, account(layout.ownerB), context.vaultB, context.mintB, account(layout.authority))
-      : transferred(receipts, context.vaultB, account(layout.ownerB), context.mintB, context.poolId);
+    const amountA = deposit ? actualTransferAmount(receipts, account(layout.ownerA), context.vaultA, context.mintA, account(layout.authority))
+      : actualTransferAmount(receipts, context.vaultA, account(layout.ownerA), context.mintA, context.poolId);
+    const amountB = deposit ? actualTransferAmount(receipts, account(layout.ownerB), context.vaultB, context.mintB, account(layout.authority))
+      : actualTransferAmount(receipts, context.vaultB, account(layout.ownerB), context.mintB, context.poolId);
     if (amountA === null || amountB === null) unsupported("transfer amounts are unavailable");
 
     if (flow.kind === "collect") {

@@ -18,6 +18,7 @@ import { assertRhcOpenAttempt, clearRhcOpenAttempt, isRhcTxHash, parseRhcOpenAtt
 import type { RhcPoolView } from "@/lib/rhc-wallet/pool-view";
 import type { EvmWallet } from "@/lib/rhc-wallet/evm-session";
 import { OpenPositionFormFields, RhcRangeButtons } from "./open-position/open-position-form";
+import { shortAddress } from "@/lib/format/address";
 
 /**
  * Robinhood Chain (4663) Uniswap v4 open-position flow (design §6 PR5), behind `RHC_UNIV4_TRADING_ENABLED`.
@@ -427,7 +428,7 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
       notes={<>
         {wallet && !walletChanged ? (
           <div className="mt-3 text-xs text-smoke">
-            <p data-testid="wallet-address">{wallet.name}: {wallet.address.slice(0, 6)}…{wallet.address.slice(-4)} · Robinhood Chain</p>
+            <p data-testid="wallet-address">{wallet.name}: {shortAddress(wallet.address)} · Robinhood Chain</p>
             {balances ? <p data-testid="wallet-balances">
               {fmtBalance(balances.eth)} ETH · {fmtBalance(balances.tokens[pool.token0.address.toLowerCase()] ?? 0n, pool.token0.decimals)} {pool.token0.symbol} · {fmtBalance(balances.tokens[pool.token1.address.toLowerCase()] ?? 0n, pool.token1.decimals)} {pool.token1.symbol}
             </p> : null}

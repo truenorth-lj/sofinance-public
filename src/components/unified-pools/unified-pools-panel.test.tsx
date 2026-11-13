@@ -20,7 +20,6 @@ const mocks = vi.hoisted(() => ({
   modal: vi.fn(),
   registryModal: vi.fn(),
   calc: vi.fn(),
-  routeEnabled: true,
   openOverride: null as null | { supported: false; reason: string },
   planOverride: null as null | { supported: false; reason: string },
 }));
@@ -38,7 +37,6 @@ vi.mock("./use-pools-apr7d", () => ({
     mocks.state[pool.poolAddress] ?? (pool.poolAddress in mocks.apr ? { status: "ready", aprPct: mocks.apr[pool.poolAddress]!, rangeLabel: "Standard", lowConfidence: false, avgDailyVolumeUsd: null } : { status: "missing", reason: "No 7-day estimate" })])),
 }));
 vi.mock("../wallet-connection", () => ({ useWalletConnection: () => ({ connected: mocks.connected, connect: mocks.connect }) }));
-vi.mock("@/lib/protocol-flags", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/protocol-flags")>(), isDexTxRouteEnabled: () => mocks.routeEnabled }));
 vi.mock("./registry-open-modal", () => ({ RegistryOpenModal: (props: { pool: { poolAddress: string }; descriptor: { id: string } }) => {
   mocks.registryModal(props.pool.poolAddress, props.descriptor.id); return null; } }));
 vi.mock("./share-calc-dialog", () => ({ ShareCalcDialog: (props: { pool: { poolAddress: string }; open: { kind: string } }) => {
@@ -68,7 +66,6 @@ beforeEach(() => {
   mocks.icons = undefined;
   mocks.planOverride = null;
   mocks.openOverride = null;
-  mocks.routeEnabled = true;
   mocks.registryModal.mockReset();
   mocks.connect.mockReset();
   mocks.modal.mockReset();
@@ -90,7 +87,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const PROD: UnifiedPoolFlags = { orca: false, meteora: false, meteoraOpen: false, rhc: true };
+const PROD: UnifiedPoolFlags = { orca: false, meteora: false, rhc: true };
 async function render(flags: UnifiedPoolFlags = PROD, props: { deepLinkPool?: string; onOpenRhc?: (r: unknown) => void } = {}) {
   await act(async () => { root.render(createElement(UnifiedPoolsPanel, { flags, onOpenRhc: props.onOpenRhc ?? vi.fn(), deepLinkPool: props.deepLinkPool })); });
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
@@ -135,7 +132,7 @@ describe("UnifiedPoolsPanel", () => {
   });
 
   it("Meteora pools open the registry dialog from their open capability (no grey button, no Raydium modal, no link out)", async () => {
-    await render({ orca: false, meteora: true, meteoraOpen: true, rhc: true });
+    await render({ orca: false, meteora: true, rhc: true });
     expect(shown()).toContain("solana:met1");
     const card = container.querySelector('[data-pool="solana:met1"]')!;
     expect(card.querySelector("[data-testid=open-disabled]")).toBeNull();
@@ -151,30 +148,24 @@ describe("UnifiedPoolsPanel", () => {
     expect(mocks.connect).toHaveBeenCalledTimes(1); // not connected: the wallet prompt opens with the dialog
   });
 
-  it("an unsupported open capability shows its reason and no button; the dex route off shows no button either", async () => {
+  it("an unsupported open capability shows its reason and no button", async () => {
     mocks.openOverride = { supported: false, reason: "Opening needs a newer pool version." };
-    await render({ orca: false, meteora: true, meteoraOpen: true, rhc: true });
-    let card = container.querySelector('[data-pool="solana:met1"]')!;
+    await render({ orca: false, meteora: true, rhc: true });
+    const card = container.querySelector('[data-pool="solana:met1"]')!;
     expect(card.querySelector("button[aria-label^='Open position in']")).toBeNull();
     expect(card.textContent).toContain("Opening needs a newer pool version.");
-    mocks.openOverride = null; mocks.routeEnabled = false;
-    await act(async () => root.unmount()); root = createRoot(container);
-    await render({ orca: false, meteora: true, meteoraOpen: true, rhc: true });
-    card = container.querySelector('[data-pool="solana:met1"]')!;
-    expect(card.querySelector("button[aria-label^='Open position in']")).toBeNull();
-    expect(card.textContent).toContain("Opening is not available yet");
     expect(mocks.registryModal).not.toHaveBeenCalled();
   });
 
   it("a deep link to a Meteora pool opens the registry dialog without asking the wallet to connect", async () => {
-    await render({ orca: false, meteora: true, meteoraOpen: true, rhc: true }, { deepLinkPool: "met1" });
+    await render({ orca: false, meteora: true, rhc: true }, { deepLinkPool: "met1" });
     await vi.waitFor(() => expect(mocks.registryModal).toHaveBeenCalledWith("met1", "meteora-dlmm"));
     expect(mocks.connect).not.toHaveBeenCalled();
   });
 
   it("an unsupported plan capability greys the calculator button with its reason", async () => {
     mocks.planOverride = { supported: false, reason: "Planning needs a paid data feed for this pool." };
-    await render({ orca: false, meteora: true, meteoraOpen: true, rhc: true });
+    await render({ orca: false, meteora: true, rhc: true });
     const card = container.querySelector('[data-pool="solana:met1"]')!;
     expect(card.querySelector("button[aria-haspopup=dialog]")).toBeNull();
     const greyed = card.querySelector<HTMLElement>("[data-testid=plan-unavailable]")!;
@@ -458,7 +449,9 @@ describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {
     const rhc = card(`robinhood:${rhcSpec.poolId.toLowerCase()}`);
     expect(rhc.querySelector("[data-testid=highest-range]")).toBeNull();
     expect(rhc.querySelector("a[href^='/app/plan']")).toBeNull();
-    expect(rhc.textContent).not.toMatch(/Raydium|Phantom/);
+    expect(rhc.querySelector("button[aria-haspopup=dialog]")).toBeNull();
+    expect(rhc.querySelector("[data-testid=plan-unavailable]")).toBeNull();
+    expect(rhc.textContent).not.toMatch(/Raydium|Phantom|Calculate/);
   });
 
   it("shows the Robinhood Chain card's stored icons (no Raydium fallback; letter avatars without one), in the card and list views", async () => {

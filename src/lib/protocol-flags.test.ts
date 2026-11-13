@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { deployTarget, isOrcaDiscoveryEnabled, isOrcaPositionsEnabled, isRhcUniv4DiscoveryEnabled, isRhcUniv4TxBuildEnabled, ORCA_DISCOVERY_ENABLED, ORCA_POSITIONS_ENABLED, RHC_UNIV4_DISCOVERY_ENABLED, RHC_UNIV4_TX_BUILD_ENABLED, isRhcUniv4TradingEnabled, RHC_UNIV4_TRADING_ENABLED, isRhcUniv4WalletSigningEnabled, RHC_UNIV4_WALLET_SIGNING_ENABLED, isRhcApr7dEnabled, RHC_APR7D_ENABLED, isMeteoraDlmmDiscoveryEnabled, METEORA_DLMM_DISCOVERY_ENABLED, isMeteoraDlmmTxBuildEnabled, METEORA_DLMM_TX_BUILD_ENABLED, isMeteoraDlmmWalletSigningEnabled, METEORA_DLMM_WALLET_SIGNING_ENABLED, isMeteoraRwaScanEnabled, METEORA_RWA_SCAN_ENABLED, isMeteoraRwaListEnabled, METEORA_RWA_LIST_ENABLED, isDexTxRouteEnabled, DEX_TX_ROUTE_ENABLED } from "./protocol-flags";
+import { deployTarget, isOrcaDiscoveryEnabled, isOrcaPositionsEnabled, isRhcUniv4DiscoveryEnabled, isRhcUniv4TxBuildEnabled, ORCA_DISCOVERY_ENABLED, ORCA_POSITIONS_ENABLED, RHC_UNIV4_DISCOVERY_ENABLED, RHC_UNIV4_TX_BUILD_ENABLED, isRhcUniv4TradingEnabled, RHC_UNIV4_TRADING_ENABLED, isRhcUniv4WalletSigningEnabled, RHC_UNIV4_WALLET_SIGNING_ENABLED, isRhcApr7dEnabled, RHC_APR7D_ENABLED, isMeteoraDlmmDiscoveryEnabled, METEORA_DLMM_DISCOVERY_ENABLED, isMeteoraDlmmTxBuildEnabled, METEORA_DLMM_TX_BUILD_ENABLED, isMeteoraDlmmWalletSigningEnabled, METEORA_DLMM_WALLET_SIGNING_ENABLED } from "./protocol-flags";
 
 describe("ORCA_DISCOVERY_ENABLED", () => {
   it("is a code constant that is OFF in production", () => {
@@ -55,22 +55,6 @@ describe("ORCA_DISCOVERY_ENABLED", () => {
     expect(isRhcApr7dEnabled("production")).toBe(true);
   });
 
-  it("METEORA_RWA_SCAN_ENABLED (Meteora in the RWA pool scan) is a frozen code constant that is ON in every target", () => {
-    expect(METEORA_RWA_SCAN_ENABLED).toEqual({ production: true, preview: true, development: true });
-    expect(Object.isFrozen(METEORA_RWA_SCAN_ENABLED)).toBe(true);
-    expect(isMeteoraRwaScanEnabled("production")).toBe(true);
-    expect(isMeteoraRwaScanEnabled("development")).toBe(true);
-  });
-
-  it("METEORA_RWA_LIST_ENABLED is frozen, ON in production, and only ever on together with the scan", () => {
-    expect(Object.isFrozen(METEORA_RWA_LIST_ENABLED)).toBe(true);
-    expect(METEORA_RWA_LIST_ENABLED.production).toBe(true);
-    for (const target of ["production", "preview", "development"] as const) {
-      expect(METEORA_RWA_LIST_ENABLED[target], `${target}: SCAN and LIST ship together`).toBe(METEORA_RWA_SCAN_ENABLED[target]);
-      expect(isMeteoraRwaListEnabled(target)).toBe(METEORA_RWA_LIST_ENABLED[target] && METEORA_RWA_SCAN_ENABLED[target]);
-    }
-  });
-
   it("METEORA_DLMM_DISCOVERY_ENABLED is a frozen code constant that is OFF in production", () => {
     expect(METEORA_DLMM_DISCOVERY_ENABLED).toEqual({ production: false, preview: true, development: true });
     expect(Object.isFrozen(METEORA_DLMM_DISCOVERY_ENABLED)).toBe(true);
@@ -117,6 +101,8 @@ describe("Raydium and Orca are untouched by Robinhood Chain", () => {
       "src/lib/rwa-pairs.ts", "src/lib/rwa-store.ts", "src/app/api/rwa-pairs/route.ts",
       "src/lib/pool-range-apr.ts", "src/app/api/pool-range-apr/route.ts", "src/lib/orca-pairs.ts", "src/lib/orca-range-apr.ts",
       "src/lib/orca-positions.ts", "src/mcp/tools.ts",
+      "src/mcp/tools/positions.ts", "src/mcp/tools/quotes.ts", "src/mcp/tools/open.ts",
+      "src/mcp/tools/compound.ts", "src/mcp/tools/withdraw.ts", "src/mcp/tools/rwa.ts",
     ]) {
       const source = readFileSync(join(process.cwd(), file), "utf8");
       expect(source, file).not.toMatch(/rhc|uniswap|rpc-evm|viem/i);
@@ -139,7 +125,7 @@ describe("Raydium, Orca and Robinhood Chain are untouched by Meteora", () => {
   });
 
   it("MCP tools reach Meteora position readers only behind METEORA_DLMM_DISCOVERY_ENABLED", () => {
-    const source = readFileSync(join(process.cwd(), "src/mcp/tools.ts"), "utf8");
+    const source = readFileSync(join(process.cwd(), "src/mcp/tools/positions.ts"), "utf8");
     const calls = source.split("\n").filter((line) => /(listMeteoraPositions|readMeteoraPositionRangeFacts|getMeteoraPositionPerformance)\(/.test(line));
     expect(calls).toHaveLength(3);
     for (const line of calls) expect(line).toContain("isMeteoraDlmmDiscoveryEnabled()");
@@ -156,13 +142,6 @@ describe("deployTarget env resolution", () => {
     expect(isRhcUniv4WalletSigningEnabled()).toBe(false);
     vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", ""); vi.stubEnv("VERCEL_ENV", "");
     expect(deployTarget()).toBe("production");
-    vi.unstubAllEnvs();
-  });
-  it("DEX_TX_ROUTE_ENABLED is a frozen code constant, on by default in production with no env (Meteora live, LJ 2026-11-01)", () => {
-    expect(DEX_TX_ROUTE_ENABLED).toEqual({ production: true, preview: true, development: true });
-    expect(Object.isFrozen(DEX_TX_ROUTE_ENABLED)).toBe(true);
-    vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", ""); vi.stubEnv("VERCEL_ENV", "");
-    expect(isDexTxRouteEnabled()).toBe(true);
     vi.unstubAllEnvs();
   });
   it("the legacy Meteora flags stay off in production", () => {

@@ -28,7 +28,7 @@ describe("comparePositions", () => {
 
 describe("groupPositions", () => {
   it("Solana first, then Robinhood Chain; drops empty chains", () => {
-    const groups = groupPositions([p({ chain: "robinhood-chain", source: "rhc-uniswap-v4", nativeId: "7" }), p({ nativeId: "s" })]);
+    const groups = groupPositions([p({ chain: "robinhood-chain", source: "uniswap-v4-rhc", nativeId: "7" }), p({ nativeId: "s" })]);
     expect(groups.map((g) => g.label)).toEqual(["Solana", "Robinhood Chain"]);
     expect(groupPositions([p({})]).map((g) => g.chain)).toEqual(["solana"]);
   });
@@ -40,7 +40,7 @@ describe("groupPositions", () => {
 
 describe("groupPositions keepEmpty and option labels", () => {
   it("keeps an empty chain group when asked (Solana + Robinhood Chain wallet with no RHC positions)", () => {
-    const groups = groupPositions([p({ nativeId: "a" })], { solana: ["raydium-clmm"], "robinhood-chain": ["rhc-uniswap-v4"] }, ["solana", "robinhood-chain"]);
+    const groups = groupPositions([p({ nativeId: "a" })], { solana: ["raydium-clmm"], "robinhood-chain": ["uniswap-v4-rhc"] }, ["solana", "robinhood-chain"]);
     expect(groups.map((g) => [g.label, g.positions.length])).toEqual([["Solana", 1], ["Robinhood Chain", 0]]);
     expect(groupPositions([], {}, ["robinhood-chain"]).map((g) => g.chain)).toEqual(["robinhood-chain"]);
   });

@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/nextjs";
 import { isJupiterUpstreamError, JupiterHttpError, JupiterUnavailableError, JUPITER_NO_ROUTE_CODE } from "@sofinance/engine/jupiter/errors";
 import { isMinContextSlotError, RpcHttpError, RpcUnavailableError } from "@sofinance/engine/rpc/errors";
 import { RPC_BEHIND_CODE } from "@sofinance/engine/rpc/context-slot";
+import { isWalletRejection } from "@/lib/tx-pipeline/errors";
 import { publicErrorCode, CompoundSendError, sanitizePublicError } from "../public-error";
 import { AMOUNT_TOO_SMALL_CODE, JUPITER_CLIENT_ERROR_CODE, SMALL_LEG_MOVES_PRICE_CODE } from "../selected-amount-error";
 import { isSentryEnabled } from "./runtime";
@@ -20,9 +21,13 @@ export function sentryErrorClass(error: unknown): string {
   return "unknown";
 }
 
+/**
+ * Same classifier as the UI: only an explicit wallet rejection (`isWalletRejection`, codes 4001 / 5000
+ * or rejection wording with no other code) is treated as a user cancel and not reported. A Phantom
+ * code-400 "rejected by user" after a broadcast is not a rejection.
+ */
 export function isUserRejectedError(error: unknown): boolean {
-  const text = error instanceof Error ? `${error.name} ${error.message}` : String(error);
-  return /user rejected|rejected the request|wallet.*reject|cancelled by user|user cancel/i.test(text);
+  return isWalletRejection(error);
 }
 
 const USER_FACING_SELECTED_CODES = new Set([

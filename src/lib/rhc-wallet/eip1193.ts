@@ -1,4 +1,5 @@
 import { isRhcUniv4WalletSigningEnabled } from "@/lib/protocol-flags";
+import { isWalletRejection } from "@/lib/tx-pipeline/errors";
 
 /**
  * Minimal injected EVM wallet access for Robinhood Chain (design §6 PR5). MetaMask first via EIP-6963, then
@@ -58,7 +59,7 @@ const errorCode = (error: unknown) => (error && typeof error === "object" && "co
 export async function connectEvmWallet(provider: Eip1193Provider): Promise<`0x${string}`> {
   let accounts: unknown;
   try { accounts = await provider.request({ method: "eth_requestAccounts" }); } catch (error) {
-    if (errorCode(error) === 4001) throw new WalletRequestError("rejected", "Connection request was rejected in the wallet");
+    if (isWalletRejection(error)) throw new WalletRequestError("rejected", "Connection request was rejected in the wallet");
     throw new WalletRequestError("unknown", "Wallet connection failed");
   }
   const first = Array.isArray(accounts) ? accounts[0] : null;
@@ -78,12 +79,12 @@ export async function ensureRobinhoodChain(provider: Eip1193Provider): Promise<v
     await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: RHC_CHAIN_ID_HEX }] });
   } catch (error) {
     const code = errorCode(error);
-    if (code === 4001) throw new WalletRequestError("rejected", "Network switch was rejected in the wallet");
+    if (isWalletRejection(error)) throw new WalletRequestError("rejected", "Network switch was rejected in the wallet");
     if (code !== 4902 && code !== -32603) throw new WalletRequestError("chain", "Could not switch to Robinhood Chain");
     try {
       await provider.request({ method: "wallet_addEthereumChain", params: [RHC_ADD_CHAIN_PARAMS] });
     } catch (addError) {
-      if (errorCode(addError) === 4001) throw new WalletRequestError("rejected", "Adding Robinhood Chain was rejected in the wallet");
+      if (isWalletRejection(addError)) throw new WalletRequestError("rejected", "Adding Robinhood Chain was rejected in the wallet");
       throw new WalletRequestError("chain", "Could not add Robinhood Chain");
     }
   }
@@ -103,7 +104,7 @@ export async function guardedWalletRequest(provider: Eip1193Provider, method: st
   if (!SIGNING_METHODS.has(method)) throw new WalletRequestError("unknown", `Not a signing method: ${method}`);
   if (!isRhcUniv4WalletSigningEnabled()) throw new WalletRequestError("signing-disabled", SIGNING_DISABLED_MESSAGE);
   try { return await provider.request({ method, params }); } catch (error) {
-    if (errorCode(error) === 4001) throw new WalletRequestError("rejected", "You rejected the request in your wallet. Nothing was sent.");
+    if (isWalletRejection(error)) throw new WalletRequestError("rejected", "You rejected the request in your wallet. Nothing was sent.");
     if (method === "eth_sendTransaction" || method === "wallet_sendCalls") {
       const gas = plainWalletError(error) === NOT_ENOUGH_GAS_MESSAGE
         ? "Not enough ETH on Robinhood Chain to pay for gas. Add some ETH only after checking wallet activity. " : "";

@@ -1,10 +1,10 @@
 import { transactionIntermediateAccounts, verifyIntermediateAccounts } from "./swap/instructions";
 import { getPdaPersonalPositionAddress, PersonalPositionLayout } from "@raydium-io/raydium-sdk-v2";
-import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, unpackAccount } from "@solana/spl-token";
-import { Connection, PublicKey, SystemProgram, VersionedTransaction, type AccountInfo } from "@solana/web3.js";
+import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { Connection, PublicKey, SystemProgram, VersionedTransaction } from "@solana/web3.js";
 import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT } from "./ids";
 import { walletPriorityFeeAllowance } from "./wallet-priority-fee";
-import { simulatedInputSpendMatches } from "./amount";
+import { assertOriginalPoolAssetsUnspent, decodeTokenAccount, simulatedInputSpend, simulationTokenDust } from "./simulate-token-accounts";
 import type { OpenPoolState } from "./open-state";
 import { withContextSlotRetry } from "./rpc/context-slot";
 
@@ -31,14 +31,6 @@ type VerifyInput = {
    */
   minContextSlot?: number;
 };
-
-function decodeToken(info: AccountInfo<Buffer> | null, key: PublicKey, program: PublicKey, wallet: PublicKey, mint: PublicKey) {
-  if (!info) return 0n;
-  if (!info.owner.equals(program)) throw new Error("Token ATA program mismatch");
-  const account = unpackAccount(key, info, program);
-  if (!account.owner.equals(wallet) || !account.mint.equals(mint)) throw new Error("Token ATA owner or mint mismatch");
-  return account.amount;
-}
 
 export function simulatedAccount(
   account: { data: string[]; owner: string; lamports: number; executable: boolean; rentEpoch?: number } | null | undefined,
@@ -84,7 +76,7 @@ export async function simulateAndVerifyOpenTransaction(input: VerifyInput) {
   const beforeInfos = snapshot.value;
   const before = new Map(keys.map((key, index) => [key.toBase58(), beforeInfos[index] ?? null] as const));
   const tokenBefore = (key: PublicKey, program: string, mint: string) =>
-    decodeToken(before.get(key.toBase58()) ?? null, key, new PublicKey(program), wallet, new PublicKey(mint));
+    decodeTokenAccount(before.get(key.toBase58()) ?? null, key, new PublicKey(program), wallet, new PublicKey(mint));
   if (tokenBefore(nftAta, TOKEN_2022_PROGRAM_ID.toBase58(), nftMint.toBase58()) !== 0n) {
     throw new Error("Position NFT mint ATA already exists with a balance");
   }
@@ -126,15 +118,17 @@ export async function simulateAndVerifyOpenTransaction(input: VerifyInput) {
     return [key.toBase58(), account] as const;
   }));
   const tokenAfter = (key: PublicKey, program: string, mint: string) =>
-    decodeToken(afterInfo.get(key.toBase58()) ?? null, key, new PublicKey(program), wallet, new PublicKey(mint));
+    decodeTokenAccount(afterInfo.get(key.toBase58()) ?? null, key, new PublicKey(program), wallet, new PublicKey(mint));
   if (tokenAfter(nftAta, TOKEN_2022_PROGRAM_ID.toBase58(), nftMint.toBase58()) !== 1n) {
     throw new Error("Simulated position NFT was not minted to the wallet ATA");
   }
   const afterA = tokenAfter(ataA, state.programA, state.mintA);
   const afterB = tokenAfter(ataB, state.programB, state.mintB);
   const inputAfter = inputAta ? tokenAfter(inputAta, state.inputTokenProgram!, state.inputMint) : null;
-  if (state.inputMint !== state.mintA && afterA < amountA) throw new Error("Simulation used original pool asset A");
-  if (state.inputMint !== state.mintB && afterB < amountB) throw new Error("Simulation used original pool asset B");
+  assertOriginalPoolAssetsUnspent({
+    inputMint: state.inputMint, mintA: state.mintA, mintB: state.mintB,
+    afterA, afterB, amountA, amountB,
+  });
   const solRead = simulated?.[addresses.length - 1];
   // A zero-SOL wallet has no system account; in sponsored mode that reads back as 0 lamports.
   const solResult = solRead ?? (sponsoredWallet && solBefore === 0 ? { lamports: 0 } : null);
@@ -149,16 +143,10 @@ export async function simulateAndVerifyOpenTransaction(input: VerifyInput) {
   if (solDebit < 0n || solDebit > debitCap || BigInt(solResult.lamports) + walletPriority < minRemainingSol) {
     throw new Error("Simulated SOL expenditure or remaining balance exceeds limit");
   }
-  let spentInput: bigint | null = null;
-  if (inputBefore !== null && inputAfter !== null) {
-    spentInput = inputBefore - inputAfter;
-    const directInput = state.inputMint === state.mintA || state.inputMint === state.mintB;
-    if (spentInput <= 0n || spentInput > requested || (!directInput && !simulatedInputSpendMatches(spentInput, requested))) {
-      throw new Error(`Simulated input asset expenditure does not match limit (spent ${spentInput} of ${requested}, direct=${directInput})`);
-    }
-  } else if (solDebit < requested - 1n) {
-    throw new Error("Simulated native SOL expenditure below selected input amount");
-  }
+  const spentInput = simulatedInputSpend({
+    inputBefore, inputAfter, requested,
+    inputMint: state.inputMint, mintA: state.mintA, mintB: state.mintB, solDebit,
+  });
   return {
     unitsConsumed: simulation.value.unitsConsumed,
     endingLiquidity: position.liquidity.toString(),
@@ -166,7 +154,9 @@ export async function simulateAndVerifyOpenTransaction(input: VerifyInput) {
     solDebitLamports: solDebit.toString(),
     positionAccount: positionAccount.toBase58(),
     nftAta: nftAta.toBase58(),
-    dustA: (afterA - amountA + (state.inputKind === "token" && state.inputMint === state.mintA ? requested : 0n)).toString(),
-    dustB: (afterB - amountB + (state.inputKind === "token" && state.inputMint === state.mintB ? requested : 0n)).toString(),
+    ...simulationTokenDust({
+      afterA, afterB, amountA, amountB, inputKind: state.inputKind,
+      inputMint: state.inputMint, mintA: state.mintA, mintB: state.mintB, requested,
+    }),
   };
 }

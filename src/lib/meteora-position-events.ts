@@ -19,11 +19,8 @@
 
 import { PublicKey, type ParsedTransactionWithMeta } from "@solana/web3.js";
 import bs58 from "bs58";
-import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { METEORA_DLMM_PROGRAM_ID } from "@sofinance/engine/protocols/meteora/constants";
-import type { PositionCashflowEvent, PositionEventContext } from "./position-performance-events";
-
-type HistoryInstruction = ParsedTransactionWithMeta["transaction"]["message"]["instructions"][number];
+import { reserveFlow, type HistoryInstruction, type PositionCashflowEvent, type PositionEventContext } from "./position-performance-events";
 
 /** Anchor `emit_cpi!` instruction tag (sha256("anchor:event")[..8]). */
 export const METEORA_EVENT_IX_TAG = "e445a52e51cb9a1d";
@@ -90,23 +87,6 @@ function decodeEvent(instruction: HistoryInstruction): DecodedEvent | null {
   }
 }
 
-/** Sum of token transfers into (`to`) or out of (`from`, signed by the pool) a reserve, or null when a receipt is malformed. */
-function reserveFlow(instructions: readonly HistoryInstruction[], reserve: string, mint: string, poolId: string, direction: "in" | "out"): bigint | null {
-  let total = 0n;
-  for (const instruction of instructions) {
-    if (![TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58()].includes(instruction.programId.toBase58())) continue;
-    if (!("parsed" in instruction)) return null;
-    const { type, info } = instruction.parsed;
-    if ((direction === "in" ? info?.destination : info?.source) !== reserve) continue;
-    if (type !== "transferChecked" && type !== "transfer") return null;
-    if (direction === "out" && info.authority !== poolId) return null;
-    if (type === "transferChecked" && info.mint !== mint) return null;
-    const amount = type === "transferChecked" ? info.tokenAmount?.amount : info.amount;
-    if (typeof amount !== "string" || !/^\d+$/.test(amount)) return null;
-    total += BigInt(amount);
-  }
-  return total;
-}
 
 /**
  * Parse one landed transaction for a Meteora position. Failed transactions

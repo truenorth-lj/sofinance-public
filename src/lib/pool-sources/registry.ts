@@ -6,7 +6,7 @@ import type { PoolSource } from "./types";
 /** Every Solana pool source the RWA scan knows, in discovery order. Add a protocol here (SCAN_DESIGN.md §9). */
 export const POOL_SOURCES: readonly PoolSource[] = Object.freeze([raydiumPoolSource, meteoraPoolSource]);
 
-/** Every registered source (Meteora's discovery and APR lane are gated in the cron by `METEORA_RWA_SCAN_ENABLED`). */
+/** Every registered source (Meteora's discovery and APR lane run in the cron). */
 export function scanPoolSources(): readonly PoolSource[] {
   return POOL_SOURCES;
 }

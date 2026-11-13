@@ -50,15 +50,22 @@ export async function feeSwapLeg(input: {
   const feeInRoute = inputFee;
   const constraints = typeof input.constraints === "number" ? { maxAccounts: input.constraints } : input.constraints;
   const request = (routeConstraints = constraints) => input.build !== false
-    ? buildRoute(wallet, inputMint, outputMint, swapAmount, input.native ?? false, routeConstraints,
-      input.signal, input.budget, undefined, platformFeeBps, input.maxPriceImpactBps, undefined, feeMint)
-    : quoteRoute(inputMint, outputMint, swapAmount, routeConstraints, input.signal, input.budget, platformFeeBps, ...(input.maxPriceImpactBps === undefined ? [] : [input.maxPriceImpactBps]));
+    ? buildRoute(wallet, inputMint, outputMint, swapAmount, {
+        wrapAndUnwrapSol: input.native ?? false, constraints: routeConstraints, signal: input.signal,
+        budget: input.budget, platformFeeBps, maxPriceImpactBps: input.maxPriceImpactBps, feeMint,
+      })
+    : quoteRoute(inputMint, outputMint, swapAmount, {
+        constraints: routeConstraints, signal: input.signal, budget: input.budget, platformFeeBps,
+        ...(input.maxPriceImpactBps === undefined ? {} : { maxPriceImpactBps: input.maxPriceImpactBps }),
+      });
   if (input.quote && input.build !== false) {
     if (input.quote.inputMint !== inputMint || input.quote.outputMint !== outputMint || BigInt(input.quote.inAmount) !== swapAmount) {
       throw new Error("Swap route does not match selected assets or pool");
     }
-    const route = await buildRoute(wallet, inputMint, outputMint, swapAmount, input.native ?? false, constraints, input.signal,
-      input.budget, undefined, platformFeeBps, input.maxPriceImpactBps, input.quote, feeMint);
+    const route = await buildRoute(wallet, inputMint, outputMint, swapAmount, {
+      wrapAndUnwrapSol: input.native ?? false, constraints, signal: input.signal, budget: input.budget,
+      platformFeeBps, maxPriceImpactBps: input.maxPriceImpactBps, quoted: input.quote, feeMint,
+    });
     return { inputMint, outputMint, spend, feeAmount, feeInRoute, minOut: BigInt(route.otherAmountThreshold), route };
   }
   const route = input.ownPool && isPoolTokenPair(input.ownPool, inputMint, outputMint)

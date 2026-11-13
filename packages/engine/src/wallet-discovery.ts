@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { ClmmConfigLayout, CLMM_PROGRAM_ID, getPdaPersonalPositionAddress, PersonalPositionLayout, PoolInfoLayout, TickUtil } from "@raydium-io/raydium-sdk-v2";
 import {
   AccountState, ExtensionType, getDefaultAccountState, getExtensionTypes, getPausableConfig,
-  getScaledUiAmountConfig, getTransferFeeConfig, getTransferHook, getAssociatedTokenAddressSync,
+  getTransferFeeConfig, getTransferHook, getAssociatedTokenAddressSync,
   TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, unpackAccount, unpackMint,
 } from "@solana/spl-token";
 import { Connection, PublicKey, type AccountInfo } from "@solana/web3.js";
@@ -10,6 +10,7 @@ import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT } from "./ids";
 import { resolveMintSymbols, symbolFromMintAccount } from "./mint-symbols";
 import { positionSide } from "./quote-math";
 import { rpcConnection } from "./rpc";
+import { scaledUiAmountOutOfTolerance } from "./token-safety";
 
 const POSITION_DISCRIMINATOR = createHash("sha256").update("account:PersonalPositionState").digest().subarray(0, 8);
 const POOL_DISCRIMINATOR = createHash("sha256").update("account:PoolState").digest().subarray(0, 8);
@@ -51,8 +52,7 @@ export function inputMintReason(mint: ReturnType<typeof unpackMint>) {
   if (transferFee && (transferFee.newerTransferFee.transferFeeBasisPoints > 0 || transferFee.olderTransferFee.transferFeeBasisPoints > 0)) return "Current transfer fee exists";
   const hook = getTransferHook(mint);
   if (hook?.programId && !hook.programId.equals(PublicKey.default)) return "Current TransferHook exists";
-  const scaled = getScaledUiAmountConfig(mint);
-  if (scaled && (scaled.multiplier !== 1 || scaled.newMultiplier !== 1)) return "ScaledUiAmount multiplier is not 1";
+  if (scaledUiAmountOutOfTolerance(mint)) return "ScaledUiAmount multiplier is not 1";
   return null;
 }
 

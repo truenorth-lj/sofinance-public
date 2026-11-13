@@ -5,6 +5,7 @@ import { type SimLog, simulateCalls } from "./open-chain";
 import { EXIT_SLIPPAGE_BPS, GAS_BUFFER_BPS } from "./open-constants";
 import type { TxView } from "./open-flow";
 import { buildExitModifyLiquidities, checkExitPlan, ExitGuardError } from "./tx-exit-posm";
+import { shortAddress } from "../../address";
 
 /**
  * Server-side exit (close position) flow, PR7 (design §3.8 / §6.2). One step, no signing or broadcast here:
@@ -172,7 +173,7 @@ export async function prepareExit(deps: ExitFlowDeps, req: { user: Address; toke
     [pos, block] = await Promise.all([readPosition(client, req.tokenId), client.getBlock({ blockTag: "latest" })]);
   } catch { return failed("rpc", "Could not read Robinhood Chain right now. Please try again in a moment."); }
   if (!pos) return failed("not-found", `Position #${req.tokenId} does not exist or is already closed.`);
-  if (!isAddressEqual(pos.owner, user)) return failed("not-owner", `Position #${req.tokenId} belongs to another wallet (${pos.owner.slice(0, 6)}…${pos.owner.slice(-4)}), not the connected one.`);
+  if (!isAddressEqual(pos.owner, user)) return failed("not-owner", `Position #${req.tokenId} belongs to another wallet (${shortAddress(pos.owner)}), not the connected one.`);
   const pool = pos.pool;
   if (!pool) return failed("pool-not-allowlisted", `Position #${req.tokenId} is not in a pool SoFinance supports (only SPCX / SPCXon).`);
   const nowSeconds = Number(block.timestamp);

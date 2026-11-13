@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isToolSupported, NOT_AVAILABLE_MESSAGE, parsePositionKey, positionKey, SUPPORTED, toolUnavailableReason, unsupported, type SourceCapabilities } from "./model";
+import { isToolSupported, NOT_AVAILABLE_MESSAGE, parsePositionKey, positionKey, positionKeysEqual, SUPPORTED, toolUnavailableReason, unsupported, type SourceCapabilities } from "./model";
 
 const caps = (over: Partial<SourceCapabilities> = {}): SourceCapabilities => ({
   compound: SUPPORTED, performance: SUPPORTED, deposit: SUPPORTED, withdraw: { supported: true, partial: true }, withdrawOutputs: ["pool-tokens"],
@@ -7,14 +7,19 @@ const caps = (over: Partial<SourceCapabilities> = {}): SourceCapabilities => ({
 });
 
 describe("position keys", () => {
-  it("round-trips source:nativeId", () => {
-    const key = positionKey("rhc-uniswap-v4", "1234");
-    expect(key).toBe("rhc-uniswap-v4:1234");
-    expect(parsePositionKey(key)).toEqual({ source: "rhc-uniswap-v4", nativeId: "1234" });
+  it("round-trips source:nativeId and writes the canonical RHC spelling", () => {
+    const key = positionKey("uniswap-v4-rhc", "1234");
+    expect(key).toBe("uniswap-v4-rhc:1234");
+    expect(parsePositionKey(key)).toEqual({ source: "uniswap-v4-rhc", nativeId: "1234" });
     expect(parsePositionKey("raydium-clmm:AbC:x")).toEqual({ source: "raydium-clmm", nativeId: "AbC:x" });
   });
+  it("does not treat the retired rhc-uniswap-v4 spelling as a position key", () => {
+    expect(parsePositionKey("rhc-uniswap-v4:4077059")).toBeNull();
+    expect(parsePositionKey("uniswap-v4-rhc:4077059")).toEqual({ source: "uniswap-v4-rhc", nativeId: "4077059" });
+    expect(positionKeysEqual("rhc-uniswap-v4:4077059", "uniswap-v4-rhc:4077059")).toBe(false);
+  });
   it("rejects unknown sources and empty parts", () => {
-    for (const bad of ["", null, undefined, "nope:1", "raydium-clmm:", ":abc", "raydium-clmm"]) expect(parsePositionKey(bad)).toBeNull();
+    for (const bad of ["", null, undefined, "nope:1", "raydium-clmm:", ":abc", "raydium-clmm", "rhc-uniswap-v4:1"]) expect(parsePositionKey(bad)).toBeNull();
   });
 });
 

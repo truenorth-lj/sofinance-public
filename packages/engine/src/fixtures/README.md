@@ -40,6 +40,12 @@ positions on it (one in range, one above, one below) and the two tick arrays
 holding their boundary ticks. Public program state only; the position owners
 are not part of these accounts and no signatures or credentials are recorded.
 
+`orca-whirlpools-core-parity.json` holds exact outputs of `@orca-so/whirlpools-core@3.1.1`
+(`tickIndexToSqrtPrice`, `collectFeesQuote`, `decreaseLiquidityQuote`, `positionStatus`)
+recorded once on 2026-11-12 (Asia/Taipei) from main `c04bbd7d61d4c961f86fc01bf9b69f15d8fb765d`
+by `pnpm exec tsx record-orca-whirlpools-core-parity.ts` at the repo root, before that
+dependency was removed. The recorder is not in this tree. No wallets, signatures or credentials.
+
 `univ4-rhc-spcx-live.json` is a read-only capture (Robinhood Chain 4663, block
 100701103, 2026-10-29) of the allowlisted Uniswap v4 SPCX/SPCXon pool on the
 StablePairHook: StateView slot0 / liquidity, the hook's dynamic fee and fee
@@ -96,7 +102,8 @@ tests replay it through a fake RPC that fails on any key not in the capture.
 `spot-swap-mints-mainnet.json` holds the raw mint accounts (base64, public
 chain data) of 15 stock tokens (xStocks, Backpack, Ondo) read from Solana
 mainnet on 2026-11-04. Spot-swap tests run the mint checks on these exact
-bytes: the five tokens whose ScaledUiAmount multiplier is not 1 are refused,
+bytes: a finite ScaledUiAmount multiplier is accepted (including the
+five tokens that used to be refused solely for a tiny dividend multiplier),
 and permanent delegate / confidential transfer are accepted.
 
 `sol-swap-step-jupiter-route-tslax.json` is a live Jupiter route for a 0.1 SOL

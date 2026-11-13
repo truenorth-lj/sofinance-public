@@ -4,6 +4,8 @@ import type { ScannedPosition } from "@sofinance/engine/protocols/uniswap-v4/pos
 import { rhcPairLabel } from "@/lib/unified-pools/rows";
 import { NOT_AVAILABLE_MESSAGE, positionKey, unsupported, type PositionSource, type SourceCapabilities, type UnifiedPosition } from "../model";
 import { formatTickPriceRange, type PriceRange } from "../range";
+import { mergeRhcPositionLookups } from "@/lib/unified-positions/rhc-list";
+import { shortAddress } from "@/lib/format/address";
 
 /** One Robinhood Chain row: a wallet holding from the scan, or an NFT id opened in this browser / added by hand. */
 export type RhcNative = { lookup: PositionLookup; held: ScannedPosition | null; priceRange: PriceRange | null };
@@ -11,7 +13,7 @@ export type RhcDiscovery = { scanned: readonly ScannedPosition[]; lookups: reado
 
 const specFor = (poolId: string | null | undefined) =>
   poolId ? UNIV4_RHC_ALLOWLISTED_POOLS.find((spec) => spec.poolId.toLowerCase() === poolId.toLowerCase()) ?? null : null;
-const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+const short = shortAddress;
 
 /** Why this position cannot be closed here (same wording as the pools-page positions panel), or null. */
 export function rhcCloseBlockReason(native: RhcNative): string | null {
@@ -35,8 +37,8 @@ function rhcUnifiedPosition(lookup: PositionLookup, held: ScannedPosition | null
   // Every allowlisted pool is a StablePair hook pool.
   const priceRange = priceRangeOf(p, Boolean(spec) || Boolean(held?.stablePair));
   return {
-    key: positionKey("rhc-uniswap-v4", lookup.tokenId),
-    source: "rhc-uniswap-v4",
+    key: positionKey("uniswap-v4-rhc", lookup.tokenId),
+    source: "uniswap-v4-rhc",
     chain: "robinhood-chain",
     nativeId: lookup.tokenId,
     poolId: p?.poolId ?? "",
@@ -50,6 +52,14 @@ function rhcUnifiedPosition(lookup: PositionLookup, held: ScannedPosition | null
     liquidity: p ? p.liquidity : "0",
     native: { lookup, held, priceRange },
   };
+}
+
+
+/** Canonical listing mapper used by the DexModule `listPositions` and by the /app source (single path, no double list). */
+export function listRhcUnifiedPositions(discovery: RhcDiscovery | null | undefined): UnifiedPosition<RhcNative>[] {
+  const scanned = discovery?.scanned ?? [];
+  const { rows, scannedById } = mergeRhcPositionLookups(scanned, discovery?.lookups ?? []);
+  return rows.map((row) => rhcUnifiedPosition(row, scannedById.get(row.tokenId) ?? null));
 }
 
 const CAPABILITIES: SourceCapabilities = Object.freeze({
@@ -66,16 +76,12 @@ const CAPABILITIES: SourceCapabilities = Object.freeze({
 
 /** Uniswap v4 on Robinhood Chain: list (scan + local ids) and full Close only; the other tools are not built yet. */
 export const rhcPositionSource: PositionSource<RhcNative, RhcDiscovery> = Object.freeze({
-  id: "rhc-uniswap-v4",
+  id: "uniswap-v4-rhc",
   chain: "robinhood-chain",
   displayName: "Uniswap v4",
   capabilities: CAPABILITIES,
   /** Wallet holdings first (scan order, newest NFT first), then local ids the scan did not find (deduped by NFT id). */
-  fromDiscovery: (discovery) => {
-    const scanned = discovery?.scanned ?? [];
-    const seen = new Set(scanned.map((s) => s.tokenId));
-    return [...scanned.map((s) => rhcUnifiedPosition(s, s)), ...(discovery?.lookups ?? []).filter((l) => !seen.has(l.tokenId)).map((l) => rhcUnifiedPosition(l, null))];
-  },
+  fromDiscovery: listRhcUnifiedPositions,
   label: (position) => {
     const { lookup, priceRange } = position.native;
     const pair = lookup.position?.poolId ? rhcPairLabel(lookup.position.poolId, " / ") : null;

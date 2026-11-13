@@ -15,7 +15,7 @@ import { installLayoutMocks } from "../../support/layout-mocks";
 
 const widths = (process.env.LAYOUT_WIDTHS ?? "360").split(",").map(Number);
 const shots = process.env.LAYOUT_SHOTS;
-// Only routes that exist in production: /app/meteora and /app/rhc are behind server flags (404 / redirect when off).
+// Only routes that exist in production: /app/rhc is behind a server flag (404 / redirect when off). The legacy /app/meteora open page was retired.
 const PAGES = ["/", "/app", "/app/rwa-pairs", "/app/plan", "/app/ai", "/app/position-performance",
   "/docs", "/docs/fees", "/docs/fee-apr", "/docs/risks", "/docs/security", "/docs/withdraw", "/blog", "/blog/dex-evolution",
   "/faq", "/terms"];

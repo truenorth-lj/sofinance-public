@@ -136,7 +136,7 @@ describe("sendSignedCompoundTransaction: broadcast failures", () => {
   it("signature mismatch: sent is unknown (no sent flag), message says to verify on-chain", async () => {
     connection.sendRawTransaction.mockResolvedValue("1".repeat(64));
     const error = await failure(sendSignedCompoundTransaction(wallet, transaction, summaryFor()));
-    expect(error.cause).toEqual(new Error("RPC returned compound signature mismatch, please verify on-chain status"));
+    expect(error.cause).toMatchObject({ name: "BroadcastSignatureMismatchError", message: "RPC returned compound signature mismatch, please verify on-chain status" });
     expect(error.sent).toBeUndefined();
   });
 

@@ -7,6 +7,7 @@ import { VersionedTransaction } from "@solana/web3.js";
 import { LoaderCircle, CircleAlert, CheckCircle2 } from "lucide-react";
 import { InkHero, InkShell, InkCard, InkNav } from "@/components/ink";
 import { useWalletConnection } from "@/components/wallet-connection";
+import { useTxWallet } from "@/components/use-tx-wallet";
 import { notSentRetryMessage } from "@/lib/public-error";
 import { addMintSignature, preserveExtraSignatures } from "@/lib/open-signatures";
 import { plainTxError, sendAndTrack, TxNotSentError, TxRunError } from "@/lib/tx-pipeline";
@@ -18,15 +19,18 @@ import { useOpenAttempt } from "@/components/use-open-attempt";
 import { captureGrowthEvent, captureGrowthEventOnce } from "@/lib/analytics/client";
 import { openFailureProperties, openOutcomeFailureProperties } from "@/lib/analytics/errors";
 import { GROWTH_EVENTS, openEventProperties } from "@/lib/analytics/events";
+import { shortAddress } from "@/lib/format/address";
+import { solscanTxUrl } from "@/lib/format/explorer";
 
 type Status = "loading" | "expired" | "wallet-mismatch" | "ready" | "signing" | "checking" | "submitting" | "success" | "error";
 
-const short = (value: string) => `${value.slice(0, 5)}…${value.slice(-5)}`;
+const short = shortAddress;
 
 export default function SignPage() {
   const params = useParams<{ token: string }>();
   const router = useRouter();
-  const { address: wallet, connected, connect, disconnect, signTransaction, signAndSendTransaction } = useWalletConnection();
+  const { address: wallet, connected, connect, disconnect } = useWalletConnection();
+  const txWallet = useTxWallet();
   
   const [payload, setPayload] = useState<PendingSignPayload | null>(null);
   const open = useOpenAttempt(payload?.kind === "open-position" ? wallet : undefined);
@@ -107,7 +111,7 @@ export default function SignPage() {
   }, [signToken]);
 
   const handleSign = async () => {
-    if (!payload || !wallet || wallet !== payload.wallet) return;
+    if (!payload || !wallet || wallet !== payload.wallet || !txWallet) return;
     if (payload.kind === "open-position" && (!open.loaded || open.pending)) return;
     let openAttempt: OpenAttempt | null = null;
     let mint: EphemeralMint | undefined;
@@ -168,7 +172,7 @@ export default function SignPage() {
       const flow = payload.kind === "add-liquidity" ? "add" : payload.kind === "withdraw" ? "withdraw"
         : payload.kind === "open-position" ? "open" : "compound";
       const result = await sendAndTrack({
-        flow, wallet: { address: wallet, signTransaction, signAndSendTransaction },
+        flow, wallet: txWallet,
         successTitle: flow === "add" ? "Liquidity added" : flow === "withdraw" ? "Withdrawal confirmed"
           : flow === "open" ? "Position opened" : "Compound confirmed",
         storage: window.localStorage,
@@ -385,7 +389,7 @@ export default function SignPage() {
               <p className="text-sm font-medium text-mint">{payload?.kind === "open-position" ? "Original open-position transaction" : "Transaction submitted"}</p>
               <p className="mt-2 text-xs text-mint">
                 <a
-                  href={`https://solscan.io/tx/${verificationSignature}`}
+                  href={solscanTxUrl(verificationSignature)}
                   target="_blank"
                   rel="noreferrer"
                   className="underline"

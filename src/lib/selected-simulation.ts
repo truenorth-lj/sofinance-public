@@ -3,10 +3,10 @@ import { transactionIntermediateAccounts, verifyIntermediateAccounts } from "@so
 import "server-only";
 
 import { PersonalPositionLayout } from "@raydium-io/raydium-sdk-v2";
-import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID, unpackAccount } from "@solana/spl-token";
-import { Connection, PublicKey, VersionedTransaction, type AccountInfo } from "@solana/web3.js";
+import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { Connection, PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT } from "@sofinance/engine/ids";
-import { simulatedInputSpendMatches } from "@sofinance/engine/amount";
+import { assertOriginalPoolAssetsUnspent, decodeTokenAccount, simulatedInputSpend, simulationTokenDust } from "@sofinance/engine/simulate-token-accounts";
 import { walletPriorityFeeAllowance } from "@sofinance/engine/wallet-priority-fee";
 import { withContextSlotRetry } from "@sofinance/engine/rpc/context-slot";
 import type { SelectedPositionState } from "@sofinance/engine/selected-state";
@@ -17,14 +17,6 @@ type VerifyInput = {
   /** Prepared message; wallet-raised ComputeBudget priority is allowed up to 0.01 SOL extra. */
   prepared?: VersionedTransaction;
 };
-
-function decodeToken(info: AccountInfo<Buffer> | null, key: PublicKey, program: PublicKey, wallet: PublicKey, mint: PublicKey) {
-  if (!info) return 0n;
-  if (!info.owner.equals(program)) throw new Error("Token ATA program mismatch");
-  const account = unpackAccount(key, info, program);
-  if (!account.owner.equals(wallet) || !account.mint.equals(mint)) throw new Error("Token ATA owner or mint mismatch");
-  return account.amount;
-}
 
 export async function simulateAndVerifySelectedTransaction(input: VerifyInput) {
   const { connection, transaction, wallet, state, requested, expectedLiquidity, sigVerify } = input;
@@ -39,7 +31,7 @@ export async function simulateAndVerifySelectedTransaction(input: VerifyInput) {
   const beforeInfos = input.useStateSnapshot ? [] : (await connection.getMultipleAccountsInfoAndContext(keys, "confirmed")).value;
   const before = new Map(keys.map((key, index) => [key.toBase58(), beforeInfos[index] ?? null] as const));
   const tokenBefore = (key: PublicKey, program: string, mint: string) =>
-    decodeToken(before.get(key.toBase58()) ?? null, key, new PublicKey(program), wallet, new PublicKey(mint));
+    decodeTokenAccount(before.get(key.toBase58()) ?? null, key, new PublicKey(program), wallet, new PublicKey(mint));
   const nftBefore = input.useStateSnapshot ? (state.ownsNft ? 1n : 0n) : tokenBefore(nftAta, state.nftProgram, state.positionMint);
   if (nftBefore !== 1n) throw new Error("Selected position NFT ATA no longer held by wallet");
   const amountA = input.useStateSnapshot ? BigInt(state.balances.a) : tokenBefore(ataA, state.programA, state.mintA);
@@ -81,13 +73,15 @@ export async function simulateAndVerifySelectedTransaction(input: VerifyInput) {
       lamports: account.lamports, executable: account.executable, rentEpoch: account.rentEpoch ?? 0 }] as const;
   }));
   const tokenAfter = (key: PublicKey, program: string, mint: string) =>
-    decodeToken(afterInfo.get(key.toBase58()) ?? null, key, new PublicKey(program), wallet, new PublicKey(mint));
+    decodeTokenAccount(afterInfo.get(key.toBase58()) ?? null, key, new PublicKey(program), wallet, new PublicKey(mint));
   if (tokenAfter(nftAta, state.nftProgram, state.positionMint) !== 1n) throw new Error("Simulated selected position NFT left wallet");
   const afterA = tokenAfter(ataA, state.programA, state.mintA);
   const afterB = tokenAfter(ataB, state.programB, state.mintB);
   const inputAfter = inputAta ? tokenAfter(inputAta, state.inputTokenProgram!, state.inputMint) : null;
-  if (state.inputMint !== state.mintA && afterA < amountA) throw new Error("Simulation used original pool asset A");
-  if (state.inputMint !== state.mintB && afterB < amountB) throw new Error("Simulation used original pool asset B");
+  assertOriginalPoolAssetsUnspent({
+    inputMint: state.inputMint, mintA: state.mintA, mintB: state.mintB,
+    afterA, afterB, amountA, amountB,
+  });
   const solResult = simulated?.[addresses.length - 1];
   if (!solResult) throw new Error("Simulation did not read back wallet SOL account");
   const solDebit = BigInt(solBefore) - BigInt(solResult.lamports);
@@ -96,20 +90,16 @@ export async function simulateAndVerifySelectedTransaction(input: VerifyInput) {
   if (solDebit < 0n || solDebit > maxSolDebit || BigInt(solResult.lamports) < BigInt(MIN_SOL_LAMPORTS)) {
     throw new Error("Simulated SOL expenditure or remaining balance exceeds limit");
   }
-  let spentInput: bigint | null = null;
-  if (inputBefore !== null && inputAfter !== null) {
-    spentInput = inputBefore - inputAfter;
-    const directInput = state.inputMint === state.mintA || state.inputMint === state.mintB;
-    if (spentInput <= 0n || spentInput > requested || (!directInput && !simulatedInputSpendMatches(spentInput, requested))) {
-      throw new Error(`Simulated input asset expenditure does not match limit (spent ${spentInput} of ${requested}, direct=${directInput})`);
-    }
-  } else if (solDebit < requested - 1n) {
-    throw new Error("Simulated native SOL expenditure below selected input amount");
-  }
+  const spentInput = simulatedInputSpend({
+    inputBefore, inputAfter, requested,
+    inputMint: state.inputMint, mintA: state.mintA, mintB: state.mintB, solDebit,
+  });
   return {
     unitsConsumed: simulation.value.unitsConsumed, endingLiquidity: position.liquidity.toString(),
     spentInput: spentInput?.toString() || null, solDebitLamports: solDebit.toString(),
-    dustA: (afterA - amountA + (state.inputKind === "token" && state.inputMint === state.mintA ? requested : 0n)).toString(),
-    dustB: (afterB - amountB + (state.inputKind === "token" && state.inputMint === state.mintB ? requested : 0n)).toString(),
+    ...simulationTokenDust({
+      afterA, afterB, amountA, amountB, inputKind: state.inputKind,
+      inputMint: state.inputMint, mintA: state.mintA, mintB: state.mintB, requested,
+    }),
   };
 }

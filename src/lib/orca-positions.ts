@@ -10,19 +10,18 @@ import {
   orcaRangeSide, orcaUncollectedFees, readOrcaTickFeeGrowth, type OrcaPosition,
 } from "@sofinance/engine/protocols/orca/position";
 import {
-  ASSUMPTIONS_LABEL, computePositionPerformance, computeTokenNativeMetrics, PERFORMANCE_METHOD, TOKEN_NATIVE_ASSUMPTIONS,
+  computePositionPerformance, computeTokenNativeMetrics,
 } from "@sofinance/engine/position-performance-math";
 import { rpcConnection, rpcProvider, type RpcProvider } from "@sofinance/engine/rpc";
-import { fetchTokenPricesUsd, type TokenPriceQuote } from "@sofinance/engine/token-prices";
-import { buildStockPerformance } from "./stock-performance-build";
-import { getTokenMetadata } from "@sofinance/engine/token-metadata";
-import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
 import { parseOrcaPositionCashflowEvents } from "./orca-position-events";
 import { aggregateCashflowsForPosition, type PositionEventContext } from "./position-performance-events";
 import { fetchPositionHistoryTransactions, toChronological, type HistoryConnection } from "./position-performance-history";
-import { describePositionPricing, type PositionHistoryEvent, type PositionPerformanceResult } from "./position-performance";
+import { type PositionHistoryEvent, type PositionPerformanceResult } from "./position-performance";
+import {
+  assemblePerformanceResult, capMaxSignatures, PERFORMANCE_READ_TIMEOUT_MS,
+  priceAndLabel, resolveSymbols,
+} from "./position-performance-assemble";
 import type { PositionRangeFacts } from "./position-range-onchain";
-import { buildRealizedFeeAprSeries } from "./realized-fee-apr-series";
 import { matchWrapPairShape } from "./rwa-pairing";
 
 /**
@@ -41,7 +40,6 @@ const LIST_MAX_POSITIONS = 50;
 /** Upper bound on 1-unit token accounts checked for an Orca position (10 getMultipleAccounts batches). */
 const LIST_MAX_CANDIDATES = 1000;
 const MULTIPLE_ACCOUNTS_BATCH = 100;
-const DEFAULT_MAX_SIGNATURES = 100;
 
 type OrcaConnection = Pick<Connection, "getAccountInfo" | "getMultipleAccountsInfo" | "getTokenAccountsByOwner">;
 export type OrcaReadOptions = { connection?: OrcaConnection };
@@ -62,11 +60,27 @@ export type OrcaPositionSnapshot = {
   stateFingerprint: string;
 };
 
-/** Live position state, or null when the mint has no Orca position account. Throws for non-allowlisted pools. */
-async function readOrcaPositionSnapshot(positionMint: string, connection: OrcaConnection): Promise<OrcaPositionSnapshot | null> {
+async function loadOrcaPositionAccount(positionMint: string, connection: OrcaConnection) {
   const positionAccount = orcaPositionAddress(new PublicKey(positionMint).toBase58());
   const info = await connection.getAccountInfo(new PublicKey(positionAccount), "confirmed");
   if (!info || info.owner.toBase58() !== ORCA_WHIRLPOOL_PROGRAM_ID || !isOrcaPositionAccount(info.data)) return null;
+  return { positionAccount, info };
+}
+
+/**
+ * True when the mint has an Orca whirlpool position account. Does not check the
+ * pool allowlist (an unsupported pool still looks like Orca and later reads throw).
+ */
+export async function positionMintLooksLikeOrca(positionMint: string, options: OrcaReadOptions = {}): Promise<boolean> {
+  const connection = options.connection ?? rpcConnection();
+  return (await loadOrcaPositionAccount(positionMint, connection)) !== null;
+}
+
+/** Live position state, or null when the mint has no Orca position account. Throws for non-allowlisted pools. */
+async function readOrcaPositionSnapshot(positionMint: string, connection: OrcaConnection): Promise<OrcaPositionSnapshot | null> {
+  const loaded = await loadOrcaPositionAccount(positionMint, connection);
+  if (!loaded) return null;
+  const { positionAccount, info } = loaded;
   const position = decodeOrcaPosition(info.data);
   if (position.positionMint !== positionMint) throw new Error("Orca position NFT mint mismatch");
   const allow = allowlisted(position.whirlpool);
@@ -249,13 +263,13 @@ export type OrcaPerformanceOptions = {
  */
 export async function getOrcaPositionPerformance(positionMint: string, options: OrcaPerformanceOptions = {}): Promise<PositionPerformanceResult | null> {
   const started = Date.now();
-  const signal = AbortSignal.timeout(50_000);
+  const signal = AbortSignal.timeout(PERFORMANCE_READ_TIMEOUT_MS);
   const connection = options.connection ?? rpcConnection(undefined, { signal });
   const read = await readOrcaPosition(positionMint, { connection });
   if (!read) return null;
   const { snapshot } = read;
   const accountsMs = Date.now() - started;
-  const maxSignatures = Math.min(Math.max(1, options.maxSignatures ?? DEFAULT_MAX_SIGNATURES), 500);
+  const maxSignatures = capMaxSignatures(options.maxSignatures);
   const nowSeconds = options.nowSeconds ?? Math.floor(Date.now() / 1000);
   const fetcher = options.fetcher ?? fetch;
   const provider = options.provider ?? rpcProvider();
@@ -279,25 +293,11 @@ export async function getOrcaPositionPerformance(positionMint: string, options: 
   const openedAt = opened?.blockTime ?? null;
   const holdingSeconds = openedAt !== null && openedAt > 0 ? Math.max(0, nowSeconds - openedAt) : 0;
 
-  let priceUsdA: number | null = null;
-  let priceUsdB: number | null = null;
-  let pricingSource: PositionPerformanceResult["pricing"]["source"] = "none";
-  let pricingLabel = "USD pricing skipped; token-raw / token-native metrics only.";
-  const pricingStarted = Date.now();
-  let quotes = new Map<string, TokenPriceQuote>();
-  if (!options.skipPricing) {
-    try {
-      quotes = await fetchTokenPricesUsd([pool.tokenMintA, pool.tokenMintB], fetcher, options.jupiterApiKey ?? getJupiterApiKey());
-      const described = describePositionPricing(quotes.get(pool.tokenMintA), quotes.get(pool.tokenMintB));
-      priceUsdA = described.priceUsdA;
-      priceUsdB = described.priceUsdB;
-      pricingSource = described.source;
-      pricingLabel = described.label;
-    } catch {
-      pricingLabel = "USD pricing request failed; USD metrics null.";
-    }
-  }
-  const pricingMs = Date.now() - pricingStarted;
+  const priced = await priceAndLabel({
+    mintA: pool.tokenMintA, mintB: pool.tokenMintB, skipPricing: options.skipPricing, fetcher,
+    jupiterApiKey: options.jupiterApiKey,
+  });
+  const { priceUsdA, priceUsdB, quotes, pricingMs } = priced;
   const sides = {
     deposited: { a: cashflows.depositedA, b: cashflows.depositedB },
     withdrawnPrincipal: { a: cashflows.withdrawnPrincipalA, b: cashflows.withdrawnPrincipalB },
@@ -310,13 +310,12 @@ export async function getOrcaPositionPerformance(positionMint: string, options: 
 
   const metadataStarted = Date.now();
   const allow = allowlisted(snapshot.poolId)!;
-  let symbolA: string | null = allow.mintA === pool.tokenMintA ? allow.wrappedSymbol : null;
-  let symbolB: string | null = allow.mintB === pool.tokenMintB ? allow.plainSymbol : null;
-  try {
-    const meta = await getTokenMetadata([pool.tokenMintA, pool.tokenMintB], fetcher, options.jupiterApiKey ?? getJupiterApiKey());
-    symbolA = meta[pool.tokenMintA]?.symbol ?? symbolA;
-    symbolB = meta[pool.tokenMintB]?.symbol ?? symbolB;
-  } catch { /* allowlist symbols */ }
+  const { symbolA, symbolB } = await resolveSymbols({
+    mintA: pool.tokenMintA, mintB: pool.tokenMintB, fetcher, jupiterApiKey: options.jupiterApiKey,
+    initialA: allow.mintA === pool.tokenMintA ? allow.wrappedSymbol : null,
+    initialB: allow.mintB === pool.tokenMintB ? allow.plainSymbol : null,
+    metadata: "prefer",
+  });
   const wrap = matchWrapPairShape(symbolA ?? "", symbolB ?? "");
   const sameAssetWrap = wrap.matched === true;
   const tokenNative = computeTokenNativeMetrics({
@@ -326,69 +325,52 @@ export async function getOrcaPositionPerformance(positionMint: string, options: 
     plainSymbol: sameAssetWrap ? wrap.plainSymbol : null, wrappedSymbol: sameAssetWrap ? wrap.wrappedSymbol : null,
   });
 
-  // Without the open (history longer than the window) the ledger is partial.
   const incomplete = fetched.truncated || !opened;
-  if (incomplete) {
-    metrics.pnlUsd = null;
-    metrics.holdingPeriodReturnPct = null;
-    metrics.annualizedReturnPct = null;
-    metrics.feeOnlyAprPct = null;
-    tokenNative.perSideFeeAprPct = { a: null, b: null };
-    if (tokenNative.tokenEquivalent) {
-      tokenNative.tokenEquivalent.metrics.holdingPeriodReturnPct = null;
-      tokenNative.tokenEquivalent.metrics.annualizedReturnPct = null;
-      tokenNative.tokenEquivalent.metrics.feeOnlyAprPct = null;
-    }
-  }
-  const assumptions = [ASSUMPTIONS_LABEL, TOKEN_NATIVE_ASSUMPTIONS, "Orca: fees are collected separately from withdrawals; rewards are not included.",
-    ...(incomplete ? ["Position history is incomplete; return percentages are unavailable until the full history is available."] : [])].join(" ");
-  const realizedFeeAprSeries = buildRealizedFeeAprSeries({
-    history, positionMint, poolId: snapshot.poolId, evaluatedAt: nowSeconds, uncollectedFees: snapshot.uncollected,
-    priceUsdA, priceUsdB, decimalsA: snapshot.decimalsA, decimalsB: snapshot.decimalsB, openedAt,
-  });
-  if (incomplete) realizedFeeAprSeries.points = [];
-  const stock = options.skipPricing ? null : await buildStockPerformance({
-    history, positionId: positionMint, poolId: snapshot.poolId, mintA: pool.tokenMintA, mintB: pool.tokenMintB,
-    decimalsA: snapshot.decimalsA, decimalsB: snapshot.decimalsB, tokenNative, metrics, incomplete, quotes, nowSeconds, fetcher, signal,
-  });
-
-  return {
-    wallet: options.wallet ?? null,
-    ownsNft,
-    positionMint,
-    positionAccount: snapshot.positionAccount,
-    poolId: snapshot.poolId,
-    mintA: pool.tokenMintA,
-    mintB: pool.tokenMintB,
-    decimalsA: snapshot.decimalsA,
-    decimalsB: snapshot.decimalsB,
-    tickLower: snapshot.position.tickLowerIndex,
-    tickUpper: snapshot.position.tickUpperIndex,
-    tickCurrent: pool.tickCurrentIndex,
-    rangeSide: snapshot.rangeSide,
-    liquidity: snapshot.position.liquidity.toString(),
-    openedAt,
-    openedAtIso: openedAt !== null ? new Date(openedAt * 1000).toISOString() : null,
-    evaluatedAt: nowSeconds,
-    evaluatedAtIso: new Date(nowSeconds * 1000).toISOString(),
-    signatureCount: fetched.signatureCount,
-    truncated: fetched.truncated,
-    maxSignatures,
-    history,
-    cashflows: {
-      depositedA: cashflows.depositedA.toString(), depositedB: cashflows.depositedB.toString(),
-      withdrawnPrincipalA: cashflows.withdrawnPrincipalA.toString(), withdrawnPrincipalB: cashflows.withdrawnPrincipalB.toString(),
-      feesCollectedA: cashflows.feesCollectedA.toString(), feesCollectedB: cashflows.feesCollectedB.toString(),
-      openCount: cashflows.openCount, increaseCount: cashflows.increaseCount, decreaseCount: cashflows.decreaseCount,
+  return assemblePerformanceResult({
+    identity: {
+      wallet: options.wallet ?? null,
+      ownsNft,
+      positionMint,
+      positionAccount: snapshot.positionAccount,
+      poolId: snapshot.poolId,
+      mintA: pool.tokenMintA,
+      mintB: pool.tokenMintB,
+      decimalsA: snapshot.decimalsA,
+      decimalsB: snapshot.decimalsB,
+      tickLower: snapshot.position.tickLowerIndex,
+      tickUpper: snapshot.position.tickUpperIndex,
+      tickCurrent: pool.tickCurrentIndex,
+      rangeSide: snapshot.rangeSide,
+      liquidity: snapshot.position.liquidity.toString(),
+      openedAt,
+      evaluatedAt: nowSeconds,
+      signatureCount: fetched.signatureCount,
+      truncated: fetched.truncated,
+      maxSignatures,
+      history,
+      cashflows: {
+        depositedA: cashflows.depositedA.toString(), depositedB: cashflows.depositedB.toString(),
+        withdrawnPrincipalA: cashflows.withdrawnPrincipalA.toString(), withdrawnPrincipalB: cashflows.withdrawnPrincipalB.toString(),
+        feesCollectedA: cashflows.feesCollectedA.toString(), feesCollectedB: cashflows.feesCollectedB.toString(),
+        openCount: cashflows.openCount, increaseCount: cashflows.increaseCount, decreaseCount: cashflows.decreaseCount,
+      },
     },
     metrics,
     tokenNative,
-    stock,
-    pricing: { source: pricingSource, label: pricingLabel, priceUsdA, priceUsdB },
-    method: PERFORMANCE_METHOD,
-    assumptions,
-    realizedFeeAprSeries,
+    quotes,
+    pricing: { source: priced.pricingSource, label: priced.pricingLabel, priceUsdA, priceUsdB },
+    incomplete,
+    incompleteMessage: "Position history is incomplete; return percentages are unavailable until the full history is available.",
+    extraAssumptions: ["Orca: fees are collected separately from withdrawals; rewards are not included."],
+    stockIncomplete: incomplete,
+    skipPricing: options.skipPricing,
+    fetcher,
+    signal,
+    uncollectedFees: snapshot.uncollected,
     historyFetch: fetched.metric,
-    timings: { totalMs: Date.now() - started, accountsMs, historyMs: fetched.metric.elapsedMs, pricingMs, metadataMs: Date.now() - metadataStarted },
-  };
+    started,
+    accountsMs,
+    pricingMs,
+    metadataStarted,
+  });
 }

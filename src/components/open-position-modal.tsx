@@ -18,6 +18,9 @@ import { solSwapReceiptLabel } from "@/components/transactions/open/use-open-sub
 import { SOL_SWAP_RECEIPT_TTL_MS } from "@/components/transactions/open/sol-swap-receipt-store";
 import { depositUsd } from "@/lib/range-apr/size-aware";
 import { useDebouncedValue } from "./use-debounced-value";
+import { openPositionStatusCopy } from "@/lib/status-copy";
+import { shortAddress } from "@/lib/format/address";
+import { solscanTxUrl } from "@/lib/format/explorer";
 
 const FIELD_HELP = {
   "Token A": "The conservative amount of token A available to open your LP position. The position may use less; any remaining tokens stay in your wallet.",
@@ -99,26 +102,13 @@ export function OpenPositionModal({
   const upfrontCost = quote ? BigInt(quote.rent.refundableLamports) + BigInt(quote.rent.nonRefundableLamports)
     + BigInt(quote.rent.walletTokenAccountLamports ?? "0") + BigInt(quote.networkFeeLamportsEstimate) : 0n;
 
-  const stepPrefix = c.openStep ? `Step ${c.openStep}/2 · ` : "";
-  const swapStatus = c.submitStage === "swap-preparing" ? "Preparing SOL swap…"
-    : c.submitStage === "swap-wallet" ? "Sign the SOL swap in your wallet…"
-      : c.submitStage === "swap-checking" ? "Your wallet returned an error. Checking Solana in case the swap went through…"
-      : c.submitStage === "swap-broadcasting" ? "Sending SOL swap…"
-        : c.submitStage === "swap-pending" ? "Waiting for the swap to confirm…" : null;
-  const status = swapStatus ? `${stepPrefix}${swapStatus}`
-    : c.openStep && (c.submitStage === "preparing" || c.submitStage === "wallet" || c.submitStage === "checking" || c.submitStage === "broadcasting")
-      ? `${stepPrefix}${c.submitStage === "preparing" ? "Preparing open position…" : c.submitStage === "wallet" ? "Sign the open position in your wallet…"
-        : c.submitStage === "checking" ? "Your wallet returned an error. Checking Solana in case it went through…" : "Sending open position…"}`
-    : c.submitStage === "preparing" ? "Preparing latest transaction…"
-    : c.submitStage === "wallet" ? "Confirm in your wallet…"
-      : c.submitStage === "checking" ? "Your wallet returned an error. Checking Solana in case it went through; please wait…"
-      : c.submitStage === "broadcasting" ? "Sending transaction…"
-        : c.submitStage === "pending" ? "Waiting for on-chain confirmation…"
-          : c.submitStage === "failed" ? "A safety check stopped it on-chain, so nothing changed except the network fee."
-            : c.submitStage === "expired" ? "It expired before Solana included it, so nothing changed."
-        : c.submitStage === "confirmed" ? "Position opened"
-          : c.quoteLoading && !quote ? "Fetching quote…"
-            : c.actionBlockedReason || "Ready to sign";
+  const status = openPositionStatusCopy({
+    submitStage: c.submitStage,
+    openStep: c.openStep,
+    quoteLoading: c.quoteLoading,
+    hasQuote: Boolean(quote),
+    actionBlockedReason: c.actionBlockedReason,
+  });
 
   const pairLabel = `${pair.wrappedSymbol}/${pair.plainSymbol}`;
   const assets = c.inputAssets.map((asset) => {
@@ -190,7 +180,7 @@ export function OpenPositionModal({
               <button type="button" onClick={c.dismissPendingSwap} className="text-cream/80 underline">
                 Dismiss
               </button>
-              <a className="underline" href={`https://solscan.io/tx/${c.pendingSwap.signature}`} target="_blank" rel="noreferrer">View swap on Solscan</a>
+              <a className="underline" href={solscanTxUrl(c.pendingSwap.signature)} target="_blank" rel="noreferrer">View swap on Solscan</a>
             </div>
           </div>
         )}
@@ -218,13 +208,13 @@ export function OpenPositionModal({
 
         {c.signature && c.submitStage !== "confirmed" && <div className="mt-3 space-y-2 text-sm" role="status">
           <p>{status}</p>
-          <a className="block text-cream/90 underline" href={`https://solscan.io/tx/${c.signature}`} target="_blank" rel="noreferrer">View original transaction on Solscan</a>
+          <a className="block text-cream/90 underline" href={solscanTxUrl(c.signature)} target="_blank" rel="noreferrer">View original transaction on Solscan</a>
           {c.retryConfirmation && <button type="button" onClick={c.retryConfirmation} className="text-cream/90 underline">Check transaction status</button>}
         </div>}
         {c.unconfirmedSwap && (
           <div className="mt-4 rounded-xl border border-amber-300/40 p-3 text-sm text-cream" role="status">
             <p>Your SOL swap still needs confirmation. Check it before opening another position.</p>
-            <a className="block underline" href={`https://solscan.io/tx/${c.unconfirmedSwap.signature}`} target="_blank" rel="noreferrer">View original swap on Solscan</a>
+            <a className="block underline" href={solscanTxUrl(c.unconfirmedSwap.signature)} target="_blank" rel="noreferrer">View original swap on Solscan</a>
             <button type="button" className="mt-2 underline disabled:opacity-40" disabled={c.busy || c.checkingSwap || !c.connected}
               onClick={() => void c.recheckSwap()}>{c.checkingSwap ? "Checking original swap…" : "Recheck original SOL swap"}</button>
           </div>
@@ -232,11 +222,11 @@ export function OpenPositionModal({
         {c.submitStage === "confirmed" ? (
           <div className="mt-3 space-y-2 text-sm">
             <p role="status" className="text-mint">Position opened</p>
-            <a className="block text-cream/90 underline" href={`https://solscan.io/tx/${c.signature}`} target="_blank" rel="noreferrer">
+            <a className="block text-cream/90 underline" href={solscanTxUrl(c.signature)} target="_blank" rel="noreferrer">
               View on Solscan
             </a>
             <a className="block text-cream/90 underline" href="/app">
-              Open in Positions{c.positionMint ? ` (${c.positionMint.slice(0, 4)}…${c.positionMint.slice(-4)})` : ""}
+              Open in Positions{c.positionMint ? ` (${shortAddress(c.positionMint)})` : ""}
             </a>
             <button type="button" onClick={c.createAnother} className="text-cream/90 underline">Create another position</button>
           </div>

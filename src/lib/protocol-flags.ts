@@ -103,7 +103,6 @@ export function isRhcUniv4WalletSigningEnabled(target: DeployTarget = deployTarg
   return RHC_UNIV4_WALLET_SIGNING_ENABLED[target];
 }
 
-
 /**
  * Uniswap v4 on Robinhood Chain: 7-day range APR (shared Solana model) for the allowlisted StablePairHook
  * pools — cron snapshot, `/api/protocol-pools/range-apr?protocol=uniswap-v4-rhc`, and the unified list
@@ -135,26 +134,9 @@ export function isMeteoraDlmmDiscoveryEnabled(target: DeployTarget = deployTarge
 }
 
 /**
- * The shared DEX route `/api/dex/[dex]/[op]` (DESIGN.md §1.2, PR4): quotes and prepares (unsigned, simulated)
- * transactions through the DEX registry for every registered DEX. ON by default in every deploy target, production
- * included, with no env (LJ 2026-11-01: Meteora goes live without a feature flag). Raydium never goes through this route.
- * Preparing never signs or sends.
- */
-export const DEX_TX_ROUTE_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
-  production: true,
-  preview: true,
-  development: true,
-});
-
-export function isDexTxRouteEnabled(target: DeployTarget = deployTarget()): boolean {
-  return DEX_TX_ROUTE_ENABLED[target];
-}
-
-/**
- * Meteora DLMM open flow: build + simulate the 1/2 setup (position account, user ATAs) and 2/2 deposit
- * (Jupiter legs with the 10 bps platform fee on the swapped portion + add_liquidity_by_strategy2), and
- * the close-and-refund transaction (`/api/meteora-open`, `/app/meteora`). OFF in production.
- * Building never signs or sends.
+ * Legacy Meteora DLMM preview-open flag. The `/app/meteora` and `/api/meteora-open` route were retired;
+ * registry open/manage does not read this flag. Left in place so existing Vercel env vars are not
+ * touched here (LJ can remove them later). OFF in production.
  */
 export const METEORA_DLMM_TX_BUILD_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
   production: false,
@@ -167,8 +149,8 @@ export function isMeteoraDlmmTxBuildEnabled(target: DeployTarget = deployTarget(
 }
 
 /**
- * Wallet signing for the Meteora open flow (Phantom / Jupiter Wallet sign buttons, server broadcast of the
- * wallet-signed tx after permit + fee-guard checks, and status).
+ * Legacy wallet-signing flag for the retired `/app/meteora` open flow. Registry flows do not read it.
+ * Left in place so existing Vercel env vars are not touched here (LJ can remove them later).
  * Preview + development only; OFF in production.
  */
 export const METEORA_DLMM_WALLET_SIGNING_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
@@ -181,32 +163,3 @@ export function isMeteoraDlmmWalletSigningEnabled(target: DeployTarget = deployT
   return METEORA_DLMM_WALLET_SIGNING_ENABLED[target];
 }
 
-/**
- * Meteora DLMM in the RWA pool scan (SCAN_DESIGN.md §8): the cron's Meteora discovery and its datapi APR lane, which
- * write the `meteora-dlmm-rwa-v1` feed. ON in every deploy target (launched 2026-11-01); nothing is listed from that
- * feed unless `METEORA_RWA_LIST_ENABLED` is on too. Turning it off stops the writes; no DB change is needed.
- */
-export const METEORA_RWA_SCAN_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
-  production: true,
-  preview: true,
-  development: true,
-});
-
-export function isMeteoraRwaScanEnabled(target: DeployTarget = deployTarget()): boolean {
-  return METEORA_RWA_SCAN_ENABLED[target];
-}
-
-/**
- * Meteora DLMM pools of the scan feed (`meteora-dlmm-rwa-v1`) in the listed pools: `/api/rwa-pairs`, `/app/rwa-pairs`
- * and the homepage top-5 candidates (SCAN_DESIGN.md §8). Turned on together with `METEORA_RWA_SCAN_ENABLED` (it has
- * no effect without it: nothing writes the feed). Opening goes through the dex route (`DEX_TX_ROUTE_ENABLED`).
- */
-export const METEORA_RWA_LIST_ENABLED: Readonly<Record<DeployTarget, boolean>> = Object.freeze({
-  production: true,
-  preview: true,
-  development: true,
-});
-
-export function isMeteoraRwaListEnabled(target: DeployTarget = deployTarget()): boolean {
-  return METEORA_RWA_LIST_ENABLED[target] && isMeteoraRwaScanEnabled(target);
-}

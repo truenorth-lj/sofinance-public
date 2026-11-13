@@ -47,6 +47,11 @@ describe("connectEvmWallet", () => {
     await expect(connectEvmWallet(mockProvider(() => { throw rpcError(4001); }).provider)).rejects.toMatchObject({ code: "rejected" });
     await expect(connectEvmWallet(mockProvider(() => []).provider)).rejects.toMatchObject({ code: "no-account" });
   });
+  it("uses the shared rejection classifier (WalletConnect 5000 and wording with no other code; not Phantom code 400)", async () => {
+    await expect(connectEvmWallet(mockProvider(() => { throw rpcError(5000); }).provider)).rejects.toMatchObject({ code: "rejected" });
+    await expect(connectEvmWallet(mockProvider(() => { throw new Error("User rejected the request."); }).provider)).rejects.toMatchObject({ code: "rejected" });
+    await expect(connectEvmWallet(mockProvider(() => { throw Object.assign(new Error("Request x rejected by user"), { code: 400 }); }).provider)).rejects.toMatchObject({ code: "unknown" });
+  });
 });
 
 describe("ensureRobinhoodChain", () => {
@@ -98,6 +103,26 @@ describe("guardedWalletRequest (signing off in development)", () => {
   });
   it("only accepts signing methods", async () => {
     await expect(guardedWalletRequest(mockProvider(() => null).provider, "eth_chainId", [])).rejects.toMatchObject({ code: "unknown" });
+  });
+});
+
+describe("guardedWalletRequest (signing on)", () => {
+  it("maps MetaMask 4001, WalletConnect 5000, and wording-only rejects to rejected; Phantom code 400 is not a rejection", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", "production");
+    const rejected = (thrower: () => never) =>
+      expect(guardedWalletRequest(mockProvider(thrower).provider, "eth_sendTransaction", [{}])).rejects.toMatchObject({
+        code: "rejected", message: "You rejected the request in your wallet. Nothing was sent.",
+      });
+    await rejected(() => { throw rpcError(4001); });
+    await rejected(() => { throw rpcError(5000); });
+    await rejected(() => { throw new Error("User rejected the request."); });
+    const unknown = await guardedWalletRequest(
+      mockProvider(() => { throw Object.assign(new Error("Request x rejected by user"), { code: 400 }); }).provider,
+      "eth_sendTransaction", [{}],
+    ).catch((e: unknown) => e) as WalletRequestError;
+    expect(unknown.code).toBe("unknown");
+    expect(unknown.message).not.toMatch(/rejected the request in your wallet/i);
+    vi.unstubAllEnvs();
   });
 });
 

@@ -1,5 +1,4 @@
 import "@/lib/engine-host";
-import bs58 from "bs58";
 import { VersionedTransaction } from "@solana/web3.js";
 import { parseWallet } from "@sofinance/engine/api-input";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
@@ -9,6 +8,7 @@ import { parseCleanupBatchSummary, simulateAndVerifyCleanupBatch, validCleanupSi
 import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
 import { exceedsTxSizeLimit } from "@sofinance/engine/transaction-limits";
 import { apiError } from "@/lib/api-response";
+import { broadcastSignedTransaction } from "@/lib/broadcast-signed-transaction";
 
 export const maxDuration = 120;
 
@@ -32,11 +32,13 @@ export async function POST(request: Request) {
       connection, transaction, summary, sigVerify: true,
       prepared: prepared !== transaction ? prepared : undefined,
     });
-    if (Date.now() >= summary.expiresAt || await connection.getBlockHeight("confirmed") > summary.lastValidBlockHeight) throw new Error("Cleanup transaction expired before broadcast");
-    const expected = bs58.encode(transaction.signatures[0]!);
-    submitted = true;
-    const signature = await connection.sendRawTransaction(transaction.serialize(), { skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3 });
-    if (signature !== expected) throw new Error("RPC returned cleanup signature mismatch; verify on-chain status");
+    const signature = await broadcastSignedTransaction({
+      connection, transaction,
+      expiry: { lastValidBlockHeight: summary.lastValidBlockHeight, expiresAt: summary.expiresAt },
+      expiredMessage: "Cleanup transaction expired before broadcast",
+      mismatchMessage: "RPC returned cleanup signature mismatch; verify on-chain status",
+      onBeforeSend: () => { submitted = true; },
+    });
     return Response.json({ signature }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     // Once the RPC send starts, even a rate-limit response can follow an

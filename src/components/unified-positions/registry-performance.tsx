@@ -7,7 +7,8 @@
  * estimate is greyed with `capabilities.exitPreview.reason` until a DEX supports it.
  */
 import { LoaderCircle } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useLatest } from "../use-latest";
 import { fetchDexPerformance, type PositionPerformance } from "@/lib/dex/client";
 import { PerformancePoolChart, PerformanceSummary, money } from "../position-performance-summary";
 import { useTokenMetadata } from "../use-token-metadata";
@@ -19,8 +20,7 @@ type Loaded = { key: string; attempt: number; data: PositionPerformance | null; 
 
 export function RegistryPerformancePanel({ position, descriptor, capabilities, onPerformance, showStockPerformance = true }: Pick<RegistryToolProps, "position" | "descriptor" | "capabilities" | "onPerformance" | "showStockPerformance">) {
   const [attempt, setAttempt] = useState(0);
-  const onPerformanceRef = useRef(onPerformance);
-  useEffect(() => { onPerformanceRef.current = onPerformance; });
+  const onPerformanceRef = useLatest(onPerformance);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const metadata = useTokenMetadata([position.tokenA.id, position.tokenB.id]);
   useEffect(() => {
@@ -37,7 +37,7 @@ export function RegistryPerformancePanel({ position, descriptor, capabilities, o
         onPerformanceRef.current?.(position.key, { report: null, error: true });
       });
     return () => controller.abort();
-  }, [descriptor, position.key, attempt]);
+  }, [descriptor, position.key, attempt, onPerformanceRef]);
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
   const current = loaded && loaded.key === position.key && loaded.attempt === attempt ? loaded : null;
   const report = current?.data?.report ?? null;

@@ -15,7 +15,7 @@ const stocks: HomepageStocks = {
   ],
   stocks: [{ underlying: "TSLA", company: "Tesla", priceUsd: 250.5, change24hPct: 4.2, icon: null, mcapUsd: 12_300_000 }],
   buy: {
-    TSLA: { underlying: "TSLA", company: "Tesla", mint: "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB", mintShort: "XsDo…oB", issuerName: "xStocks", symbol: "TSLAx" },
+    TSLA: { underlying: "TSLA", company: "Tesla", mint: "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB", mintShort: "XsDo…HzoB", issuerName: "xStocks", symbol: "TSLAx" },
     AMZN: { underlying: "AMZN", company: "Amazon", mint: "Xs3eBt7uRfJX8QUs4suhyU8p2M6DoUDrJyWBa8LLZsg", mintShort: "Xs3e…Zsg", issuerName: "xStocks", symbol: "AMZNx" },
   },
 } as unknown as HomepageStocks;

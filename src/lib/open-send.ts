@@ -14,6 +14,7 @@ import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { exceedsTxSizeLimit, isZeroSignature } from "@sofinance/engine/transaction-limits";
 import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
+import { broadcastSignedTransaction } from "@/lib/broadcast-signed-transaction";
 
 
 export async function sendSignedOpenPosition(
@@ -90,10 +91,10 @@ export async function sendSignedOpenPosition(
   const expectedSignature = bs58.encode(transaction.signatures[0]!);
   let signature: string;
   try {
-    signature = await connection.sendRawTransaction(transaction.serialize(), {
-      skipPreflight: false, preflightCommitment: "confirmed", maxRetries: 3,
+    signature = await broadcastSignedTransaction({
+      connection, transaction, expectedSignature,
+      mismatchMessage: "RPC returned transaction signature mismatch",
     });
-    if (signature !== expectedSignature) throw new Error("RPC returned transaction signature mismatch");
   } catch (error) {
     // The retrying RPC exposes only its last error. Even a preflight rejection
     // may follow an accepted send whose response was lost; keep the original

@@ -21,7 +21,7 @@ import { createEvmSession } from "@/lib/rhc-wallet/evm-session";
 const provider = { request: async ({ method }: { method: string }) => (method === "eth_accounts" ? seen.accounts() : method === "eth_chainId" ? "0x1237" : null) };
 const discover = vi.fn(async () => [{ info: { uuid: "mm", name: "MetaMask", rdns: "io.metamask" }, provider }]);
 
-const FLAGS = { orca: false, meteora: false, meteoraOpen: false, rhc: true };
+const FLAGS = { orca: false, meteora: false, rhc: true };
 let container: HTMLDivElement; let root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

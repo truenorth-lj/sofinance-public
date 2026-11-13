@@ -14,26 +14,13 @@ import type { Capability, ChainId, SourceCapabilities, TokenRef, UnifiedPosition
 export const DEX_IDS = ["raydium-clmm", "orca-whirlpool", "meteora-dlmm", "uniswap-v4-rhc"] as const;
 export type DexId = (typeof DEX_IDS)[number];
 
-/**
- * Legacy spellings accepted for one release, then removed. `"rhc-uniswap-v4"` is the unified-positions
- * `PositionSourceId` spelling (position keys in URLs/local storage may still carry it). Only `normalizeDexId` reads
- * this table (old URLs / localStorage); adapters and the contract suite use the canonical id
- * (`position.source === descriptor.id`).
- *
- * TODO(PR11): delete LEGACY_DEX_ID_ALIASES (and the "rhc-uniswap-v4" PositionSourceId) once Uniswap v4 on Robinhood
- * Chain is served through the registry and stored keys have been migrated.
- */
-export const LEGACY_DEX_ID_ALIASES: Readonly<Record<string, DexId>> = Object.freeze({ "rhc-uniswap-v4": "uniswap-v4-rhc" });
-
 export function isDexId(value: unknown): value is DexId {
   return typeof value === "string" && (DEX_IDS as readonly string[]).includes(value);
 }
 
-/** Canonical id for a current or legacy spelling; null for anything else. */
+/** Canonical id, or null when the spelling is unknown (legacy aliases are not accepted). */
 export function normalizeDexId(value: string | null | undefined): DexId | null {
-  if (!value) return null;
-  if (isDexId(value)) return value;
-  return Object.hasOwn(LEGACY_DEX_ID_ALIASES, value) ? LEGACY_DEX_ID_ALIASES[value]! : null;
+  return value && isDexId(value) ? value : null;
 }
 
 export type DexSigner = SourceCapabilities["signer"];
@@ -126,6 +113,36 @@ export type DexCapabilities = SourceCapabilities & {
   plan: Capability;
 };
 
+/**
+ * Which open shell the pools page / deep link uses. Data on `DexUi`, never a `protocol === "…"` at the call site.
+ */
+export type DexOpenUi = "registry" | "native-modal" | "rhc-dialog" | "none";
+
+/**
+ * Client-safe UI record (Phase E, docs/refactor/phase-e-dex-registry.md §2.2).
+ * Does not include `showHighestRange` or `nullFeeLabel` (those stay on `CHAIN_META`).
+ * No invented `feePolicy`.
+ */
+export type DexUi = {
+  /** Which open shell the pools page / deep link uses. */
+  openUi: DexOpenUi;
+  /** Off-site venue URL, if any. */
+  externalPoolUrl?: (poolAddress: string) => string;
+  /**
+   * When true, `/app/plan` and the share calculator use descriptor fee/rent terms.
+   * When false, they keep `LEGACY_*` in `lp-plan-pool-terms.ts`.
+   * Explicit data: true only on Meteora's `descriptor.ui`; unregistered venues are false.
+   */
+  useDescriptorPlanTerms: boolean;
+  /** Plan link when this venue has no descriptor yet (Raydium). Ignored when `capabilities.plan` exists. */
+  planFallback?: Capability;
+  /**
+   * When false, the positions UI does not fetch this DEX's positions or performance.
+   * Omitted or true = fetch when the signer matches (Meteora today; the default must stay unchanged).
+   */
+  listPositions?: boolean;
+};
+
 /** UI-safe description of one DEX: the registry element the UI reads (extends the unified-positions source). */
 export type DexDescriptor<N = unknown> = {
   id: DexId;
@@ -133,6 +150,8 @@ export type DexDescriptor<N = unknown> = {
   displayName: string;
   meta: DexMeta;
   capabilities: DexCapabilities;
+  /** Client-safe UI record. Present on registered venues that have shipped these flags (Meteora today). */
+  ui?: DexUi;
   /** Per-position overrides, merged over `capabilities` by `capabilitiesFor` (same rule as unified positions). */
   positionCapabilities?(position: UnifiedPosition<N>): Partial<DexCapabilities>;
 };

@@ -129,13 +129,20 @@ function descriptorExitCost(descriptor: DexDescriptor): Readonly<Record<ExitAsse
 
 export function planPoolTerms(input: {
   descriptor: DexDescriptor | null;
+  /**
+   * When true, use descriptor fee/rent terms. Defaults to `Boolean(descriptor)` (today: true only for
+   * Meteora). Callers pass `uiFor(protocol).useDescriptorPlanTerms` (explicit descriptor/table data)
+   * so a later descriptor cannot flip Plan numbers just by being registered.
+   */
+  useDescriptorPlanTerms?: boolean;
   /** The pool list's own reason it cannot open this pool (`openUnavailableReason`), or null. */
   listOpenReason: string | null;
   symbols?: readonly [string, string];
 }): PlanPoolTerms {
   const { descriptor, listOpenReason, symbols } = input;
   const listOpen: Capability = listOpenReason ? { supported: false, reason: listOpenReason } : { supported: true };
-  if (!descriptor) {
+  const useDescriptor = input.useDescriptorPlanTerms ?? Boolean(descriptor);
+  if (!useDescriptor || !descriptor) {
     return {
       openCost: LEGACY_COST,
       lpFeeShare: LEGACY_LP_FEE_SHARE,
