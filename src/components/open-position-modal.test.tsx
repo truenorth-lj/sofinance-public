@@ -464,6 +464,44 @@ describe("open-position signing and quote refresh", () => {
   });
 });
 
+describe("SOL two-step fee copy", () => {
+  const solAsset = { kind: "native" as const, mint: NATIVE_SOL_MINT, decimals: 9, balance: "216474000", eligible: true, reason: null };
+  beforeEach(() => window.localStorage.clear());
+  afterEach(() => window.localStorage.clear());
+  const stubWallet = (assets: unknown[]) => {
+    const original = fetch as unknown as (url: string, init?: RequestInit) => Promise<unknown>;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) =>
+      url.startsWith("/api/wallet") ? { ok: true, json: async () => ({ assets }) } : original(url, init)));
+  };
+
+  it("says both the swap and the open include the 10 bps protocol fee", async () => {
+    stubWallet([solAsset]);
+    await act(async () => { root.render(createElement(OpenPositionModal, { pair, onClose: vi.fn() })); });
+    await advance(1);
+    await act(async () => { mocks.controller!.chooseAsset("native", NATIVE_SOL_MINT); });
+    await advance(1);
+    expect(container.textContent).toContain(
+      "SOL deposits take two wallet approvals: 1/2 swaps your SOL to a pool token, and 2/2 opens the position with exactly what the swap delivered. The 10 bps protocol fee is included in both the swap and the open.",
+    );
+    expect(container.textContent).not.toContain("the 10 bps protocol fee was already paid in the swap");
+    expect(container.textContent).not.toContain("the 10 bps protocol fee is charged inside this swap");
+  });
+
+  it("says step 2/2 includes the 10 bps protocol fee when a landed swap receipt is present", async () => {
+    stubWallet([solAsset]);
+    window.localStorage.setItem(`sofinance:sol-swap-receipt:v1:${mocks.wallet}:${pair.poolAddress}`, JSON.stringify({
+      wallet: mocks.wallet, poolId: pair.poolAddress, signature: "1111111111111111111111111111111111111111111111111111111111111111",
+      outputMint: pair.mintA, outputSymbol: "HOODx", delivered: "695000", decimals: 6, landedAt: Date.now(),
+    }));
+    await act(async () => { root.render(createElement(OpenPositionModal, { pair, onClose: vi.fn() })); });
+    await advance(1);
+    const banner = container.querySelector("[data-testid='pending-sol-swap']")!;
+    expect(banner.textContent).toContain("Step 2/2 deposits exactly this amount and includes the 10 bps protocol fee.");
+    expect(banner.textContent).not.toContain("the 10 bps protocol fee was already paid in the swap");
+    expect(container.textContent).not.toContain("The 10 bps protocol fee is included in both the swap and the open.");
+  });
+});
+
 describe("temporary SOL input switch (SOL_INPUT_ENABLED = false)", () => {
   const usdc = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
   const stubWallet = (assets: unknown[]) => {
