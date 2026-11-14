@@ -13,7 +13,7 @@ import {
   TickUtil,
 } from "@raydium-io/raydium-sdk-v2";
 import { Keypair, PublicKey, type AccountInfo, type Connection } from "@solana/web3.js";
-import { readRaydiumPositionAccounts, readRaydiumUncollectedFees } from "./position-snapshot";
+import { decodeRaydiumPersonalPosition, readRaydiumPositionAccounts, readRaydiumRangeFacts, readRaydiumUncollectedFees } from "./position-snapshot";
 
 const key = () => Keypair.generate().publicKey;
 const nft = key();
@@ -114,6 +114,13 @@ describe("Raydium position snapshot", () => {
 
     const fees = await readRaydiumUncollectedFees(connection, snapshot);
     expect(fees).toEqual({ a: 17n, b: 0n });
+    const facts = await readRaydiumRangeFacts(nft.toBase58(), connection);
+    expect(facts.onChainPriceBPerA).toBeGreaterThan(0);
+    expect(facts.poolId).toBe(snapshot.poolId);
+    expect(facts.tickCurrent).toBe(snapshot.tickCurrent);
+    expect(decodeRaydiumPersonalPosition(positionData())).toMatchObject({
+      nftMint: nft.toBase58(), poolId: pool.toBase58(), tickLower: -100, tickUpper: 100, liquidity: "10000",
+    });
     expect(tickRead).toHaveBeenCalledTimes(1);
     expect(tickRead.mock.calls[0]?.[1]).toBe("confirmed");
   });

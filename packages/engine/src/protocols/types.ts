@@ -52,6 +52,8 @@ export type ClmmPositionAccounts = {
   tickCurrent: number;
   tickSpacing: number;
   liquidity: string;
+  /** Pool sqrt price as a decimal string, the layout's `sqrtPriceX64`. */
+  sqrtPriceX64: string;
   rangeSide: "below" | "inside" | "above";
   /** Round-down token amounts currently in the position. */
   amountA: bigint;

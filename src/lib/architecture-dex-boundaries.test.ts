@@ -32,7 +32,7 @@ const config = ts.readConfigFile(path.join(root, "tsconfig.json"), ts.sys.readFi
 const options = ts.parseJsonConfigFileContent(config.config, ts.sys, root).options;
 
 /** Ceiling on the baseline totals; lower these together with the JSON whenever a PR removes violations. */
-const BASELINE_CEILING = { imports: 78, branches: 28 } as const;
+const BASELINE_CEILING = { imports: 77, branches: 28 } as const;
 
 /** Every DEX id spelling (canonical + legacy) and chain string that must not drive a branch outside src/lib/dex. */
 const DEX_BRANCH_LITERALS: ReadonlySet<string> = new Set([

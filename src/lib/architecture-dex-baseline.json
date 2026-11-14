@@ -1,6 +1,6 @@
 {
   "imports": {
-    "src/app/api/compound-confirm/route.ts": 2,
+    "src/app/api/compound-confirm/route.ts": 1,
     "src/app/api/compound-recover-import/route.ts": 1,
     "src/app/api/compound-state/route.ts": 1,
     "src/app/api/lp-decision/exit-preview/route.ts": 1,

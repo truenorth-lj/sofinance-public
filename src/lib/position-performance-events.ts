@@ -10,7 +10,7 @@
 import { createHash } from "node:crypto";
 import { PublicKey, type ParsedTransactionWithMeta } from "@solana/web3.js";
 import bs58 from "bs58";
-import { CLMM_PROGRAM_ID } from "@raydium-io/raydium-sdk-v2";
+import { RAYDIUM_CLMM_PROGRAM_ID } from "@sofinance/engine/ids";
 import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
 
 const instructionDisc = (name: string) => createHash("sha256").update(`global:${name}`).digest().subarray(0, 8);
@@ -114,7 +114,7 @@ function scopedWithdrawalCalculations(logs: readonly string[], instructions: rea
       continue;
     }
     if (/^Program \S+ (success|failed:)/.test(line)) { stack.pop(); continue; }
-    if (outerIndex < 0 || stack.length !== 1 || stack[0] !== CLMM_PROGRAM_ID.toBase58() || !line.startsWith("Program data: ")) continue;
+    if (outerIndex < 0 || stack.length !== 1 || stack[0] !== RAYDIUM_CLMM_PROGRAM_ID.toBase58() || !line.startsWith("Program data: ")) continue;
     const data = Buffer.from(line.slice(14), "base64");
     if (data.length !== 92 || !data.subarray(0, 8).equals(CALCULATE_DISC)) continue;
     if (calculations.has(outerIndex)) incompletePositionHistory("ambiguous withdrawal calculation events");
@@ -149,7 +149,7 @@ export function parsePositionCashflowEvents(
     return true;
   };
   for (const [index, instruction] of transaction.transaction.message.instructions.entries()) {
-    if (instruction.programId.toBase58() !== CLMM_PROGRAM_ID.toBase58() || !("accounts" in instruction)) continue;
+    if (instruction.programId.toBase58() !== RAYDIUM_CLMM_PROGRAM_ID.toBase58() || !("accounts" in instruction)) continue;
     let data: Buffer;
     try { data = Buffer.from(bs58.decode(instruction.data)); } catch { continue; }
     const disc = data.subarray(0, 8);
@@ -222,7 +222,7 @@ export function parsePositionCashflowEvents(
   // transfer receipts cannot be isolated by the outer index alone.
   for (const group of transaction.meta.innerInstructions ?? []) {
     for (const instruction of group.instructions) {
-      if (!instruction.programId.equals(CLMM_PROGRAM_ID) || !("accounts" in instruction)) continue;
+      if (!instruction.programId.equals(RAYDIUM_CLMM_PROGRAM_ID) || !("accounts" in instruction)) continue;
       let disc: Buffer;
       try { disc = Buffer.from(bs58.decode(instruction.data)).subarray(0, 8); } catch { continue; }
       const account = (index: number) => instruction.accounts[index]?.toBase58();

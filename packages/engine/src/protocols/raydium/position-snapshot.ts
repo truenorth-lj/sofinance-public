@@ -10,6 +10,7 @@ import {
   TickArrayUtil,
   TickUtil,
 } from "@raydium-io/raydium-sdk-v2";
+import BN from "bn.js";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { accruedFee } from "../../compound-math";
 import { positionSide } from "../../quote-math";
@@ -80,6 +81,7 @@ export async function readRaydiumPositionAccounts(positionMint: string, connecti
     tickCurrent: pool.tickCurrent,
     tickSpacing: pool.tickSpacing,
     liquidity: position.liquidity.toString(),
+    sqrtPriceX64: pool.sqrtPriceX64.toString(),
     rangeSide,
     amountA: BigInt(currentAmounts.amountA.toString()),
     amountB: BigInt(currentAmounts.amountB.toString()),
@@ -132,4 +134,60 @@ export async function readRaydiumUncollectedFees(
     owed: side === "A" ? accounts.tokenFeesOwedA : accounts.tokenFeesOwedB,
   });
   return { a: fee("A"), b: fee("B") };
+}
+
+export type RaydiumPersonalPosition = {
+  nftMint: string;
+  poolId: string;
+  tickLower: number;
+  tickUpper: number;
+  liquidity: string;
+};
+
+/** Decode a personal-position account. Callers keep their own owner and discriminator checks. */
+export function decodeRaydiumPersonalPosition(data: Uint8Array): RaydiumPersonalPosition {
+  const position = PersonalPositionLayout.decode(Buffer.from(data));
+  return {
+    nftMint: position.nftMint.toBase58(),
+    poolId: position.poolId.toBase58(),
+    tickLower: position.tickLower,
+    tickUpper: position.tickUpper,
+    liquidity: position.liquidity.toString(),
+  };
+}
+
+export type RaydiumRangeFacts = {
+  positionMint: string;
+  poolId: string;
+  mintA: string;
+  mintB: string;
+  decimalsA: number;
+  decimalsB: number;
+  tickLower: number;
+  tickUpper: number;
+  tickCurrent: number;
+  onChainPriceBPerA: number;
+};
+
+/** Range status for a Raydium CLMM position: the valuation snapshot plus the pool mid price. */
+export async function readRaydiumRangeFacts(positionMint: string, connection: Connection): Promise<RaydiumRangeFacts> {
+  const accounts = await readRaydiumPositionAccounts(positionMint, connection);
+  const onChainPriceBPerA = Number(
+    TickUtil.sqrtPriceX64ToPrice(new BN(accounts.sqrtPriceX64), accounts.decimalsA, accounts.decimalsB).toString(),
+  );
+  if (!Number.isFinite(onChainPriceBPerA) || onChainPriceBPerA <= 0) {
+    throw new Error("On-chain pool mid price is not a positive B-per-A value");
+  }
+  return {
+    positionMint,
+    poolId: accounts.poolId,
+    mintA: accounts.mintA,
+    mintB: accounts.mintB,
+    decimalsA: accounts.decimalsA,
+    decimalsB: accounts.decimalsB,
+    tickLower: accounts.tickLower,
+    tickUpper: accounts.tickUpper,
+    tickCurrent: accounts.tickCurrent,
+    onChainPriceBPerA,
+  };
 }

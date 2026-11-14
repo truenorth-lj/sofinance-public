@@ -2,7 +2,7 @@ import "@/lib/engine-host";
 import { PublicKey, type ParsedTransactionWithMeta } from "@solana/web3.js";
 import { createHash } from "node:crypto";
 import bs58 from "bs58";
-import { CLMM_PROGRAM_ID } from "@raydium-io/raydium-sdk-v2";
+import { RAYDIUM_CLMM_PROGRAM_ID } from "@sofinance/engine/ids";
 import { parsePositionCashflowEvents, type PositionCashflowEvent, type PositionEventContext } from "./position-performance-events";
 import { type HistoryConnection, type HistoryFetchMetric, type HistoryFallbackReason,
   type HistorySignature } from "./position-performance-history";
@@ -45,7 +45,7 @@ function bindOpeningEvents(events: PositionCashflowEvent[], tx: ParsedTransactio
   for (const [index, outer] of tx.transaction.message.instructions.entries()) {
     const instructions = [outer, ...(tx.meta?.innerInstructions?.find(group => group.index === index)?.instructions ?? [])];
     for (const instruction of instructions) {
-      if (!instruction.programId.equals(CLMM_PROGRAM_ID) || !("accounts" in instruction)) continue;
+      if (!instruction.programId.equals(RAYDIUM_CLMM_PROGRAM_ID) || !("accounts" in instruction)) continue;
       const data = Buffer.from(bs58.decode(instruction.data));
       const kind = openingInstructions.find(item => data.subarray(0, 8).equals(item.discriminator));
       if (!kind) continue;
