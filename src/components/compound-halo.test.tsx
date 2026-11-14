@@ -13,12 +13,13 @@ const rect = (left: number, top: number, width: number, height: number) =>
   ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON() {} }) as DOMRect;
 let container: HTMLDivElement, root: Root;
 
-/** The Compound panel's wiring in miniature: the button click only starts the send; confirmation sets "success". */
-function Harness() {
+/** The Compound panel's wiring in miniature: the button click only starts the send; confirmation sets "success".
+ *  `holdUntilDismissed` stands in for the app result dialog still being open. */
+function Harness({ holdUntilDismissed = false }: { holdUntilDismissed?: boolean }) {
   const [feedback, set] = useState<Feedback>(null);
   useLayoutEffect(() => { setFeedback = set; }, []);
   const button = useRef<HTMLButtonElement>(null);
-  const play = useCompoundSuccessHalo(feedback);
+  const play = useCompoundSuccessHalo(feedback, holdUntilDismissed && feedback !== null);
   return <div data-halo-surface="" data-testid="surface">
     <section>
       <button ref={button} type="button" onClick={() => set({ phase: "submitting", signature: "" })}>One-click compound</button>
@@ -79,7 +80,7 @@ describe("compound success halo canvas", () => {
     await act(async () => setFeedback({ phase: "success", signature: "sig1" }));
     await advance(100);
     expect(made.some((mask) => mask.width > 0)).toBe(true);
-    await advance(1000);
+    await advance(1200);
     expect(halo()).toBeNull();
     expect(made.map((mask) => mask.width)).toEqual(made.map(() => 0));
   });
@@ -151,12 +152,12 @@ describe("compound success halo trigger", () => {
     expect(draws).toBeGreaterThan(0);
   });
 
-  it("removes the overlay at rest after the 1000 ms play, and the same signature never plays again", async () => {
+  it("removes the overlay at rest after the 1200 ms play, and the same signature never plays again", async () => {
     await act(async () => root.render(createElement(Harness)));
     await act(async () => setFeedback({ phase: "success", signature: "sig1" }));
-    await advance(500);
-    expect(halo()).not.toBeNull();
     await advance(600);
+    expect(halo()).not.toBeNull();
+    await advance(700);
     expect(halo()).toBeNull();
     await act(async () => setFeedback({ phase: "success", signature: "sig1" }));
     await advance(16);
@@ -173,23 +174,67 @@ describe("compound success halo trigger", () => {
   it("restarts when another confirmed success arrives mid-play", async () => {
     await act(async () => root.render(createElement(Harness)));
     await act(async () => setFeedback({ phase: "success", signature: "sig1" }));
-    await advance(700);
+    await advance(800);
     await act(async () => setFeedback({ phase: "success", signature: "sig2" }));
-    await advance(700);
-    // 1400 ms after the first play: still running because the second one restarted the clock.
+    await advance(800);
+    // 1600 ms after the first play: still running because the second one restarted the clock.
     expect(halo()).not.toBeNull();
-    await advance(400);
+    await advance(500);
     expect(halo()).toBeNull();
   });
 
-  it("reduced motion fades in place over 600 ms", async () => {
+  it("does not play while the result dialog is open; plays after it is closed, only on confirmed success", async () => {
+    await act(async () => root.render(createElement(Harness, { holdUntilDismissed: true })));
+    await act(async () => setFeedback({ phase: "success", signature: "sig1" }));
+    await advance(16);
+    expect(halo()).toBeNull();
+    await act(async () => setFeedback(null));
+    await advance(16);
+    expect(halo()).not.toBeNull();
+  });
+
+  it("closing a failed or still-confirming dialog never plays it", async () => {
+    await act(async () => root.render(createElement(Harness, { holdUntilDismissed: true })));
+    await act(async () => setFeedback({ phase: "failed", signature: "sig1" }));
+    await act(async () => setFeedback(null));
+    await advance(16);
+    expect(halo()).toBeNull();
+    await act(async () => setFeedback({ phase: "confirming", signature: "sig2" }));
+    await act(async () => setFeedback(null));
+    await advance(16);
+    expect(halo()).toBeNull();
+  });
+
+  it("a short screen shake of at most 3px is cleared by 150 ms, and reduced motion never shakes", async () => {
+    await act(async () => root.render(createElement(Harness)));
+    const surface = container.querySelector<HTMLElement>('[data-testid="surface"]')!;
+    await act(async () => setFeedback({ phase: "success", signature: "sig1" }));
+    await advance(16);
+    expect(halo()).not.toBeNull();
+    const transform = surface.style.transform;
+    expect(transform).toMatch(/translate\(/);
+    const nums = [...transform.matchAll(/-?\d+(?:\.\d+)?/g)].map((match) => Number(match[0]));
+    expect(nums.length).toBeGreaterThan(0);
+    expect(Math.max(...nums.map(Math.abs))).toBeLessThanOrEqual(3);
+    await advance(150);
+    expect(surface.style.transform).toBe("");
+    await advance(1200);
+    expect(halo()).toBeNull();
+  });
+
+  it("reduced motion fades in place over 600 ms and never shakes the surface", async () => {
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("reduce"), addEventListener() {}, removeEventListener() {} }));
     await act(async () => root.render(createElement(Harness)));
+    const surface = container.querySelector<HTMLElement>('[data-testid="surface"]')!;
     await act(async () => setFeedback({ phase: "success", signature: "sig1" }));
     await advance(16);
     expect(halo()?.getAttribute("data-halo-reduced")).toBe("true");
-    await advance(650);
+    expect(surface.style.transform).toBe("");
+    await advance(100);
+    expect(surface.style.transform).toBe("");
+    await advance(550);
     expect(halo()).toBeNull();
+    expect(surface.style.transform).toBe("");
   });
 
   it("the visual preview event plays it without any transaction", async () => {

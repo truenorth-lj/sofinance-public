@@ -3,9 +3,10 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import {
-  HALO_BAND_PX, HALO_DURATION_MS, HALO_PALETTE, HALO_REDUCED_DURATION_MS, haloCanvasScale, haloGlintAlpha, haloProgress, haloRadius,
-  haloReach, haloReducedStrength, haloRingAlpha, haloStrength, haloVisibleSlice, parseOpaqueRgb, schemeForBackground, shouldPlayHalo,
-  type HaloScheme, type HaloSlice, type Rgb,
+  HALO_BAND_PX, HALO_DURATION_MS, HALO_PALETTE, HALO_REDUCED_DURATION_MS, haloCanvasScale, haloGlintAlpha, haloOriginPoint,
+  haloProgress, haloRadius, haloReach, haloReducedStrength, haloRingAlpha, haloShake, haloStrength, haloTrailStrength,
+  haloTrailTime, haloVisibleSlice, nextHaloTrigger, parseOpaqueRgb, schemeForBackground,
+  type HaloScheme, type HaloSlice, type HaloTriggerState, type Rgb,
 } from "@/lib/compound-halo/math";
 
 /** The page content area the halo is clipped to (below the top nav). Falls back to the Compound panel's own section. */
@@ -26,21 +27,21 @@ export function haloPreviewEnabled(env: { NODE_ENV?: string; NEXT_PUBLIC_HALO_PR
 type Feedback = { phase: string; signature: string } | null;
 
 /**
- * Plays the halo once a compound transaction is CONFIRMED successful (the controller's feedback reaches "success" for
- * that signature). Clicking Compound never plays it. Returns a counter that changes on every play; a new play while
- * one runs restarts it.
+ * Plays the halo once a compound transaction is CONFIRMED successful, and only after any app result dialog for that
+ * send has been closed. `held` is true while that dialog is still open. Clicking Compound never plays it. Returns a
+ * counter that changes on every play; a new play while one runs restarts it. Once per signature.
  */
-export function useCompoundSuccessHalo(feedback: Feedback): number {
-  const lastPlayed = useRef<string | null>(null);
+export function useCompoundSuccessHalo(feedback: Feedback, held = false): number {
+  const trigger = useRef<HaloTriggerState>({ lastPlayed: null, queued: null });
   const [play, setPlay] = useState(0);
   const phase = feedback?.phase ?? null;
   const signature = feedback?.signature ?? null;
   useEffect(() => {
-    const current = phase && signature !== null ? { phase, signature } : null;
-    if (!shouldPlayHalo(current, lastPlayed.current)) return;
-    lastPlayed.current = signature;
-    setPlay((count) => count + 1);
-  }, [phase, signature]);
+    const current = phase && signature ? { phase, signature } : null;
+    const next = nextHaloTrigger(current, held, trigger.current);
+    trigger.current = next.state;
+    if (next.play) setPlay((count) => count + 1);
+  }, [phase, signature, held]);
   useEffect(() => {
     if (!haloPreviewEnabled()) return;
     const preview = () => setPlay((count) => count + 1);
@@ -220,43 +221,28 @@ function protectTextAndIcons(context: CanvasRenderingContext2D, mask: HTMLCanvas
   context.restore();
 }
 
-function drawFrame(context: CanvasRenderingContext2D, run: Run, t: number) {
+function paintRing(context: CanvasRenderingContext2D, run: Run, t: number, strength: number, band: number, glints: boolean) {
+  if (strength <= 0 || t <= 0) return;
   const { origin, scheme } = run;
   const { width, height } = run.slice;
   const palette = HALO_PALETTE[scheme];
-  context.clearRect(0, 0, width, height);
-  if (run.reduced) {
-    // Fades in and out in place: a soft glow around the button, no travelling ring and no glints.
-    const alpha = haloRingAlpha(haloReducedStrength(t), scheme);
-    const glow = context.createRadialGradient(origin.x, origin.y, 0, origin.x, origin.y, HALO_BAND_PX * 2.5);
-    glow.addColorStop(0, rgba(palette[3], alpha));
-    glow.addColorStop(0.35, rgba(palette[0], alpha * 0.8));
-    glow.addColorStop(0.7, rgba(palette[1], alpha * 0.4));
-    glow.addColorStop(1, rgba(palette[1], 0));
-    context.fillStyle = glow;
-    context.fillRect(0, 0, width, height);
-    return;
-  }
-  const strength = haloStrength(t);
-  // To just past the far corner of the visible slice (the canvas), not the whole content area.
-  const reach = haloReach(origin, { width, height });
+  const reach = haloReach(origin, { width, height }, band);
   const radius = haloRadius(t, reach);
-  const half = HALO_BAND_PX / 2;
+  const half = band / 2;
   const inner = Math.max(0, radius - half), outer = radius + half;
-  if (outer <= 0 || strength <= 0) return;
+  if (outer <= 0) return;
   const at = (distance: number) => Math.max(0, Math.min(1, (distance - inner) / (outer - inner)));
   const ringAlpha = haloRingAlpha(strength, scheme);
-  // The band's (1 − x²)² profile, coloured trailing green → mint → white front → blue fringe.
   const ring = context.createRadialGradient(origin.x, origin.y, inner, origin.x, origin.y, outer);
   ring.addColorStop(0, rgba(palette[2], 0));
-  ring.addColorStop(at(radius - half * 0.55), rgba(palette[2], ringAlpha * 0.42));
-  ring.addColorStop(at(radius - half * 0.15), rgba(palette[0], ringAlpha * 0.92));
-  ring.addColorStop(at(radius + half * 0.1), rgba(palette[3], ringAlpha));
-  ring.addColorStop(at(radius + half * 0.5), rgba(palette[1], ringAlpha * 0.42));
+  ring.addColorStop(at(radius - half * 0.55), rgba(palette[2], ringAlpha * 0.55));
+  ring.addColorStop(at(radius - half * 0.18), rgba(palette[0], ringAlpha));
+  ring.addColorStop(at(radius + half * 0.08), rgba(palette[3], ringAlpha));
+  ring.addColorStop(at(radius + half * 0.48), rgba(palette[1], ringAlpha * 0.55));
   ring.addColorStop(1, rgba(palette[1], 0));
   context.fillStyle = ring;
   context.fillRect(0, 0, width, height);
-  // Faint glints where the front crosses a border or divider.
+  if (!glints) return;
   const glintAlpha = haloGlintAlpha(strength, scheme, run.reduced);
   if (!glintAlpha || !run.edges.length) return;
   const glint = context.createRadialGradient(origin.x, origin.y, inner, origin.x, origin.y, outer);
@@ -275,10 +261,34 @@ function drawFrame(context: CanvasRenderingContext2D, run: Run, t: number) {
   }
 }
 
+function drawFrame(context: CanvasRenderingContext2D, run: Run, t: number) {
+  const { origin, scheme } = run;
+  const { width, height } = run.slice;
+  const palette = HALO_PALETTE[scheme];
+  context.clearRect(0, 0, width, height);
+  if (run.reduced) {
+    // Fades in and out in place: a soft glow around the button, no travelling ring, no glints, no shake.
+    const alpha = haloRingAlpha(haloReducedStrength(t), scheme);
+    const glow = context.createRadialGradient(origin.x, origin.y, 0, origin.x, origin.y, HALO_BAND_PX * 2.5);
+    glow.addColorStop(0, rgba(palette[3], alpha));
+    glow.addColorStop(0.35, rgba(palette[0], alpha * 0.8));
+    glow.addColorStop(0.7, rgba(palette[1], alpha * 0.4));
+    glow.addColorStop(1, rgba(palette[1], 0));
+    context.fillStyle = glow;
+    context.fillRect(0, 0, width, height);
+    return;
+  }
+  // Trailing wave first (behind), then the brighter, thicker front wave with glints.
+  const trailT = haloTrailTime(t);
+  paintRing(context, run, trailT, haloTrailStrength(t), HALO_BAND_PX * 1.15, false);
+  paintRing(context, run, t, haloStrength(t), HALO_BAND_PX, true);
+}
+
 /**
- * Transparent canvas overlay for the confirmed-compound halo: colour rings spreading from the Compound button plus
- * faint glints on borders and dividers. The canvases cover only the visible slice of the content area. It never
- * snapshots or distorts the page, ignores the pointer, ends on a window resize, and is removed from the DOM at rest.
+ * Transparent canvas overlay for the confirmed-compound halo: colour rings spreading from the Compound button that is
+ * visible after the result dialog closes, plus faint glints on borders and dividers. The canvases cover only the
+ * visible slice of the content area. It ignores the pointer, ends on a window resize, and is removed from the DOM at
+ * rest. A very short translate (≤ 3px, ≤ 150ms) shakes the surface; reduced motion never shakes or moves the ring.
  */
 export function CompoundSuccessHalo({ play, originRef }: { play: number; originRef: RefObject<HTMLElement | null> }) {
   const [run, setRun] = useState<Run | null>(null);
@@ -286,18 +296,19 @@ export function CompoundSuccessHalo({ play, originRef }: { play: number; originR
   useLayoutEffect(() => {
     if (!play) return;
     const button = originRef.current;
-    const surface = button?.closest<HTMLElement>(`[${HALO_SURFACE_ATTR}]`) ?? button?.closest<HTMLElement>("section") ?? null;
-    if (!button || !surface) return;
+    const surface = button?.closest<HTMLElement>(`[${HALO_SURFACE_ATTR}]`) ?? button?.closest<HTMLElement>("section")
+      ?? document.querySelector<HTMLElement>(`[${HALO_SURFACE_ATTR}]`) ?? null;
+    if (!surface) return;
     const box = surface.getBoundingClientRect();
     const slice = haloVisibleSlice(box, { width: window.innerWidth, height: window.innerHeight });
     if (!slice.width || !slice.height) return;
     const frame = { left: box.left + slice.x, top: box.top + slice.y, width: slice.width, height: slice.height };
-    const target = button.getBoundingClientRect();
+    const target = button?.getBoundingClientRect() ?? null;
     const reduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const surfaceStyle = getComputedStyle(surface);
     const radius = parseFloat(surfaceStyle.borderTopLeftRadius) > 0 ? surfaceStyle.borderTopLeftRadius : "var(--radius-surface, 28px)";
     setRun({ surface, scheme: resolveScheme(surface), reduced, radius, slice,
-      origin: { x: target.left - frame.left + target.width / 2, y: target.top - frame.top + target.height / 2 },
+      origin: haloOriginPoint(target && target.width && target.height ? target : null, frame),
       edges: reduced ? [] : collectEdges(surface, frame) });
   }, [play, originRef]);
   useEffect(() => {
@@ -318,6 +329,11 @@ export function CompoundSuccessHalo({ play, originRef }: { play: number; originR
     const box = run.surface.getBoundingClientRect();
     const frameBox = { left: box.left + run.slice.x, top: box.top + run.slice.y, width: run.slice.width, height: run.slice.height };
     const duration = run.reduced ? HALO_REDUCED_DURATION_MS : HALO_DURATION_MS;
+    const previousTransform = run.surface.style.transform;
+    const applyShake = (elapsed: number) => {
+      const { x, y } = haloShake(elapsed, run.reduced);
+      run.surface.style.transform = x || y ? `translate(${x}px, ${y}px)` : previousTransform;
+    };
     let mask: HTMLCanvasElement | null = null;
     let frame = 0, cancelled = false;
     void buildHaloMask(run.surface, frameBox, scale).then((built) => {
@@ -325,10 +341,12 @@ export function CompoundSuccessHalo({ play, originRef }: { play: number; originR
       mask = built;
       const start = performance.now();
       const tick = (now: number) => {
-        const t = haloProgress(now - start, duration);
+        const elapsed = now - start;
+        const t = haloProgress(elapsed, duration);
+        applyShake(elapsed);
         drawFrame(context, run, t);
         protectTextAndIcons(context, mask, run);
-        if (t >= 1) { setRun(null); return; }
+        if (t >= 1) { applyShake(duration); setRun(null); return; }
         frame = requestAnimationFrame(tick);
       };
       frame = requestAnimationFrame(tick);
@@ -336,6 +354,7 @@ export function CompoundSuccessHalo({ play, originRef }: { play: number; originR
     return () => {
       cancelled = true;
       cancelAnimationFrame(frame);
+      run.surface.style.transform = previousTransform;
       if (mask) { mask.width = 0; mask.height = 0; mask = null; }
       canvas.width = 0; canvas.height = 0;
     };
