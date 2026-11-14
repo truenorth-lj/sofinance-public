@@ -50,12 +50,18 @@ describe("SiteHeader", () => {
     }
   });
 
-  it("renders the cream squircle H mark at 28px and drops the ink circle", () => {
+  it("renders a bare cream squircle H mark and wordmark, with no lemon capsule", () => {
     const html = renderToStaticMarkup(createElement(SiteHeader));
     expect(html).toContain('src="/navbar-mark-squircle-cream.svg"');
-    expect(html).toContain("h-7 w-7");
-    expect(html).toContain("pl-[7px]");
-    expect(html).not.toContain("bg-ink");
+    expect(html).toContain("h-9 w-9");
+    expect(html).toContain("gap-2.5");
+    expect(html).toContain("font-display");
+    expect(html).toContain("text-[20px]");
+    expect(html).toContain("font-bold");
+    expect(html).toContain("text-cream");
+    expect(html).toContain("SoFinance");
+    expect(html).not.toContain("bg-lemon");
+    expect(html).not.toContain("pl-[7px]");
     expect(html).not.toContain("text-lemon");
   });
 
