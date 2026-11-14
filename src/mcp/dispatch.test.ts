@@ -7,7 +7,7 @@ import { listToolDefinitions, type ToolName } from "./tool-definitions";
 it("covers every unique metadata name on both surfaces exactly once", () => {
   for (const surface of ["http", "stdio"] as const) {
     const names = listToolDefinitions(surface).map(tool => tool.name);
-    expect(new Set(names).size).toBe(15);
+    expect(new Set(names).size).toBe(16);
     expect(names.toSorted()).toEqual(Object.keys(TOOL_DISPATCH).toSorted());
   }
 });

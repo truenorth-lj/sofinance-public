@@ -30,6 +30,7 @@ import { generateMcpToken } from "@/lib/mcp-auth";
 import { verifySignToken } from "@/lib/pending-sign-token";
 import { buildTransaction, SIGNING_SECRET, testKeypair, toBase64 } from "@/lib/test-support/send-fixtures";
 import { VALID_ARGS, wallet, otherWallet } from "./test-support/dispatch-fixtures";
+import { resetPoolSnapshotCache } from "./tools/pool-snapshot";
 
 const names = ["list_positions", "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction",
   "quote_open_position", "prepare_open_position", "prepare_withdraw", "get_position_performance", "get_position_range_status", "list_rwa_pairs"] as const;
@@ -53,6 +54,7 @@ beforeEach(async () => {
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.invalid.example");
   vi.spyOn(console, "error").mockImplementation(() => {});
   for (const mock of Object.values(backend)) mock.mockReset();
+  resetPoolSnapshotCache();
   backend.discover.mockResolvedValue({ wallet, positions: [], assets: [], slot: 1, fetchedAt: 2 });
   backend.selectedQuote.mockResolvedValue({ quote: summary.quote });
   for (const mock of [backend.selectedBuild, backend.compound, backend.openBuild]) mock.mockResolvedValue({ summary, transaction });

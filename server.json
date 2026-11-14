@@ -1,0 +1,22 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "xyz.sofinancelab/sofinance",
+  "title": "SoFinance",
+  "description": "Same-stock tokenized-stock LP pools on Solana: pools, 7-day APR estimates, unsigned transactions.",
+  "version": "0.2.0",
+  "websiteUrl": "https://sofinancelab.xyz/app/ai",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://sofinancelab.xyz/api/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Optional. \"Bearer <token>\" from https://sofinancelab.xyz/app/ai (connect wallet, Sign to get MCP config; valid 24h). Not needed for list_rwa_pairs and get_pool_range_apr.",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

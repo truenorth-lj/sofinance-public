@@ -17,6 +17,16 @@ describe("/llms.txt", () => {
     expect(text).toContain("NVDA / NVDAx");
   });
 
+  it("lists the Meteora DLMM pools and the Solana pools added since the last review (SPY, TTWO)", async () => {
+    const text = await GET().text();
+    expect(text).toContain("Solana (Meteora DLMM, 2 pools)");
+    expect(text).toContain("- TSLA / TSLAx (Tesla)\n");
+    expect(text).toContain("- SPY / SPYx (S&P 500 ETF)");
+    expect(text).toContain("- TTWO / TTWOx (Take-Two Interactive)");
+    expect(text).toContain("INTC / INTCx (Intel), two fee tiers");
+    expect(text).toContain("https://sofinancelab.xyz/api/mcp");
+  });
+
   it("keeps the public-copy rules", async () => {
     const text = await GET().text();
     expect(text).not.toContain("yield-and-apr");
