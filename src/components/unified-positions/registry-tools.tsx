@@ -21,7 +21,7 @@ import { useTxWallet } from "../use-tx-wallet";
 import { RegistryPerformancePanel } from "./registry-performance";
 import type { PositionPerformanceReport } from "@/lib/position-performance-report";
 import { beginPositionOp, trackPositionSignature, usePositionOpLock } from "./position-op-lock";
-import { CompoundSuccessHalo, useCompoundSuccessHalo } from "../compound-halo";
+import { CompoundTokenBurst, useCompoundCelebration } from "../compound-celebration";
 
 /** A wallet balance the Add panel can check against (raw atomic string). */
 export type ToolBalance = { balance: string; decimals: number };
@@ -422,9 +422,11 @@ function RegistryCompoundPanel({ position, descriptor, symbolOf, onConfirmed }: 
   const tokenFor = (mint: string) => [position.tokenA, position.tokenB].find((token) => token.id === mint);
   const rentLine = tokenAccountRentLine(op.prepared?.createsTokenAccounts, (mint) => { const token = tokenFor(mint); return token ? symbolOf(token) : "pool token"; });
   const submit = () => void send({ descriptor, positionKey: position.key });
-  // The pipeline's "success" is the confirmed landing (never the click); the halo plays once per signature.
+  // The pipeline's "success" is the confirmed landing (never the click); the coins pop out of the Compound button once per
+  // signature. There is no result dialog here, so nothing holds it.
   const compoundButtonRef = useRef<HTMLButtonElement>(null);
-  const haloPlay = useCompoundSuccessHalo(tx.status === "success" && tx.signature ? { phase: "success", signature: tx.signature } : null);
+  const celebration = useCompoundCelebration(tx.status === "success" && tx.signature ? { phase: "success", signature: tx.signature } : null,
+    false, [symbolOf(position.tokenA), symbolOf(position.tokenB)]);
   return <section className={CARD} data-testid="registry-compound" aria-labelledby="registry-compound-heading">
     {/* Same look and words as the Raydium Compound fees panel (LJ 11/14); the transaction flow below is unchanged. */}
     <h2 id="registry-compound-heading" className="flex items-center gap-2 text-lg font-semibold text-cream"><Sprout aria-hidden="true" className="h-5 w-5 text-cream/80" />Compound fees</h2>
@@ -440,7 +442,7 @@ function RegistryCompoundPanel({ position, descriptor, symbolOf, onConfirmed }: 
         </button>
         {blocked ? <span data-testid="registry-compound-blocked" role="status" className="text-xs text-smoke">{blocked}</span> : null}
       </div>
-      <CompoundSuccessHalo play={haloPlay} originRef={compoundButtonRef} />
+      <CompoundTokenBurst play={celebration.play} originRef={compoundButtonRef} />
       <LockNote lock={op} />
       <TxStatus tx={tx} successText="Fees compounded." walletNote={rentLine} />
     </>}
