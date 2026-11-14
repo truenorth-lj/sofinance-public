@@ -1,9 +1,9 @@
 import "@/lib/engine-host";
 import "server-only";
 
-import { CLMM_PROGRAM_ID, PoolInfoLayout, TickArrayLayout, getPdaTickArrayAddress } from "@raydium-io/raydium-sdk-v2";
-import { PublicKey, type Connection } from "@solana/web3.js";
+import { RaydiumPoolAccountMissingError, readRaydiumLiquiditySample } from "@sofinance/engine/protocols/raydium/pool-liquidity";
 import { rpcConnection } from "@sofinance/engine/rpc";
+import type { Connection } from "@solana/web3.js";
 import { buildLiquidityBins, tickArrayStartsForWindow, windowBounds, type LiquidityBin } from "./liquidity-bins";
 import { NotRaydiumClmmPoolError } from "./not-clmm-pool";
 
@@ -34,45 +34,32 @@ export type OnchainPoolLiquidity = {
 export async function readOnchainPoolLiquidity(
   poolId: string, connection: Connection = rpcConnection(),
 ): Promise<OnchainPoolLiquidity> {
-  const pool = new PublicKey(poolId);
-  const poolInfo = await connection.getAccountInfo(pool, "confirmed");
-  if (!poolInfo || !poolInfo.owner.equals(CLMM_PROGRAM_ID)) {
-    throw new NotRaydiumClmmPoolError();
+  let sample;
+  try {
+    sample = await readRaydiumLiquiditySample(poolId, connection, (pool) => {
+      const half = halfWindowBinsFor(pool.tickSpacing);
+      const { firstTick, endTick } = windowBounds(pool.tickCurrent, pool.tickSpacing, half);
+      return tickArrayStartsForWindow(firstTick, endTick, pool.tickSpacing);
+    });
+  } catch (error) {
+    if (error instanceof RaydiumPoolAccountMissingError) throw new NotRaydiumClmmPoolError();
+    throw error;
   }
-  const state = PoolInfoLayout.decode(poolInfo.data);
-  const tickSpacing = state.tickSpacing;
-  const half = halfWindowBinsFor(tickSpacing);
-  const { firstTick, endTick } = windowBounds(state.tickCurrent, tickSpacing, half);
-  const starts = tickArrayStartsForWindow(firstTick, endTick, tickSpacing);
-  const keys = starts.map((start) => getPdaTickArrayAddress(CLMM_PROGRAM_ID, pool, start).publicKey);
-  const infos = await connection.getMultipleAccountsInfo(keys, "confirmed");
-  const liquidityNet = new Map<number, bigint>();
-  infos.forEach((info, index) => {
-    if (!info) return;
-    if (!info.owner.equals(CLMM_PROGRAM_ID)) throw new Error("Tick array owner mismatch");
-    const array = TickArrayLayout.decode(info.data);
-    if (!array.poolId.equals(pool) || array.startTickIndex !== starts[index]) {
-      throw new Error("Tick array pool or start index mismatch");
-    }
-    for (const tick of array.ticks) {
-      if (tick.liquidityGross.isZero()) continue;
-      liquidityNet.set(tick.tick, BigInt(tick.liquidityNet.toString()));
-    }
-  });
+  const half = halfWindowBinsFor(sample.tickSpacing);
   return {
     poolId,
-    mintA: state.mintA.toBase58(),
-    mintB: state.mintB.toBase58(),
-    decimalsA: state.mintDecimalsA,
-    decimalsB: state.mintDecimalsB,
-    tickSpacing,
-    tickCurrent: state.tickCurrent,
-    sqrtPriceX64: state.sqrtPriceX64.toString(),
+    mintA: sample.mintA,
+    mintB: sample.mintB,
+    decimalsA: sample.decimalsA,
+    decimalsB: sample.decimalsB,
+    tickSpacing: sample.tickSpacing,
+    tickCurrent: sample.tickCurrent,
+    sqrtPriceX64: sample.sqrtPriceX64,
     bins: buildLiquidityBins({
-      tickCurrent: state.tickCurrent,
-      tickSpacing,
-      poolLiquidity: BigInt(state.liquidity.toString()),
-      liquidityNet,
+      tickCurrent: sample.tickCurrent,
+      tickSpacing: sample.tickSpacing,
+      poolLiquidity: sample.poolLiquidity,
+      liquidityNet: sample.liquidityNet,
       halfWindowBins: half,
     }),
   };
