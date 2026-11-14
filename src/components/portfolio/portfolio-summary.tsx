@@ -1,5 +1,6 @@
 "use client";
 
+import { Loader2 } from "lucide-react";
 import { useId, useState } from "react";
 import { cn } from "@/lib/cn";
 import { formatUsd } from "@/lib/format/usd";
@@ -26,13 +27,14 @@ export function CompoundAllButton({ className }: { className?: string }) {
 
 const count = (n: number) => `${n} ${n === 1 ? "position" : "positions"}`;
 
-/** A total, or a dash while positions are still read (a total never grows while it is on screen). */
+/** A total so far (it grows as positions are read; dimmed until all are in), or a dash before the first one. */
 function Total({ value, totals }: { value: number | null; totals: PortfolioTotals }) {
-  return <p className="mt-1 text-2xl font-semibold tabular-nums tracking-[-0.02em] text-cream">{totals.pending ? "—" : formatUsd(value)}</p>;
+  return <p aria-busy={totals.pending > 0} className={cn("mt-1 text-2xl font-semibold tabular-nums tracking-[-0.02em]", totals.pending ? "text-cream/60" : "text-cream")}>{formatUsd(value)}</p>;
 }
 
 function Note({ totals }: { totals: PortfolioTotals }) {
-  if (totals.pending) return <p role="status" className="mt-1 text-xs text-smoke">Reading {totals.positions - totals.pending} of {totals.positions}…</p>;
+  if (totals.pending) return <p role="status" data-testid="portfolio-loading" className="mt-1 flex items-center gap-1.5 text-xs text-smoke">
+    <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />Loading {totals.positions - totals.pending} of {totals.positions} positions…</p>;
   if (totals.missing) return <p className="mt-1 text-xs text-smoke">{count(totals.missing)} could not be read and {totals.missing === 1 ? "is" : "are"} not included.</p>;
   return null;
 }
@@ -45,7 +47,7 @@ const card = "rounded-2xl border border-white/12 bg-char p-4 sm:p-5";
  * line, then "Compound all".
  */
 export function PortfolioSummary({ totals }: { totals: PortfolioTotals }) {
-  const fees = (value: number | null) => totals.pending ? "—" : formatUsd(value);
+  const fees = (value: number | null) => formatUsd(value);
   return <section aria-label="Portfolio totals" data-testid="portfolio-summary" className="mt-3 grid gap-3 sm:grid-cols-3">
     <div className={card} data-testid="portfolio-total-value">
       <h2 className="text-xs font-semibold text-smoke">Total LP value</h2>

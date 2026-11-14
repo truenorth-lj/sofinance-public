@@ -67,10 +67,17 @@ describe("PortfolioSummary", () => {
     expect(phone.closest("span")!.className).toContain("sm:hidden");
     expect(container.textContent).not.toMatch(/backtest|earn|yield|auto-rebalance|guarantee/i);
   });
-  it("shows dashes while positions are read, and says how many could not be read", async () => {
+  it("shows the totals so far with a loading hint while positions are read, and says how many could not be read", async () => {
     await act(async () => root.render(createElement(PortfolioSummary, { totals: { ...totals, pending: 1 } })));
+    const total = container.querySelector("[data-testid=portfolio-total-value] p")!;
+    expect(total.textContent).toBe("$1,234.50");
+    expect(total.getAttribute("aria-busy")).toBe("true");
+    expect(container.querySelector("[data-testid=portfolio-loading]")!.textContent).toBe("Loading 1 of 2 positions…");
+    await act(async () => root.render(createElement(PortfolioSummary, { totals: { ...totals, valueUsd: null, unclaimedFeesUsd: null, cumulativeFeesUsd: null, pending: 2 } })));
     expect(container.querySelector("[data-testid=portfolio-total-value] p")!.textContent).toBe("—");
-    expect(container.textContent).toContain("Reading 1 of 2…");
+    await act(async () => root.render(createElement(PortfolioSummary, { totals })));
+    expect(container.querySelector("[data-testid=portfolio-loading]")).toBeNull();
+    expect(container.querySelector("[data-testid=portfolio-total-value] p")!.getAttribute("aria-busy")).toBe("false");
     await act(async () => root.render(createElement(PortfolioSummary, { totals: { ...totals, missing: 1 } })));
     expect(container.textContent).toContain("1 position could not be read and is not included.");
   });

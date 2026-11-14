@@ -26,8 +26,10 @@ describe("portfolioTotals", () => {
     expect(portfolioTotals([ready(100, 2, 10), ready(50, 1, 5)], [25])).toEqual({ positions: 3, valueUsd: 175, unclaimedFeesUsd: 3,
       cumulativeFeesUsd: 15, pending: 0, missing: 0 });
   });
-  it("shows no total while a position is still loading", () => {
-    expect(portfolioTotals([ready(100, 2, 10), { status: "loading" }])).toMatchObject({ valueUsd: null, unclaimedFeesUsd: null, pending: 1 });
+  it("adds up progressively while positions are still loading, and says how many are pending", () => {
+    expect(portfolioTotals([ready(100, 2, 10), { status: "loading" }], [25])).toMatchObject({ positions: 3, valueUsd: 125, unclaimedFeesUsd: 2,
+      cumulativeFeesUsd: 10, pending: 1, missing: 0 });
+    expect(portfolioTotals([{ status: "loading" }, { status: "loading" }])).toMatchObject({ valueUsd: null, unclaimedFeesUsd: null, pending: 2 });
   });
   it("counts failed or unpriced positions as missing instead of zero", () => {
     expect(portfolioTotals([ready(100, 2, 10), { status: "failed" }], [null])).toMatchObject({ valueUsd: 100, missing: 2 });

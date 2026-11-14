@@ -44,6 +44,7 @@ import { solscanAccountUrl } from "@/lib/format/explorer";
 import { PortfolioSummary } from "./portfolio/portfolio-summary";
 import { PortfolioPositionList, rowActions, type PortfolioRow } from "./portfolio/portfolio-rows";
 import { usePositionReports, type LoadedReport } from "./portfolio/use-position-reports";
+import { invalidateReports } from "./portfolio/report-cache";
 import { portfolioTotals, positionFigures, type FiguresState, type PositionFigures } from "@/lib/portfolio/figures";
 
 const short = shortAddress;
@@ -79,6 +80,9 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
     loadingDiscovery, loadingState, stateError } = controller;
   // My positions from DEXes served through the registry (PR5): every Solana-wallet DEX except the inline source above.
   const [registryRefresh, setRegistryRefresh] = useState(0);
+  // Portfolio numbers: forget the cached reports (all, or the given positions) and read them again.
+  const [reportsRefresh, setReportsRefresh] = useState(0);
+  const refreshReports = (keys?: readonly string[]) => { invalidateReports(keys); setReportsRefresh((value) => value + 1); };
   const registry = useRegistryPositions({ owner: connected ? wallet || null : null, signer: "solana-wallet", exclude: [positionSource.id], refresh: registryRefresh });
   const totalCostPercent = quote && typeof quote.roundtripCostInput === "string" && BigInt(quote.requested) > 0n
     ? (Number(quote.roundtripCostInput) / Number(quote.requested) * 100).toFixed(2)
@@ -92,7 +96,11 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   const compound = useCompoundController({ wallet: wallet || undefined, positionMint: selectionAligned ? selection?.positionMint : undefined,
     // Selection alignment gates positionMint above, not wallet-wide leftover recovery.
     externalBlocked: addBusy || withdrawBusy,
-    onConfirmed: () => { void refreshState(); } });
+    // A confirmed compound changed this position's fees and value: read its Portfolio numbers again.
+    onConfirmed: () => {
+      void refreshState();
+      refreshReports(selectionAligned && selection?.positionMint ? [positionKey(positionSource.id, selection.positionMint)] : undefined);
+    } });
   // Unclaimed fees come from the compound reader (same accrual formula as the Performance card); its snapshot also carries the
   // liquidity amounts, so rows show liquidity and unclaimed fees from one consistent read when it is available.
   // Duplicates the visibleState filter in use-compound-controller.ts:223 (it already drops another wallet's or position's state):
@@ -200,7 +208,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
       // Keyed by the position only: the cross-op lock is per position and must not depend on the open tab (PM review of #289).
       tool: (item: UnifiedPosition, view: ToolId) => <RegistryPositionTool key={item.key} position={item} descriptor={registry.descriptor(item)!}
         capabilities={registry.capabilities(item)!} view={view} balances={walletBalances} symbolOf={(token) => tokenSymbol(token.id, metadata, token.symbol)}
-        onConfirmed={() => { setOtherKey(item.key); setRegistryRefresh((value) => value + 1); void refreshDiscovery(); }}
+        onConfirmed={() => { setOtherKey(item.key); setRegistryRefresh((value) => value + 1); void refreshDiscovery(); refreshReports([item.key]); }}
         onPerformance={(key, result) => setPanelResult({ key, ...result })} showStockPerformance={!stockShownInOverview} />,
       capabilities: registry.capabilities(otherSelected)! }
     : otherSelected && external ? { header: external.header, details: external.details, tool: external.tool, capabilities: capabilitiesFor(external.source, otherSelected) }
@@ -280,7 +288,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   const panelOwnsReport = activeView === "performance" && Boolean(panelKey);
   // On Performance an unresolved default selection waits, so its first report read belongs to the panel (no double read).
   const portfolioReports = usePositionReports(activeView === "performance" && awaitingDefaultSelection ? []
-    : panelOwnsReport ? performanceSources.filter((item) => item.key !== panelKey) : performanceSources);
+    : panelOwnsReport ? performanceSources.filter((item) => item.key !== panelKey) : performanceSources, { refresh: reportsRefresh });
   const reportFor = (key: string): LoadedReport | "loading" | undefined => panelOwnsReport && key === panelKey
     ? panelResult?.key === key ? panelResult : "loading" : portfolioReports[key];
   const reportedKeys = new Set(performanceSources.map((item) => item.key));
@@ -301,7 +309,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   // registry DEXes and, on /app, the Robinhood Chain scan via the parent's refresh counter.
   const refreshAll = () => {
     if (wallet) {
-      void refreshDiscovery(); setRegistryRefresh((value) => value + 1);
+      void refreshDiscovery(); setRegistryRefresh((value) => value + 1); refreshReports();
       if (selectionAligned && selection?.positionMint) { void refreshState(); void compound.refreshState(); }
     }
     onRescan?.();

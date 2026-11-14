@@ -399,7 +399,7 @@ describe("automatic cleanup after a new compound", () => {
     let rejectCleanup!: (error: Error) => void;
     mocks.sign.mockImplementationOnce(async (tx: VersionedTransaction) => { tx.sign([testKeypair(1)]); return tx; })
       .mockImplementationOnce(() => new Promise<VersionedTransaction>((_resolve, reject) => { rejectCleanup = reject; }));
-    const harvest = () => container.querySelector('section[aria-label="Harvest"]')!;
+    const harvest = () => container.querySelector('section[aria-label="Fees to compound"]')!;
     const freshAmounts = "0 " + fixture.state.mintA.slice(0, 4) + "…" + fixture.state.mintA.slice(-4) +
       " + 0.000002 " + fixture.state.mintB.slice(0, 4) + "…" + fixture.state.mintB.slice(-4);
     await render();

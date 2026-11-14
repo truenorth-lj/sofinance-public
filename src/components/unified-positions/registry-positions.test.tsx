@@ -11,6 +11,7 @@ import { DEPOSIT_MINIMUM_UNAVAILABLE, dexDescriptors } from "@/lib/dex/client";
 import { getTxNotices, resetTxNotices } from "@/lib/tx-pipeline";
 import { RegistryPositionTool } from "./registry-tools";
 import { resetPositionOpLocks } from "./position-op-lock";
+import { clearReportCache } from "../portfolio/report-cache";
 
 const WALLET = testKeypair(91).publicKey.toBase58();
 const RAYDIUM_MINT = testKeypair(92).publicKey.toBase58();
@@ -29,6 +30,14 @@ vi.mock("../use-token-metadata", () => ({ useTokenMetadata: () => ({}) }));
 vi.mock("../pool-daily-apr-panel", () => ({ PoolDailyAprChart: ({ poolId, overlay }: { poolId: string; overlay?: { points: unknown[] } }) =>
   createElement("div", { "data-testid": "pool-daily-apr-chart", "data-pool": poolId, "data-overlay": overlay ? String(overlay.points.length) : "none" }) }));
 vi.mock("../transaction-status-dialog", () => ({ TransactionStatusDialog: () => null }));
+// The real registry tool panel; the test keeps its latest `onConfirmed` to play a confirmed op (e.g. a compound).
+const toolProbe = vi.hoisted(() => ({ onConfirmed: undefined as (() => void) | undefined }));
+vi.mock("./registry-tools", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./registry-tools")>();
+  return { ...actual, RegistryPositionTool: (props: Parameters<typeof actual.RegistryPositionTool>[0]) => {
+    toolProbe.onConfirmed = props.onConfirmed; return createElement(actual.RegistryPositionTool, props);
+  } };
+});
 vi.mock("../wallet-connection", async (importOriginal) => ({ ...await importOriginal<typeof import("../wallet-connection")>(),
   useWalletConnection: () => ({ address: WALLET, connected: true, connect: vi.fn(), disconnect: vi.fn(), isMobile: false, walletsCount: 1,
     connectionError: "", signTransaction: vi.fn() }) }));
@@ -55,7 +64,7 @@ const raydiumRow = { positionMint: RAYDIUM_MINT, positionAccount: "p", poolId: P
 
 let container: HTMLDivElement; let root: Root;
 beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); localStorage.clear(); resetTxNotices();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); localStorage.clear(); resetTxNotices(); clearReportCache(); toolProbe.onConfirmed = undefined;
   state.dex = { status: 200, body: { positions: [meteoraRow()] } }; state.raydium = []; state.dexCalls = []; state.icons = null; state.hold = null; resetPositionOpLocks();
   state.performance = { status: 200, body: performanceBody() }; state.walletHold = null; state.positionsHold = null;
   state.quoteAdd = { status: 200, body: {} };
@@ -291,6 +300,21 @@ describe("/app My positions with registry DEXes", () => {
     await settle();
     expect(state.dexCalls.at(-1)).toEqual(["/api/dex/meteora-dlmm/compound", { owner: WALLET, positionKey: `meteora-dlmm:${POSITION}`, step: 1, priorSignatures: [] }]);
     expect(container.querySelector("[data-testid=registry-compound] [role=alert]")?.textContent).toContain("This position has no unclaimed fees yet, so there is nothing to compound.");
+  });
+
+  it("Refresh and a confirmed Meteora compound each send a new Meteora performance read for the Portfolio numbers", async () => {
+    await render();
+    const reads = () => state.dexCalls.filter(([path]) => path === "/api/dex/meteora-dlmm/performance");
+    expect(reads()).toEqual([["/api/dex/meteora-dlmm/performance", { positionKey: `meteora-dlmm:${POSITION}` }]]);
+    const refresh = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Refresh")!;
+    await act(async () => refresh.click());
+    await settle();
+    expect(reads()).toHaveLength(2);
+    expect(toolProbe.onConfirmed).toBeTypeOf("function");
+    await act(async () => toolProbe.onConfirmed!());
+    await settle();
+    expect(reads()).toHaveLength(3);
+    expect(reads().at(-1)).toEqual(["/api/dex/meteora-dlmm/performance", { positionKey: `meteora-dlmm:${POSITION}` }]);
   });
 
   it("Compound with no unclaimed fees is disabled up front with a plain reason, and nothing is requested", async () => {

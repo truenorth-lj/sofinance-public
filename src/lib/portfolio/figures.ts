@@ -37,21 +37,22 @@ export type PortfolioTotals = {
   valueUsd: number | null;
   unclaimedFeesUsd: number | null;
   cumulativeFeesUsd: number | null;
-  /** Positions whose numbers are still being read; a total is shown only once this is 0. */
+  /** Positions whose numbers are still being read; the totals so far add up the rest (the card shows a loading hint). */
   pending: number;
   /** Positions whose numbers could not be read (or have no USD price): a total over the rest says so. */
   missing: number;
 };
 
 /**
- * The three numbers at the top of Portfolio. A total waits until every position is read, so it never grows while the
- * user reads it; a position that failed or has no price is left out and counted in `missing` (the card says so).
+ * The three numbers at the top of Portfolio. Totals add up progressively as positions are read (PM review of #395), with
+ * `pending` driving a loading hint until all are in; a position that failed or has no price is left out and counted in
+ * `missing` (the card says so). A total with nothing read yet is null (a dash), never 0.
  * `extraValueUsd`: value of positions without a Performance report (Robinhood Chain), added to the LP total only.
  */
 export function portfolioTotals(states: readonly FiguresState[], extraValue: readonly (number | null)[] = []): PortfolioTotals {
   const pending = states.filter((state) => state.status === "loading").length;
   const ready = states.flatMap((state) => state.status === "ready" ? [state.figures] : []);
-  const sum = (values: (number | null)[]) => pending ? null : values.some((value) => value !== null)
+  const sum = (values: (number | null)[]) => values.some((value) => value !== null)
     ? values.reduce<number>((total, value) => total + (value ?? 0), 0) : null;
   const values = [...ready.map((item) => item.valueUsd), ...extraValue];
   const missing = states.filter((state) => state.status === "failed").length

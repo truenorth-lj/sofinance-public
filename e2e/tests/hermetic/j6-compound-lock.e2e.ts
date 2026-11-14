@@ -113,7 +113,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     });
     await showCompound(page);
     const panel = page.getByRole("region", { name: "Compound fees", exact: true });
-    const harvest = panel.getByRole("region", { name: "Harvest", exact: true }).first();
+    const harvest = panel.getByRole("region", { name: "Fees to compound", exact: true }).first();
     await expect(harvest).toContainText(/0\.00001 \S+ \+ 0\.00002 \S+/);
     await panel.getByRole("button", { name: "One-click compound", exact: true }).click();
     await expect(panel.getByRole("button", { name: "Preparing cleanup…", exact: true })).toBeVisible();
