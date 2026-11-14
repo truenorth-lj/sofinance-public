@@ -5,7 +5,7 @@ import { knownTokenSymbol, NOT_ENOUGH_SOL_FOR_FEES_MESSAGE, notEnoughBalanceMess
 import { readSwapFeeConfig } from "@sofinance/engine/swap/fee";
 import { assertNativeInputFeeCoverage, depositFeePlan, feeSwapLeg } from "@sofinance/engine/swap/leg";
 import BN from "bn.js";
-import { LiquidityMathUtil, TickUtil } from "@raydium-io/raydium-sdk-v2";
+import { LiquidityMathUtil, TickUtil } from "@sofinance/engine/protocols/raydium/liquidity-math";
 import { DEFAULT_ADD_TOLERANCE_BPS, DEFAULT_RESALE_FLOOR_BPS, MAX_PRICE_IMPACT_BPS, QUOTE_TTL_MS, SLIPPAGE_BPS } from "@sofinance/engine/ids";
 import { describeResaleFloorFailure, formatAmount, meetsResaleFloor, parseAddToleranceBps, parseResaleFloorBps, parseTokenAmount } from "@sofinance/engine/amount";
 import { allocateSpend, padAmountMax, poolPriceRates, toleranceLiquidity } from "@sofinance/engine/quote-math";

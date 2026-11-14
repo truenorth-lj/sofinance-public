@@ -7,7 +7,7 @@
  * measured prototype and the keep-the-loop switch.
  */
 import BN from "bn.js";
-import { LiquidityMathUtil, SqrtPriceMath } from "@raydium-io/raydium-sdk-v2";
+import { LiquidityMathUtil, SqrtPriceMath } from "@sofinance/engine/protocols/raydium/liquidity-math";
 import { DEFAULT_ADD_TOLERANCE_BPS } from "@sofinance/engine/ids";
 import { allocateSpend, poolPriceRates, sizingAmountsConverged, SIZING_CONVERGE_BPS, toleranceLiquidity } from "@sofinance/engine/quote-math";
 
