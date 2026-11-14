@@ -7,14 +7,12 @@ import { ArrowDown, ArrowUpRight, LoaderCircle, RefreshCw } from "lucide-react";
 import { assetMetadata, assetSymbol } from "./token-picker";
 import { formatAmount } from "@sofinance/engine/amount";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
-import { PositionAssetRow } from "./position-asset-row";
 import { resolveNftAccountLookup } from "@/lib/exit-account-lookup";
 import { useTokenMetadata } from "./use-token-metadata";
 import { useSelectedController } from "./use-selected-controller";
 import { TransactionStatusDialog } from "./transaction-status-dialog";
 import { useCompoundController } from "./use-compound-controller";
 import { InkFooter, InkNav } from "./ink";
-import { RangeBadge } from "./unified-positions/range-badge";
 import { useNoticeBottomOffset } from "./transactions/notice-offset";
 import { AddLiquiditySection } from "./add-liquidity-section";
 import { PositionToolsSection } from "./position-tools-section";
@@ -33,10 +31,8 @@ import { CLOSED_LABEL, groupPositions, isClosed } from "@/lib/unified-positions/
 import type { ExternalPositions } from "./unified-positions/external-positions";
 import { RegistryPositionDetails, RegistryPositionHeader, useRegistryPositions } from "./unified-positions/registry-positions";
 import { RegistryPositionTool, type ToolBalance } from "./unified-positions/registry-tools";
-import { useStoredTokenIcons } from "./use-stored-token-icons";
 import { tokenSymbol } from "@/lib/position-label";
 import { type OverviewPosition } from "./stocks-overview";
-import { Collapsible } from "./collapsible";
 import { fetchDexPerformance } from "@/lib/dex/client";
 import type { PositionPerformanceReport } from "@/lib/position-performance-report";
 import { shortAddress } from "@/lib/format/address";
@@ -101,12 +97,6 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
       void refreshState();
       refreshReports(selectionAligned && selection?.positionMint ? [positionKey(positionSource.id, selection.positionMint)] : undefined);
     } });
-  // Unclaimed fees come from the compound reader (same accrual formula as the Performance card); its snapshot also carries the
-  // liquidity amounts, so rows show liquidity and unclaimed fees from one consistent read when it is available.
-  // Duplicates the visibleState filter in use-compound-controller.ts:223 (it already drops another wallet's or position's state):
-  // kept as a second guard so a stale fee read of the previous position can never render beside this one.
-  const feeState = state && compound.state?.positionMint === state.positionMint ? compound.state : null;
-  const assets = feeState ?? state;
   const busy = addBusy || compound.busy || withdrawBusy;
   useLayoutEffect(() => {
     if (!busy && ownedPick && selection && selection.positionMint !== ownedPick.mint) choosePosition(ownedPick.mint);
@@ -124,8 +114,6 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
     ...registry.positions.flatMap((item) => [item.tokenA.id, item.tokenB.id]),
   ];
   const metadata = useTokenMetadata(metadataMints);
-  // Registry rows: token icons from the stored icon map (the pairs list's source), fetched only when such a row is listed.
-  const storedIcons = useStoredTokenIcons(connected && registry.positions.length > 0);
   const walletBalances: Record<string, ToolBalance> = Object.fromEntries((discovery?.assets ?? []).map((asset) => [asset.mint, { balance: asset.balance, decimals: asset.decimals }]));
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [assetRisksOpen, setAssetRisksOpen] = useState(false);
@@ -204,7 +192,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   const otherSelected = otherPositions.find((item) => positionKeysEqual(item.key, otherKey) || item.key === otherKey)
     ?? (!otherKey && solanaEmpty && !initialMint ? otherPositions[0] ?? null : null);
   const otherBinding = otherSelected && registry.owns(otherSelected)
-    ? { header: (item: UnifiedPosition) => <RegistryPositionHeader position={item} metadata={metadata} icons={storedIcons} showAssets={activeView !== "performance"} />, details: (item: UnifiedPosition) => <RegistryPositionDetails position={item} />,
+    ? { header: (item: UnifiedPosition) => <RegistryPositionHeader position={item} />, details: (item: UnifiedPosition) => <RegistryPositionDetails position={item} />,
       // Keyed by the position only: the cross-op lock is per position and must not depend on the open tab (PM review of #289).
       tool: (item: UnifiedPosition, view: ToolId) => <RegistryPositionTool key={item.key} position={item} descriptor={registry.descriptor(item)!}
         capabilities={registry.capabilities(item)!} view={view} balances={walletBalances} symbolOf={(token) => tokenSymbol(token.id, metadata, token.symbol)}
@@ -438,16 +426,8 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
         {hasSelection && <div className="mt-5 border-t border-white/10 pt-4" data-testid="selected-position-detail" data-selected-key={selectedKey}>
         {selectedItem && isClosed(selectedItem) && <p className="mt-3 w-fit rounded-full border border-white/20 px-2.5 py-1 text-xs font-semibold text-smoke" data-testid="position-closed">{CLOSED_LABEL}: no liquidity left</p>}
         {otherSelected && otherBinding ? otherBinding.header(otherSelected) : <>
-        {state && <div className="mt-3 flex flex-wrap items-center gap-2 text-xs"><RangeBadge status={state.rangeSide === "inside" ? "in" : state.rangeSide} /></div>}
-        {/* Performance already shows the position's value and fees below: the per-token rows fold away there. */}
-        {assets && <Collapsible open={activeView !== "performance"} testId="position-assets-collapse">
-          <div aria-label="Position assets" className="mt-5 divide-y divide-white/10">
-          <PositionAssetRow symbol={poolLabel(assets.mintA)} icon={metadata[assets.mintA]?.icon ?? null} decimals={assets.decimalsA}
-            liquidityRaw={assets.currentAmounts.a} unclaimedFeesRaw={feeState?.fees.a ?? null} priceUsd={assets.pricing?.priceUsdA ?? null} />
-          <PositionAssetRow symbol={poolLabel(assets.mintB)} icon={metadata[assets.mintB]?.icon ?? null} decimals={assets.decimalsB}
-            liquidityRaw={assets.currentAmounts.b} unclaimedFeesRaw={feeState?.fees.b ?? null} priceUsd={assets.pricing?.priceUsdB ?? null} />
-          </div>
-        </Collapsible>}
+        {/* No range badge or per-token Liquidity / Unclaimed fees rows here: the position's row above already shows its
+            shares, value and fees (LJ 11/14). */}
         </>}
         <button type="button" aria-haspopup="dialog" onClick={() => setAssetRisksOpen(true)}
           className="mt-4 text-xs font-semibold text-cream/80 transition-opacity hover:opacity-70 disabled:opacity-40">

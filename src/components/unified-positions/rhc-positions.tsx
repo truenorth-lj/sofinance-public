@@ -13,7 +13,6 @@ import { RhcPositionsToolbar } from "../rhc-positions-toolbar";
 import { useRhcPositionList } from "../use-rhc-position-list";
 import { RhcWrongNetworkPrompt } from "../unified-pools/rhc-wrong-network-prompt";
 import { PositionAssetRow } from "../position-asset-row";
-import { RangeBadge } from "./range-badge";
 import type { ExternalPositions } from "./external-positions";
 import { fetchPositionValues, type RhcPositionValueRow } from "./rhc-values";
 import { shortAddress } from "@/lib/format/address";
@@ -25,13 +24,15 @@ const nativeOf = (position: UnifiedPosition) => position.native as RhcNative;
 /**
  * Robinhood Chain Uniswap v4 positions for `/app` My positions: the wallet's on-chain holdings (server scan) plus NFT ids opened
  * in this browser or added by hand, and the existing full Close flow as the Withdraw tool. Same reads, guards and copy as the
- * pools-page `RhcUniv4PositionsPanel`. Nothing loads until the nav's EVM wallet is connected and on Robinhood Chain.
+ * pools-page `RhcUniv4PositionsPanel`. The reads are server reads by address (scan, lookups, values), so they run with the
+ * nav's EVM address whatever network the wallet is on. The section shows only once a position is found (none, no EVM
+ * wallet, or a failed scan: no section). A wallet on another network is asked to switch only when Close is clicked (LJ 11/14).
  */
 export function useRhcPositions({ wallet, signingEnabled, refreshKey, receiptPoll }: {
   wallet: RhcWallet | null; signingEnabled: boolean; refreshKey: number; receiptPoll?: { intervalMs?: number; timeoutMs?: number };
 }): ExternalPositions | undefined {
   const wrongNetwork = useOptionalEvmWalletConnection()?.wrongNetwork ?? false;
-  const address = wallet && !wrongNetwork ? wallet.address : null;
+  const address = wallet ? wallet.address : null;
   const list = useRhcPositionList({ address, refreshKey, trackedIds: trackedPositionIds });
   const close = useRhcClose({ wallet, receiptPoll, onClosed: async () => { await list.load(); } });
 
@@ -47,6 +48,8 @@ export function useRhcPositions({ wallet, signingEnabled, refreshKey, receiptPol
     return () => { live = false; };
   }, [valueIds, refreshKey]);
   const valueOf = (tokenId: string) => values?.rows.get(tokenId) ?? null;
+  // Close on another network: the switch prompt shows inside that position's Withdraw tool instead of the preview.
+  const [switchFor, setSwitchFor] = useState<string | null>(null);
   if (!wallet) return undefined;
 
   const add = () => list.submitAdd(trackPositionId);
@@ -59,22 +62,21 @@ export function useRhcPositions({ wallet, signingEnabled, refreshKey, receiptPol
       <p className="text-sm font-semibold text-cream">Robinhood Chain</p>
       <p className="text-xs text-smoke" data-testid="rhc-wallet">{wallet.name}: {short(wallet.address)}</p>
     </div>
-    {wrongNetwork ? <RhcWrongNetworkPrompt purpose="see and manage your positions" /> : <>
-      <RhcPositionsToolbar
-        intro={<p className="mt-1 text-xs text-smoke">Uniswap v4 positions this wallet holds on Robinhood Chain show up automatically. Missing one? Add its position NFT number.</p>}
-        addId={addId} onAddId={setAddId} onAdd={add} loading={loading} scanning={scanning}
-        scanError={scan?.error} loadError={loadError}
-        empty={null} />
-      {sentElsewhere ? <CloseStatus sent={sentElsewhere} symbols={["SPCX", "SPCXon"]} /> : null}
-    </>}
+    <RhcPositionsToolbar
+      intro={<p className="mt-1 text-xs text-smoke">Uniswap v4 positions this wallet holds on Robinhood Chain show up automatically. Missing one? Add its position NFT number.</p>}
+      addId={addId} onAddId={setAddId} onAdd={add} loading={loading} scanning={scanning}
+      scanError={scan?.error} loadError={loadError}
+      empty={null} />
+    {sentElsewhere ? <CloseStatus sent={sentElsewhere} symbols={["SPCX", "SPCXon"]} /> : null}
   </div>;
 
   return {
     chain: "robinhood-chain",
     sourceIds: [rhcPositionSource.id],
     source: rhcPositionSource as never,
-    positions: wrongNetwork ? [] : positions,
-    status,
+    positions,
+    // No section (wallet line, scan status, add-by-number) until a position is found; a just-closed last position keeps its status.
+    status: positions.length || sentElsewhere ? status : null,
     busy: close.busy !== null,
     figures: (position) => rhcFigures(position, valueOf(position.nativeId)),
     header: (position) => {
@@ -84,8 +86,8 @@ export function useRhcPositions({ wallet, signingEnabled, refreshKey, receiptPol
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-cream/80" data-testid="rhc-range">
             {priceRange ? `Range ${priceRange.text}` : p ? `Ticks ${p.tickLower} to ${p.tickUpper}` : "Range unknown"}</span>
-          {/* In/out of range is not read on Robinhood Chain (no pool price): the badge says so. Unread position: the pill does. */}
-          {p ? <RangeBadge status={position.rangeStatus} /> : null}
+          {/* No range badge here (LJ 11/14): the position's row above already shows it. The token rows below stay: the row
+              has no per-token amounts or fees for Robinhood Chain. */}
           {held ? <span className="rounded-full border border-white/15 px-1.5 py-0.5 text-[10px] text-smoke" data-testid="position-in-wallet">In your wallet</span> : null}
           {!held && (!p || !p.ownedByUser) ? <button type="button" onClick={() => remove(lookup.tokenId)} className="text-xs text-smoke underline">Remove</button> : null}
         </div>
@@ -111,8 +113,9 @@ export function useRhcPositions({ wallet, signingEnabled, refreshKey, receiptPol
       return <section className="mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-8" data-testid="rhc-withdraw" data-position={lookup.tokenId}>
         <h2 className="text-lg font-semibold text-cream">Withdraw · full close</h2>
         <p className="mt-2 text-xs leading-5 text-smoke">Closing removes all liquidity, collects accrued pool fees and burns the position NFT. Partial withdraw is not available on Robinhood Chain yet.</p>
-        <button type="button" disabled={busy !== null} onClick={() => preview(lookup.tokenId)}
+        <button type="button" disabled={busy !== null} onClick={() => { if (wrongNetwork) setSwitchFor(lookup.tokenId); else { setSwitchFor(null); void preview(lookup.tokenId); } }}
           className="mt-4 rounded-lg border border-white/25 px-3 py-1.5 text-xs font-semibold text-cream disabled:opacity-40">{busy === lookup.tokenId && !ready ? "Simulating…" : "Close"}</button>
+        {wrongNetwork && switchFor === lookup.tokenId ? <RhcWrongNetworkPrompt purpose="close this position" /> : null}
         <RhcCloseFollowup tokenId={lookup.tokenId} signingEnabled={signingEnabled} ready={ready} busy={busy} error={error} sent={sent} confirm={confirm} symbols={symbols} />
       </section>;
     },

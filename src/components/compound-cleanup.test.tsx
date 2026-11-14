@@ -381,7 +381,7 @@ describe("automatic cleanup after a new compound", () => {
     expect(controller.receipts).toHaveLength(0); expect(controller.cleanup?.compoundSignature).toBeTruthy();
     expect(container.textContent).toContain("Compound confirmed.");
   });
-  it.each([true, false])("shows fresh yield while cleanup awaits signing (confirmation includes state: %s)", async includesState => {
+  it.each([true, false])("keeps the fresh fees state while cleanup awaits signing (confirmation includes state: %s)", async includesState => {
     enableCompound();
     const freshState = { ...fixture.state, fees: { a: "0", b: "2" } };
     const handler = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>;
@@ -399,22 +399,20 @@ describe("automatic cleanup after a new compound", () => {
     let rejectCleanup!: (error: Error) => void;
     mocks.sign.mockImplementationOnce(async (tx: VersionedTransaction) => { tx.sign([testKeypair(1)]); return tx; })
       .mockImplementationOnce(() => new Promise<VersionedTransaction>((_resolve, reject) => { rejectCleanup = reject; }));
-    const harvest = () => container.querySelector('section[aria-label="Fees to compound"]')!;
-    const freshAmounts = "0 " + fixture.state.mintA.slice(0, 4) + "…" + fixture.state.mintA.slice(-4) +
-      " + 0.000002 " + fixture.state.mintB.slice(0, 4) + "…" + fixture.state.mintB.slice(-4);
+    // The "Fees to compound" card is gone (LJ 11/14): the fresh fees live in the controller state only.
+    const harvest = () => container.querySelector('section[aria-label="Fees to compound"]');
     await render();
-    const previousHarvest = harvest().textContent;
+    expect(harvest()).toBeNull();
     await act(async () => { controller.compound(); });
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     expect(controller.state?.fees).toEqual(freshState.fees);
     expect(controller.cleanup?.running).toBe(true); expect(controller.stage).toBe("wallet");
-    expect(harvest().textContent).not.toBe(previousHarvest);
-    expect(harvest().textContent).toContain(freshAmounts);
+    expect(harvest()).toBeNull();
     expect(controller.preview).toBeNull();
     expect(container.textContent).toContain("Approve cleanup in wallet…");
     expect(container.textContent).not.toContain("Previous transaction simulation record");
     await act(async () => { rejectCleanup(new Error("User rejected cleanup")); });
-    expect(harvest().textContent).toContain(freshAmounts);
+    expect(controller.state?.fees).toEqual(freshState.fees); expect(harvest()).toBeNull();
     expect(controller.attemptStatus).toBe("success"); expect(controller.receipts).toHaveLength(1);
     expect(broadcastCount).toBe(0); expect(mocks.sign).toHaveBeenCalledTimes(2);
   });
