@@ -2,7 +2,7 @@ import "@/lib/engine-host";
 import "server-only";
 
 import BN from "bn.js";
-import { TickUtil } from "@raydium-io/raydium-sdk-v2";
+import { TickUtil } from "@sofinance/engine/protocols/raydium/liquidity-math";
 import { resolveOpenRange } from "@sofinance/engine/open-range";
 import type { RangeAprPresetId } from "./types";
 
