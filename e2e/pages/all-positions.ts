@@ -9,5 +9,5 @@ export async function selectPosition(page: Page, key: string) {
   await expect(panel.getByTestId("selected-position-detail")).toHaveAttribute("data-selected-key", key);
 }
 
-/** Compound fees has no dropdown of its own any more: it uses the same All positions rows. */
+/** Compound has no tab or dropdown of its own (LJ 11/14): it is the position row's button, on the same All positions rows. */
 export const selectCompoundPosition = selectPosition;

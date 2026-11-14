@@ -67,17 +67,20 @@ describe("Positions while disconnected", () => {
 });
 
 describe("Positions operations for a selected position", () => {
-  it("orders the tool tabs inside the selected position's detail", async () => {
+  it("orders the tool tabs inside the selected position's detail: no Compound fees tab, Add to position open by default", async () => {
     mocks.connected = true;
     await act(async () => root.render(createElement(SelectedApp)));
     const detail = container.querySelector('[data-testid="selected-position-detail"]')!;
     expect(Array.from(detail.querySelectorAll('nav[aria-label="Position operations"] button')).map((b) => b.textContent?.trim()))
-      .toEqual(["Compound fees", "Performance", "Add to position", "Withdraw"]);
+      .toEqual(["Performance", "Add to position", "Withdraw"]);
     expect(Array.from(detail.querySelectorAll<HTMLOptionElement>("select#position-action option")).map((o) => [o.textContent, o.disabled]))
-      .toEqual([["Compound fees", false], ["Performance", false], ["Add to position", false], ["Withdraw", true]]);
+      .toEqual([["Performance", false], ["Add to position", false], ["Withdraw", true]]);
+    expect(container.querySelector<HTMLElement>("#deposit-view")?.hidden).toBe(false);
+    expect(container.querySelector("#compound-view")).toBeNull();
+    expect(container.textContent).not.toContain("One-click compound");
     await act(async () => button("Performance").click());
     expect(container.querySelector<HTMLElement>("#performance-view")?.hidden).toBe(false);
-    expect(container.querySelector<HTMLElement>("#compound-view")?.hidden).toBe(true);
+    expect(container.querySelector("#compound-view")).toBeNull();
     expect(container.querySelector("#perf-position")).toBeNull();
     expect(container.querySelector("#perf-heading")).toBeNull();
     expect(container.textContent).not.toContain("Compute performance");

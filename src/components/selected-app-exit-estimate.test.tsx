@@ -167,7 +167,7 @@ describe("stock summary and position detail hierarchy", () => {
     await settle();
     expect(perfMints().at(-1)).toBe(OTHER_OWNED_MINT);
   });
-  it("Compound fees keeps All positions (no dropdown of its own); its rows lock during a compound", async () => {
+  it("an old view=compound link opens Add to position (no Compound tab); rows and their Compound buttons lock during a compound", async () => {
     compoundMock.busy = true;
     await mount({ wallet: OWN_WALLET, positions: [OWNED_MINT, OTHER_OWNED_MINT], stateOk: true, initialMint: OWNED_MINT, initialView: "compound" });
     await settle();
@@ -179,7 +179,11 @@ describe("stock summary and position detail hierarchy", () => {
     expect(container.querySelector("#compound-position")).toBeNull();
     // The tabs sit inside the selected position's detail, the tool below the list.
     expect(entry.querySelector('[data-testid="selected-position-detail"] nav[aria-label="Position operations"]')).not.toBeNull();
-    expect(container.querySelector('#compound-view')).not.toBeNull();
+    expect(container.querySelector('#compound-view')).toBeNull();
+    expect(container.querySelector<HTMLElement>('#deposit-view')?.hidden).toBe(false);
+    const compounds = [...container.querySelectorAll<HTMLButtonElement>('[data-testid="position-row-action"][data-tool="compound"]')];
+    expect(compounds).toHaveLength(2);
+    expect(compounds.every((button) => button.disabled)).toBe(true);
   });
   it("uses lightweight rows outside Performance without reading any history", async () => {
     await mount({ wallet: OWN_WALLET, positions: [OWNED_MINT, OTHER_OWNED_MINT], stateOk: true, initialMint: OWNED_MINT, initialView: "deposit" });

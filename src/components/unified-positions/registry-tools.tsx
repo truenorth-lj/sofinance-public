@@ -8,7 +8,7 @@
  * Every send goes through the shared tx pipeline (`useTxPipeline` + `dexTxAdapter`): wallet signAndSend, loading →
  * success / failure with a Solscan link, balances refresh; the pipeline's success notice stays until dismissed.
  */
-import { CircleAlert, LoaderCircle, Sprout } from "lucide-react";
+import { CircleAlert, LoaderCircle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatAmount, parseTokenAmount } from "@sofinance/engine/amount";
 import { DEPOSIT_MINIMUM_UNAVAILABLE, depositTooSmallMessage, dexTxAdapter, fetchAddQuote, type AddQuote, type DexCapabilities, type DexPreparedStep, type DexDescriptor, type DexStepInput, type DexStepOp, type FeeRule, type RentQuote } from "@/lib/dex/client";
@@ -21,7 +21,7 @@ import { useTxWallet } from "../use-tx-wallet";
 import { RegistryPerformancePanel } from "./registry-performance";
 import type { PositionPerformanceReport } from "@/lib/position-performance-report";
 import { beginPositionOp, trackPositionSignature, usePositionOpLock } from "./position-op-lock";
-import { CompoundSuccessHalo, useCompoundSuccessHalo } from "../compound-halo";
+import { ROW_COMPOUND_CLASS, RowActionsBar, RowCompoundLabel, RowStatus, type RowCompoundSlot } from "../portfolio/portfolio-rows";
 
 /** A wallet balance the Add panel can check against (raw atomic string). */
 export type ToolBalance = { balance: string; decimals: number };
@@ -43,7 +43,6 @@ export type RegistryToolProps = {
 
 const CARD = "mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-8";
 /** The Raydium Compound fees panel's button (compound-panel.tsx), so both DEXes' compound looks the same. */
-const COMPOUND_BUTTON = "inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-3.5 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:min-w-48";
 export const BUTTON = "mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-4 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-cream/40 disabled:hover:bg-white/10";
 export const FIELD = "w-full rounded-inset border border-white/20 bg-white/10 px-4 py-3 text-base font-semibold text-cream outline-none focus:border-white/40 disabled:opacity-60 sm:text-sm";
 export const LABEL = "mt-5 block text-xs font-medium uppercase tracking-[0.16em] text-smoke";
@@ -52,7 +51,6 @@ const LAMPORTS_PER_SOL = 1_000_000_000;
 export function RegistryPositionTool(props: RegistryToolProps) {
   if (props.view === "performance" && props.capabilities.performance.supported) return <RegistryPerformancePanel {...props} />;
   if (props.view === "deposit" && props.capabilities.deposit.supported) return <RegistryAddPanel {...props} />;
-  if (props.view === "compound" && props.capabilities.compound.supported) return <RegistryCompoundPanel {...props} />;
   if (props.view === "withdraw" && props.capabilities.withdraw.supported) return <>
     <RegistryWithdrawPanel {...props} />
     {props.capabilities.claim.supported ? <RegistryClaimPanel {...props} /> : null}
@@ -413,36 +411,42 @@ export function compoundBlockedReason(position: UnifiedPosition, symbolOf: (toke
   return `There are no ${symbolOf(kept)} fees to put back while the price is outside the range. Claim the ${symbolOf(other)} fees to your wallet instead.`;
 }
 
-function RegistryCompoundPanel({ position, descriptor, symbolOf, onConfirmed }: RegistryToolProps) {
+/**
+ * A Meteora (registry DEX) row's Compound (LJ 11/14: the only Compound entry; no Compound fees tab or panel). The button
+ * sends straight through this DEX's existing compound flow (prepare + simulate → wallet → confirm), same lock as every other
+ * op on the position. Under the row: the pre-sign disclosures (fee rule, range and pool fee notes, rent), progress, errors.
+ */
+export function RegistryRowCompound({ position, descriptor, symbolOf, onConfirmed, slot }: {
+  position: UnifiedPosition; descriptor: DexDescriptor; symbolOf: (token: TokenRef) => string; onConfirmed: () => void; slot: RowCompoundSlot;
+}) {
   const op = usePositionTx("compound", position, onConfirmed);
-  const { tx, send, connected, locked } = op;
+  const { tx, send, locked } = op;
   const blocked = compoundBlockedReason(position, symbolOf);
   const rangeLine = compoundRangeLine(position, symbolOf);
   const poolFeeLine = position.rangeStatus === "in" ? descriptor.meta.inRangeDepositPoolFee ?? null : null;
   const tokenFor = (mint: string) => [position.tokenA, position.tokenB].find((token) => token.id === mint);
   const rentLine = tokenAccountRentLine(op.prepared?.createsTokenAccounts, (mint) => { const token = tokenFor(mint); return token ? symbolOf(token) : "pool token"; });
   const submit = () => void send({ descriptor, positionKey: position.key });
-  // The pipeline's "success" is the confirmed landing (never the click); the halo plays once per signature.
-  const compoundButtonRef = useRef<HTMLButtonElement>(null);
-  const haloPlay = useCompoundSuccessHalo(tx.status === "success" && tx.signature ? { phase: "success", signature: tx.signature } : null);
-  return <section className={CARD} data-testid="registry-compound" aria-labelledby="registry-compound-heading">
-    {/* Same look and words as the Raydium Compound fees panel (LJ 11/14); the transaction flow below is unchanged. */}
-    <h2 id="registry-compound-heading" className="flex items-center gap-2 text-lg font-semibold text-cream"><Sprout aria-hidden="true" className="h-5 w-5 text-cream/80" />Compound fees</h2>
-    <p className="mt-2 text-xs leading-5 text-smoke">Adds this position&apos;s fees back into the same range.</p>
-    <p className="mt-1 text-xs leading-5 text-smoke">{feeLine(descriptor.meta.feePolicy.compound, "")}</p>
-    {/* No per-token fees line here (LJ 11/14): the position's row shows its fees. The checks (compoundBlockedReason) are unchanged. */}
-    {rangeLine ? <p data-testid="registry-compound-range" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{rangeLine}</p> : null}
-    {poolFeeLine ? <p data-testid="registry-compound-pool-fee" className="mt-3 text-xs leading-5 text-smoke">{poolFeeLine}</p> : null}
-    {!connected ? <NotConnected /> : <>
-      <div className="mt-5 flex flex-wrap items-center gap-4">
-        <button ref={compoundButtonRef} type="button" disabled={locked || blocked !== null} onClick={submit} className={COMPOUND_BUTTON}>
-          {tx.locked ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : <Sprout aria-hidden="true" className="size-4" />}One-click compound
-        </button>
-        {blocked ? <span data-testid="registry-compound-blocked" role="status" className="text-xs text-smoke">{blocked}</span> : null}
-      </div>
-      <CompoundSuccessHalo play={haloPlay} originRef={compoundButtonRef} />
+  const signing = tx.status === "preparing" || tx.status === "wallet";
+  const outcome = tx.status === "success" || tx.status === "failed" || tx.locked;
+  return <>
+    <RowActionsBar>
+      <button type="button" data-testid="position-row-action" data-tool="compound" aria-busy={tx.locked}
+        disabled={locked || blocked !== null || (slot.disabled && !tx.locked)} onClick={submit} title={tx.locked ? "Compounding…" : "Compound"} className={ROW_COMPOUND_CLASS}>
+        <RowCompoundLabel busy={tx.locked} label={tx.locked ? "Compounding…" : "Compound"} />
+      </button>
+      {slot.otherActions}
+    </RowActionsBar>
+    {blocked || op.lockedByOther || outcome ? <RowStatus testId="row-compound-status">
+      {blocked ? <p role="status" data-testid="registry-compound-blocked" className="text-smoke">{blocked}</p> : null}
+      {/* Stated before signing (shown from the click until the wallet answers): fee rule, range and pool fee notes. */}
+      {signing ? <div data-testid="registry-compound-disclosure" className="space-y-1">
+        <p data-testid="registry-compound-fee">{feeLine(descriptor.meta.feePolicy.compound, "")}</p>
+        {rangeLine ? <p data-testid="registry-compound-range">{rangeLine}</p> : null}
+        {poolFeeLine ? <p data-testid="registry-compound-pool-fee" className="text-smoke">{poolFeeLine}</p> : null}
+      </div> : null}
       <LockNote lock={op} />
-      <TxStatus tx={tx} successText="Fees compounded." walletNote={rentLine} />
-    </>}
-  </section>;
+      <TxStatus tx={{ ...tx, interrupted: undefined }} successText="Fees compounded." walletNote={rentLine} />
+    </RowStatus> : null}
+  </>;
 }

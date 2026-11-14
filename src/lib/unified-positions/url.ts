@@ -1,8 +1,9 @@
-import { parsePositionKey, type ToolId } from "./model";
+import { DEFAULT_DETAIL_VIEW, parsePositionKey, type ToolId } from "./model";
 
 type Query = Record<string, string | string[] | undefined>;
 const first = (value: string | string[] | undefined) => Array.isArray(value) ? value[0] || "" : value || "";
-const VIEWS: readonly ToolId[] = ["compound", "performance", "deposit", "withdraw"];
+// `view=compound` (old links) opens the default tab: Compound has no tab (LJ 11/14).
+const VIEWS: readonly ToolId[] = ["performance", "deposit", "withdraw"];
 
 /**
  * `/app` selection from the URL: `?position=<source>:<id>&view=<tool>` (unified positions). A valid `?position=` key is
@@ -13,7 +14,7 @@ export function initialSelectionFromQuery(query: Query): { initialView: ToolId; 
   const view = first(query.view) as ToolId;
   const position = parsePositionKey(first(query.position));
   return {
-    initialView: VIEWS.includes(view) ? view : "compound",
+    initialView: VIEWS.includes(view) ? view : DEFAULT_DETAIL_VIEW,
     initialMint: position ? "" : first(query.mint) || first(query.positionMint),
     initialPositionKey: position ? first(query.position) : "",
   };
