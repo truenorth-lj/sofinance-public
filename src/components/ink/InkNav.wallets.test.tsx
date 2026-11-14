@@ -93,12 +93,15 @@ describe("InkNav wallets", () => {
     expect(sol().dataset.connected).toBe("true");
   });
 
-  it("follows wallet events: another network shows a Wrong network button, an emptied account list disconnects only EVM", async () => {
+  it("follows wallet events: another network keeps the address button with no network tag, an emptied account list disconnects only EVM", async () => {
     await render({ initialSolana: SOL });
     await act(async () => { listeners.get("chainChanged")!("0x1"); });
+    // No "Wrong network" tag or switch in the header (LJ 11/14); the address button stays and still disconnects.
     expect(evm()!.textContent).toBe("0xb95b…1b04");
-    expect(container.querySelector("[data-testid=nav-evm-switch]")!.textContent).toBe("Wrong network");
-    expect(evm()!.getAttribute("aria-label")).toContain("another network");
+    expect(evm()!.dataset.connected).toBe("true");
+    expect(container.querySelector("[data-testid=nav-evm-switch]")).toBeNull();
+    expect(container.querySelector("header")!.textContent).not.toContain("Wrong network");
+    expect(evm()!.getAttribute("aria-label")).toBe("EVM wallet 0xb95b…1b04, connected. Disconnect");
     expect(sol().dataset.connected).toBe("true");
     await act(async () => { listeners.get("accountsChanged")!([]); });
     expect(evm()!.dataset.connected).toBe("false");

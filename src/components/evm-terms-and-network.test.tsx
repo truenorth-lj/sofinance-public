@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // EVM wallet: the connect goes through the same "Before you connect" terms step as Solana (same text, same acceptance
-// storage), and a wallet on the wrong network gets a "Wrong network" switch in the nav and a switch prompt in the
-// Robinhood Chain sections (My positions block, Open position dialog).
+// storage). A wallet on the wrong network gets no tag or switch in the nav; the switch prompt shows inside the Robinhood
+// Chain actions (Close in Withdraw, Open position dialog).
 import { act, createElement, useEffect, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -170,34 +170,56 @@ describe("wrong network", () => {
     expect(live.evm.wrongNetwork).toBe(true);
   }
 
-  it("the nav keeps the address and shows an amber Wrong network button instead of a chain tag; it switches to Robinhood Chain", async () => {
+  // The header never asks about the network (LJ 11/14); the switch is asked for inside the RHC Close action.
+  const navAndClose = () => createElement("div", null, nav(), createElement(RhcMyPositions));
+  async function promptSwitch() {
+    stubServer();
+    panels.scan.mockImplementation(async () => ({ positions: [held("9")], error: null }));
+    await onOtherNetwork(navAndClose());
+    await click(closeButton());
+    return q("[data-testid=rhc-withdraw] [data-testid=rhc-wrong-network] button");
+  }
+
+  it("the nav keeps the address button with no Wrong network tag, no chain tag and no switch on another network", async () => {
     await onOtherNetwork(nav());
-    const switchButton = q("[data-testid=nav-evm-switch]")!;
-    expect(switchButton.textContent).toBe("Wrong network");
+    const header = q("header")!;
     expect(q("[data-testid=nav-evm-wallet]")!.textContent).toBe("0xb95b…1b04");
-    expect(q("[data-testid=nav-evm-group]")!.textContent).not.toMatch(/RHC|EVM$/);
-    await click(switchButton);
-    expect(wallet.calls).toContain("wallet_switchEthereumChain");
+    expect(q("[data-testid=nav-evm-wallet]")!.dataset.connected).toBe("true");
     expect(q("[data-testid=nav-evm-switch]")).toBeNull();
-    expect(q("[data-testid=nav-evm-wallet]")!.textContent).toBe("0xb95b…1b04RHC");
+    expect(header.textContent).not.toContain("Wrong network");
+    expect(header.textContent).not.toMatch(/RHC/);
+    expect(wallet.calls).not.toContain("wallet_switchEthereumChain");
+    // The address button still disconnects (no prompt, no switch).
+    await click(q("[data-testid=nav-evm-wallet]"));
+    expect(live.evm.wallet).toBeNull();
+    expect(wallet.calls).not.toContain("wallet_switchEthereumChain");
+    noWalletPrompt();
+  });
+
+  it("switching from the RHC Close prompt puts the nav on Robinhood Chain (RHC tag), still without any network tag", async () => {
+    await click(await promptSwitch());
+    expect(wallet.calls).toContain("wallet_switchEthereumChain");
     expect(live.evm.chainId).toBe(4663);
+    expect(q("[data-testid=nav-evm-wallet]")!.textContent).toBe("0xb95b…1b04RHC");
+    expect(q("header")!.textContent).not.toContain("Wrong network");
     noWalletPrompt();
   });
 
   it("adds Robinhood Chain when the wallet does not know it (4902), then it is on the right network", async () => {
-    await onOtherNetwork(nav());
+    const button = await promptSwitch();
     wallet.switchError = { code: 4902 };
-    await click(q("[data-testid=nav-evm-switch]"));
+    await click(button);
     expect(wallet.calls).toEqual(expect.arrayContaining(["wallet_switchEthereumChain", "wallet_addEthereumChain"]));
     expect(live.evm.wrongNetwork).toBe(false);
   });
 
   it("a rejected switch keeps the wallet connected on the wrong network and says why", async () => {
-    await onOtherNetwork(nav());
+    const button = await promptSwitch();
     wallet.switchError = { code: 4001 };
-    await click(q("[data-testid=nav-evm-switch]"));
+    await click(button);
     expect(live.evm.wallet?.address).toBe(EVM);
-    expect(q("[data-testid=nav-evm-switch]")).not.toBeNull();
+    expect(live.evm.wrongNetwork).toBe(true);
+    expect(q("[data-testid=nav-evm-switch]")).toBeNull();
     expect(q("[data-testid=nav-evm-error]")!.textContent).toContain("Network switch was rejected in the wallet");
   });
 
