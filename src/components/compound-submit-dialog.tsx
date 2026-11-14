@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { ArrowUpRight, CheckCircle2, CircleAlert, LoaderCircle } from "lucide-react";
 import type { CompoundSubmitFeedback } from "./use-compound-controller";
 import { solscanTxUrl } from "@/lib/format/explorer";
+import { OK_RELEASE_KEYFRAMES, OK_RELEASE_MS } from "@/lib/compound-celebration/coins";
 
 export function compoundSubmitCopy(feedback: CompoundSubmitFeedback, slow = false) {
   switch (feedback.phase) {
@@ -16,11 +17,17 @@ export function compoundSubmitCopy(feedback: CompoundSubmitFeedback, slow = fals
   }
 }
 
-/** Modal status for a signed one-click compound: submitting → confirming → success / failed. */
-export function CompoundSubmitDialog({ feedback, slow = false, onDismiss }: {
-  feedback: CompoundSubmitFeedback | null; slow?: boolean; onDismiss: () => void;
+/**
+ * Modal status for a signed one-click compound: submitting → confirming → success / failed.
+ * On "Compound confirmed", OK shrinks while pressed and, with `onCelebrate`, pops back on release: the coins leave from
+ * it at that moment (`onCelebrate` gets its box) and the dialog closes OK_RELEASE_MS later. Reduced motion: no pop, it
+ * closes at once.
+ */
+export function CompoundSubmitDialog({ feedback, slow = false, onDismiss, onCelebrate }: {
+  feedback: CompoundSubmitFeedback | null; slow?: boolean; onDismiss: () => void; onCelebrate?: (okButton: DOMRect) => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const releasing = useRef<number | null>(null);
   const open = feedback !== null;
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -28,6 +35,8 @@ export function CompoundSubmitDialog({ feedback, slow = false, onDismiss }: {
     if (open && !dialog.open) dialog.showModal?.();
     if (!open && dialog.open) dialog.close?.();
   }, [open]);
+  // A pending close belongs to the dialog that started it.
+  useEffect(() => () => { if (releasing.current !== null) { window.clearTimeout(releasing.current); releasing.current = null; } }, [feedback?.signature]);
   if (!feedback) return null;
   const copy = compoundSubmitCopy(feedback, slow);
   const active = feedback.phase === "submitting" || feedback.phase === "confirming";
@@ -46,8 +55,17 @@ export function CompoundSubmitDialog({ feedback, slow = false, onDismiss }: {
       <a href={solscanTxUrl(feedback.signature)} target="_blank" rel="noreferrer"
         className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-lilac underline underline-offset-4">View on Solscan <ArrowUpRight className="h-4 w-4" /></a>
       <div className="mt-6 flex gap-3">
-        {(!active || slow) && <button type="button" onClick={onDismiss} autoFocus
-          className={successful ? "inline-flex w-full items-center justify-center rounded-full bg-lemon px-5 py-3.5 text-sm font-semibold text-ink hover:bg-[#fff27f]"
+        {(!active || slow) && <button type="button" autoFocus onClick={(event) => {
+          if (!successful || !onCelebrate) { onDismiss(); return; }
+          if (releasing.current !== null) return;
+          const button = event.currentTarget;
+          onCelebrate(button.getBoundingClientRect());
+          const reduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+          if (reduced || typeof button.animate !== "function") { onDismiss(); return; }
+          button.animate([...OK_RELEASE_KEYFRAMES], { duration: OK_RELEASE_MS, easing: "ease-out" }).finished?.catch(() => {});
+          releasing.current = window.setTimeout(() => { releasing.current = null; onDismiss(); }, OK_RELEASE_MS);
+        }}
+          className={successful ? "inline-flex w-full items-center justify-center rounded-full bg-lemon px-5 py-3.5 text-sm font-semibold text-ink transition-transform duration-75 hover:bg-[#fff27f] motion-safe:active:scale-[0.94]"
             : "inline-flex w-full items-center justify-center rounded-full border border-white/20 px-5 py-3.5 text-sm font-semibold text-cream/90 hover:bg-white/[0.06]"}>
           {successful ? "OK" : "Close"}
         </button>}

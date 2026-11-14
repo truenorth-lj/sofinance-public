@@ -349,8 +349,6 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
     <div className="relative mx-auto max-w-[1280px] px-3 pb-32 pt-3 max-sm:pb-[max(8rem,calc(var(--tx-notice-bottom-offset,0px)+2rem))] sm:px-5 sm:pt-5">
       <InkNav wallet={wallet} connected={connected} onConnect={connect} onDisconnect={disconnect} />
 
-      {/* The page content area below the nav: the compound success coins are clipped to it. */}
-      <div className="relative" data-celebration-surface="">
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 px-1">
         <h1 className="text-xl font-semibold text-cream sm:text-2xl">Portfolio</h1>
         <button type="button" disabled={(!wallet && !(external && onRescan)) || anyBusy} onClick={refreshAll}
@@ -463,7 +461,6 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
       </PositionToolsSection>
       {connectionError && activeView === "compound" && !otherSelected && <div role="alert" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{connectionError}</div>}
       {error && !quoteError && activeView === "compound" && !otherSelected && <div role="alert" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{error}</div>}
-      </div>
       <InkFooter />
     </div>
     <AssetRisksDialog open={hasSelection && assetRisksOpen} onOpenChange={setAssetRisksOpen}>

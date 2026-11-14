@@ -423,8 +423,8 @@ function RegistryCompoundPanel({ position, descriptor, symbolOf, onConfirmed }: 
   const tokenFor = (mint: string) => [position.tokenA, position.tokenB].find((token) => token.id === mint);
   const rentLine = tokenAccountRentLine(op.prepared?.createsTokenAccounts, (mint) => { const token = tokenFor(mint); return token ? symbolOf(token) : "pool token"; });
   const submit = () => void send({ descriptor, positionKey: position.key });
-  // The pipeline's "success" is the confirmed landing (never the click); the coins burst once per signature. There is no
-  // result dialog here, so nothing holds it.
+  // The pipeline's "success" is the confirmed landing (never the click); the coins pop out of the Compound button once per
+  // signature. There is no result dialog here, so nothing holds it.
   const compoundButtonRef = useRef<HTMLButtonElement>(null);
   const celebration = useCompoundCelebration(tx.status === "success" && tx.signature ? { phase: "success", signature: tx.signature } : null,
     false, [symbolOf(position.tokenA), symbolOf(position.tokenB)]);
@@ -443,7 +443,7 @@ function RegistryCompoundPanel({ position, descriptor, symbolOf, onConfirmed }: 
         </button>
         {blocked ? <span data-testid="registry-compound-blocked" role="status" className="text-xs text-smoke">{blocked}</span> : null}
       </div>
-      <CompoundTokenBurst play={celebration} originRef={compoundButtonRef} />
+      <CompoundTokenBurst play={celebration.play} originRef={compoundButtonRef} />
       <LockNote lock={op} />
       <TxStatus tx={tx} successText="Fees compounded." walletNote={rentLine} />
     </>}

@@ -358,7 +358,8 @@ describe("automatic cleanup after a new compound", () => {
     // happy-dom has no layout: give the panel a visible box so the overlay has an area to fly in.
     const box = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() =>
       ({ left: 0, top: 0, width: 400, height: 600, right: 400, bottom: 600, x: 0, y: 0, toJSON() {} }) as DOMRect);
-    const burst = () => container.querySelector('[data-testid="compound-token-burst"]');
+    // A full-screen layer on the body (drawn above the result dialog).
+    const burst = () => document.querySelector('[data-testid="compound-token-burst"]');
     confirmationStatus = status;
     enableCompound(); await render();
     expect(burst()).toBeNull();

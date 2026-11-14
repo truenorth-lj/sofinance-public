@@ -1,29 +1,50 @@
 /**
- * Compound success celebration: tokenized-stock coins burst out of the Compound button like a gift box opening.
- * Pure functions (coin choice, flight paths, timing, trigger) so the animation can be tested without a browser.
+ * Compound success celebration: when the "Compound confirmed" OK is released, tokenized-stock coins pop out of it and
+ * fall like beads to the bottom of the screen, bounce, settle and fade. Pure functions (coin choice, physics, timing,
+ * trigger) so the animation can be tested without a browser.
  */
 import { MANUAL_TOKEN_ICONS } from "@/lib/token-icons/map";
 
-/** The button wobbles like a box about to open, then the coins leave. */
-export const WOBBLE_MS = 300;
-/** Coins leave this long after the wobble starts (just before it settles). */
-export const BURST_DELAY_MS = 240;
-/** One coin's flight, from leaving the button to gone. */
-export const FLIGHT_MS = 1300;
+/** The OK button shrinks to this while pressed (CSS :active). */
+export const OK_PRESS_SCALE = 0.94;
+/** On release it pops back a little past its size, then the dialog closes. Coins leave at the release. */
+export const OK_RELEASE_MS = 180;
+export const OK_RELEASE_KEYFRAMES: readonly { offset: number; transform: string }[] = Object.freeze([
+  { offset: 0, transform: `scale(${OK_PRESS_SCALE})` },
+  { offset: 0.5, transform: "scale(1.06)" },
+  { offset: 1, transform: "scale(1)" },
+]);
+
+/** One coin: pop out, fall, bounce, settle and fade. */
+export const FALL_MS = 2100;
+/** Fading starts at this fraction of a coin's play. */
+export const FADE_FROM = 0.78;
 /** Last coin leaves this long after the first. */
-export const STAGGER_MS = 90;
-/** Whole play, wobble included: the overlay is removed after this. */
-export const CELEBRATION_MS = BURST_DELAY_MS + STAGGER_MS + FLIGHT_MS;
-/** Reduced motion: no wobble and no flight; a few coins fade in and out where they are. */
+export const STAGGER_MS = 80;
+/** Whole play: the overlay is removed after this. */
+export const CELEBRATION_MS = STAGGER_MS + FALL_MS;
+/** Keyframe spacing along a simulated path. */
+export const SAMPLE_MS = 25;
+/** Physics in CSS px and seconds. Restitution is the share of speed kept by a bounce. */
+export const PHYSICS = Object.freeze({
+  gravity: 3000, restitution: { min: 0.4, max: 0.56 }, floorFriction: 0.72, wallBounce: 0.6, restSpeed: 70,
+  /** Gap between a near coin and the bottom of the screen; far coins land up to `depthLift` px higher. */
+  floorMargin: 12, depthLift: 60,
+});
+/** Reduced motion: no pop and no fall; a few coins fade in and out where they are. */
 export const REDUCED_MS = 700;
 export const REDUCED_COINS = 3;
-/** How many coins burst out, and how many of them are the position's own stock (when it has an xStock logo). */
+/** How many coins pop out, and how many of them are the position's own stock (when it has an xStock logo). */
 export const COIN_COUNT = { wide: 14, narrow: 9 } as const;
 export const OWN_SHARE = 0.5;
 /** Coin diameter in CSS px from the far plane (depth 0) to the near plane (depth 1). */
 export const COIN_SIZE = { far: 34, near: 70 } as const;
 
 export type Rand = () => number;
+export type Point = { x: number; y: number };
+export type Viewport = { width: number; height: number };
+
+const clamp = (value: number, min: number, max: number) => (value < min ? min : value > max ? max : value);
 
 /** Small deterministic generator (mulberry32) so one play is reproducible from its seed. */
 export function seededRandom(seed: number): Rand {
@@ -57,7 +78,7 @@ export function stockTicker(symbol: string | null | undefined): string | null {
 }
 
 /**
- * Logos for one burst: about half are the position's own stock (the first symbol with an xStock logo), the rest a
+ * Logos for one play: about half are the position's own stock (the first symbol with an xStock logo), the rest a
  * shuffled mix of the other xStocks. Without an own stock, all of them are the mix.
  */
 export function pickCoinLogos(symbols: readonly (string | null | undefined)[], count: number, rand: Rand): string[] {
@@ -69,7 +90,7 @@ export function pickCoinLogos(symbols: readonly (string | null | undefined)[], c
   }
   const ownCount = own ? Math.round(count * OWN_SHARE) : 0;
   const tickers = [...Array.from({ length: ownCount }, () => own!), ...Array.from({ length: count - ownCount }, (_, i) => others[i % others.length]!)];
-  // Interleave so the own stock is spread through the burst rather than leaving first.
+  // Interleave so the own stock is spread through the play rather than leaving first.
   for (let i = tickers.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
     [tickers[i], tickers[j]] = [tickers[j]!, tickers[i]!];
@@ -77,95 +98,107 @@ export function pickCoinLogos(symbols: readonly (string | null | undefined)[], c
   return tickers.map((ticker) => STOCK_COIN_LOGOS[ticker]!);
 }
 
-export type CoinFlight = {
-  /** 0 = far (small, a little soft), 1 = near (large, slightly out of focus). */
+/** One sampled moment of a coin's path, in viewport px (x, y is the coin centre). */
+export type BeadFrame = { t: number; x: number; y: number; tiltY: number; roll: number; scale: number; opacity: number };
+export type BeadFlight = {
+  /** 0 = far (small, lands higher), 1 = near (large, lands lowest, slightly out of focus). */
   depth: number;
   size: number;
   blur: number;
   delay: number;
-  /** Where the coin comes to rest relative to the button centre, in CSS px. */
-  dx: number;
-  dy: number;
-  /** Tilt at launch and at rest (degrees): the coin turns as it flies, so its rim shows. */
-  turnFrom: { x: number; y: number; z: number };
-  turnTo: { x: number; y: number; z: number };
+  /** Where this coin's centre meets the floor. */
+  floorY: number;
+  bounces: number;
+  frames: BeadFrame[];
 };
 
+const easeOutCubic = (t: number) => 1 - (1 - clamp(t, 0, 1)) ** 3;
+
 /**
- * Flight plans for a burst out of a box: an upward fan from just below the button's line on the left, over the top, to
- * just below it on the right, reaching about `reach` px. Nearer coins travel further and are larger.
+ * Simulated paths for coins popping out of `origin`: launched up and outward, pulled down by gravity to the bottom of
+ * the viewport, bouncing lower each time (restitution 0.40–0.56), losing sideways speed on each bounce, bouncing off the
+ * screen's sides, then rolling to a stop. The coin wobbles (tilts back and forth, never flips, so the logo stays
+ * readable) and the wobble calms down with each bounce. Pops in over 120 ms, fades out from FADE_FROM of the play.
  */
-export function coinFlights(count: number, reach: number, rand: Rand): CoinFlight[] {
+export function beadFlights(count: number, origin: Point, viewport: Viewport, rand: Rand): BeadFlight[] {
+  const dt = 1 / 240;
+  const sampleEvery = Math.round(SAMPLE_MS / 1000 / dt);
+  const steps = Math.round(FALL_MS / 1000 / dt);
+  const total = FALL_MS / 1000;
+  const power = clamp(viewport.height / 900, 0.7, 1.1);
+  const spread = clamp(viewport.width / 1280, 0.45, 1.1);
   return Array.from({ length: count }, (_, index) => {
-    // Spread the angles evenly over the fan, then jitter, so the burst has no empty side.
+    // Spread the launch angles evenly over the fan, then jitter, so no side is empty.
     const slot = (index + 0.15 + rand() * 0.7) / count;
-    const angle = (-192 + slot * 204) * (Math.PI / 180);
+    const angle = (-158 + slot * 136) * (Math.PI / 180);
     const depth = rand();
-    const distance = reach * (0.45 + 0.55 * rand()) * (0.75 + 0.35 * depth);
     const size = COIN_SIZE.far + (COIN_SIZE.near - COIN_SIZE.far) * depth;
-    const blur = depth > 0.82 ? (depth - 0.82) * 9 : depth < 0.12 ? 0.6 : 0;
-    const spin = (rand() < 0.5 ? -1 : 1) * (25 + rand() * 30);
-    return {
-      depth, size, blur: Math.round(blur * 10) / 10, delay: Math.round(rand() * STAGGER_MS),
-      dx: Math.cos(angle) * distance, dy: Math.sin(angle) * distance * 0.85,
-      turnFrom: { x: (rand() - 0.5) * 50, y: -spin, z: (rand() - 0.5) * 30 },
-      turnTo: { x: (rand() - 0.5) * 24, y: spin * 0.4, z: (rand() - 0.5) * 20 },
-    };
+    const blur = depth > 0.82 ? Math.round((depth - 0.82) * 90) / 10 : depth < 0.12 ? 0.6 : 0;
+    const speed = (620 + 420 * rand()) * (0.85 + 0.3 * depth) * power;
+    let vx = Math.cos(angle) * speed * spread * 1.15;
+    let vy = Math.sin(angle) * speed;
+    const half = size / 2;
+    const floorY = Math.max(origin.y + 40, viewport.height - PHYSICS.floorMargin - half - (1 - depth) * PHYSICS.depthLift);
+    const restitution = PHYSICS.restitution.min + (PHYSICS.restitution.max - PHYSICS.restitution.min) * rand();
+    let wobble = 40 + 20 * rand();
+    const omega = 7 + 5 * rand(), phase = rand() * Math.PI * 2;
+    const airRoll = (rand() - 0.5) * 160;
+    let x = origin.x, y = origin.y, roll = 0, bounces = 0, resting = false;
+    const frames: BeadFrame[] = [];
+    for (let step = 0; step <= steps; step++) {
+      const t = step * dt;
+      if (step % sampleEvery === 0) {
+        const opacity = t < 0.05 ? t / 0.05 : t > FADE_FROM * total ? Math.max(0, 1 - (t - FADE_FROM * total) / ((1 - FADE_FROM) * total)) : 1;
+        frames.push({ t, x, y, tiltY: wobble * Math.sin(omega * t + phase), roll, scale: 0.3 + 0.7 * easeOutCubic(t / 0.12),
+          opacity: step === steps ? 0 : Math.round(opacity * 1000) / 1000 });
+      }
+      if (!resting) vy += PHYSICS.gravity * dt;
+      x += vx * dt;
+      y += vy * dt;
+      if (y >= floorY) {
+        y = floorY;
+        if (vy > 0) {
+          if (vy * restitution < PHYSICS.restSpeed) { vy = 0; resting = true; }
+          else { vy = -vy * restitution; bounces++; }
+          vx *= PHYSICS.floorFriction;
+          wobble *= 0.55;
+        }
+      }
+      // On the floor it rolls (turning with the distance it covers) and slows; in the air it turns slowly.
+      if (resting) { vx *= 1 - 3 * dt; roll += ((vx * dt) / half) * (180 / Math.PI); }
+      else roll += airRoll * dt;
+      if (x < half) { x = half; vx = Math.abs(vx) * PHYSICS.wallBounce; }
+      if (x > viewport.width - half) { x = viewport.width - half; vx = -Math.abs(vx) * PHYSICS.wallBounce; }
+    }
+    return { depth, size, blur, delay: Math.round(rand() * STAGGER_MS), floorY, bounces, frames };
   });
 }
 
-/** Ease-out (cubic): fast out of the box, gliding to rest. */
-export const easeOutCubic = (t: number) => 1 - (1 - Math.min(1, Math.max(0, t))) ** 3;
-
 /**
- * Keyframes along one flight, sampled so a gentle arc (a little lift, then settling) survives linear interpolation.
- * `move` (outer layer): position, size and opacity — pops in over the first 8%, holds, fades over the last 40%.
- * `turn` (inner layer): the tilt. Kept apart because opacity below 1 flattens 3D on the element it is set on.
+ * Web Animations keyframes for one coin, relative to where it starts (`origin`).
+ * `move` (outer layer): position, pop-in scale and opacity. `turn` (inner 3D layer): wobble and roll. Kept apart
+ * because opacity below 1 flattens 3D on the element it is set on.
  */
-export function flightKeyframes(flight: CoinFlight, steps = 12): {
-  move: { transform: string; opacity: number; offset: number }[];
-  turn: { transform: string; offset: number }[];
+export function beadKeyframes(flight: BeadFlight, origin: Point): {
+  move: { offset: number; opacity: number; transform: string }[];
+  turn: { offset: number; transform: string }[];
 } {
-  const move: { transform: string; opacity: number; offset: number }[] = [];
-  const turn: { transform: string; offset: number }[] = [];
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-    const travel = easeOutCubic(t);
-    const lift = -18 * Math.sin(Math.PI * Math.min(1, t * 1.4)) * (0.5 + flight.depth);
-    const scale = 0.25 + 0.75 * easeOutCubic(Math.min(1, t * 2.2));
-    const mix = (from: number, to: number) => from + (to - from) * travel;
-    const opacity = t < 0.08 ? t / 0.08 : t > 0.6 ? Math.max(0, 1 - (t - 0.6) / 0.4) : 1;
-    move.push({ offset: t, opacity: Math.round(opacity * 1000) / 1000,
-      transform: `translate3d(${(flight.dx * travel).toFixed(1)}px, ${(flight.dy * travel + lift).toFixed(1)}px, 0) scale(${scale.toFixed(3)})` });
-    turn.push({ offset: t, transform: `rotateX(${mix(flight.turnFrom.x, flight.turnTo.x).toFixed(1)}deg) `
-      + `rotateY(${mix(flight.turnFrom.y, flight.turnTo.y).toFixed(1)}deg) rotateZ(${mix(flight.turnFrom.z, flight.turnTo.z).toFixed(1)}deg)` });
-  }
-  return { move, turn };
+  const total = FALL_MS / 1000;
+  const offset = (t: number) => Math.min(1, Math.round((t / total) * 10000) / 10000);
+  return {
+    move: flight.frames.map((frame) => ({ offset: offset(frame.t), opacity: frame.opacity,
+      transform: `translate3d(${(frame.x - origin.x).toFixed(1)}px, ${(frame.y - origin.y).toFixed(1)}px, 0) scale(${frame.scale.toFixed(3)})` })),
+    turn: flight.frames.map((frame) => ({ offset: offset(frame.t),
+      transform: `rotateY(${frame.tiltY.toFixed(1)}deg) rotateZ(${frame.roll.toFixed(1)}deg)` })),
+  };
 }
 
-/** Reduced motion: a few still coins around the button (no travel, no turn), fading in and out where they are. */
-export function reducedSpots(count = REDUCED_COINS): CoinFlight[] {
+/** Reduced motion: a few still coins beside the origin, fading in and out where they are. */
+export function reducedSpots(origin: Point, count = REDUCED_COINS): { size: number; x: number; y: number }[] {
   return Array.from({ length: count }, (_, i) => {
     const angle = (-150 + (120 * i) / Math.max(1, count - 1)) * (Math.PI / 180);
-    const still = { x: 0, y: 0, z: 0 };
-    return { depth: 0.5, size: (COIN_SIZE.far + COIN_SIZE.near) / 2, blur: 0, delay: 0,
-      dx: Math.round(Math.cos(angle) * 70), dy: Math.round(Math.sin(angle) * 60), turnFrom: still, turnTo: still };
+    return { size: (COIN_SIZE.far + COIN_SIZE.near) / 2, x: Math.round(origin.x + Math.cos(angle) * 80), y: Math.round(origin.y + Math.sin(angle) * 60) };
   });
-}
-
-/** The box wobble on the button: a squash, two small tilts, settle. Scale stays within 0.94–1.06, tilt within ±4°. */
-export const WOBBLE_KEYFRAMES: readonly { transform: string; offset: number }[] = Object.freeze([
-  { offset: 0, transform: "scale(1) rotate(0deg)" },
-  { offset: 0.18, transform: "scale(0.94, 0.96) rotate(0deg)" },
-  { offset: 0.42, transform: "scale(1.06) rotate(-4deg)" },
-  { offset: 0.66, transform: "scale(1.03) rotate(3deg)" },
-  { offset: 0.86, transform: "scale(1.01) rotate(-1deg)" },
-  { offset: 1, transform: "scale(1) rotate(0deg)" },
-]);
-
-/** How far coins fly: most of the visible content area, without leaving a phone screen entirely. */
-export function burstReach(area: { width: number; height: number }): number {
-  return Math.max(120, Math.min(520, Math.min(area.width * 0.55, area.height * 0.65)));
 }
 
 export type CelebrationTriggerState = { lastPlayed: string | null; queued: string | null };
@@ -193,12 +226,8 @@ export function nextCelebrationTrigger(
   return { play, state: { lastPlayed, queued } };
 }
 
-export type CelebrationSlice = { x: number; y: number; width: number; height: number };
-
-/** The part of the content area the user can see (content area ∩ viewport), in content-area coordinates. */
-export function visibleSlice(area: { left: number; top: number; width: number; height: number },
-  viewport: { width: number; height: number }): CelebrationSlice {
-  const left = Math.max(area.left, 0), top = Math.max(area.top, 0);
-  const right = Math.min(area.left + area.width, viewport.width), bottom = Math.min(area.top + area.height, viewport.height);
-  return { x: left - area.left, y: top - area.top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
+/** The OK release plays the queued success right away (and marks it played, so closing the dialog does not repeat it). */
+export function releaseCelebration(state: CelebrationTriggerState): { play: string | null; state: CelebrationTriggerState } {
+  if (!state.queued || state.queued === state.lastPlayed) return { play: null, state };
+  return { play: state.queued, state: { lastPlayed: state.queued, queued: null } };
 }

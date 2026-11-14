@@ -2,6 +2,7 @@
 import { act, createElement, type FunctionComponent } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { OK_RELEASE_MS } from "@/lib/compound-celebration/coins";
 import { SelectedApp } from "./selected-app";
 import { RecoveryPage } from "./portfolio/recovery-page";
 import { useCompoundController, type CompoundConfirmation } from "./use-compound-controller";
@@ -390,7 +391,8 @@ describe("one-click compound submit dialog", () => {
     expect(dialog()?.textContent).toContain("Compound confirmed");
     const statesBefore = fetchMock.mock.calls.filter(([url]) => url === "/api/compound-state").length;
     const refreshBefore = mocks.refresh.mock.calls.length;
-    await act(async () => button("OK")!.click()); await advance(1);
+    // OK pops back on release (the coins leave from it), then the dialog closes OK_RELEASE_MS later.
+    await act(async () => button("OK")!.click()); await advance(OK_RELEASE_MS);
     expect(controller.feedback).toBeNull(); expect(dialog()).toBeNull();
     expect(fetchMock.mock.calls.filter(([url]) => url === "/api/compound-state").length).toBeGreaterThan(statesBefore);
     expect(mocks.refresh.mock.calls.length).toBeGreaterThan(refreshBefore);

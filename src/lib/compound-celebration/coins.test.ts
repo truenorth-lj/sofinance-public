@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  BURST_DELAY_MS, CELEBRATION_MS, COIN_COUNT, COIN_SIZE, FLIGHT_MS, REDUCED_COINS, STAGGER_MS, STOCK_COIN_LOGOS, WOBBLE_KEYFRAMES, WOBBLE_MS,
-  burstReach, coinFlights, flightKeyframes, nextCelebrationTrigger, pickCoinLogos, reducedSpots, seedFrom, seededRandom, stockTicker,
-  visibleSlice,
+  CELEBRATION_MS, COIN_COUNT, COIN_SIZE, FALL_MS, OK_PRESS_SCALE, OK_RELEASE_KEYFRAMES, OK_RELEASE_MS, PHYSICS, REDUCED_COINS, SAMPLE_MS, STAGGER_MS,
+  STOCK_COIN_LOGOS, beadFlights, beadKeyframes, nextCelebrationTrigger, pickCoinLogos, reducedSpots, releaseCelebration, seedFrom, seededRandom,
+  stockTicker, type BeadFlight,
 } from "./coins";
 
 const logo = (ticker: string) => `https://xstocks-metadata.backed.fi/logos/tokens/${ticker}x.png`;
@@ -30,9 +30,7 @@ describe("stock coins", () => {
     const others = logos.filter((url) => url !== logo("NVDA"));
     expect(new Set(others).size).toBe(others.length);
     expect(others.every((url) => Object.values(STOCK_COIN_LOGOS).includes(url))).toBe(true);
-    // The own stock is spread through the burst, not all first.
     expect(logos.slice(0, 7).every((url) => url === logo("NVDA"))).toBe(false);
-    // Phone: 9 coins, 5 of them the own stock.
     expect(pickCoinLogos(["USDC", "TSLAx"], COIN_COUNT.narrow, seededRandom(7)).filter((url) => url === logo("TSLA"))).toHaveLength(5);
   });
   it("uses only the mix when the position has no stock with a logo, and is the same for the same seed", () => {
@@ -44,78 +42,105 @@ describe("stock coins", () => {
   it("seeds from the signature deterministically", () => {
     expect(seedFrom("sig-a")).toBe(seedFrom("sig-a"));
     expect(seedFrom("sig-a")).not.toBe(seedFrom("sig-b"));
-    const rand = seededRandom(seedFrom("sig-a"));
-    const values = Array.from({ length: 200 }, rand);
+    const values = Array.from({ length: 200 }, seededRandom(seedFrom("sig-a")));
     expect(values.every((value) => value >= 0 && value < 1)).toBe(true);
   });
 });
 
-describe("burst flight", () => {
-  const reach = 400;
-  const flights = coinFlights(14, reach, seededRandom(11));
-  it("fans upward out of the box: most coins rise, none drops far below the button", () => {
-    expect(flights).toHaveLength(14);
-    expect(flights.filter((flight) => flight.dy < 0).length).toBeGreaterThanOrEqual(11);
-    expect(Math.max(...flights.map((flight) => flight.dy))).toBeLessThan(0.25 * reach);
-    expect(flights.some((flight) => flight.dx < -reach * 0.3)).toBe(true);
-    expect(flights.some((flight) => flight.dx > reach * 0.3)).toBe(true);
-    expect(Math.max(...flights.map((flight) => Math.hypot(flight.dx, flight.dy)))).toBeLessThanOrEqual(reach * 1.1);
+describe("OK button press", () => {
+  it("shrinks to 0.94 while pressed and pops back past its size on release, in 180 ms", () => {
+    expect(OK_PRESS_SCALE).toBe(0.94);
+    expect(OK_RELEASE_MS).toBe(180);
+    expect(OK_RELEASE_KEYFRAMES.map((frame) => frame.transform)).toEqual(["scale(0.94)", "scale(1.06)", "scale(1)"]);
+    expect(OK_RELEASE_KEYFRAMES.map((frame) => frame.offset)).toEqual([0, 0.5, 1]);
   });
-  it("puts coins at different depths: near ones larger and slightly soft, far ones smaller", () => {
+});
+
+/** Local minima of y after the first floor contact: the tops of the bounces. */
+function bouncePeaks(flight: BeadFlight): number[] {
+  const first = flight.frames.findIndex((frame) => frame.y >= flight.floorY - 0.01);
+  const peaks: number[] = [];
+  for (let i = Math.max(1, first + 1); i < flight.frames.length - 1; i++) {
+    const [a, b, c] = [flight.frames[i - 1]!.y, flight.frames[i]!.y, flight.frames[i + 1]!.y];
+    if (b < a && b <= c && b < flight.floorY - 4) peaks.push(b);
+  }
+  return peaks;
+}
+
+describe("beads falling to the floor", () => {
+  const viewport = { width: 1280, height: 900 };
+  const origin = { x: 640, y: 560 };
+  const flights = beadFlights(14, origin, viewport, seededRandom(11));
+  it("pops out of the OK button: starts there, small and invisible, and first goes up", () => {
+    expect(flights).toHaveLength(14);
+    for (const flight of flights) {
+      expect(flight.frames[0]).toMatchObject({ t: 0, x: origin.x, y: origin.y, opacity: 0, scale: 0.3 });
+      expect(flight.delay).toBeGreaterThanOrEqual(0);
+      expect(flight.delay).toBeLessThanOrEqual(STAGGER_MS);
+    }
+    expect(flights.filter((flight) => flight.frames[4]!.y < origin.y).length).toBe(14);
+  });
+  it("falls to the bottom of the screen and bounces lower each time", () => {
+    for (const flight of flights) {
+      expect(flight.frames.every((frame) => frame.y <= flight.floorY + 1e-6)).toBe(true);
+      expect(flight.frames.some((frame) => Math.abs(frame.y - flight.floorY) < 1e-6)).toBe(true);
+      expect(flight.floorY).toBeLessThanOrEqual(viewport.height - PHYSICS.floorMargin - flight.size / 2 + 1e-9);
+      expect(flight.floorY).toBeGreaterThanOrEqual(viewport.height - PHYSICS.floorMargin - flight.size / 2 - PHYSICS.depthLift - 1e-9);
+      const peaks = bouncePeaks(flight);
+      for (let i = 1; i < peaks.length; i++) expect(peaks[i]!).toBeGreaterThanOrEqual(peaks[i - 1]! - 0.5);
+    }
+    expect(flights.filter((flight) => flight.bounces >= 2).length).toBeGreaterThanOrEqual(10);
+    // Far coins land higher than near ones (depth).
+    const sorted = [...flights].sort((a, b) => a.depth - b.depth);
+    expect(sorted[0]!.floorY).toBeLessThan(sorted.at(-1)!.floorY);
+    expect(sorted[0]!.size).toBeLessThan(sorted.at(-1)!.size);
     for (const flight of flights) {
       expect(flight.size).toBeGreaterThanOrEqual(COIN_SIZE.far);
       expect(flight.size).toBeLessThanOrEqual(COIN_SIZE.near);
       expect(flight.blur).toBeLessThanOrEqual(1.7);
-      expect(flight.delay).toBeGreaterThanOrEqual(0);
-      expect(flight.delay).toBeLessThanOrEqual(STAGGER_MS);
-      if (flight.depth > 0.82) expect(flight.blur).toBeGreaterThan(0);
-      if (flight.depth >= 0.12 && flight.depth <= 0.82) expect(flight.blur).toBe(0);
     }
-    const sorted = [...flights].sort((a, b) => a.depth - b.depth);
-    expect(sorted[0]!.size).toBeLessThan(sorted.at(-1)!.size);
   });
-  it("leaves the button small and invisible, ends at rest where planned, faded out, and turns as it flies", () => {
-    const flight = flights[0]!;
-    const { move, turn } = flightKeyframes(flight);
-    expect(move[0]).toMatchObject({ offset: 0, opacity: 0, transform: "translate3d(0.0px, 0.0px, 0) scale(0.250)" });
-    expect(move.at(-1)).toMatchObject({ offset: 1, opacity: 0, transform: `translate3d(${flight.dx.toFixed(1)}px, ${flight.dy.toFixed(1)}px, 0) scale(1.000)` });
-    expect(move.some((frame) => frame.opacity === 1)).toBe(true);
+  it("stays on screen (bounces off the sides), spreads to both sides, wobbles without flipping, and fades out", () => {
+    for (const flight of flights) {
+      for (const frame of flight.frames) {
+        expect(frame.x).toBeGreaterThanOrEqual(flight.size / 2 - 1e-6);
+        expect(frame.x).toBeLessThanOrEqual(viewport.width - flight.size / 2 + 1e-6);
+        expect(Math.abs(frame.tiltY)).toBeLessThanOrEqual(60);
+      }
+      expect(flight.frames.at(-1)).toMatchObject({ t: FALL_MS / 1000, opacity: 0 });
+      expect(flight.frames.find((frame) => frame.t >= 1)!.opacity).toBe(1);
+      expect(flight.frames).toHaveLength(FALL_MS / SAMPLE_MS + 1);
+    }
+    expect(flights.some((flight) => flight.frames.at(-1)!.x < origin.x - 150)).toBe(true);
+    expect(flights.some((flight) => flight.frames.at(-1)!.x > origin.x + 150)).toBe(true);
+  });
+  it("keeps a phone's coins inside a 390 px screen", () => {
+    const phone = beadFlights(9, { x: 195, y: 545 }, { width: 390, height: 844 }, seededRandom(5));
+    for (const flight of phone) for (const frame of flight.frames) {
+      expect(frame.x).toBeGreaterThanOrEqual(0);
+      expect(frame.x).toBeLessThanOrEqual(390);
+      expect(frame.y).toBeLessThanOrEqual(844);
+    }
+  });
+  it("turns into Web Animations keyframes relative to the start, offsets 0 → 1", () => {
+    const { move, turn } = beadKeyframes(flights[0]!, origin);
+    expect(move[0]).toEqual({ offset: 0, opacity: 0, transform: "translate3d(0.0px, 0.0px, 0) scale(0.300)" });
+    expect(move.at(-1)!.offset).toBe(1);
+    expect(move.at(-1)!.opacity).toBe(0);
     expect(move.map((frame) => frame.offset)).toEqual([...move.map((frame) => frame.offset)].sort((a, b) => a - b));
-    expect(turn[0]!.transform).toBe(`rotateX(${flight.turnFrom.x.toFixed(1)}deg) rotateY(${flight.turnFrom.y.toFixed(1)}deg) rotateZ(${flight.turnFrom.z.toFixed(1)}deg)`);
-    expect(turn.at(-1)!.transform).toBe(`rotateX(${flight.turnTo.x.toFixed(1)}deg) rotateY(${flight.turnTo.y.toFixed(1)}deg) rotateZ(${flight.turnTo.z.toFixed(1)}deg)`);
-    expect(Math.abs(flight.turnFrom.y)).toBeGreaterThanOrEqual(25);
+    expect(turn).toHaveLength(move.length);
+    expect(turn[0]!.transform).toMatch(/^rotateY\(-?\d+\.\ddeg\) rotateZ\(0\.0deg\)$/);
   });
-  it("wobbles the button a little (scale 0.94–1.06, tilt ≤ 4°) and settles where it started", () => {
-    expect(WOBBLE_MS).toBe(300);
-    expect(WOBBLE_KEYFRAMES[0]!.transform).toBe("scale(1) rotate(0deg)");
-    expect(WOBBLE_KEYFRAMES.at(-1)!.transform).toBe("scale(1) rotate(0deg)");
-    for (const frame of WOBBLE_KEYFRAMES) {
-      const scales = [...frame.transform.matchAll(/scale\(([\d.]+)(?:, ([\d.]+))?\)/g)].flatMap((m) => [m[1], m[2]]).filter(Boolean).map(Number);
-      const tilt = Number(/rotate\((-?[\d.]+)deg\)/.exec(frame.transform)![1]);
-      expect(Math.min(...scales)).toBeGreaterThanOrEqual(0.94);
-      expect(Math.max(...scales)).toBeLessThanOrEqual(1.06);
-      expect(Math.abs(tilt)).toBeLessThanOrEqual(4);
-    }
+  it("is over in about 2.2 s", () => {
+    expect(CELEBRATION_MS).toBe(STAGGER_MS + FALL_MS);
+    expect(CELEBRATION_MS).toBe(2180);
   });
-  it("is over in about 1.6 s: coins leave just before the wobble settles", () => {
-    expect(BURST_DELAY_MS).toBeLessThan(WOBBLE_MS);
-    expect(FLIGHT_MS).toBe(1300);
-    expect(CELEBRATION_MS).toBe(BURST_DELAY_MS + STAGGER_MS + FLIGHT_MS);
-    expect(CELEBRATION_MS).toBe(1630);
-  });
-  it("flies across most of the visible area, within 120–520 px", () => {
-    expect(burstReach({ width: 1240, height: 900 })).toBe(520);
-    expect(burstReach({ width: 390, height: 844 })).toBeCloseTo(214.5, 9);
-    expect(burstReach({ width: 100, height: 100 })).toBe(120);
-  });
-  it("reduced motion: three still coins beside the button, no turn", () => {
-    const spots = reducedSpots();
+  it("reduced motion: three still coins just above and beside the origin", () => {
+    const spots = reducedSpots(origin);
     expect(spots).toHaveLength(REDUCED_COINS);
     for (const spot of spots) {
-      expect(spot.turnFrom).toEqual({ x: 0, y: 0, z: 0 });
-      expect(spot.turnTo).toEqual({ x: 0, y: 0, z: 0 });
-      expect(Math.hypot(spot.dx, spot.dy)).toBeLessThanOrEqual(75);
-      expect(spot.dy).toBeLessThan(0);
+      expect(Math.hypot(spot.x - origin.x, spot.y - origin.y)).toBeLessThanOrEqual(85);
+      expect(spot.y).toBeLessThan(origin.y);
     }
   });
 });
@@ -137,19 +162,19 @@ describe("celebration trigger", () => {
     expect(held.state.queued).toBe("s1");
     expect(nextCelebrationTrigger(null, false, held.state).play).toBe("s1");
   });
+  it("the OK release plays the held success at once, and closing the dialog afterwards does not repeat it", () => {
+    const held = nextCelebrationTrigger({ phase: "success", signature: "s1" }, true, empty);
+    const released = releaseCelebration(held.state);
+    expect(released.play).toBe("s1");
+    expect(nextCelebrationTrigger(null, false, released.state).play).toBeNull();
+    expect(releaseCelebration(released.state).play).toBeNull();
+    expect(releaseCelebration(empty).play).toBeNull();
+  });
   it("never plays after a failed or unconfirmed send", () => {
     const failed = nextCelebrationTrigger({ phase: "failed", signature: "s1" }, true, empty);
     expect(nextCelebrationTrigger(null, false, failed.state).play).toBeNull();
+    expect(releaseCelebration(failed.state).play).toBeNull();
     const confirming = nextCelebrationTrigger({ phase: "confirming", signature: "s2" }, true, empty);
     expect(nextCelebrationTrigger(null, false, confirming.state).play).toBeNull();
-  });
-});
-
-describe("visible slice", () => {
-  it("is the content area ∩ viewport, in content-area coordinates", () => {
-    expect(visibleSlice({ left: 20, top: -700, width: 1240, height: 2400 }, { width: 1280, height: 900 }))
-      .toEqual({ x: 0, y: 700, width: 1240, height: 900 });
-    expect(visibleSlice({ left: 0, top: 1000, width: 400, height: 300 }, { width: 400, height: 800 }))
-      .toEqual({ x: 0, y: 0, width: 400, height: 0 });
   });
 });

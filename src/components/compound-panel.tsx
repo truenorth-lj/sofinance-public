@@ -41,7 +41,7 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: 
         state && !c.hasFees ? "Currently no fees available to compound" : null;
   const showCurrentAttempt = currentAttemptShown(c);
   const compoundButtonRef = useRef<HTMLButtonElement>(null);
-  // Coins burst out after the result dialog's OK; mostly this position's own stock.
+  // Coins pop out of the result dialog's OK and fall like beads; mostly this position's own stock.
   const celebration = useCompoundCelebration(c.feedback, c.feedback !== null, state ? [tokenLabel(state.mintA), tokenLabel(state.mintB)] : []);
   return <section aria-labelledby="compound-heading" className="mt-6 rounded-[28px] border border-white/12 bg-char p-5 sm:p-8">
     <div className="min-w-0">
@@ -65,9 +65,9 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: 
       </button>
       <span role="status" className="text-xs text-smoke">{c.loading ? "Loading latest fees…" : blockedText}</span>
     </div>
-    <CompoundTokenBurst play={celebration} originRef={compoundButtonRef} />
+    <CompoundTokenBurst play={celebration.play} originRef={compoundButtonRef} />
     {showCurrentAttempt && <AttemptCard c={c} tokenLabel={tokenLabel} />}
-    <CompoundSubmitDialog feedback={c.feedback} slow={c.feedbackSlow} onDismiss={c.dismissFeedback} />
+    <CompoundSubmitDialog feedback={c.feedback} slow={c.feedbackSlow} onDismiss={c.dismissFeedback} onCelebrate={celebration.celebrateFrom} />
     {c.error && <div role="alert" className="mt-4 flex gap-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" /><span>{c.error}</span></div>}
     {/* The cleanup a confirmed compound starts on its own stays visible here; the rest of harvest account management lives on
         its own recovery page (LJ 11/14), linked from the position's details. */}
