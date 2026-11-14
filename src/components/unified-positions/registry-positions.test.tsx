@@ -20,7 +20,7 @@ const POOL = "8k2c9Kiavx5pbWc2dmzhL7vFp11sLgMcKFfSueq8haAh";
 const POSITION = testKeypair(94).publicKey.toBase58();
 const MINT_A = "TSLAqBbv4CNCnzWFeB7LmydAyEiNMJtve7DYKLpdK4S";
 const MINT_B = "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB";
-const state = vi.hoisted(() => ({ dex: { status: 200, body: {} as unknown }, op: { status: 422, body: {} as unknown }, raydium: [] as unknown[], dexCalls: [] as [string, unknown][], icons: null as unknown, hold: null as Promise<void> | null,
+const state = vi.hoisted(() => ({ dex: { status: 200, body: {} as unknown }, op: { status: 422, body: {} as unknown }, raydium: [] as unknown[], dexCalls: [] as [string, unknown][], hold: null as Promise<void> | null,
   performance: { status: 200, body: {} as unknown }, walletHold: null as Promise<void> | null, positionsHold: null as Promise<void> | null, quoteAdd: { status: 200, body: {} as unknown } }));
 
 
@@ -65,7 +65,7 @@ const raydiumRow = { positionMint: RAYDIUM_MINT, positionAccount: "p", poolId: P
 let container: HTMLDivElement; let root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); localStorage.clear(); resetTxNotices(); clearReportCache(); toolProbe.onConfirmed = undefined;
-  state.dex = { status: 200, body: { positions: [meteoraRow()] } }; state.raydium = []; state.dexCalls = []; state.icons = null; state.hold = null; resetPositionOpLocks();
+  state.dex = { status: 200, body: { positions: [meteoraRow()] } }; state.raydium = []; state.dexCalls = []; state.hold = null; resetPositionOpLocks();
   state.performance = { status: 200, body: performanceBody() }; state.walletHold = null; state.positionsHold = null;
   state.quoteAdd = { status: 200, body: {} };
   state.op = { status: 422, body: { error: "This pool pays farming rewards, and claiming them isn't available here yet.", code: "UNSUPPORTED" } };
@@ -76,7 +76,6 @@ beforeEach(() => {
       if (state.walletHold) await state.walletHold;
       return Response.json({ wallet: WALLET, slot: 1, fetchedAt: 1, positions: state.raydium, assets: [] });
     }
-    if (url.pathname === "/api/rwa-pairs" && state.icons) return Response.json({ pairs: [], tokenIcons: state.icons });
     if (url.pathname.startsWith("/api/dex/")) {
       state.dexCalls.push([url.pathname, JSON.parse(String(init?.body))]);
       if (url.pathname.endsWith("/performance")) return Response.json(state.performance.body, { status: state.performance.status });
@@ -126,7 +125,8 @@ describe("/app My positions with registry DEXes", () => {
     await settle();
     expect(groups()).toEqual([["Solana", [`TSLA / TSLAx · Meteora · #${POSITION.slice(0, 4)}…${POSITION.slice(-4)}`]]]);
     expect(selectedKey()).toBe(`meteora-dlmm:${POSITION}`);
-    expect(container.querySelector("[data-testid=registry-position-header]")?.textContent).toBe("In rangeRange 0.9800–1.0200");
+    // Only the range pill: no range badge, no per-token rows (the position's row shows them, LJ 11/14).
+    expect(container.querySelector("[data-testid=registry-position-header]")?.textContent).toBe("Range 0.9800–1.0200");
     // PR9: Performance has a registry panel too (never the Raydium one).
     await act(async () => tab("Performance").click());
     await settle();
@@ -284,13 +284,14 @@ describe("/app My positions with registry DEXes", () => {
     expect(getTxNotices().filter((notice) => notice.state === "failure")).toEqual([]);
   });
 
-  it("Compound: shows the unclaimed fees and 'No platform fee', posts to the generic route and shows the server's plain refusal", async () => {
+  it("Compound: no per-token fees line or 'Fees to compound' card, states 'No platform fee', posts to the generic route and shows the server's plain refusal", async () => {
     state.op = { status: 400, body: { error: "This position has no unclaimed fees yet, so there is nothing to compound.", code: "INVALID_REQUEST" } };
     await render();
     const panel = container.querySelector("[data-testid=registry-compound]")!;
     // Same note as the Raydium Compound fees panel (LJ 11/14), then this DEX's fee line.
     expect(panel.textContent).toContain("Adds this position's fees back into the same range.No platform fee.");
-    expect(panel.textContent).toContain("Unclaimed: 0.0015 TSLA · 0.0023 TSLAx");
+    expect(panel.textContent).not.toContain("Unclaimed");
+    expect(container.querySelector('section[aria-label="Fees to compound"]')).toBeNull();
     expect(container.querySelector("[data-testid=registry-compound-range]")).toBeNull(); // in range
     // In range the pool's own composition fee is stated (descriptor meta, not a DEX branch).
     expect(container.querySelector("[data-testid=registry-compound-pool-fee]")?.textContent).toContain("composition fee");
@@ -444,11 +445,10 @@ describe("/app My positions with registry DEXes", () => {
     expect(panel.querySelector("[data-testid=registry-add-too-small]")?.textContent).toBe(DEPOSIT_MINIMUM_UNAVAILABLE);
   });
 
-  it("the header uses the stored token icons (same source as the pairs list) instead of the first-letter placeholder", async () => {
-    state.icons = { solana: { [MINT_A]: "https://example.test/tsla.png", [MINT_B]: "https://example.test/tslax.png" }, robinhood: {} };
+  it("the selected position's details read no token icons (the removed per-token rows were their only use)", async () => {
+    const fetchSpy = vi.mocked(fetch);
     await render(LISTED);
-    const srcs = [...container.querySelectorAll<HTMLImageElement>("[data-testid=registry-position-assets] img")].map((img) => img.getAttribute("src"));
-    expect(srcs).toEqual(["https://example.test/tsla.png", "https://example.test/tslax.png"]);
+    expect(fetchSpy.mock.calls.map(([input]) => new URL(String(input), "http://x").pathname)).not.toContain("/api/rwa-pairs");
   });
 
   it("panels follow capabilities: no Claim section when claim is unsupported, nothing for a tool the DEX lacks", async () => {
@@ -465,30 +465,14 @@ describe("/app My positions with registry DEXes", () => {
     expect(container.querySelector("[data-testid=registry-compound]")).toBeNull();
   });
 
-  it("shows the shared Liquidity and Unclaimed fees rows for the selected registry position (no USD until priced)", async () => {
+  it("Meteora details: no range badge and no per-token Liquidity / Unclaimed fees rows above the tabs; the range pill stays", async () => {
     await render(LISTED);
-    const rows = [...container.querySelectorAll("[data-testid=registry-position-assets] dl")].map((row) => [...row.querySelectorAll("dt, dd")].map((cell) => cell.textContent));
-    expect(rows).toHaveLength(2);
-    // One grid per token: label | amount + symbol | USD, each cell exactly one value (PM 11/1: no wrapped second dash).
-    expect(rows[0]!.map((cell) => cell?.replace(/\s+/g, " "))).toEqual(["Liquidity", "1.25 TSLA", "—", "Unclaimed fees", "0.0015 TSLA", "—"]);
-    expect(rows[1]!.map((cell) => cell?.replace(/\s+/g, " "))).toEqual(["Liquidity", "0.987 TSLAx", "—", "Unclaimed fees", "0.0023 TSLAx", "—"]);
-    // The USD cells sit in the grid's own column for both lines (same template for every token), so they align. A narrow
-    // row (a phone) puts each label above its values so the amount keeps most of the width (container query, not screen).
-    const grids = [...container.querySelectorAll("[data-testid=registry-position-assets] dl")].map((row) => row.className);
-    expect(new Set(grids).size).toBe(1);
-    expect(grids[0]).toContain("grid-cols-[minmax(0,1fr)_auto]");
-    expect(grids[0]).toContain("@md:grid-cols-[auto_minmax(0,1fr)_6rem]");
-  });
-
-  it("a registry position whose amounts were not read shows a dash on both rows, never zero (same rule as Robinhood Chain)", async () => {
-    state.dex = { status: 200, body: { positions: [meteoraRow("5000", "omit")] } };
-    await render(LISTED);
-    const values = [...container.querySelectorAll("[data-testid=registry-position-assets] dd")].map((cell) => cell.textContent);
-    expect(values.map((cell) => cell?.replace(/\s+/g, " "))).toEqual(["— TSLA", "—", "— TSLA", "—", "— TSLAx", "—", "— TSLAx", "—"]);
-    state.dex = { status: 200, body: { positions: [meteoraRow("5000", { liquidityRaw: null, unclaimedFeesRaw: null })] } };
-    await act(async () => root.unmount()); root = createRoot(container);
-    await render(LISTED);
-    expect([...container.querySelectorAll("[data-testid=registry-position-assets] dd")].map((cell) => cell.textContent)).toEqual(values);
+    const header = container.querySelector("[data-testid=registry-position-header]")!;
+    expect(header.textContent).toBe("Range 0.9800–1.0200");
+    expect(header.querySelector("[data-testid=range-badge]")).toBeNull();
+    expect(container.querySelector("[data-testid=registry-position-assets]")).toBeNull();
+    expect(container.querySelector('[aria-label="Position assets"]')).toBeNull();
+    expect(container.querySelector('[data-testid="selected-position-detail"] nav[aria-label="Position operations"]')).not.toBeNull();
   });
 
   it("a ?position= deep link to a registry position selects it over the scanned positions", async () => {

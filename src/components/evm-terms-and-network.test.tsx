@@ -7,11 +7,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/app" }));
-const panels = vi.hoisted(() => ({ open: vi.fn(), positions: vi.fn() }));
+const panels = vi.hoisted(() => ({ open: vi.fn(), positions: vi.fn(),
+  scan: vi.fn<(address: string) => Promise<{ positions: unknown[]; error: string | null }>>(async () => ({ positions: [], error: null })) }));
 vi.mock("./rhc-univ4-open-panel", () => ({ RhcUniv4OpenPanel: (props: unknown) => { panels.open(props); return createElement("div", { "data-testid": "rhc-open-panel" }); } }));
 vi.mock("./rhc-close", async (importOriginal) => ({ ...await importOriginal<typeof import("./rhc-close")>(),
   fetchPositions: (...args: unknown[]) => { panels.positions(args); return Promise.resolve({ lookups: [], error: null }); },
-  fetchScan: () => Promise.resolve({ positions: [], error: null }) }));
+  fetchScan: (address: string) => panels.scan(address) }));
 
 import { InkNav } from "./ink/InkNav";
 import { TermsGate } from "./terms-gate";
@@ -54,6 +55,7 @@ function Reader() { const value = useEvmWalletConnection(); useEffect(() => { li
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear(); handlers.clear(); panels.open.mockClear(); panels.positions.mockClear();
+  panels.scan.mockReset(); panels.scan.mockImplementation(async () => ({ positions: [], error: null }));
   Object.assign(wallet, { chain: "0x1237", shared: false, switchError: null, calls: [] });
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
   session = createEvmSession({ discover, storage: () => localStorage });
@@ -199,18 +201,79 @@ describe("wrong network", () => {
     expect(q("[data-testid=nav-evm-error]")!.textContent).toContain("Network switch was rejected in the wallet");
   });
 
-  it("My positions (Robinhood Chain) shows the switch prompt instead of the positions, and the positions after switching", async () => {
-    await onOtherNetwork(createElement(() => {
-      const { wallet: w } = useEvmWalletConnection();
-      return createElement("div", null, useRhcPositions({ wallet: w, signingEnabled: false, refreshKey: 0 })?.status);
+  // /app My positions, Robinhood Chain (LJ 11/14): the scan is a server read by address, so it runs whatever network the
+  // wallet is on; the section shows only with positions; the network switch is asked for only when Close is clicked.
+  const held = (tokenId: string) => ({ tokenId, hooks: null, stablePair: true,
+    position: { tokenId, owner: EVM, ownedByUser: true, liquidity: "1000", tickLower: -10, tickUpper: 10, poolId: "0xpool", baseSymbol: "SPCX" } });
+  const exitCalls: unknown[] = [];
+  function RhcMyPositions() {
+    const { wallet: w } = useEvmWalletConnection();
+    const rhc = useRhcPositions({ wallet: w, signingEnabled: false, refreshKey: 0 });
+    return createElement("div", { "data-testid": "rhc-host", "data-bound": rhc ? "yes" : "no" }, rhc?.status,
+      ...(rhc?.positions ?? []).map((p) => createElement("div", { key: p.key }, rhc!.tool(p, "withdraw"))));
+  }
+  const stubServer = () => {
+    exitCalls.length = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(String(input), "http://x");
+      if (url.pathname === "/api/rhc-univ4-exit") { exitCalls.push(JSON.parse(String(init?.body))); return Response.json({ error: "test" }, { status: 503 }); }
+      return Response.json({ error: "not in this test" }, { status: 503 });
     }));
-    expect(q("[data-testid=rhc-wrong-network]")!.textContent).toContain("Switch to Robinhood Chain to see and manage your positions");
-    expect(q("[aria-label='Position NFT number']")).toBeNull();
-    expect(panels.positions).not.toHaveBeenCalled();
-    await click(q("[data-testid=rhc-wrong-network] button"));
+  };
+  const closeButton = () => [...container.querySelectorAll<HTMLButtonElement>("[data-testid=rhc-withdraw] button")].find((b) => b.textContent === "Close") ?? null;
+
+  it("My positions (Robinhood Chain) on another network: scans by address, and with no positions shows no section and no Wrong network card", async () => {
+    stubServer();
+    await onOtherNetwork(createElement(RhcMyPositions));
+    expect(panels.scan).toHaveBeenCalledWith(EVM);
+    expect(q("[data-testid=rhc-positions-section]")).toBeNull();
     expect(q("[data-testid=rhc-wrong-network]")).toBeNull();
-    expect(q("[aria-label='Position NFT number']")).not.toBeNull();
-    expect(panels.positions).toHaveBeenCalled();
+    expect(wallet.calls).not.toContain("wallet_switchEthereumChain");
+  });
+
+  it("My positions (Robinhood Chain) on another network with positions: the section and positions show, no Wrong network card", async () => {
+    stubServer();
+    panels.scan.mockImplementation(async () => ({ positions: [held("9")], error: null }));
+    await onOtherNetwork(createElement(RhcMyPositions));
+    expect(q("[data-testid=rhc-positions-section]")).not.toBeNull();
+    expect(q("[data-testid=rhc-wallet]")!.textContent).toContain("0xb95b…1b04");
+    expect(q("[data-testid=rhc-wrong-network]")).toBeNull();
+    expect(container.querySelectorAll("[data-testid=rhc-withdraw]")).toHaveLength(1);
+  });
+
+  it("My positions (Robinhood Chain): a failed scan shows no section", async () => {
+    stubServer();
+    panels.scan.mockImplementation(async () => ({ positions: [], error: "Couldn't check this wallet's Robinhood Chain positions right now." }));
+    await onOtherNetwork(createElement(RhcMyPositions));
+    expect(panels.scan).toHaveBeenCalled();
+    expect(q("[data-testid=rhc-positions-section]")).toBeNull();
+    expect(container.textContent).not.toContain("Couldn't check");
+  });
+
+  it("My positions (Robinhood Chain): no EVM wallet, no scan and no section", async () => {
+    stubServer();
+    recordTermsAcceptance();
+    await render(createElement(RhcMyPositions));
+    expect(live.evm.wallet).toBeNull();
+    expect(q("[data-testid=rhc-host]")!.dataset.bound).toBe("no");
+    expect(panels.scan).not.toHaveBeenCalled();
+    expect(q("[data-testid=rhc-positions-section]")).toBeNull();
+  });
+
+  it("Close on another network asks to switch inside the Withdraw tool (no preview), and previews after switching", async () => {
+    stubServer();
+    panels.scan.mockImplementation(async () => ({ positions: [held("9")], error: null }));
+    await onOtherNetwork(createElement(RhcMyPositions));
+    expect(q("[data-testid=rhc-wrong-network]")).toBeNull();
+    await click(closeButton());
+    expect(q("[data-testid=rhc-withdraw] [data-testid=rhc-wrong-network]")!.textContent).toContain("Switch to Robinhood Chain to close this position");
+    expect(exitCalls).toEqual([]);
+    await click(q("[data-testid=rhc-wrong-network] button"));
+    expect(wallet.calls).toContain("wallet_switchEthereumChain");
+    expect(live.evm.wrongNetwork).toBe(false);
+    expect(q("[data-testid=rhc-wrong-network]")).toBeNull();
+    await click(closeButton());
+    expect(exitCalls).toEqual([expect.objectContaining({ action: "prepare", user: EVM, tokenId: "9" })]);
   });
 
   it("the Open position dialog shows the switch prompt instead of the open panel, and the panel after switching", async () => {
