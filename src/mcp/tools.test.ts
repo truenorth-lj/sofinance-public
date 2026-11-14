@@ -51,6 +51,8 @@ vi.mock("../lib/open-permit", () => ({
   verifyOpenPositionPermit: vi.fn(() => true),
 }));
 
+// Live-discovery path (no RWA store), independent of the runner's env.
+vi.mock("@/lib/config/rwa-env", () => ({ getRwaConfig: () => ({ enabled: false }) }));
 vi.mock("../lib/rwa-pairs", () => ({
   RAYDIUM_API_V3: "https://api-v3.raydium.io",
   discoverRwaPairs: vi.fn(),

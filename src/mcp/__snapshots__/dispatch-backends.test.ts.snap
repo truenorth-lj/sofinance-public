@@ -122,7 +122,7 @@ exports[`http real read/prepare handlers > list_rwa_pairs preserves backend argu
     "content": [
       {
         "text": "{
-  "source": "synthetic",
+  "source": "SoFinance saved pools snapshot (same list as the pools page)",
   "stale": false,
   "aprWindow": "7-day estimate: the last 7 full UTC days of pool volume against the pool's current liquidity",
   "note": "Estimates from past trading, not a promise of future fees. Fees accrue only while the pool price is inside your range.",
@@ -667,7 +667,7 @@ exports[`stdio real read/prepare handlers > list_rwa_pairs preserves backend arg
     "content": [
       {
         "text": "{
-  "source": "synthetic",
+  "source": "SoFinance saved pools snapshot (same list as the pools page)",
   "stale": false,
   "aprWindow": "7-day estimate: the last 7 full UTC days of pool volume against the pool's current liquidity",
   "note": "Estimates from past trading, not a promise of future fees. Fees accrue only while the pool price is inside your range.",

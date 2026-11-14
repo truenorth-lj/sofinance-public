@@ -20,7 +20,9 @@ vi.mock("@sofinance/engine/open-atomic", async (importOriginal) => ({
   buildAndSimulateOpenPosition: backend.openBuild,
 }));
 vi.mock("@sofinance/engine/withdraw/build", () => ({ buildWithdraw: backend.withdraw }));
-vi.mock("@/lib/rwa-store", () => ({ getRwaPairs: backend.pairs }));
+vi.mock("@/lib/rwa-store", () => ({ getRwaPairs: backend.pairs, getRwaStore: () => ({ request: backend.rpc }) }));
+// Production shape (saved snapshot), independent of the runner's DATABASE_URL / gateway env.
+vi.mock("@/lib/config/rwa-env", () => ({ getRwaConfig: () => ({ enabled: true }) }));
 vi.mock("@/lib/position-performance", () => ({ getPositionPerformance: backend.performance }));
 vi.mock("@/lib/position-range-onchain", () => ({ readPositionRangeFacts: backend.range }));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: backend.rpc }));
