@@ -33,6 +33,7 @@ beforeEach(() => {
   vi.useFakeTimers(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   draws = 0; calls = [];
   const context = new Proxy({}, { get: (_target, key) => (key === "createRadialGradient" ? () => ({ addColorStop: () => {} })
+    : key === "measureText" ? () => ({})
     : key === "clearRect" ? () => { draws++; } : (...args: unknown[]) => { calls.push(`${String(key)}:${args.map((a) => a instanceof HTMLImageElement ? "img" : String(a)).join(",")}`); }),
   set: () => true });
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
@@ -103,6 +104,22 @@ describe("compound success halo canvas", () => {
     expect(markup).toMatch(/<circle[^>]*fill="#000"[^>]*stroke="none"/);
     expect(markup).not.toContain("rgb(");
     setSrc.mockRestore(); surface.remove();
+  });
+});
+
+describe("compound success halo text mask", () => {
+  it("cuts visible text glyphs and a select's shown value out, but not screen-reader-only text that paints nothing", async () => {
+    const surface = document.createElement("div");
+    surface.innerHTML = `<p>Hi</p><label style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0px, 0px, 0px, 0px)">Position operations</label><select><option>Compound fees</option></select>`;
+    document.body.append(surface);
+    vi.spyOn(Range.prototype, "getBoundingClientRect").mockImplementation(() => rect(10, 10, 8, 14));
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      return this.tagName === "LABEL" ? rect(0, 0, 1, 1) : rect(0, 0, 100, 20);
+    });
+    await buildHaloMask(surface, { left: 0, top: 0, width: 200, height: 200 }, 1);
+    const glyphs = calls.filter((call) => call.startsWith("fillText:")).map((call) => call.split(",")[0]!.slice("fillText:".length));
+    expect(glyphs).toEqual(["H", "i", "Compound fees"]);
+    surface.remove();
   });
 });
 

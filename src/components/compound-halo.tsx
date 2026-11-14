@@ -125,6 +125,20 @@ function solidSvgImage(svg: SVGSVGElement, rect: DOMRect): Promise<HTMLImageElem
  * own alpha (clipped to their corner radius) are painted into an offscreen transparency mask over the visible slice.
  * Those pixels are cut out of the light layer, so text and icons never light up. No bounding boxes are filled.
  */
+/** Screen-reader-only text (sr-only: clipped to a 1 px box) paints nothing, so it must not be cut out of the light. */
+function visuallyHidden(element: Element, surface: HTMLElement, seen: Map<Element, boolean>): boolean {
+  const cached = seen.get(element);
+  if (cached !== undefined) return cached;
+  const style = getComputedStyle(element);
+  const rect = element.getBoundingClientRect();
+  const hidden = style.display === "none" || style.visibility === "hidden" || (!!style.opacity && Number(style.opacity) === 0)
+    || (!!style.clip && style.clip !== "auto") || (!!style.clipPath && style.clipPath !== "none")
+    || (!!style.overflow && style.overflow !== "visible" && (rect.width <= 1 || rect.height <= 1))
+    || (element !== surface && !!element.parentElement && visuallyHidden(element.parentElement, surface, seen));
+  seen.set(element, hidden);
+  return hidden;
+}
+
 export async function buildHaloMask(surface: HTMLElement, frame: HaloFrame, scale: number): Promise<HTMLCanvasElement | null> {
   const mask = document.createElement("canvas");
   mask.width = Math.ceil(frame.width * scale); mask.height = Math.ceil(frame.height * scale);
@@ -134,12 +148,13 @@ export async function buildHaloMask(surface: HTMLElement, frame: HaloFrame, scal
   const walker = document.createTreeWalker(surface, NodeFilter.SHOW_TEXT);
   let node: Node | null;
   const range = document.createRange();
+  const hidden = new Map<Element, boolean>();
   while ((node = walker.nextNode())) {
     const parent = node.parentElement;
-    if (!parent || !node.textContent?.trim() || parent.closest("canvas,script,style,svg")) continue;
+    if (!parent || !node.textContent?.trim() || parent.closest("canvas,script,style,svg,option")) continue;
     if (outside(parent.getBoundingClientRect(), frame)) continue;
+    if (visuallyHidden(parent, surface, hidden)) continue;
     const style = getComputedStyle(parent);
-    if (style.visibility === "hidden" || style.display === "none") continue;
     context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
     const text = node.textContent;
     for (let i = 0; i < text.length; i++) {
@@ -157,6 +172,23 @@ export async function buildHaloMask(surface: HTMLElement, frame: HaloFrame, scal
     }
   }
   range.detach();
+  // A <select> paints its chosen option itself (no DOM text node to range over): cut that label out at its padding box.
+  for (const select of surface.querySelectorAll<HTMLSelectElement>("select")) {
+    const label = select.selectedOptions[0]?.text.trim();
+    const rect = select.getBoundingClientRect();
+    if (!label || !rect.width || !rect.height || outside(rect, frame) || visuallyHidden(select, surface, hidden)) continue;
+    const style = getComputedStyle(select);
+    context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    const metrics = context.measureText(label);
+    const ascent = metrics.fontBoundingBoxAscent ?? parseFloat(style.fontSize) * 0.8;
+    const descent = metrics.fontBoundingBoxDescent ?? parseFloat(style.fontSize) * 0.2;
+    // The control centres its font box in the content box; put the baseline where that box's baseline lands.
+    const top = rect.top - frame.top + (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.paddingTop) || 0);
+    const inner = rect.height - (parseFloat(style.borderTopWidth) || 0) - (parseFloat(style.borderBottomWidth) || 0)
+      - (parseFloat(style.paddingTop) || 0) - (parseFloat(style.paddingBottom) || 0);
+    context.fillText(label, rect.left - frame.left + (parseFloat(style.borderLeftWidth) || 0) + (parseFloat(style.paddingLeft) || 0),
+      Math.floor(top + (inner + ascent - descent) / 2)); // the control snaps its baseline to whole pixels
+  }
   const icons: Promise<void>[] = [];
   for (const svg of surface.querySelectorAll<SVGSVGElement>("svg")) {
     const rect = svg.getBoundingClientRect();
