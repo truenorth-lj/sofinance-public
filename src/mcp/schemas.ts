@@ -1,8 +1,21 @@
 import "@/lib/engine-host";
 import { z } from "zod";
+import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 
 // Solana public key validation (base58, 32-44 chars typically)
 const publicKeySchema = z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/, "Invalid Solana public key");
+
+/** Mint addresses for the two symbols the open tools name in their description. */
+const INPUT_MINT_SYMBOLS: Readonly<Record<string, string>> = Object.freeze({
+  SOL: NATIVE_SOL_MINT,
+  USDC: USDC_MINT,
+});
+
+/** A mint address, or "SOL" / "USDC" (any case), resolved to its mint before validation. */
+const inputMintSchema = z.string().transform((value) => {
+  const trimmed = value.trim();
+  return INPUT_MINT_SYMBOLS[trimmed.toUpperCase()] ?? trimmed;
+}).pipe(publicKeySchema);
 
 // List positions input schema
 export const listPositionsSchema = z.object({
@@ -81,17 +94,26 @@ export type SubmitCompoundTransactionInput = z.infer<typeof submitCompoundTransa
 // List RWA same-asset CLMM pairs (read-only discovery)
 export const listRwaPairsSchema = z.object({
   minTvl: z.number().min(0).default(0),
+  /** Accepted for older clients; the list now comes from the saved pools snapshot, so it has no effect. */
   maxPages: z.number().int().min(1).max(30).default(3),
-  sortBy: z.enum(["estimatedFeeApr", "tvl", "volume24h"]).default("estimatedFeeApr"),
+  sortBy: z.enum(["apr7d", "estimatedFeeApr", "tvl", "volume24h"]).default("apr7d"),
+  /** Ticker filter, e.g. "TSLA": matches either token symbol or the pair's base ticker (case-insensitive). */
+  symbol: z.string().trim().min(1).max(16).optional(),
 });
 export type ListRwaPairsInput = z.infer<typeof listRwaPairsSchema>;
+
+// 7-day range APR for one listed pool, from the saved snapshot (read-only)
+export const getPoolRangeAprSchema = z.object({
+  poolId: publicKeySchema,
+});
+export type GetPoolRangeAprInput = z.infer<typeof getPoolRangeAprSchema>;
 
 const openRangePresetSchema = z.enum(["tight", "standard", "wide", "custom"]).default("standard");
 
 export const quoteOpenPositionSchema = z.object({
   wallet: publicKeySchema,
   poolId: publicKeySchema,
-  inputMint: publicKeySchema,
+  inputMint: inputMintSchema,
   inputKind: z.enum(["native", "token"]),
   amount: z.string().regex(/^\d+(\.\d+)?$/, "Amount must be a valid decimal number"),
   rangePreset: openRangePresetSchema,

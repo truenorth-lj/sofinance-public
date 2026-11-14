@@ -12,7 +12,7 @@ import { IMPLEMENTATION, VALID_ARGS, wallet, otherWallet } from "./test-support/
 
 const handlers = vi.hoisted(() => ({
   prepareWithdraw: vi.fn(), submitWithdrawTransaction: vi.fn(),
-  getPositionPerformance: vi.fn(), getPositionRangeStatus: vi.fn(), listRwaPairs: vi.fn(),
+  getPositionPerformance: vi.fn(), getPositionRangeStatus: vi.fn(), listRwaPairs: vi.fn(), getPoolRangeApr: vi.fn(),
   listPositions: vi.fn(), quoteAddLiquidity: vi.fn(), prepareTransaction: vi.fn(), quoteCompound: vi.fn(),
   prepareCompoundTransaction: vi.fn(), submitSignedTransaction: vi.fn(), submitCompoundTransaction: vi.fn(),
   quoteOpenPosition: vi.fn(), prepareOpenPosition: vi.fn(), submitOpenPosition: vi.fn(),
@@ -24,7 +24,8 @@ import { createMcpServer } from "./create-server";
 
 const names = Object.keys(VALID_ARGS) as (keyof typeof VALID_ARGS)[];
 const optional = ["get_position_performance", "get_position_range_status"];
-const none = ["list_rwa_pairs"];
+const none = ["list_rwa_pairs", "get_pool_range_apr"];
+const publicTools = ["list_rwa_pairs", "get_pool_range_apr"];
 const resultValue = { ok: true, nested: { values: [1, null, "繁體"], omitted: undefined }, signature: "original-signature" };
 let client: Client;
 let server: ReturnType<typeof createMcpServer>;
@@ -129,7 +130,13 @@ for (const surface of ["http", "stdio"] as const) describe(surface, () => {
     expect(observations).toMatchSnapshot();
   });
 });
-it.each(names)("HTTP %s requires a token before any handler, including no-wallet tools", async name => {
+it.each(names.filter(name => !publicTools.includes(name)))("HTTP %s requires a token before any handler", async name => {
   expect(await call("http", name, VALID_ARGS[name], false)).toMatchObject({ status: 401 });
   expect(calls()).toEqual({});
+});
+it.each(publicTools)("HTTP %s (public, read-only snapshot) runs without a token", async name => {
+  const response = await call("http", name, VALID_ARGS[name as keyof typeof VALID_ARGS], false);
+  expect(response).toMatchObject({ status: 200 });
+  expect(JSON.stringify(response)).toContain("original-signature");
+  expect(Object.keys(calls())).toEqual([IMPLEMENTATION[name as keyof typeof IMPLEMENTATION]]);
 });

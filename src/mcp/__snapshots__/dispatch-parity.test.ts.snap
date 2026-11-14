@@ -1,5 +1,367 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`http > get_pool_range_apr preserves backend error sanitization and serialization failure 1`] = `
+[
+  {
+    "body": {
+      "id": 7,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{
+  "error": "upstream [redacted] [redacted]"
+}",
+            "type": "text",
+          },
+        ],
+        "isError": true,
+      },
+    },
+    "status": 200,
+  },
+  {
+    "body": {
+      "id": 7,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{
+  "error": "Unknown send; reconcile original-signature"
+}",
+            "type": "text",
+          },
+        ],
+        "isError": true,
+      },
+    },
+    "status": 200,
+  },
+  {
+    "body": {
+      "id": 7,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{
+  "error": "Tool call failed"
+}",
+            "type": "text",
+          },
+        ],
+        "isError": true,
+      },
+    },
+    "status": 200,
+  },
+  {
+    "body": {
+      "id": 7,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{
+  "error": "Do not know how to serialize a BigInt"
+}",
+            "type": "text",
+          },
+        ],
+        "isError": true,
+      },
+    },
+    "status": 200,
+  },
+]
+`;
+
+exports[`http > get_pool_range_apr preserves parsed arguments, exactly one handler, serialization and all rejection variants 1`] = `
+[
+  {
+    "calls": {
+      "getPoolRangeApr": [
+        [
+          {
+            "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+          },
+        ],
+      ],
+    },
+    "label": "valid",
+    "response": {
+      "body": {
+        "id": 7,
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "{
+  "ok": true,
+  "nested": {
+    "values": [
+      1,
+      null,
+      "繁體"
+    ]
+  },
+  "signature": "original-signature"
+}",
+              "type": "text",
+            },
+          ],
+        },
+      },
+      "status": 200,
+    },
+  },
+  {
+    "calls": {},
+    "label": "undefined",
+    "response": {
+      "body": {
+        "id": 7,
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "{
+  "error": "Invalid arguments: (args): required"
+}",
+              "type": "text",
+            },
+          ],
+          "isError": true,
+        },
+      },
+      "status": 200,
+    },
+  },
+  {
+    "calls": {},
+    "label": "null",
+    "response": {
+      "body": {
+        "id": 7,
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "{
+  "error": "Invalid arguments: (args): Invalid input: expected object, received null"
+}",
+              "type": "text",
+            },
+          ],
+          "isError": true,
+        },
+      },
+      "status": 200,
+    },
+  },
+  {
+    "calls": {},
+    "label": "empty",
+    "response": {
+      "body": {
+        "id": 7,
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "{
+  "error": "Invalid arguments: poolId: required"
+}",
+              "type": "text",
+            },
+          ],
+          "isError": true,
+        },
+      },
+      "status": 200,
+    },
+  },
+  {
+    "calls": {},
+    "label": "string",
+    "response": {
+      "body": {
+        "id": 7,
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "{
+  "error": "Invalid arguments: (args): Invalid input: expected object, received string"
+}",
+              "type": "text",
+            },
+          ],
+          "isError": true,
+        },
+      },
+      "status": 200,
+    },
+  },
+  {
+    "calls": {},
+    "label": "array",
+    "response": {
+      "body": {
+        "id": 7,
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "{
+  "error": "Invalid arguments: (args): Invalid input: expected object, received array"
+}",
+              "type": "text",
+            },
+          ],
+          "isError": true,
+        },
+      },
+      "status": 200,
+    },
+  },
+  {
+    "calls": {
+      "getPoolRangeApr": [
+        [
+          {
+            "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+          },
+        ],
+      ],
+    },
+    "label": "wrong wallet",
+    "response": {
+      "body": {
+        "id": 7,
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "{
+  "ok": true,
+  "nested": {
+    "values": [
+      1,
+      null,
+      "繁體"
+    ]
+  },
+  "signature": "original-signature"
+}",
+              "type": "text",
+            },
+          ],
+        },
+      },
+      "status": 200,
+    },
+  },
+  {
+    "calls": {
+      "getPoolRangeApr": [
+        [
+          {
+            "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+          },
+        ],
+      ],
+    },
+    "label": "invalid wallet",
+    "response": {
+      "body": {
+        "id": 7,
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "{
+  "ok": true,
+  "nested": {
+    "values": [
+      1,
+      null,
+      "繁體"
+    ]
+  },
+  "signature": "original-signature"
+}",
+              "type": "text",
+            },
+          ],
+        },
+      },
+      "status": 200,
+    },
+  },
+  {
+    "calls": {},
+    "label": "invalid schema and mismatched wallet",
+    "response": {
+      "body": {
+        "id": 7,
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "{
+  "error": "Invalid arguments: poolId: required"
+}",
+              "type": "text",
+            },
+          ],
+          "isError": true,
+        },
+      },
+      "status": 200,
+    },
+  },
+  {
+    "calls": {
+      "getPoolRangeApr": [
+        [
+          {
+            "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+          },
+        ],
+      ],
+    },
+    "label": "omitted wallet",
+    "response": {
+      "body": {
+        "id": 7,
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "{
+  "ok": true,
+  "nested": {
+    "values": [
+      1,
+      null,
+      "繁體"
+    ]
+  },
+  "signature": "original-signature"
+}",
+              "type": "text",
+            },
+          ],
+        },
+      },
+      "status": 200,
+    },
+  },
+]
+`;
+
 exports[`http > get_position_performance preserves backend error sanitization and serialization failure 1`] = `
 [
   {
@@ -1073,7 +1435,7 @@ exports[`http > list_rwa_pairs preserves parsed arguments, exactly one handler, 
           {
             "maxPages": 3,
             "minTvl": 0,
-            "sortBy": "estimatedFeeApr",
+            "sortBy": "apr7d",
           },
         ],
       ],
@@ -1112,7 +1474,7 @@ exports[`http > list_rwa_pairs preserves parsed arguments, exactly one handler, 
           {
             "maxPages": 3,
             "minTvl": 0,
-            "sortBy": "estimatedFeeApr",
+            "sortBy": "apr7d",
           },
         ],
       ],
@@ -1151,7 +1513,7 @@ exports[`http > list_rwa_pairs preserves parsed arguments, exactly one handler, 
           {
             "maxPages": 3,
             "minTvl": 0,
-            "sortBy": "estimatedFeeApr",
+            "sortBy": "apr7d",
           },
         ],
       ],
@@ -1190,7 +1552,7 @@ exports[`http > list_rwa_pairs preserves parsed arguments, exactly one handler, 
           {
             "maxPages": 3,
             "minTvl": 0,
-            "sortBy": "estimatedFeeApr",
+            "sortBy": "apr7d",
           },
         ],
       ],
@@ -1273,7 +1635,7 @@ exports[`http > list_rwa_pairs preserves parsed arguments, exactly one handler, 
           {
             "maxPages": 3,
             "minTvl": 0,
-            "sortBy": "estimatedFeeApr",
+            "sortBy": "apr7d",
           },
         ],
       ],
@@ -1312,7 +1674,7 @@ exports[`http > list_rwa_pairs preserves parsed arguments, exactly one handler, 
           {
             "maxPages": 3,
             "minTvl": 0,
-            "sortBy": "estimatedFeeApr",
+            "sortBy": "apr7d",
           },
         ],
       ],
@@ -1351,7 +1713,7 @@ exports[`http > list_rwa_pairs preserves parsed arguments, exactly one handler, 
           {
             "maxPages": 3,
             "minTvl": 0,
-            "sortBy": "estimatedFeeApr",
+            "sortBy": "apr7d",
           },
         ],
       ],
@@ -1390,7 +1752,7 @@ exports[`http > list_rwa_pairs preserves parsed arguments, exactly one handler, 
           {
             "maxPages": 3,
             "minTvl": 0,
-            "sortBy": "estimatedFeeApr",
+            "sortBy": "apr7d",
           },
         ],
       ],
@@ -5286,6 +5648,285 @@ exports[`http > unknown name null keeps the protocol contract 1`] = `
 }
 `;
 
+exports[`stdio > get_pool_range_apr preserves backend error sanitization and serialization failure 1`] = `
+[
+  {
+    "content": [
+      {
+        "text": "{
+  "error": "upstream [redacted] [redacted]"
+}",
+        "type": "text",
+      },
+    ],
+    "isError": true,
+  },
+  {
+    "content": [
+      {
+        "text": "{
+  "error": "Unknown send; reconcile original-signature"
+}",
+        "type": "text",
+      },
+    ],
+    "isError": true,
+  },
+  {
+    "content": [
+      {
+        "text": "{
+  "error": "Tool call failed"
+}",
+        "type": "text",
+      },
+    ],
+    "isError": true,
+  },
+  {
+    "content": [
+      {
+        "text": "{
+  "error": "Do not know how to serialize a BigInt"
+}",
+        "type": "text",
+      },
+    ],
+    "isError": true,
+  },
+]
+`;
+
+exports[`stdio > get_pool_range_apr preserves parsed arguments, exactly one handler, serialization and all rejection variants 1`] = `
+[
+  {
+    "calls": {
+      "getPoolRangeApr": [
+        [
+          {
+            "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+          },
+        ],
+      ],
+    },
+    "label": "valid",
+    "response": {
+      "content": [
+        {
+          "text": "{
+  "ok": true,
+  "nested": {
+    "values": [
+      1,
+      null,
+      "繁體"
+    ]
+  },
+  "signature": "original-signature"
+}",
+          "type": "text",
+        },
+      ],
+    },
+  },
+  {
+    "calls": {},
+    "label": "undefined",
+    "response": {
+      "content": [
+        {
+          "text": "{
+  "error": "Invalid arguments: (args): required"
+}",
+          "type": "text",
+        },
+      ],
+      "isError": true,
+    },
+  },
+  {
+    "calls": {},
+    "label": "null",
+    "response": {
+      "protocolError": {
+        "code": -32603,
+        "message": "MCP error -32603: [
+  {
+    "expected": "record",
+    "code": "invalid_type",
+    "path": [
+      "params",
+      "arguments"
+    ],
+    "message": "Invalid input: expected record, received null"
+  }
+]",
+      },
+    },
+  },
+  {
+    "calls": {},
+    "label": "empty",
+    "response": {
+      "content": [
+        {
+          "text": "{
+  "error": "Invalid arguments: poolId: required"
+}",
+          "type": "text",
+        },
+      ],
+      "isError": true,
+    },
+  },
+  {
+    "calls": {},
+    "label": "string",
+    "response": {
+      "protocolError": {
+        "code": -32603,
+        "message": "MCP error -32603: [
+  {
+    "expected": "record",
+    "code": "invalid_type",
+    "path": [
+      "params",
+      "arguments"
+    ],
+    "message": "Invalid input: expected record, received string"
+  }
+]",
+      },
+    },
+  },
+  {
+    "calls": {},
+    "label": "array",
+    "response": {
+      "protocolError": {
+        "code": -32603,
+        "message": "MCP error -32603: [
+  {
+    "expected": "record",
+    "code": "invalid_type",
+    "path": [
+      "params",
+      "arguments"
+    ],
+    "message": "Invalid input: expected record, received array"
+  }
+]",
+      },
+    },
+  },
+  {
+    "calls": {
+      "getPoolRangeApr": [
+        [
+          {
+            "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+          },
+        ],
+      ],
+    },
+    "label": "wrong wallet",
+    "response": {
+      "content": [
+        {
+          "text": "{
+  "ok": true,
+  "nested": {
+    "values": [
+      1,
+      null,
+      "繁體"
+    ]
+  },
+  "signature": "original-signature"
+}",
+          "type": "text",
+        },
+      ],
+    },
+  },
+  {
+    "calls": {
+      "getPoolRangeApr": [
+        [
+          {
+            "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+          },
+        ],
+      ],
+    },
+    "label": "invalid wallet",
+    "response": {
+      "content": [
+        {
+          "text": "{
+  "ok": true,
+  "nested": {
+    "values": [
+      1,
+      null,
+      "繁體"
+    ]
+  },
+  "signature": "original-signature"
+}",
+          "type": "text",
+        },
+      ],
+    },
+  },
+  {
+    "calls": {},
+    "label": "invalid schema and mismatched wallet",
+    "response": {
+      "content": [
+        {
+          "text": "{
+  "error": "Invalid arguments: poolId: required"
+}",
+          "type": "text",
+        },
+      ],
+      "isError": true,
+    },
+  },
+  {
+    "calls": {
+      "getPoolRangeApr": [
+        [
+          {
+            "poolId": "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1",
+          },
+        ],
+      ],
+    },
+    "label": "omitted wallet",
+    "response": {
+      "content": [
+        {
+          "text": "{
+  "ok": true,
+  "nested": {
+    "values": [
+      1,
+      null,
+      "繁體"
+    ]
+  },
+  "signature": "original-signature"
+}",
+          "type": "text",
+        },
+      ],
+    },
+  },
+]
+`;
+
 exports[`stdio > get_position_performance preserves backend error sanitization and serialization failure 1`] = `
 [
   {
@@ -6146,7 +6787,7 @@ exports[`stdio > list_rwa_pairs preserves parsed arguments, exactly one handler,
           {
             "maxPages": 3,
             "minTvl": 0,
-            "sortBy": "estimatedFeeApr",
+            "sortBy": "apr7d",
           },
         ],
       ],
@@ -6178,7 +6819,7 @@ exports[`stdio > list_rwa_pairs preserves parsed arguments, exactly one handler,
           {
             "maxPages": 3,
             "minTvl": 0,
-            "sortBy": "estimatedFeeApr",
+            "sortBy": "apr7d",
           },
         ],
       ],
@@ -6230,7 +6871,7 @@ exports[`stdio > list_rwa_pairs preserves parsed arguments, exactly one handler,
           {
             "maxPages": 3,
             "minTvl": 0,
-            "sortBy": "estimatedFeeApr",
+            "sortBy": "apr7d",
           },
         ],
       ],
@@ -6302,7 +6943,7 @@ exports[`stdio > list_rwa_pairs preserves parsed arguments, exactly one handler,
           {
             "maxPages": 3,
             "minTvl": 0,
-            "sortBy": "estimatedFeeApr",
+            "sortBy": "apr7d",
           },
         ],
       ],
@@ -6334,7 +6975,7 @@ exports[`stdio > list_rwa_pairs preserves parsed arguments, exactly one handler,
           {
             "maxPages": 3,
             "minTvl": 0,
-            "sortBy": "estimatedFeeApr",
+            "sortBy": "apr7d",
           },
         ],
       ],
@@ -6366,7 +7007,7 @@ exports[`stdio > list_rwa_pairs preserves parsed arguments, exactly one handler,
           {
             "maxPages": 3,
             "minTvl": 0,
-            "sortBy": "estimatedFeeApr",
+            "sortBy": "apr7d",
           },
         ],
       ],
@@ -6398,7 +7039,7 @@ exports[`stdio > list_rwa_pairs preserves parsed arguments, exactly one handler,
           {
             "maxPages": 3,
             "minTvl": 0,
-            "sortBy": "estimatedFeeApr",
+            "sortBy": "apr7d",
           },
         ],
       ],

@@ -6,17 +6,16 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { publicToolError } from "./public-tool-error.js";
 import { dispatchTool } from "./dispatch.js";
+import { SERVER_INFO, serverInstructions } from "./protocol.js";
 
 export function createMcpServer() {
   const server = new Server(
-    {
-      name: "sofinance-mcp-server",
-      version: "0.1.0",
-    },
+    { ...SERVER_INFO },
     {
       capabilities: {
         tools: {},
       },
+      instructions: serverInstructions(),
     }
   );
 

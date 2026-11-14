@@ -51,6 +51,8 @@ vi.mock("../lib/open-permit", () => ({
   verifyOpenPositionPermit: vi.fn(() => true),
 }));
 
+// Live-discovery path (no RWA store), independent of the runner's env.
+vi.mock("@/lib/config/rwa-env", () => ({ getRwaConfig: () => ({ enabled: false }) }));
 vi.mock("../lib/rwa-pairs", () => ({
   RAYDIUM_API_V3: "https://api-v3.raydium.io",
   discoverRwaPairs: vi.fn(),
@@ -481,7 +483,7 @@ describe("MCP Tools", () => {
   });
 
   describe("listRwaPairs", () => {
-    it("includes openPositionUrl and recommendedRanges on each pair", async () => {
+    it("includes openPositionUrl on each pair and the four range presets", async () => {
       const poolId = "So11111111111111111111111111111111111111112";
       vi.mocked(discoverRwaPairs).mockResolvedValue({
         pairingRuleSummary: "rule",
@@ -526,7 +528,7 @@ describe("MCP Tools", () => {
 
       const result = await listRwaPairs({ minTvl: 0, maxPages: 1, sortBy: "estimatedFeeApr" });
       expect(result.pairs[0]?.openPositionUrl).toContain(`/app/rwa-pairs?pool=${poolId}&open=1`);
-      expect(result.pairs[0]?.recommendedRanges.some((item: { id: string }) => item.id === "standard")).toBe(true);
+      expect(result.rangePresets.map((item) => item.id)).toEqual(["micro", "tight", "standard", "wide"]);
     });
   });
 

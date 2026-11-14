@@ -7,6 +7,12 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
   "result": {
     "tools": [
       {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": false,
+          "openWorldHint": true,
+          "readOnlyHint": false,
+        },
         "description": "Prepare a fully simulated position withdrawal with a sign link. Default receive USDC; original keeps position tokens. Supply percent (1–100) OR targetUSDC. Impact above 5% requires confirmHighImpact. For two transactions, finalize the first then call again with stage=swap, tx1Signature and previous (the complete first result).",
         "inputSchema": {
           "oneOf": [
@@ -72,6 +78,12 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
         "name": "prepare_withdraw",
       },
       {
+        "annotations": {
+          "destructiveHint": true,
+          "idempotentHint": false,
+          "openWorldHint": true,
+          "readOnlyHint": false,
+        },
         "description": "Submit a wallet signed withdrawal. Verifies its HMAC permit and signature, checks expiry, and re-simulates before broadcast. Supply the unchanged summary and permit from prepare_withdraw. If the wallet appended extra instructions (e.g. Phantom Lighthouse), also pass unsignedTransaction from prepare_withdraw. High impact requires confirmHighImpact=true.",
         "inputSchema": {
           "properties": {
@@ -105,6 +117,12 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
         "name": "submit_withdraw",
       },
       {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true,
+        },
         "description": "Compute holding-period return and realized fee APR for a Raydium CLMM position NFT from finalized history and current on-chain state (not Raydium pool 24h feeApr). Prefer token-native metrics: for same-asset RWA wrap pairs (e.g. SPCXx/SPCX) report TE in the plain/base ticker using current tick mid (1.0001^tick×10^(decA−decB)), plus raw A/B inventory, holdingDays, feeOnlyAprPct and annualizedReturnPct (HPR×365/days; feesEarned/deposited×365/days). USD is optional/secondary (Jupiter Price v3 / Raydium stable-leg, labeled current — not historical). Discovers open/increase/decrease txs via personal-position signatures + Anchor events + current equity. After submitting a position transaction, use refreshHistory=true and historyAfterSignatures to require its finalized history. Read-only.",
         "inputSchema": {
           "properties": {
@@ -147,6 +165,12 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
         "name": "get_position_performance",
       },
       {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true,
+        },
         "description": "Compute live in-range / out-of-range status for a Raydium CLMM position from the current on-chain pool price versus tickLower/tickUpper (B per 1 A). Flags when price approaches a range edge. Read-only.",
         "inputSchema": {
           "properties": {
@@ -171,12 +195,17 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
         "name": "get_position_range_status",
       },
       {
-        "description": "Discover Raydium CLMM pools where BOTH sides are the same underlying RWA asset (wrapped vs unwrapped / xStock style), e.g. SPCXx/SPCX, MSTRx/MSTR, NVDAx/NVDA. Excludes RWA/USDC and unrelated meme collisions. Returns pool address, mint symbols, fee tier, TVL, 24h volume/fees, Raydium fee APR, estimated fee APR from (24h fees/TVL)*365*100 (labeled), Token-2022 and freeze-risk flags, openPositionUrl deep link (/app/rwa-pairs?pool=<id>&open=1), and recommendedRanges (tight ±0.05%, standard ±0.3% default, wide ±1%, B per 1 A). Chain: list_rwa_pairs → quote_open_position → prepare_open_position → sign via signUrl → list_positions. Read-only; no wallet required. Pairing rule: FOOx/FOO (or FOO-x / xFOO) symbol wrap + both mints Jupiter-tagged (stocks|rwa; prefer xstocks/backpack) or on the Backed xStocks Solana whitelist.",
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false,
+          "readOnlyHint": true,
+        },
+        "description": "List the same-stock Solana pools on the SoFinance pools page (https://sofinancelab.xyz/app/rwa-pairs): Raydium CLMM and Meteora DLMM pools where both sides are the same stock from two issuers (e.g. TSLA/TSLAx, SPCX/SPCXx), plus the USDC/USDT pool. Served from the site's saved pools snapshot, the same list the page shows. Each pool has protocol, symbols, fee tier, TVL, 24h volume, apr7d (the highest 7-day range fee APR estimate and which of the 4 range presets it comes from: Micro, Tight, Standard, Wide), and an openPositionUrl. Filter with symbol (e.g. "TSLA"). Default order: 7-day APR, high to low. Estimates from past trading, not a promise of future fees. For the 4 presets of one pool call get_pool_range_apr. No wallet or token needed. Opening a position through MCP (quote_open_position / prepare_open_position) is Raydium CLMM only and needs a wallet token; Meteora pools open on the website.",
         "inputSchema": {
           "properties": {
             "maxPages": {
-              "default": 10,
-              "description": "Max Raydium list pages to scan, page size 1000 (1-30, default 10)",
+              "description": "Deprecated, ignored: the list comes from the saved snapshot.",
               "type": "number",
             },
             "minTvl": {
@@ -185,13 +214,18 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
               "type": "number",
             },
             "sortBy": {
-              "default": "estimatedFeeApr",
-              "description": "Sort key. estimatedFeeApr uses (24h fees/TVL)*365*100 when available; also returns raydiumFeeApr24h from the API.",
+              "default": "apr7d",
+              "description": "Sort key (default apr7d, the 7-day estimate the site ranks by). estimatedFeeApr is the older pool-level 24h figure.",
               "enum": [
+                "apr7d",
                 "estimatedFeeApr",
                 "tvl",
                 "volume24h",
               ],
+              "type": "string",
+            },
+            "symbol": {
+              "description": "Optional ticker filter, e.g. TSLA or TSLAx (case-insensitive; matches either token or the base ticker)",
               "type": "string",
             },
           },
@@ -199,8 +233,38 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           "type": "object",
         },
         "name": "list_rwa_pairs",
+        "title": "List same-stock pools",
       },
       {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false,
+          "readOnlyHint": true,
+        },
+        "description": "Estimated 7-day fee APR of one listed pool (poolAddress from list_rwa_pairs, Raydium or Meteora) for each of the 4 range presets the site prices: Micro (±2 price steps), Tight (±0.05%), Standard (±0.3%), Wide (±1%). Per preset: price bounds (B per 1 A), APR %, share of the last 7 days' volume that traded inside the range, and fees per day at the site's $1,000 card basis. Also the highest-APR preset, the 7-day window, data freshness and confidence. Same saved snapshot as the pool cards on https://sofinancelab.xyz/app/rwa-pairs. New pools (too few days of data) and missing snapshots return a status with a reason and no APR. Estimates from past trading, not a promise of future fees. No wallet or token needed.",
+        "inputSchema": {
+          "properties": {
+            "poolId": {
+              "description": "Pool address (poolAddress from list_rwa_pairs)",
+              "type": "string",
+            },
+          },
+          "required": [
+            "poolId",
+          ],
+          "type": "object",
+        },
+        "name": "get_pool_range_apr",
+        "title": "7-day range APR for a pool",
+      },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true,
+        },
         "description": "List all Raydium CLMM positions and wallet assets. Returns position NFTs (with pool, ticks, liquidity) and eligible input assets (SOL, tokens) with balances. Read-only, no private keys required. Use this first to discover available positions and assets.",
         "inputSchema": {
           "properties": {
@@ -217,6 +281,12 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
         "name": "list_positions",
       },
       {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true,
+        },
         "description": "Get a quote for adding liquidity to a position. Estimates swap routes (Jupiter), price impact, output amounts, and immediate resale gap. Verifies NFT ownership, pool state, and balance. Read-only. Quotes expire quickly (configured TTL). Failure modes: insufficient balance, high price impact (>5%), resale floor breach, quote expiration, pool state changes.",
         "inputSchema": {
           "properties": {
@@ -267,6 +337,12 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
         "name": "quote_add_liquidity",
       },
       {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": false,
+          "openWorldHint": true,
+          "readOnlyHint": false,
+        },
         "description": "Prepare an unsigned, fully-simulated transaction for adding liquidity. Returns base64-encoded transaction for signing, HMAC permit, and summary. The server NEVER holds private keys. Transaction must be signed by the user/agent wallet. Includes: full simulation, 1232-byte limit check, Jupiter swap + Raydium increase_liquidity_v2, short-lived permit. Failure modes: same as quote_add_liquidity, plus simulation failure, size limit, blockhash expiry. After signing, use submit_signed_transaction.",
         "inputSchema": {
           "properties": {
@@ -317,6 +393,12 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
         "name": "prepare_transaction",
       },
       {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true,
+        },
         "description": "Get a quote for compounding a position (harvest fees/rewards, swap to ratio, reinvest). Returns expected liquidity increase, swap plan, simulation results. Verifies position eligibility. Read-only. Phase one: rejects third reward tokens (no verifiable swap path). Failure modes: ineligible position, third reward token, insufficient harvested fees for minimum liquidity unit, swap plan failure.",
         "inputSchema": {
           "properties": {
@@ -346,6 +428,12 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
         "name": "quote_compound",
       },
       {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": false,
+          "openWorldHint": true,
+          "readOnlyHint": false,
+        },
         "description": "Prepare an unsigned compound transaction. Returns base64 transaction, permit, and summary. Same safety as prepare_transaction: full simulation, HMAC permit, no private keys. After signing, use submit_compound_transaction.",
         "inputSchema": {
           "properties": {
@@ -375,6 +463,12 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
         "name": "prepare_compound_transaction",
       },
       {
+        "annotations": {
+          "destructiveHint": true,
+          "idempotentHint": false,
+          "openWorldHint": true,
+          "readOnlyHint": false,
+        },
         "description": "Submit a signed add-liquidity transaction. Re-verifies HMAC permit, re-reads on-chain state, re-simulates, then broadcasts. Pass signedTransaction plus every field of submitArgs from the prepare_transaction response, unchanged. Failure modes: permit mismatch, state changed (liquidity, balance, NFT), expired (time or blockhash), simulation failure. Returns transaction signature on success.",
         "inputSchema": {
           "properties": {
@@ -489,6 +583,12 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
         "name": "submit_signed_transaction",
       },
       {
+        "annotations": {
+          "destructiveHint": true,
+          "idempotentHint": false,
+          "openWorldHint": true,
+          "readOnlyHint": false,
+        },
         "description": "Submit a signed compound transaction. Re-verifies permit and summary, then broadcasts. Returns signature on success. Same safety as submit_signed_transaction.",
         "inputSchema": {
           "properties": {
@@ -524,6 +624,12 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
         "name": "submit_compound_transaction",
       },
       {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true,
+        },
         "description": "Quote opening a NEW Raydium CLMM position in a pool (no existing NFT). Input SOL/USDC/pool token, amount, and a price range (presets tight ±0.05% / standard ±0.3% / wide ±1%, or custom minPrice/maxPrice in B per 1 A). Returns expected A/B after Jupiter swap-to-ratio, tick-aligned range, in/out-of-range, price impact, refundable vs non-refundable SOL rent (NFT + tick arrays), and Token-2022/freeze flags. Fails clearly on insufficient balance, >5% impact, transfer-fee/freeze, or unfunded tick arrays the wallet cannot pay. Read-only.",
         "inputSchema": {
           "properties": {
@@ -540,7 +646,7 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
               "type": "string",
             },
             "inputMint": {
-              "description": "SOL, USDC, or a mint in the pool",
+              "description": ""SOL" or "USDC" (resolved to So11111111111111111111111111111111111111112 / EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v), or a mint address in the pool",
               "type": "string",
             },
             "maxPrice": {
@@ -593,6 +699,12 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
         "name": "quote_open_position",
       },
       {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": false,
+          "openWorldHint": true,
+          "readOnlyHint": false,
+        },
         "description": "Prepare an unsigned, fully-simulated transaction that opens a new CLMM position. Prefer passing nftMint from an agent-held Keypair so the server never signs: wallet signs first, then add the mint signature on the wallet-returned tx and call submit_open_position. Without nftMint, open signUrl: the sign page generates the mint in the browser, re-prepares, wallet signs first, then the mint (the returned tx is a preview only). HMAC permit, summary, signUrl. 1232-byte limit, fresh blockhash, full simulation. Not submit_signed_transaction — this tx has two required signers.",
         "inputSchema": {
           "properties": {
@@ -608,7 +720,7 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
               "type": "string",
             },
             "inputMint": {
-              "description": "Input asset mint",
+              "description": "Input asset mint, or "SOL" / "USDC"",
               "type": "string",
             },
             "maxPrice": {
@@ -660,6 +772,12 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
         "name": "prepare_open_position",
       },
       {
+        "annotations": {
+          "destructiveHint": true,
+          "idempotentHint": false,
+          "openWorldHint": true,
+          "readOnlyHint": false,
+        },
         "description": "Submit a signed open-position transaction. Re-verifies HMAC permit, re-reads pool/balances, re-simulates (sigVerify true, including the NFT-mint partial signature), then broadcasts. Pass signedTransaction plus permit, wallet, and the complete summary from prepare_open_position, unchanged. If the wallet rewrote the message (Phantom Lighthouse / ComputeBudget), also pass unsignedTransaction from prepare. Returns signature and the new positionMint.",
         "inputSchema": {
           "properties": {
@@ -702,6 +820,12 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
 exports[`stdio MCP server > preserves the complete stdio discovery response 1`] = `
 [
   {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+    },
     "description": "Prepare a fully simulated position withdrawal with a sign link. Default receive USDC; original keeps position tokens. Supply percent (1–100) OR targetUSDC. Impact above 5% requires confirmHighImpact. For two transactions, finalize the first then call again with stage=swap, tx1Signature and previous (the complete first result).",
     "inputSchema": {
       "oneOf": [
@@ -767,6 +891,12 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
     "name": "prepare_withdraw",
   },
   {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+    },
     "description": "Submit a wallet signed withdrawal. Verifies its HMAC permit and signature, checks expiry, and re-simulates before broadcast. Supply the unchanged summary and permit from prepare_withdraw. If the wallet appended extra instructions (e.g. Phantom Lighthouse), also pass unsignedTransaction from prepare_withdraw. High impact requires confirmHighImpact=true.",
     "inputSchema": {
       "properties": {
@@ -800,6 +930,12 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
     "name": "submit_withdraw",
   },
   {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true,
+    },
     "description": "Compute holding-period return and realized fee APR for a Raydium CLMM position NFT from finalized history and current on-chain state (not Raydium pool 24h feeApr). Prefer token-native metrics: for same-asset RWA wrap pairs (e.g. SPCXx/SPCX) report TE in the plain/base ticker using current tick mid (1.0001^tick×10^(decA−decB)), plus raw A/B inventory, holdingDays, feeOnlyAprPct and annualizedReturnPct (HPR×365/days; feesEarned/deposited×365/days). USD is optional/secondary (Jupiter Price v3 / Raydium stable-leg, labeled current — not historical). Discovers open/increase/decrease txs via personal-position signatures + Anchor events + current equity. After submitting a position transaction, use refreshHistory=true and historyAfterSignatures to require its finalized history. Read-only.",
     "inputSchema": {
       "properties": {
@@ -842,6 +978,12 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
     "name": "get_position_performance",
   },
   {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true,
+    },
     "description": "Compute live in-range / out-of-range status for a Raydium CLMM position from the current on-chain pool price versus tickLower/tickUpper (B per 1 A). Flags when price approaches a range edge. Read-only.",
     "inputSchema": {
       "properties": {
@@ -866,12 +1008,17 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
     "name": "get_position_range_status",
   },
   {
-    "description": "Discover Raydium CLMM pools where BOTH sides are the same underlying RWA asset (wrapped vs unwrapped / xStock style), e.g. SPCXx/SPCX, MSTRx/MSTR, NVDAx/NVDA. Excludes RWA/USDC and unrelated meme collisions. Returns pool address, mint symbols, fee tier, TVL, 24h volume/fees, Raydium fee APR, estimated fee APR from (24h fees/TVL)*365*100 (labeled), Token-2022 and freeze-risk flags, openPositionUrl deep link (/app/rwa-pairs?pool=<id>&open=1), and recommendedRanges (tight ±0.05%, standard ±0.3% default, wide ±1%, B per 1 A). Chain: list_rwa_pairs → quote_open_position → prepare_open_position → sign via signUrl → list_positions. Read-only; no wallet required. Pairing rule: FOOx/FOO (or FOO-x / xFOO) symbol wrap + both mints Jupiter-tagged (stocks|rwa; prefer xstocks/backpack) or on the Backed xStocks Solana whitelist.",
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+    },
+    "description": "List the same-stock Solana pools on the SoFinance pools page (https://sofinancelab.xyz/app/rwa-pairs): Raydium CLMM and Meteora DLMM pools where both sides are the same stock from two issuers (e.g. TSLA/TSLAx, SPCX/SPCXx), plus the USDC/USDT pool. Served from the site's saved pools snapshot, the same list the page shows. Each pool has protocol, symbols, fee tier, TVL, 24h volume, apr7d (the highest 7-day range fee APR estimate and which of the 4 range presets it comes from: Micro, Tight, Standard, Wide), and an openPositionUrl. Filter with symbol (e.g. "TSLA"). Default order: 7-day APR, high to low. Estimates from past trading, not a promise of future fees. For the 4 presets of one pool call get_pool_range_apr. No wallet or token needed. Opening a position through MCP (quote_open_position / prepare_open_position) is Raydium CLMM only and needs a wallet token; Meteora pools open on the website.",
     "inputSchema": {
       "properties": {
         "maxPages": {
-          "default": 10,
-          "description": "Max Raydium list pages to scan, page size 1000 (1-30, default 10)",
+          "description": "Deprecated, ignored: the list comes from the saved snapshot.",
           "type": "number",
         },
         "minTvl": {
@@ -880,13 +1027,18 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
           "type": "number",
         },
         "sortBy": {
-          "default": "estimatedFeeApr",
-          "description": "Sort key. estimatedFeeApr uses (24h fees/TVL)*365*100 when available; also returns raydiumFeeApr24h from the API.",
+          "default": "apr7d",
+          "description": "Sort key (default apr7d, the 7-day estimate the site ranks by). estimatedFeeApr is the older pool-level 24h figure.",
           "enum": [
+            "apr7d",
             "estimatedFeeApr",
             "tvl",
             "volume24h",
           ],
+          "type": "string",
+        },
+        "symbol": {
+          "description": "Optional ticker filter, e.g. TSLA or TSLAx (case-insensitive; matches either token or the base ticker)",
           "type": "string",
         },
       },
@@ -894,8 +1046,38 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       "type": "object",
     },
     "name": "list_rwa_pairs",
+    "title": "List same-stock pools",
   },
   {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true,
+    },
+    "description": "Estimated 7-day fee APR of one listed pool (poolAddress from list_rwa_pairs, Raydium or Meteora) for each of the 4 range presets the site prices: Micro (±2 price steps), Tight (±0.05%), Standard (±0.3%), Wide (±1%). Per preset: price bounds (B per 1 A), APR %, share of the last 7 days' volume that traded inside the range, and fees per day at the site's $1,000 card basis. Also the highest-APR preset, the 7-day window, data freshness and confidence. Same saved snapshot as the pool cards on https://sofinancelab.xyz/app/rwa-pairs. New pools (too few days of data) and missing snapshots return a status with a reason and no APR. Estimates from past trading, not a promise of future fees. No wallet or token needed.",
+    "inputSchema": {
+      "properties": {
+        "poolId": {
+          "description": "Pool address (poolAddress from list_rwa_pairs)",
+          "type": "string",
+        },
+      },
+      "required": [
+        "poolId",
+      ],
+      "type": "object",
+    },
+    "name": "get_pool_range_apr",
+    "title": "7-day range APR for a pool",
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true,
+    },
     "description": "List all Raydium CLMM positions and wallet assets. Returns position NFTs (with pool, ticks, liquidity) and eligible input assets (SOL, tokens) with balances. Read-only, no private keys required. Use this first to discover available positions and assets.",
     "inputSchema": {
       "properties": {
@@ -912,6 +1094,12 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
     "name": "list_positions",
   },
   {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true,
+    },
     "description": "Get a quote for adding liquidity to a position. Estimates swap routes (Jupiter), price impact, output amounts, and immediate resale gap. Verifies NFT ownership, pool state, and balance. Read-only. Quotes expire quickly (configured TTL). Failure modes: insufficient balance, high price impact (>5%), resale floor breach, quote expiration, pool state changes.",
     "inputSchema": {
       "properties": {
@@ -962,6 +1150,12 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
     "name": "quote_add_liquidity",
   },
   {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+    },
     "description": "Prepare an unsigned, fully-simulated transaction for adding liquidity. Returns base64-encoded transaction for signing, HMAC permit, and summary. The server NEVER holds private keys. Transaction must be signed by the user/agent wallet. Includes: full simulation, 1232-byte limit check, Jupiter swap + Raydium increase_liquidity_v2, short-lived permit. Failure modes: same as quote_add_liquidity, plus simulation failure, size limit, blockhash expiry. After signing, use submit_signed_transaction.",
     "inputSchema": {
       "properties": {
@@ -1012,6 +1206,12 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
     "name": "prepare_transaction",
   },
   {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true,
+    },
     "description": "Get a quote for compounding a position (harvest fees/rewards, swap to ratio, reinvest). Returns expected liquidity increase, swap plan, simulation results. Verifies position eligibility. Read-only. Phase one: rejects third reward tokens (no verifiable swap path). Failure modes: ineligible position, third reward token, insufficient harvested fees for minimum liquidity unit, swap plan failure.",
     "inputSchema": {
       "properties": {
@@ -1041,6 +1241,12 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
     "name": "quote_compound",
   },
   {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+    },
     "description": "Prepare an unsigned compound transaction. Returns base64 transaction, permit, and summary. Same safety as prepare_transaction: full simulation, HMAC permit, no private keys. After signing, use submit_compound_transaction.",
     "inputSchema": {
       "properties": {
@@ -1070,6 +1276,12 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
     "name": "prepare_compound_transaction",
   },
   {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+    },
     "description": "Submit a signed add-liquidity transaction. Re-verifies HMAC permit, re-reads on-chain state, re-simulates, then broadcasts. Pass signedTransaction plus every field of submitArgs from the prepare_transaction response, unchanged. Failure modes: permit mismatch, state changed (liquidity, balance, NFT), expired (time or blockhash), simulation failure. Returns transaction signature on success.",
     "inputSchema": {
       "properties": {
@@ -1184,6 +1396,12 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
     "name": "submit_signed_transaction",
   },
   {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true,
+    },
     "description": "Quote opening a NEW Raydium CLMM position in a pool (no existing NFT). Input SOL/USDC/pool token, amount, and a price range (presets tight ±0.05% / standard ±0.3% / wide ±1%, or custom minPrice/maxPrice in B per 1 A). Returns expected A/B after Jupiter swap-to-ratio, tick-aligned range, in/out-of-range, price impact, refundable vs non-refundable SOL rent (NFT + tick arrays), and Token-2022/freeze flags. Fails clearly on insufficient balance, >5% impact, transfer-fee/freeze, or unfunded tick arrays the wallet cannot pay. Read-only.",
     "inputSchema": {
       "properties": {
@@ -1200,7 +1418,7 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
           "type": "string",
         },
         "inputMint": {
-          "description": "SOL, USDC, or a mint in the pool",
+          "description": ""SOL" or "USDC" (resolved to So11111111111111111111111111111111111111112 / EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v), or a mint address in the pool",
           "type": "string",
         },
         "maxPrice": {
@@ -1253,6 +1471,12 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
     "name": "quote_open_position",
   },
   {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+    },
     "description": "Prepare an unsigned, fully-simulated transaction that opens a new CLMM position. Prefer passing nftMint from an agent-held Keypair so the server never signs: wallet signs first, then add the mint signature on the wallet-returned tx and call submit_open_position. Without nftMint, open signUrl: the sign page generates the mint in the browser, re-prepares, wallet signs first, then the mint (the returned tx is a preview only). HMAC permit, summary, signUrl. 1232-byte limit, fresh blockhash, full simulation. Not submit_signed_transaction — this tx has two required signers.",
     "inputSchema": {
       "properties": {
@@ -1268,7 +1492,7 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
           "type": "string",
         },
         "inputMint": {
-          "description": "Input asset mint",
+          "description": "Input asset mint, or "SOL" / "USDC"",
           "type": "string",
         },
         "maxPrice": {
@@ -1320,6 +1544,12 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
     "name": "prepare_open_position",
   },
   {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+    },
     "description": "Submit a signed open-position transaction. Re-verifies HMAC permit, re-reads pool/balances, re-simulates (sigVerify true, including the NFT-mint partial signature), then broadcasts. Pass signedTransaction plus permit, wallet, and the complete summary from prepare_open_position, unchanged. If the wallet rewrote the message (Phantom Lighthouse / ComputeBudget), also pass unsignedTransaction from prepare. Returns signature and the new positionMint.",
     "inputSchema": {
       "properties": {
@@ -1355,6 +1585,12 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
     "name": "submit_open_position",
   },
   {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+    },
     "description": "Submit a signed compound transaction. Re-verifies permit and summary, then broadcasts. Returns signature on success. Same safety as submit_signed_transaction.",
     "inputSchema": {
       "properties": {
