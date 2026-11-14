@@ -1,6 +1,6 @@
 import "@/lib/engine-host";
 import { OPEN_RANGE_UI_PRESETS } from "@sofinance/engine/open-range-presets";
-import { dexDescriptors } from "@/lib/dex/client";
+import { dexRegistry } from "@/lib/dex";
 import { CARD_APR_DEPOSIT_USD } from "@/lib/lp-plan-pool-terms";
 import { rangeAprPayload } from "@/lib/range-apr/display-policy";
 import { highestRangeSummary } from "@/lib/range-apr/preset-list";
@@ -20,7 +20,7 @@ export const FEES_NOTE =
 export const RANGE_PRESETS = OPEN_RANGE_UI_PRESETS.map(({ id, label, band }) => ({ id, label, band }));
 
 export function protocolName(protocol: string): string {
-  return dexDescriptors.descriptorFor(protocol)?.displayName ?? protocol;
+  return dexRegistry.descriptorFor(protocol)?.displayName ?? protocol;
 }
 
 export const POOL_NOT_LISTED_MESSAGE =
