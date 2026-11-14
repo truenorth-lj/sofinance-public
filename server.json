@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "xyz.sofinancelab/sofinance",
   "title": "SoFinance",
-  "description": "Same-stock tokenized-stock LP pools on Solana: pools, 7-day APR estimates, unsigned transactions.",
+  "description": "List same-stock LP pools on Raydium and Meteora, with 7-day fee APR estimates. Fees not guaranteed.",
   "version": "0.2.0",
   "websiteUrl": "https://sofinancelab.xyz/app/ai",
   "remotes": [

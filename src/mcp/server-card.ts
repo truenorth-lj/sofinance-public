@@ -1,10 +1,12 @@
+import serverJson from "../../server.json";
 import { CANONICAL_SITE_URL, APP_ROUTES } from "@/lib/public-urls";
 import { LATEST_PROTOCOL_VERSION, SERVER_INFO, SUPPORTED_PROTOCOL_VERSIONS, serverInstructions } from "./protocol";
 import { listToolDefinitions, PUBLIC_TOOL_NAMES } from "./tool-definitions";
 
 const MCP_ENDPOINT = `${CANONICAL_SITE_URL}/api/mcp`;
-const SERVER_DESCRIPTION =
-  "Same-stock liquidity pools of tokenized stocks on Solana: list pools and 7-day range APR estimates, quote, and prepare unsigned transactions your wallet signs.";
+/** The registry entry (repo-root server.json) is the one source for the short description. */
+export const SERVER_DESCRIPTION: string = serverJson.description;
+export { serverJson };
 
 /**
  * `/.well-known/mcp/server-card.json`: lets directories describe the server without a live scan. Tools come from the
