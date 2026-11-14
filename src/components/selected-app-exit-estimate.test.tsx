@@ -190,7 +190,7 @@ describe("stock summary and position detail hierarchy", () => {
     const pick = container.querySelector<HTMLButtonElement>(`[data-position-key="raydium-clmm:${OTHER_OWNED_MINT}"]`)!;
     await act(async () => pick.click()); await settle();
     expect(perfMints()).toEqual([]);
-    expect(container.querySelector('[data-testid="position-assets-collapse"]')?.getAttribute("data-open")).toBe("true");
+    expect(container.querySelector('[data-testid="position-assets-collapse"]')).toBeNull();
     expect(new URL(window.location.href).searchParams.get("position")).toBe(`raydium-clmm:${OTHER_OWNED_MINT}`);
   });
   it("shows stock cards only in the overview, retaining details for the selected position", async () => {
@@ -199,9 +199,9 @@ describe("stock summary and position detail hierarchy", () => {
     expect(container.querySelector('[data-testid="stocks-overview"]')).not.toBeNull();
     expect(container.querySelector('#performance-view [data-testid="stock-performance"]')).toBeNull();
     expect(container.querySelector('#performance-view')?.textContent).toContain("Position details");
-    // Range and the per-token rows are shown once, above the tabs: not repeated in Performance.
+    // No range badge or per-token rows in the details (the position's row shows them), nor in Performance.
     expect(container.querySelector('#performance-view')?.textContent).not.toContain("In range");
-    expect(container.querySelector('[data-testid="position-assets-collapse"]')?.getAttribute("data-open")).toBe("false");
+    expect(container.querySelector('[data-testid="position-assets-collapse"]')).toBeNull();
   });
   it("selects a position from the stock drilldown and updates the existing position details", async () => {
     // Expire overview fixtures cached by earlier cases that had no stock report.
@@ -237,25 +237,20 @@ describe("stock summary and position detail hierarchy", () => {
   });
 });
 
-describe("position asset rows: liquidity and unclaimed fees side by side", () => {
-  const rows = () => container.querySelector('[aria-label="Position assets"]')!.textContent!;
-  it("shows liquidity and unclaimed fees per token (amounts and USD) so they add up to the position value", async () => {
+describe("selected Raydium position details: no duplicate top block (LJ 11/14)", () => {
+  it("shows no range badge and no per-token Liquidity / Unclaimed fees rows above the tabs; Learn more details and the tabs stay", async () => {
     compoundMock.state = { ...selectedState(OWNED_MINT), eligible: true, reason: null, status: 0, vaultA: "v", vaultB: "w", tickSpacing: 1,
       fees: { a: "25000000", b: "10000000" }, rewards: [] };
     await mount({ wallet: OWN_WALLET, positions: [OWNED_MINT], stateOk: true, initialMint: OWNED_MINT });
     await settle();
-    const text = rows();
-    expect(text.match(/Liquidity/g)).toHaveLength(2);
-    expect(text.match(/Unclaimed fees/g)).toHaveLength(2);
-    // A: 5 SPCXx liquidity ($500) + 0.25 unclaimed ($25); B: 5.2 SPCX liquidity ($260) + 0.1 unclaimed ($5) = $790 in total.
-    for (const expected of ["Liquidity5", "$500.00", "Unclaimed fees0.25 ", "$25.00", "Liquidity5.2", "$260.00", "Unclaimed fees0.1 ", "$5.00"]) expect(text).toContain(expected);
-    expect(500 + 25 + 260 + 5).toBe(790);
-  });
-  it("shows a dash, never zero, while unclaimed fees are not available", async () => {
-    await mount({ wallet: OWN_WALLET, positions: [OWNED_MINT], stateOk: true, initialMint: OWNED_MINT });
-    await settle();
-    expect(rows()).toContain("Unclaimed fees— ");
-    expect(rows()).not.toContain("Unclaimed fees0 ");
+    const detail = container.querySelector('[data-testid="selected-position-detail"]')!;
+    expect(detail).not.toBeNull();
+    expect(container.querySelector('[aria-label="Position assets"]')).toBeNull();
+    expect(container.querySelector('[data-testid="position-assets-collapse"]')).toBeNull();
+    expect(detail.querySelector('[data-testid="range-badge"]')).toBeNull();
+    expect(detail.textContent).not.toMatch(/Unclaimed fees/);
+    expect(detail.querySelector('nav[aria-label="Position operations"]')).not.toBeNull();
+    expect(container.textContent).toContain("Learn more details");
   });
 });
 

@@ -416,7 +416,6 @@ export function compoundBlockedReason(position: UnifiedPosition, symbolOf: (toke
 function RegistryCompoundPanel({ position, descriptor, symbolOf, onConfirmed }: RegistryToolProps) {
   const op = usePositionTx("compound", position, onConfirmed);
   const { tx, send, connected, locked } = op;
-  const fees = position.holdings?.unclaimedFeesRaw ?? null;
   const blocked = compoundBlockedReason(position, symbolOf);
   const rangeLine = compoundRangeLine(position, symbolOf);
   const poolFeeLine = position.rangeStatus === "in" ? descriptor.meta.inRangeDepositPoolFee ?? null : null;
@@ -431,7 +430,7 @@ function RegistryCompoundPanel({ position, descriptor, symbolOf, onConfirmed }: 
     <h2 id="registry-compound-heading" className="flex items-center gap-2 text-lg font-semibold text-cream"><Sprout aria-hidden="true" className="h-5 w-5 text-cream/80" />Compound fees</h2>
     <p className="mt-2 text-xs leading-5 text-smoke">Adds this position&apos;s fees back into the same range.</p>
     <p className="mt-1 text-xs leading-5 text-smoke">{feeLine(descriptor.meta.feePolicy.compound, "")}</p>
-    {fees ? <p className="mt-3 text-sm text-cream/80">Unclaimed: {formatAmount(fees.a, position.tokenA.decimals)} {symbolOf(position.tokenA)} · {formatAmount(fees.b, position.tokenB.decimals)} {symbolOf(position.tokenB)}</p> : null}
+    {/* No per-token fees line here (LJ 11/14): the position's row shows its fees. The checks (compoundBlockedReason) are unchanged. */}
     {rangeLine ? <p data-testid="registry-compound-range" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{rangeLine}</p> : null}
     {poolFeeLine ? <p data-testid="registry-compound-pool-fee" className="mt-3 text-xs leading-5 text-smoke">{poolFeeLine}</p> : null}
     {!connected ? <NotConnected /> : <>

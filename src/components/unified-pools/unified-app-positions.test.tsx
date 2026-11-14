@@ -194,6 +194,15 @@ describe("/app shared detail panel for a Robinhood Chain position (PM review of 
     ]);
   });
 
+  it("the selected Robinhood Chain details show the range pill and token rows but no second range badge (the row has it, LJ 11/14)", async () => {
+    await render();
+    const header = container.querySelector("[data-testid=rhc-position-header]")!;
+    expect(header.querySelector("[data-testid=rhc-range]")).not.toBeNull();
+    expect(header.querySelector("[data-testid=range-badge]")).toBeNull();
+    expect(header.querySelector("[data-testid=rhc-position-assets]")).not.toBeNull();
+    expect(container.querySelector("[data-testid=rhc-wrong-network]")).toBeNull();
+  });
+
   it("a field it cannot read shows a dash and keeps the row (values read failed)", async () => {
     await render();
     const assets = container.querySelector("[data-testid=rhc-position-assets]")!;
