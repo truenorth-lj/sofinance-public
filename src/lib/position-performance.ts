@@ -1,22 +1,9 @@
 import "@/lib/engine-host";
 import "server-only";
 
-import {
-  CLMM_PROGRAM_ID,
-  getPdaPersonalPositionAddress,
-  getPdaTickArrayAddress,
-  LiquidityMathUtil,
-  PersonalPositionLayout,
-  PoolInfoLayout,
-  TickArrayLayout,
-  TickArrayUtil,
-  TickUtil,
-} from "@raydium-io/raydium-sdk-v2";
 import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Connection, PublicKey } from "@solana/web3.js";
-import { createHash } from "node:crypto";
-import { accruedFee } from "@sofinance/engine/compound-math";
-import { positionSide } from "@sofinance/engine/quote-math";
+import { readRaydiumPositionAccounts, readRaydiumUncollectedFees } from "@sofinance/engine/protocols/raydium/position-snapshot";
 import { rpcConnection, rpcProvider, type RpcProvider } from "@sofinance/engine/rpc";
 import {
   type HistoryConnection,
@@ -49,9 +36,6 @@ import {
 } from "./position-performance-assemble";
 import { resetRpcCache } from "@sofinance/engine/rpc/cache";
 import { createHistoryRpcConnections } from "./position-history-rpc";
-
-const POSITION_DISCRIMINATOR = createHash("sha256").update("account:PersonalPositionState").digest().subarray(0, 8);
-const POOL_DISCRIMINATOR = createHash("sha256").update("account:PoolState").digest().subarray(0, 8);
 
 // At four public-RPC starts/second, 500 details cannot finish within the shared
 // fifty-second deadline. Durable reads checkpoint in bounded chunks instead.
@@ -175,38 +159,6 @@ async function fetchRaydiumPoolSymbols(
   }
 }
 
-async function readUncollectedFees(connection: Connection, programId: PublicKey, poolId: PublicKey, position: ReturnType<typeof PersonalPositionLayout.decode>, pool: ReturnType<typeof PoolInfoLayout.decode>) {
-  const ticks = [position.tickLower, position.tickUpper];
-  const starts = ticks.map((tick) => TickArrayUtil.getTickArrayStartIndex(tick, pool.tickSpacing));
-  const keys = starts.map((start) => getPdaTickArrayAddress(programId, poolId, start).publicKey);
-  const infos = await connection.getMultipleAccountsInfo(keys, "confirmed");
-  const boundaries = infos.map((info, index) => {
-    if (!info || !info.owner.equals(programId)) throw new Error("Boundary tick array missing for fee accrual");
-    const array = TickArrayLayout.decode(info.data);
-    if (array.poolId.toBase58() !== poolId.toBase58() || array.startTickIndex !== starts[index]) {
-      throw new Error("Tick array does not match pool or start index");
-    }
-    const tick = array.ticks[TickArrayUtil.getTickOffsetInArray(ticks[index]!, pool.tickSpacing)];
-    if (!tick || tick.tick !== ticks[index]) throw new Error("Boundary tick not initialized");
-    return tick;
-  });
-  const lower = boundaries[0]!;
-  const upper = boundaries[1]!;
-  const fee = (side: "A" | "B") =>
-    accruedFee({
-      tickCurrent: pool.tickCurrent,
-      tickLower: position.tickLower,
-      tickUpper: position.tickUpper,
-      global: BigInt(pool[`feeGrowthGlobalX64${side}`].toString()),
-      lowerOutside: BigInt(lower[`feeGrowthOutsideX64${side}`].toString()),
-      upperOutside: BigInt(upper[`feeGrowthOutsideX64${side}`].toString()),
-      lastInside: BigInt(position[`feeGrowthInsideLastX64${side}`].toString()),
-      liquidity: BigInt(position.liquidity.toString()),
-      owed: BigInt(position[`tokenFeesOwed${side}`].toString()),
-    });
-  return { a: fee("A"), b: fee("B") };
-}
-
 async function walletOwnsNft(connection: Connection, wallet: PublicKey, mint: PublicKey): Promise<boolean> {
   for (const program of [TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID]) {
     const ata = getAssociatedTokenAddressSync(mint, wallet, false, program);
@@ -239,28 +191,8 @@ export async function getPositionPerformance(
   const nowSeconds = options.nowSeconds ?? Math.floor(Date.now() / 1000);
 
   const mint = new PublicKey(positionMint);
-  const positionPda = getPdaPersonalPositionAddress(CLMM_PROGRAM_ID, mint).publicKey;
-  const positionInfo = await connection.getAccountInfo(positionPda, "confirmed");
-  if (
-    !positionInfo ||
-    !positionInfo.owner.equals(CLMM_PROGRAM_ID) ||
-    !positionInfo.data.subarray(0, 8).equals(POSITION_DISCRIMINATOR)
-  ) {
-    throw new Error("Raydium CLMM personal position account not found for this NFT mint");
-  }
-  const position = PersonalPositionLayout.decode(positionInfo.data);
-  if (!position.nftMint.equals(mint)) throw new Error("Position NFT mint mismatch");
-
-  const poolId = position.poolId;
-  const poolInfo = await connection.getAccountInfo(poolId, "confirmed");
-  if (
-    !poolInfo ||
-    !poolInfo.owner.equals(CLMM_PROGRAM_ID) ||
-    !poolInfo.data.subarray(0, 8).equals(POOL_DISCRIMINATOR)
-  ) {
-    throw new Error("Pool account missing or not a Raydium CLMM pool");
-  }
-  const pool = PoolInfoLayout.decode(poolInfo.data);
+  const snapshot = await readRaydiumPositionAccounts(positionMint, connection);
+  const positionPda = new PublicKey(snapshot.positionAccount);
 
   const accountsMs = Date.now() - started;
   const provider = options.provider ?? rpcProvider();
@@ -274,13 +206,13 @@ export async function getPositionPerformance(
     connection,
     provider,
     fallbackConnection,
-    context: { positionMint, positionAccount: positionPda.toBase58(), poolId: poolId.toBase58(),
-      mintA: pool.mintA.toBase58(), mintB: pool.mintB.toBase58(),
-      vaultA: pool.vaultA.toBase58(), vaultB: pool.vaultB.toBase58() },
+    context: { positionMint, positionAccount: snapshot.positionAccount, poolId: snapshot.poolId,
+      mintA: snapshot.mintA, mintB: snapshot.mintB,
+      vaultA: snapshot.vaultA, vaultB: snapshot.vaultB },
     store: historyStore, signal,
     bypassCache: options.historyMemoryCache === false || options.refreshHistory || Boolean(options.historyAfterSignatures?.length),
     afterSignatures: options.historyAfterSignatures,
-    stateFingerprint: createHash("sha256").update(positionInfo.data).digest("hex"),
+    stateFingerprint: snapshot.stateFingerprint,
     connectionsForSignal: !options.connection ? sharedSignal => {
       // Only durable history uses pacing; valuation and transaction RPC keep their own paths.
       const connections = createHistoryRpcConnections(sharedSignal);
@@ -289,13 +221,13 @@ export async function getPositionPerformance(
         rpcMetrics: () => connections.observer.snapshot(),
         receiptProvider: (signature: string) => connections.observer.receiptProvider(signature) };
     } : undefined,
-  }), readUncollectedFees(connection, CLMM_PROGRAM_ID, poolId, position, pool),
+  }), readRaydiumUncollectedFees(connection, snapshot),
   options.wallet ? walletOwnsNft(connection, new PublicKey(options.wallet), mint) : Promise.resolve(null)]);
   const truncated = fetched.truncated;
   const history: PositionHistoryEvent[] = fetched.history;
 
   const allEvents = history.flatMap((item) => item.events);
-  const cashflows = aggregateCashflowsForPosition(allEvents, positionMint, poolId.toBase58());
+  const cashflows = aggregateCashflowsForPosition(allEvents, positionMint, snapshot.poolId);
 
   const openedAt =
     history.find((item) => item.events.some((event) => event.kind === "open"))?.blockTime ??
@@ -303,26 +235,11 @@ export async function getPositionPerformance(
     null;
   const holdingSeconds = openedAt !== null && openedAt > 0 ? Math.max(0, nowSeconds - openedAt) : 0;
 
-  const lower = TickUtil.getSqrtPriceAtTick(position.tickLower);
-  const upper = TickUtil.getSqrtPriceAtTick(position.tickUpper);
-  const currentAmounts = LiquidityMathUtil.getAmountsForLiquidity(
-    pool.sqrtPriceX64,
-    lower,
-    upper,
-    position.liquidity,
-    false,
-  );
-  const rangeSide = positionSide(
-    BigInt(pool.sqrtPriceX64.toString()),
-    BigInt(lower.toString()),
-    BigInt(upper.toString()),
-  );
-
-  const mintA = pool.mintA.toBase58();
-  const mintB = pool.mintB.toBase58();
+  const mintA = snapshot.mintA;
+  const mintB = snapshot.mintB;
   const priced = await priceAndLabel({
     mintA, mintB, skipPricing: options.skipPricing, fetcher,
-    jupiterApiKey: options.jupiterApiKey, raydiumPoolId: poolId.toBase58(),
+    jupiterApiKey: options.jupiterApiKey, raydiumPoolId: snapshot.poolId,
   });
   const { priceUsdA, priceUsdB, quotes, pricingMs } = priced;
 
@@ -331,21 +248,21 @@ export async function getPositionPerformance(
     withdrawnPrincipal: { a: cashflows.withdrawnPrincipalA, b: cashflows.withdrawnPrincipalB },
     feesCollected: { a: cashflows.feesCollectedA, b: cashflows.feesCollectedB },
     liquidityAmounts: {
-      a: BigInt(currentAmounts.amountA.toString()),
-      b: BigInt(currentAmounts.amountB.toString()),
+      a: snapshot.amountA,
+      b: snapshot.amountB,
     },
     uncollectedFees: uncollected,
     holdingSeconds,
     priceUsdA,
     priceUsdB,
-    decimalsA: pool.mintDecimalsA,
-    decimalsB: pool.mintDecimalsB,
+    decimalsA: snapshot.decimalsA,
+    decimalsB: snapshot.decimalsB,
   });
 
   const metadataStarted = Date.now();
   const { symbolA, symbolB } = await resolveSymbols({
     mintA, mintB, fetcher, jupiterApiKey: options.jupiterApiKey, metadata: "fill-missing",
-    prefetch: () => fetchRaydiumPoolSymbols(poolId.toBase58(), fetcher),
+    prefetch: () => fetchRaydiumPoolSymbols(snapshot.poolId, fetcher),
   });
 
   const wrap = matchWrapPairShape(symbolA ?? "", symbolB ?? "");
@@ -355,14 +272,14 @@ export async function getPositionPerformance(
     withdrawnPrincipal: { a: cashflows.withdrawnPrincipalA, b: cashflows.withdrawnPrincipalB },
     feesCollected: { a: cashflows.feesCollectedA, b: cashflows.feesCollectedB },
     liquidityAmounts: {
-      a: BigInt(currentAmounts.amountA.toString()),
-      b: BigInt(currentAmounts.amountB.toString()),
+      a: snapshot.amountA,
+      b: snapshot.amountB,
     },
     uncollectedFees: uncollected,
     holdingDays: metrics.holdingDays,
-    decimalsA: pool.mintDecimalsA,
-    decimalsB: pool.mintDecimalsB,
-    tickCurrent: pool.tickCurrent,
+    decimalsA: snapshot.decimalsA,
+    decimalsB: snapshot.decimalsB,
+    tickCurrent: snapshot.tickCurrent,
     symbolA,
     symbolB,
     sameAssetWrap,
@@ -378,17 +295,17 @@ export async function getPositionPerformance(
       wallet: options.wallet ?? null,
       ownsNft,
       positionMint,
-      positionAccount: positionPda.toBase58(),
-      poolId: poolId.toBase58(),
+      positionAccount: snapshot.positionAccount,
+      poolId: snapshot.poolId,
       mintA,
       mintB,
-      decimalsA: pool.mintDecimalsA,
-      decimalsB: pool.mintDecimalsB,
-      tickLower: position.tickLower,
-      tickUpper: position.tickUpper,
-      tickCurrent: pool.tickCurrent,
-      rangeSide,
-      liquidity: position.liquidity.toString(),
+      decimalsA: snapshot.decimalsA,
+      decimalsB: snapshot.decimalsB,
+      tickLower: snapshot.tickLower,
+      tickUpper: snapshot.tickUpper,
+      tickCurrent: snapshot.tickCurrent,
+      rangeSide: snapshot.rangeSide,
+      liquidity: snapshot.liquidity,
       openedAt,
       evaluatedAt: nowSeconds,
       signatureCount: fetched.signatureCount,

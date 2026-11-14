@@ -8,6 +8,7 @@ import { readOpenPoolState } from "../open-state";
 import { readSelectedPositionState } from "../selected-state";
 import { compoundProtocolInstructions } from "../swap/receipt";
 import { discoverWallet } from "../wallet-discovery";
+import { readRaydiumPositionAccounts, readRaydiumUncollectedFees } from "./raydium/position-snapshot";
 import type { ClmmProtocolAdapter } from "./types";
 
 /**
@@ -31,4 +32,6 @@ export const raydiumClmmAdapter: ClmmProtocolAdapter = Object.freeze({
   get buildPositionExitInstructions() { return buildPositionExitInstructions; },
   get discoverWallet() { return discoverWallet; },
   get protocolInstructions() { return compoundProtocolInstructions; },
+  get readPositionAccounts() { return readRaydiumPositionAccounts; },
+  get readUncollectedFees() { return readRaydiumUncollectedFees; },
 } satisfies ClmmProtocolAdapter);
