@@ -366,6 +366,10 @@ describe("automatic cleanup after a new compound", () => {
     await act(async () => { controller.compound(); });
     await act(async () => { await vi.advanceTimersByTimeAsync(16); });
     expect(controller.attemptStatus).toBe(status);
+    // The "Compound confirmed" dialog is still open: the halo must not play yet.
+    expect(container.querySelector('[data-testid="compound-halo"]')).toBeNull();
+    await act(async () => { controller.dismissFeedback(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(16); });
     expect(Boolean(container.querySelector('[data-testid="compound-halo"]'))).toBe(status === "success");
     getContext.mockRestore(); box.mockRestore();
   });
