@@ -9,5 +9,5 @@ export default async function PositionPerformancePage({ searchParams }: {
     else if (value !== undefined) query.set(key, value);
   }
   query.set("view", "performance");
-  redirect(`/app?${query}`);
+  redirect(`/app/portfolio?${query}`);
 }

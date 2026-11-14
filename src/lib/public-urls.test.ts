@@ -16,7 +16,8 @@ describe("public app URLs", () => {
   });
 
   it("keeps product pages under /app", () => {
-    expect(APP_ROUTES.home).toBe("/app");
+    expect(APP_ROUTES.home).toBe("/app/portfolio");
+    expect(APP_ROUTES.portfolioRecovery).toBe("/app/portfolio/recovery");
     expect(APP_ROUTES.plan).toBe("/app/plan");
     expect(APP_ROUTES.rwaPairs).toBe("/app/rwa-pairs");
     expect(APP_ROUTES.positionPerformance).toBe("/app/position-performance");

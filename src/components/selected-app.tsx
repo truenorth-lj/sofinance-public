@@ -14,7 +14,6 @@ import { useSelectedController } from "./use-selected-controller";
 import { TransactionStatusDialog } from "./transaction-status-dialog";
 import { useCompoundController } from "./use-compound-controller";
 import { InkFooter, InkNav } from "./ink";
-import { HarvestAccountManagement } from "./compound-panel";
 import { RangeBadge } from "./unified-positions/range-badge";
 import { useNoticeBottomOffset } from "./transactions/notice-offset";
 import { AddLiquiditySection } from "./add-liquidity-section";
@@ -29,8 +28,8 @@ import Link from "next/link";
 import { captureGrowthEvent } from "@/lib/analytics/client";
 import { GROWTH_EVENTS } from "@/lib/analytics/events";
 import { raydiumPositionSource as positionSource } from "@/lib/unified-positions/sources/raydium";
-import { capabilitiesFor, firstSupportedTool, parsePositionKey, positionKey, positionKeysEqual, toolUnavailableReason, type ToolId, type UnifiedPosition } from "@/lib/unified-positions/model";
-import { CLOSED_LABEL, groupPositions, isClosed, positionOptionLabel, type PositionGroup } from "@/lib/unified-positions/rows";
+import { capabilitiesFor, firstSupportedTool, parsePositionKey, positionKey, positionKeysEqual, toolUnavailableReason, type SourceCapabilities, type ToolId, type UnifiedPosition } from "@/lib/unified-positions/model";
+import { CLOSED_LABEL, groupPositions, isClosed } from "@/lib/unified-positions/rows";
 import type { ExternalPositions } from "./unified-positions/external-positions";
 import { RegistryPositionDetails, RegistryPositionHeader, useRegistryPositions } from "./unified-positions/registry-positions";
 import { RegistryPositionTool, type ToolBalance } from "./unified-positions/registry-tools";
@@ -42,6 +41,11 @@ import { fetchDexPerformance } from "@/lib/dex/client";
 import type { PositionPerformanceReport } from "@/lib/position-performance-report";
 import { shortAddress } from "@/lib/format/address";
 import { solscanAccountUrl } from "@/lib/format/explorer";
+import { PortfolioSummary } from "./portfolio/portfolio-summary";
+import { PortfolioPositionList, rowActions, type PortfolioRow } from "./portfolio/portfolio-rows";
+import { usePositionReports, type LoadedReport } from "./portfolio/use-position-reports";
+import { invalidateReports } from "./portfolio/report-cache";
+import { portfolioTotals, positionFigures, type FiguresState, type PositionFigures } from "@/lib/portfolio/figures";
 
 const short = shortAddress;
 const money = (value: string, decimals: number, digits = 6) => formatAmount(value, decimals, digits);
@@ -76,6 +80,9 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
     loadingDiscovery, loadingState, stateError } = controller;
   // My positions from DEXes served through the registry (PR5): every Solana-wallet DEX except the inline source above.
   const [registryRefresh, setRegistryRefresh] = useState(0);
+  // Portfolio numbers: forget the cached reports (all, or the given positions) and read them again.
+  const [reportsRefresh, setReportsRefresh] = useState(0);
+  const refreshReports = (keys?: readonly string[]) => { invalidateReports(keys); setReportsRefresh((value) => value + 1); };
   const registry = useRegistryPositions({ owner: connected ? wallet || null : null, signer: "solana-wallet", exclude: [positionSource.id], refresh: registryRefresh });
   const totalCostPercent = quote && typeof quote.roundtripCostInput === "string" && BigInt(quote.requested) > 0n
     ? (Number(quote.roundtripCostInput) / Number(quote.requested) * 100).toFixed(2)
@@ -89,7 +96,11 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   const compound = useCompoundController({ wallet: wallet || undefined, positionMint: selectionAligned ? selection?.positionMint : undefined,
     // Selection alignment gates positionMint above, not wallet-wide leftover recovery.
     externalBlocked: addBusy || withdrawBusy,
-    onConfirmed: () => { void refreshState(); } });
+    // A confirmed compound changed this position's fees and value: read its Portfolio numbers again.
+    onConfirmed: () => {
+      void refreshState();
+      refreshReports(selectionAligned && selection?.positionMint ? [positionKey(positionSource.id, selection.positionMint)] : undefined);
+    } });
   // Unclaimed fees come from the compound reader (same accrual formula as the Performance card); its snapshot also carries the
   // liquidity amounts, so rows show liquidity and unclaimed fees from one consistent read when it is available.
   // Duplicates the visibleState filter in use-compound-controller.ts:223 (it already drops another wallet's or position's state):
@@ -197,7 +208,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
       // Keyed by the position only: the cross-op lock is per position and must not depend on the open tab (PM review of #289).
       tool: (item: UnifiedPosition, view: ToolId) => <RegistryPositionTool key={item.key} position={item} descriptor={registry.descriptor(item)!}
         capabilities={registry.capabilities(item)!} view={view} balances={walletBalances} symbolOf={(token) => tokenSymbol(token.id, metadata, token.symbol)}
-        onConfirmed={() => { setOtherKey(item.key); setRegistryRefresh((value) => value + 1); void refreshDiscovery(); }}
+        onConfirmed={() => { setOtherKey(item.key); setRegistryRefresh((value) => value + 1); void refreshDiscovery(); refreshReports([item.key]); }}
         onPerformance={(key, result) => setPanelResult({ key, ...result })} showStockPerformance={!stockShownInOverview} />,
       capabilities: registry.capabilities(otherSelected)! }
     : otherSelected && external ? { header: external.header, details: external.details, tool: external.tool, capabilities: capabilitiesFor(external.source, otherSelected) }
@@ -227,8 +238,6 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
     writeUrl(found.key, activeView);
   };
   const changeView = (view: ToolId) => { setActiveView(view); writeUrl(selectedKey, view); };
-  const optionLabel = (item: UnifiedPosition, group: PositionGroup) =>
-    positionOptionLabel(item.source === positionSource.id ? positionSource : registry.owns(item) ? registry.optionSource(item, metadata) : external!.source as never, item as never, { showSourceName: group.showSourceName, metadata });
   const anyBusy = busy || Boolean(external?.busy);
   const assetOptions = discovery?.assets || [];
   const poolLabel = (mint: string) => {
@@ -256,7 +265,9 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   // keep its rows selectable but let the eventual selected panel own the first report read.
   // Explicit picks/deep links can read immediately; a failed wallet scan must not stall the overview.
   const awaitingDefaultSelection = !discovery && !stateError && !otherSelected && !performanceMint;
-  const overviewPositions: OverviewPosition[] = !connected || !wallet || awaitingDefaultSelection ? [] : [
+  // Every open Solana position whose source reads Performance: the Portfolio numbers and the Performance overview read
+  // the same reports (shared cache, one read per position).
+  const performanceSources: Omit<OverviewPosition, "fromPanel">[] = !connected || !wallet ? [] : [
     ...solanaPositions.filter((item) => !isClosed(item)).map((item): OverviewPosition => ({ key: item.key,
       positionId: item.nativeId, pool: { id: item.poolId, source: positionSource.displayName,
         label: `${poolLabel(item.tokenA.id)} / ${poolLabel(item.tokenB.id)}` }, load: async (signal) => {
@@ -265,20 +276,40 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
       const body = await response.json().catch(() => null) as (PositionPerformanceReport & { error?: string }) | null;
       if (!response.ok || !body || body.positionMint !== item.nativeId) throw new Error(body?.error || "Performance could not be loaded.");
       return body;
-    }, fromPanel: fromPanel(item.key) })),
+    } })),
     ...registry.positions.filter((item) => !isClosed(item) && registry.capabilities(item)?.performance.supported).map((item): OverviewPosition => ({
       key: item.key, positionId: item.nativeId, pool: { id: item.poolId, source: registry.optionSource(item, metadata).displayName,
         label: `${tokenSymbol(item.tokenA.id, metadata, item.tokenA.symbol)} / ${tokenSymbol(item.tokenB.id, metadata, item.tokenB.symbol)}` },
-      load: async (signal) => (await fetchDexPerformance(registry.descriptor(item)!, item.key, { signal })).report ?? null,
-      fromPanel: fromPanel(item.key) })),
+      load: async (signal) => (await fetchDexPerformance(registry.descriptor(item)!, item.key, { signal })).report ?? null })),
   ];
+  const overviewPositions: OverviewPosition[] = awaitingDefaultSelection ? []
+    : performanceSources.map((item) => ({ ...item, fromPanel: fromPanel(item.key) }));
+  // Portfolio numbers: on Performance the selected position's own panel reads its report, so the totals take that result.
+  const panelOwnsReport = activeView === "performance" && Boolean(panelKey);
+  // On Performance an unresolved default selection waits, so its first report read belongs to the panel (no double read).
+  const portfolioReports = usePositionReports(activeView === "performance" && awaitingDefaultSelection ? []
+    : panelOwnsReport ? performanceSources.filter((item) => item.key !== panelKey) : performanceSources, { refresh: reportsRefresh });
+  const reportFor = (key: string): LoadedReport | "loading" | undefined => panelOwnsReport && key === panelKey
+    ? panelResult?.key === key ? panelResult : "loading" : portfolioReports[key];
+  const reportedKeys = new Set(performanceSources.map((item) => item.key));
+  const capabilitiesOf = (item: UnifiedPosition): SourceCapabilities => item.source === positionSource.id ? capabilitiesFor(positionSource, item)
+    : registry.owns(item) ? registry.capabilities(item)! : capabilitiesFor(external!.source, item);
+  const figuresOf = (item: UnifiedPosition): PositionFigures | null => {
+    if (!reportedKeys.has(item.key)) return external && item.chain === external.chain ? external.figures?.(item) ?? null : null;
+    const loaded = reportFor(item.key);
+    return loaded && loaded !== "loading" && !loaded.error ? positionFigures(loaded.report) : null;
+  };
+  const portfolio = portfolioTotals(allPositions.filter((item) => !isClosed(item) && reportedKeys.has(item.key)).map((item): FiguresState => {
+    const loaded = reportFor(item.key);
+    return !loaded || loaded === "loading" ? { status: "loading" } : loaded.error ? { status: "failed" } : { status: "ready", figures: positionFigures(loaded.report) };
+  }), allPositions.filter((item) => !isClosed(item) && !reportedKeys.has(item.key)).map((item) => figuresOf(item)?.valueUsd ?? null));
   const stockShownInOverview = overviewPositions.length > 0 && panelResult?.key === panelKey
     && Boolean(panelResult.report?.stock) && overviewPositions.some((item) => item.key === panelKey);
   // One "Refresh" (was "Rescan wallet" + "Reload fees"): the Solana scan, the selected position's on-chain state and fees, the
   // registry DEXes and, on /app, the Robinhood Chain scan via the parent's refresh counter.
   const refreshAll = () => {
     if (wallet) {
-      void refreshDiscovery(); setRegistryRefresh((value) => value + 1);
+      void refreshDiscovery(); setRegistryRefresh((value) => value + 1); refreshReports();
       if (selectionAligned && selection?.positionMint) { void refreshState(); void compound.refreshState(); }
     }
     onRescan?.();
@@ -290,24 +321,30 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   const showTools = hasSelection || (activeView === "performance" && Boolean(performanceMint || previewPoolId));
   const loadingPositions = connected && (loadingDiscovery || !discovery) && !stateError;
   const showEmpty = !allPositions.length && !loadingPositions && !registry.loadingNames.length;
-  // Only uncovered positions get lightweight rows. Stock positions remain reachable through their drilldown;
-  // non-Performance tools never mount the overview or start history reads just to select a position.
-  const renderPositionRows = (coveredKeys: ReadonlySet<string>) => <div className="space-y-4" data-testid="position-fallback-rows">
-    {groups.map((group) => {
-      const remaining = group.positions.filter((item) => !coveredKeys.has(item.key));
-      if (!remaining.length) return null;
-      return <section key={group.chain} aria-label={group.label} data-testid="position-chain-group">
-        <h3 className="mb-2 text-xs font-semibold text-smoke">{group.label}</h3>
-        <ul className="space-y-2">{remaining.map((item) => <li key={item.key}>
-          <button type="button" data-testid="position-fallback-select" data-position-key={item.key}
-            aria-pressed={selectedKey === item.key} disabled={anyBusy} onClick={() => pickKey(item.key)}
-            className={`w-full rounded-xl border px-4 py-3 text-left text-sm transition-colors enabled:hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50 ${selectedKey === item.key ? "border-mint/40 bg-mint/5" : "border-white/10"}`}>
-            {optionLabel(item, group)}{selectedKey === item.key && <span className="ml-3 text-xs text-mint">Selected</span>}
-          </button>
-        </li>)}</ul>
-      </section>;
-    })}
-  </div>;
+  // Portfolio rows (every tool's list). On Performance, stock positions are covered by the overview above them.
+  const sourceName = (item: UnifiedPosition) => item.source === positionSource.id ? positionSource.displayName
+    : registry.owns(item) ? registry.optionSource(item, metadata).displayName : external?.source.displayName ?? "";
+  const pairOf = (item: UnifiedPosition) => `${tokenSymbol(item.tokenA.id, metadata, item.tokenA.symbol || poolLabel(item.tokenA.id))} / ${tokenSymbol(item.tokenB.id, metadata, item.tokenB.symbol || poolLabel(item.tokenB.id))}`;
+  const portfolioRows = new Map<string, PortfolioRow>(groups.flatMap((group) => group.positions.map((item): [string, PortfolioRow] => {
+    const figures = figuresOf(item);
+    // Position number tells apart two positions in the same pair (an NFT mint shortened, an EVM token id as-is).
+    const id = `#${String(item.nativeId).length > 12 ? short(String(item.nativeId)) : String(item.nativeId)}`;
+    const pair = item.tokenA.id || item.tokenB.id ? pairOf(item) : "";
+    const title = figures?.stock ?? (pair || `Position ${id}`);
+    return [item.key, { item, figures, title,
+      subtitle: [title !== pair ? pair : null, group.showSourceName ? sourceName(item) : null, title.endsWith(id) ? null : id].filter(Boolean).join(" · "),
+      actions: rowActions(capabilitiesOf(item), isClosed(item)) }];
+  })));
+  const openTool = (key: string, view: ToolId) => {
+    const found = allPositions.find((item) => item.key === key || positionKeysEqual(item.key, key));
+    if (!found) return;
+    setActiveView(view);
+    if (found.source === positionSource.id) { setOtherKey(""); pickPosition(found.nativeId); } else setOtherKey(found.key);
+    writeUrl(found.key, view);
+  };
+  const renderPositionRows = (coveredKeys: ReadonlySet<string>) => <PortfolioPositionList
+    groups={groups.map((group) => ({ ...group, positions: group.positions.filter((item) => !coveredKeys.has(item.key)) }))}
+    rows={portfolioRows} selectedKey={selectedKey} disabled={anyBusy} onSelect={pickKey} onAction={openTool} />;
   return <div className="min-h-screen bg-canvas text-cream">
     <div className="relative mx-auto max-w-[1280px] px-3 pb-32 pt-3 max-sm:pb-[max(8rem,calc(var(--tx-notice-bottom-offset,0px)+2rem))] sm:px-5 sm:pt-5">
       <InkNav wallet={wallet} connected={connected} onConnect={connect} onDisconnect={disconnect} />
@@ -315,12 +352,14 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
       {/* The page content area below the nav: the compound success halo is clipped to it. */}
       <div className="relative" data-halo-surface="">
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 px-1">
-        <h1 className="text-xl font-semibold text-cream sm:text-2xl">Positions</h1>
+        <h1 className="text-xl font-semibold text-cream sm:text-2xl">Portfolio</h1>
         <button type="button" disabled={(!wallet && !(external && onRescan)) || anyBusy} onClick={refreshAll}
           className="inline-flex items-center gap-1.5 rounded-full border border-white/20 px-3 py-1.5 text-xs font-semibold text-cream/80 transition-colors hover:border-white/40 disabled:opacity-40">
           <RefreshCw aria-hidden="true" className={`h-3.5 w-3.5 ${loadingDiscovery || compound.loading ? "animate-spin motion-reduce:animate-none" : ""}`} />Refresh
         </button>
       </div>
+
+      {allPositions.length > 0 && <PortfolioSummary totals={portfolio} />}
 
       <PositionToolsSection
         activeView={activeView}
@@ -414,17 +453,16 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
           className="mt-4 text-xs font-semibold text-cream/80 transition-opacity hover:opacity-70 disabled:opacity-40">
           Learn more details
         </button>
+        {/* Harvest account recovery has its own page (LJ 11/14): linked only from a Raydium position's details. */}
+        {selectedSolana && !otherSelected && <Link href={`${APP_ROUTES.portfolioRecovery}?position=${encodeURIComponent(selectedSolana.key)}`}
+          data-testid="harvest-recovery-link" className="ml-4 mt-4 inline-block text-xs font-semibold text-cream/80 underline underline-offset-2 hover:opacity-70">
+          Recover leftover compound balances</Link>}
         {tabs}
         </div>}
       </section>}
       </PositionToolsSection>
       {connectionError && activeView === "compound" && !otherSelected && <div role="alert" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{connectionError}</div>}
       {error && !quoteError && activeView === "compound" && !otherSelected && <div role="alert" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{error}</div>}
-      {/* Old harvest balances stay recoverable when the wallet has no Raydium position (the Compound fees panel carries this otherwise). */}
-      {connected && !selectedSolana && <details className="mt-6 rounded-[28px] border border-white/12 bg-char p-5 text-xs text-smoke sm:p-7" data-testid="harvest-accounts-standalone">
-        <summary className="cursor-pointer font-semibold">Leftover compound balances</summary>
-        <HarvestAccountManagement controller={compound} tokenLabel={poolLabel} standalone />
-      </details>}
       </div>
       <InkFooter />
     </div>

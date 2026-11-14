@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
-import { act, createElement, useLayoutEffect } from "react";
+import { act, createElement, Fragment, useLayoutEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PublicKey, SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { useCompoundController } from "./use-compound-controller";
-import { CompoundPanel } from "./compound-panel";
+import { CompoundPanel, HarvestAccountManagement } from "./compound-panel";
 import { compoundAttemptKey, compoundReceiptsKey, persistCompoundAttempt, persistCompoundReceipt, type CompoundAttempt, type CompoundReceipt } from "@sofinance/engine/compound-attempt";
 import { persistCleanupBatch } from "@/lib/compound-cleanup-batch-attempt";
 import { compoundHistoryFixture } from "@/lib/test-support/compound-history-fixture";
@@ -26,7 +26,8 @@ let broadcastSignatures: string[];
 function Harness() {
   const value = useCompoundController({ wallet, positionMint, externalBlocked: false, onConfirmed: mocks.confirmed });
   useLayoutEffect(() => { controller = value; });
-  return createElement(CompoundPanel, { controller: value });
+  // Harvest account management moved to its own recovery page (LJ 11/14): same controller, rendered beside the panel here.
+  return createElement(Fragment, null, createElement(CompoundPanel, { controller: value }), createElement(HarvestAccountManagement, { controller: value }));
 }
 const render = async () => { await act(async () => root.render(createElement(Harness))); await act(async () => { await vi.advanceTimersByTimeAsync(1); }); };
 const receipt = (index = 0): CompoundReceipt => ({ wallet: fixture.wallet, positionMint: fixture.state.positionMint,
@@ -398,7 +399,7 @@ describe("automatic cleanup after a new compound", () => {
     let rejectCleanup!: (error: Error) => void;
     mocks.sign.mockImplementationOnce(async (tx: VersionedTransaction) => { tx.sign([testKeypair(1)]); return tx; })
       .mockImplementationOnce(() => new Promise<VersionedTransaction>((_resolve, reject) => { rejectCleanup = reject; }));
-    const harvest = () => container.querySelector('section[aria-label="Harvest"]')!;
+    const harvest = () => container.querySelector('section[aria-label="Fees to compound"]')!;
     const freshAmounts = "0 " + fixture.state.mintA.slice(0, 4) + "…" + fixture.state.mintA.slice(-4) +
       " + 0.000002 " + fixture.state.mintB.slice(0, 4) + "…" + fixture.state.mintB.slice(-4);
     await render();

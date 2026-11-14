@@ -64,13 +64,13 @@ for (const scenario of ["packed", "chunked", "interrupted-confirmation"] as cons
       const pending = count <= 2;
       return route.fulfill({ json: { signature, status: pending ? "pending" : "success", chainStatus: pending ? "pending" : "success" } });
     });
-    // `/app` also lists pools (Solana + Robinhood Chain); this journey is about cleanup, so the pool list is empty.
+    // The app also lists pools (Solana + Robinhood Chain); this journey is about cleanup, so the pool list is empty.
     await page.route("**/api/rwa-pairs**", route => route.fulfill({ json: { pairs: [] } }));
     await page.route("**/api/protocol-pools**", route => route.fulfill({ json: { pairs: [], pools: [] } }));
-    await page.goto("/app", { waitUntil: "domcontentloaded" });
+    // Harvest account management has its own recovery page (LJ 11/14), off the Portfolio main screen.
+    await page.goto("/app/portfolio/recovery", { waitUntil: "domcontentloaded" });
     await new ConnectModal(page, wallet).connect();
-    // A wallet with no open position keeps harvest account management in one collapsed section under All positions.
-    await page.getByTestId("harvest-accounts-standalone").locator("summary").first().click();
+    await expect(page.getByTestId("harvest-recovery-page")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Clean up leftover fees" })).toBeVisible();
     await page.getByRole("button", { name: "Find leftover fees" }).click();
     await expect(page.getByText(/Wallet scan complete/)).toBeVisible();

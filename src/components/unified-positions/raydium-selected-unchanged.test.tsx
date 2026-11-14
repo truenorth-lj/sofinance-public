@@ -16,7 +16,7 @@ const MINT_A = testKeypair(75).publicKey.toBase58();
 const MINT_B = testKeypair(76).publicKey.toBase58();
 const state = vi.hoisted(() => ({ dexCalls: 0, dex: "404" as "404" | "empty" | "hang" | "500" }));
 
-vi.mock("next/navigation", () => ({ usePathname: () => "/app" }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/app/portfolio" }));
 vi.mock("../use-sol-usdc-price", () => ({ useSolUsdcPrices: () => ({ rate: null, usdcUsd: null }) }));
 vi.mock("../use-token-metadata", () => ({ useTokenMetadata: () => ({}) }));
 vi.mock("../transaction-status-dialog", () => ({ TransactionStatusDialog: () => null }));

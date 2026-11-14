@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { PositionFigures } from "@/lib/portfolio/figures";
 import type { ChainId, PositionSource, PositionSourceId, ToolId, UnifiedPosition } from "@/lib/unified-positions/model";
 
 /**
@@ -17,4 +18,6 @@ export type ExternalPositions = {
   header(position: UnifiedPosition): ReactNode;
   details(position: UnifiedPosition): ReactNode;
   tool(position: UnifiedPosition, tool: ToolId): ReactNode;
+  /** Portfolio row numbers this chain can read without a Performance report (dashes for the rest), or null while unread. */
+  figures?(position: UnifiedPosition): PositionFigures | null;
 };

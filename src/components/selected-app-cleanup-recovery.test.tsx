@@ -4,6 +4,7 @@ import { act, createElement, useLayoutEffect, type FunctionComponent } from "rea
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SelectedApp } from "./selected-app";
+import { RecoveryPage } from "./portfolio/recovery-page";
 import { WalletConnectionContext, type WalletConnection } from "./wallet-connection";
 import type { CompoundController } from "./use-compound-controller";
 import { compoundHistoryFixture } from "@/lib/test-support/compound-history-fixture";
@@ -68,13 +69,20 @@ afterEach(async () => {
   await act(async () => root.unmount()); container.remove(); localStorage.clear();
   vi.useRealTimers(); vi.unstubAllGlobals();
 });
+const connection = (): WalletConnection => ({ address: fixture.wallet, connected: true, connect: vi.fn(), disconnect: vi.fn(),
+  isMobile: false, walletsCount: 1, connectionError: "", signTransaction: sign, signAndSendTransaction: send });
 async function mount() {
-  const connection: WalletConnection = { address: fixture.wallet, connected: true, connect: vi.fn(), disconnect: vi.fn(),
-    isMobile: false, walletsCount: 1, connectionError: "", signTransaction: sign, signAndSendTransaction: send };
-  await act(async () => root.render(createElement(WalletConnectionContext.Provider, { value: connection },
+  await act(async () => root.render(createElement(WalletConnectionContext.Provider, { value: connection() },
     createElement(SelectedApp as FunctionComponent<{ initialView: "compound" }>, { initialView: "compound" }))));
   await settle();
 }
+async function mountRecovery() {
+  await act(async () => root.render(createElement(WalletConnectionContext.Provider, { value: connection() },
+    createElement(RecoveryPage, {}))));
+  await settle();
+}
+const harvestOnScreen = () => !!container.querySelector('[data-testid="harvest-accounts-standalone"]')
+  || [...container.querySelectorAll("summary, button")].some((node) => /Harvest account management|Clean up all balances|Retrieve this balance/.test(node.textContent ?? ""));
 
 describe("All positions wallet-wide leftover recovery", () => {
   it.each([
@@ -92,15 +100,40 @@ describe("All positions wallet-wide leftover recovery", () => {
     expect(probe.current?.canCompound).toBe(false);
     expect(probe.current?.canCleanup).toBe(true);
     expect(probe.current?.ready).toBe(true);
-    // With a Raydium row the Compound fees panel carries the harvest tools; with none they stay reachable on their own.
-    if (hasPosition) expect(button("One-click compound").disabled).toBe(true);
-    else expect(container.querySelector('[data-testid="harvest-accounts-standalone"]')).not.toBeNull();
+    // Harvest account management is off the Portfolio main screen (LJ 11/14); a Raydium position's details link to it.
+    expect(harvestOnScreen()).toBe(false);
+    if (hasPosition) {
+      expect(button("One-click compound").disabled).toBe(true);
+      expect(container.querySelector<HTMLAnchorElement>('[data-testid="harvest-recovery-link"]')?.getAttribute("href"))
+        .toBe(`/app/portfolio/recovery?position=${encodeURIComponent(`raydium-clmm:${otherMint}`)}`);
+    } else expect(container.querySelector('[data-testid="harvest-recovery-link"]')).toBeNull();
+    expect(calls.filter(c => c.url.endsWith("-prepare"))).toEqual([]);
+    // The same wallet-wide recovery runs on /app/portfolio/recovery.
+    await act(async () => root.unmount()); root = createRoot(container); calls = [];
+    await mountRecovery();
+    expect(probe.current?.positionMint).toBeUndefined();
+    expect(probe.current?.receipts).toHaveLength(1);
+    expect(probe.current?.canCleanup).toBe(true);
+    expect(container.querySelector('[data-testid="harvest-recovery-page"]')).not.toBeNull();
     expect(button("Clean up all balances").disabled).toBe(false);
     expect(button("Retrieve this balance").disabled).toBe(false);
     await act(async () => button(label).click()); await settle();
     expect(calls.filter(c => c.url.endsWith("-prepare"))).toEqual([{ url: endpoint,
       body: { wallet: fixture.wallet, compoundAccounts: fixture.attempt.summary.compoundAccounts } }]);
     expect(loadCompoundReceipts(localStorage, fixture.wallet).receipts).toHaveLength(1);
+    expect(sign).not.toHaveBeenCalled(); expect(send).not.toHaveBeenCalled();
+  });
+
+  it("Compound all on the Portfolio screen is greyed out and sends nothing (both the desktop and the phone button)", async () => {
+    positions = [fixture.state.positionMint, otherMint]; eligible = true;
+    await mount();
+    const buttons = [...container.querySelectorAll<HTMLButtonElement>('[data-testid="compound-all"]')];
+    expect(buttons).toHaveLength(2);
+    const before = calls.length;
+    for (const target of buttons) { await act(async () => target.click()); await settle(); }
+    expect(buttons.every((target) => target.getAttribute("aria-disabled") === "true")).toBe(true);
+    expect(calls.slice(before)).toEqual([]);
+    expect(calls.filter((c) => c.url.endsWith("-prepare"))).toEqual([]);
     expect(sign).not.toHaveBeenCalled(); expect(send).not.toHaveBeenCalled();
   });
 

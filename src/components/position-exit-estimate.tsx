@@ -243,17 +243,21 @@ export function PositionExitEstimate({ positionId, nftAccount, nftAccountPending
                 {new Decimal(exit.recoveryUSDCAtomic).div(1e6).toFixed(6)} USDC +{" "}
                 {new Decimal(exit.recoverySOLLamports).div(1e9).toFixed(9)} SOL
               </p>
-              <p className="mt-3 text-xs leading-relaxed text-smoke">
-                Network and priority fee {exit.networkAndPriorityLamports ?? "unknown"} lamports, already reflected
-                in the SOL change and not deducted again. Swap fees and price impact are already reflected in the
-                simulated USDC received.
-              </p>
             </>
           )}
-          <p className="mt-3 border-t border-white/10 pt-3 text-xs leading-relaxed text-smoke">
-            Read {exit.observedAt ?? "at an unknown time"} · valid until {exit.localExpiresAt ?? "unknown"} (local
-            conservative refresh window) · {exit.bytes ?? "unknown"} bytes
-          </p>
+          {/* Lamports and transaction-size readouts fold away (LJ 11/14 phase-1 nit); the text itself is unchanged. */}
+          <details data-testid="exit-estimate-technical" className="mt-3 border-t border-white/10 pt-3 text-xs leading-relaxed text-smoke">
+            <summary className="cursor-pointer font-semibold">Technical details</summary>
+            {exit.recoveryUSDCAtomic && exit.recoverySOLLamports && <p className="mt-2">
+              Network and priority fee {exit.networkAndPriorityLamports ?? "unknown"} lamports, already reflected
+              in the SOL change and not deducted again. Swap fees and price impact are already reflected in the
+              simulated USDC received.
+            </p>}
+            <p className="mt-2">
+              Read {exit.observedAt ?? "at an unknown time"} · valid until {exit.localExpiresAt ?? "unknown"} (local
+              conservative refresh window) · {exit.bytes ?? "unknown"} bytes
+            </p>
+          </details>
           <p className="mt-2 text-xs leading-relaxed text-smoke">
             SOL keeps its price exposure. This is a split-asset recovery, not all-USDC cash. A read-only simulation
             cannot be signed or sent.

@@ -10,11 +10,20 @@ import { persistCompoundAttempt } from "@sofinance/engine/compound-attempt";
 import { compoundHistoryFixture } from "@/lib/test-support/compound-history-fixture";
 import { testKeypair } from "@/lib/test-support/send-fixtures";
 import { USDC_MINT } from "@sofinance/engine/ids";
+import { clearReportCache } from "./portfolio/report-cache";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/app" }));
 vi.mock("./use-sol-usdc-price", () => ({ useSolUsdcPrices: () => ({ rate: null, usdcUsd: null }) }));
 vi.mock("./use-token-metadata", () => ({ useTokenMetadata: () => ({}) }));
 vi.mock("./transaction-status-dialog", () => ({ TransactionStatusDialog: () => null }));
+// The real Compound controller; the test keeps its latest `onConfirmed` to play a confirmed compound.
+const compoundProbe = vi.hoisted(() => ({ onConfirmed: undefined as (() => void) | undefined }));
+vi.mock("./use-compound-controller", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./use-compound-controller")>();
+  return { ...actual, useCompoundController: (args: Parameters<typeof actual.useCompoundController>[0]) => {
+    compoundProbe.onConfirmed = args.onConfirmed; return actual.useCompoundController(args);
+  } };
+});
 vi.mock("./wallet-connection", async (importOriginal) => ({ ...await importOriginal<typeof import("./wallet-connection")>(),
   useWalletConnection: () => ({ address: wallet, connected: true, connect: vi.fn(), disconnect: vi.fn(), isMobile: false, walletsCount: 1,
     connectionError: "", signTransaction: vi.fn() }) }));
@@ -23,6 +32,7 @@ let wallet: string;
 let container: HTMLDivElement, root: Root;
 let fixture: ReturnType<typeof compoundHistoryFixture>;
 let paths: string[];
+let reportMints: string[];
 const latencyMs = 300;
 const otherMint = testKeypair(81).publicKey.toBase58();
 const advance = async (ms: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
@@ -50,6 +60,7 @@ function serve(confirmation: Record<string, unknown>) {
   vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input), "http://x");
     paths.push(url.pathname);
+    if (url.pathname === "/api/position-performance") reportMints.push(url.searchParams.get("positionMint") ?? (typeof init?.body === "string" ? (JSON.parse(init.body) as { positionMint?: string }).positionMint ?? "" : ""));
     await new Promise((resolve) => setTimeout(resolve, latencyMs));
     const body = typeof init?.body === "string" ? JSON.parse(init.body) as { positionMint?: string } : {};
     const positionMint = url.searchParams.get("positionMint") || body.positionMint || fixture.state.positionMint;
@@ -71,7 +82,7 @@ async function open(initialMint = "") {
 
 beforeEach(() => {
   vi.useFakeTimers(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); window.localStorage.clear();
-  fixture = compoundHistoryFixture(); wallet = fixture.wallet; paths = [];
+  fixture = compoundHistoryFixture(); wallet = fixture.wallet; paths = []; reportMints = []; clearReportCache();
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); });
@@ -81,8 +92,31 @@ describe("opening the Compound fees tab reads each position source once", () => 
     serve({ status: "pending", chainStatus: "pending", state: null });
     await open(fixture.state.positionMint);
     // The registry DEX (Meteora, dex route on by default) is read exactly once per wallet; the Raydium reads are unchanged.
-    expect([...paths].sort()).toEqual(["/api/compound-state", "/api/dex/meteora-dlmm/positions", "/api/selected-state", "/api/wallet"]);
-    expect(paths.filter((path) => !path.startsWith("/api/dex/"))).toEqual(["/api/wallet", "/api/selected-state", "/api/compound-state"]);
+    // Portfolio's summary reads one Performance report per position (two Raydium positions here), once each.
+    expect([...paths].sort()).toEqual(["/api/compound-state", "/api/dex/meteora-dlmm/positions", "/api/position-performance", "/api/position-performance", "/api/selected-state", "/api/wallet"]);
+    expect(paths.filter((path) => !path.startsWith("/api/dex/") && path !== "/api/position-performance")).toEqual(["/api/wallet", "/api/selected-state", "/api/compound-state"]);
+    expect(new Set(reportMints)).toEqual(new Set([otherMint, fixture.state.positionMint]));
+  });
+
+  it("Refresh reads every position's Portfolio numbers again; a confirmed compound reads that position's again", async () => {
+    serve({ status: "pending", chainStatus: "pending", state: null });
+    await open(fixture.state.positionMint);
+    expect(new Set(reportMints)).toEqual(new Set([otherMint, fixture.state.positionMint]));
+    const loaded = reportMints.length;
+    expect(loaded).toBe(2);
+    // Nothing reads again on its own inside the cache minute…
+    for (let step = 0; step < 20; step++) await advance(100);
+    expect(reportMints).toHaveLength(loaded);
+    // …but Refresh forgets the cached reports and reads both positions again.
+    const refresh = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Refresh")!;
+    await act(async () => refresh.click());
+    for (let step = 0; step < 20; step++) await advance(100);
+    expect(reportMints.slice(loaded).sort()).toEqual([otherMint, fixture.state.positionMint].sort());
+    // A confirmed compound on the selected position reads only that position's report again.
+    const refreshed = reportMints.length;
+    await act(async () => compoundProbe.onConfirmed?.());
+    for (let step = 0; step < 20; step++) await advance(100);
+    expect(reportMints.slice(refreshed)).toEqual([fixture.state.positionMint]);
   });
 
   it("a saved compound that already finalized is checked once, and its fresh position read replaces a second compound read", async () => {

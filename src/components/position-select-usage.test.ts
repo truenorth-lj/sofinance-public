@@ -12,7 +12,7 @@ describe("shared PositionSelect usage", () => {
     expect(app).not.toContain('id="compound-position"');
     expect(app).toContain("all-positions-heading");
     expect(stocks).toContain("<StocksOverview embedded");
-    expect(app).toContain("position-fallback-select");
+    expect(readFileSync(resolve("src/components/portfolio/portfolio-rows.tsx"), "utf8")).toContain("position-fallback-select");
     expect(perf).toContain("<PositionSelect");
     expect(perf).not.toContain("Look up another position by NFT mint");
     expect(app).not.toContain("ticks {item.tickLower}");

@@ -16,7 +16,7 @@ import { installLayoutMocks } from "../../support/layout-mocks";
 const widths = (process.env.LAYOUT_WIDTHS ?? "360").split(",").map(Number);
 const shots = process.env.LAYOUT_SHOTS;
 // Only routes that exist in production: /app/rhc is behind a server flag (404 / redirect when off). The legacy /app/meteora open page was retired.
-const PAGES = ["/", "/app", "/app/rwa-pairs", "/app/plan", "/app/ai", "/app/position-performance",
+const PAGES = ["/", "/app/portfolio", "/app/portfolio/recovery", "/app/rwa-pairs", "/app/plan", "/app/ai", "/app/position-performance",
   "/docs", "/docs/fees", "/docs/fee-apr", "/docs/risks", "/docs/security", "/docs/withdraw", "/blog", "/blog/dex-evolution",
   "/faq", "/terms"];
 
@@ -62,7 +62,7 @@ for (const width of widths) {
         await check(path === "/" ? "home" : path.slice(1).replaceAll("/", "-"));
       }
       if (phone) {
-        await page.goto("/app", { waitUntil: "domcontentloaded" });
+        await page.goto("/app/portfolio", { waitUntil: "domcontentloaded" });
         await page.getByTestId("nav-menu").click();
         await page.getByRole("navigation", { name: "App" }).getByRole("link").first().waitFor();
         await check("app-menu-open", { fullPage: false });
@@ -76,7 +76,7 @@ for (const width of widths) {
       test.setTimeout(180_000);
       const { context, page, wallet, phone } = await setup(browser, baseURL, width);
       const check = checker(page, width, phone);
-      await page.goto("/app", { waitUntil: "domcontentloaded" });
+      await page.goto("/app/portfolio", { waitUntil: "domcontentloaded" });
       await new ConnectModal(page, wallet).connect();
       // All positions lists the wallet's positions on every tool; the first one opens with the tool tabs.
       await page.getByRole("region", { name: "All positions", exact: true }).getByTestId("position-fallback-select").first().waitFor();
@@ -148,7 +148,7 @@ for (const width of widths) {
       await open.first().click();                                   // not connected yet: the terms gate comes first
       await page.getByRole("dialog", { name: "Before you connect", exact: true }).waitFor();
       await check("terms-gate", { fullPage: false });
-      await page.goto("/app", { waitUntil: "domcontentloaded" });
+      await page.goto("/app/portfolio", { waitUntil: "domcontentloaded" });
       const connect = new ConnectModal(page, wallet);
       await connect.connect();
       await connect.navAddress.waitFor();

@@ -58,7 +58,8 @@ async function render(selected: Record<string, unknown> = {}) {
 const rows = () => [...container.querySelectorAll<HTMLButtonElement>('[data-testid="position-fallback-select"]')];
 const selectedKey = () => rows().find((row) => row.getAttribute("aria-pressed") === "true")?.getAttribute("data-position-key");
 const groups = () => [...container.querySelectorAll('[data-testid="position-chain-group"]')].map((group) => [group.getAttribute("aria-label"),
-  group.querySelector("button") ? [...group.querySelectorAll("button")].map((row) => row.firstChild?.textContent) : [...group.querySelectorAll("p")].map((row) => row.textContent)]);
+  [...group.querySelectorAll('[data-testid="position-fallback-select"]')].map((row) => [row.querySelector('[data-testid="position-row-title"]')?.textContent,
+    row.querySelector('[data-testid="position-row-subtitle"]')?.textContent, row.querySelector("[data-range-status]")?.textContent ?? ""].join(" · "))]);
 const tab = (label: string) => [...container.querySelectorAll<HTMLButtonElement>("nav[aria-label='Position operations'] button")].find((b) => b.textContent === label)!;
 const click = async (el: HTMLElement) => { await act(async () => { el.click(); }); await settle(); };
 async function choose(value: string) {
@@ -82,9 +83,11 @@ describe("/app unified All positions", () => {
   it("EVM wallet only: no empty Solana group, Robinhood Chain group with Closed last, first position selected on its Withdraw", async () => {
     await render();
     expect(groups()).toEqual([["Robinhood Chain", [
-      expect.stringMatching(/^#9 · .+ · range 0\.98778–1\.0077 SPCXon per SPCX$/),
-      "#7 · ticks -123 to 77",
-      expect.stringMatching(/^#8 · .+ · Closed$/)]]]);
+      // Portfolio rows: pair, position number, the grey range badge (the list has no RHC range read; Closed has none).
+      "SPCX / SPCXon · #9 · Range unknown",
+      "Position #7 ·  · Range unknown",
+      "SPCX / SPCXon · #8 · "]]]);
+    expect(container.querySelector('[data-position-key="uniswap-v4-rhc:8"]')!.textContent).toContain("Closed");
     expect(selectedKey()).toBe("uniswap-v4-rhc:9");
     expect(tab("Withdraw").getAttribute("aria-pressed")).toBe("true");
     expect(container.querySelector("[data-testid=rhc-withdraw]")?.getAttribute("data-position")).toBe("9");
