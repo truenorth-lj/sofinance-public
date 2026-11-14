@@ -2,11 +2,11 @@
 // Durable record of a landed step 1/2 (SOL -> pool token swap) whose step 2/2
 // open has not confirmed yet. It lives in localStorage keyed by wallet + pool so
 // it survives form edits, closing the modal and a page reload; without it the
-// user would hold the swapped tokens but could only open them as a plain token
-// deposit (charged the 10 bps token fee again).
+// user would hold the swapped tokens but lose the locked delivered amount and
+// the continue-open (2/2) flow.
 import type { SolSwapReceipt } from "./sol-swap-step-client";
 
-/** Mirrors the server's SOL_SWAP_FEE_CREDIT_MS: a step-2 open may skip the already paid fee for 30 minutes. */
+/** How long a landed step-1 receipt stays available so the user can continue to step 2/2. */
 export const SOL_SWAP_RECEIPT_TTL_MS = 30 * 60_000;
 
 export type PendingSolSwapReceipt = SolSwapReceipt & {

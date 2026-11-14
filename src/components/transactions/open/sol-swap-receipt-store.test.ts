@@ -27,7 +27,7 @@ describe("sol-swap receipt store", () => {
     expect(window.localStorage.getItem(solSwapReceiptKey("WalletB", "PoolA"))).toBeNull();
     expect(loadSolSwapReceipt(window.localStorage, "WalletA", "PoolA", now)).not.toBeNull();
   });
-  it("expires after the 30-minute fee credit and removes the record", () => {
+  it("expires after 30 minutes and removes the record", () => {
     saveSolSwapReceipt(window.localStorage, receipt());
     expect(isSolSwapReceiptExpired(receipt(), now + SOL_SWAP_RECEIPT_TTL_MS - 1)).toBe(false);
     expect(loadSolSwapReceipt(window.localStorage, "WalletA", "PoolA", now + SOL_SWAP_RECEIPT_TTL_MS - 1)).not.toBeNull();
@@ -51,8 +51,7 @@ describe("sol-swap receipt store", () => {
     expect(loadSolSwapReceipt(window.localStorage, "WalletA", "PoolA", now)).toBeNull();
     expect(loadSolSwapReceipt(window.localStorage, "WalletB", "PoolA", now)).not.toBeNull();
   });
-  it("matches the server-side fee credit window", async () => {
-    const server = await import("@/server/transactions/sol-swap-step");
-    expect(SOL_SWAP_RECEIPT_TTL_MS).toBe(server.SOL_SWAP_FEE_CREDIT_MS);
+  it("is a 30-minute resume window", () => {
+    expect(SOL_SWAP_RECEIPT_TTL_MS).toBe(30 * 60_000);
   });
 });
