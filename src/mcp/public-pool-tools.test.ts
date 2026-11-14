@@ -16,7 +16,8 @@ import { dispatchTool, isPublicTool, TOOL_DISPATCH } from "./dispatch";
 import { listToolDefinitions, PUBLIC_TOOL_NAMES, type ToolName } from "./tool-definitions";
 import { quoteOpenPositionSchema, prepareOpenPositionSchema } from "./schemas";
 import { resetPoolSnapshotCache, ttlMemo } from "./tools/pool-snapshot";
-import { POOL_NOT_LISTED_MESSAGE } from "./tools/pool-apr";
+import { FEES_NOTE, POOL_NOT_LISTED_MESSAGE, WINDOW_LABEL } from "./tools/pool-apr";
+import { APR_24H_WARNING } from "./tools/rwa";
 import { VALID_ARGS } from "./test-support/dispatch-fixtures";
 
 const SNAPSHOT = "2026-11-14T12:16:35.000Z";
@@ -82,6 +83,9 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
+/** Copy rule: "guaranteed" is banned except the one approved risk line, exactly "Fees not guaranteed" (LJ via PM). */
+const withoutAllowed = (text: string) => text.replace(/\bFees not guaranteed\b/g, "");
+
 describe("list_rwa_pairs over the remote route, no token", () => {
   it("serves the saved snapshot incl. Meteora, with protocol and 7-day APR, ranked by 7-day APR", async () => {
     const { response, value } = await rpc("list_rwa_pairs", {});
@@ -100,7 +104,7 @@ describe("list_rwa_pairs over the remote route, no token", () => {
     const newPool = value.pairs[3];
     expect(newPool.apr7d).toMatchObject({ status: "new", daysOfData: 3 });
     expect(newPool.apr7d).not.toHaveProperty("highestRangeAprPct");
-    expect(JSON.stringify(value)).not.toMatch(/\byield|\bearn|guarantee|backtest/i);
+    expect(withoutAllowed(JSON.stringify(value))).not.toMatch(/\byield|\bearn|guarantee|backtest/i);
   });
 
   it("symbol filter answers 'which TSLA pool' with both Raydium and Meteora, reading APR only for matches", async () => {
@@ -164,6 +168,47 @@ describe("get_pool_range_apr over the remote route, no token", () => {
   it("validates poolId", async () => {
     const { json } = await rpc("get_pool_range_apr", { poolId: "not a pool" });
     expect(json.result?.isError).toBe(true);
+  });
+});
+
+describe("fee disclaimer and the 24h figure", () => {
+  it("both public tools carry the window and the full fee disclaimer, in the approved wording only", async () => {
+    expect(FEES_NOTE).toContain("Fees not guaranteed.");
+    expect(withoutAllowed(FEES_NOTE)).not.toMatch(/guarantee/i);
+    const list = (await rpc("list_rwa_pairs", {})).value;
+    expect(list).toMatchObject({ note: FEES_NOTE, aprWindow: WINDOW_LABEL });
+    const one = (await rpc("get_pool_range_apr", { poolId: POOLS.meteoraTsla })).value;
+    expect(one.note).toBe(FEES_NOTE);
+    expect(one.window.label).toBe(WINDOW_LABEL);
+    const definitions = listToolDefinitions("http");
+    for (const name of PUBLIC_TOOL_NAMES) {
+      const description = definitions.find((tool) => tool.name === name)!.description ?? "";
+      expect(description).toContain("Fees not guaranteed.");
+      expect(withoutAllowed(description)).not.toMatch(/guarantee|\byield|\bearn\b|backtest/i);
+    }
+  });
+
+  it("labels estimatedFeeAprPct as 24h and warns only where there is no 7-day estimate, numbers unchanged", async () => {
+    const { value } = await rpc("list_rwa_pairs", {});
+    for (const row of value.pairs) {
+      expect(row.estimatedFeeAprWindow).toBe("24h");
+      const input = SNAPSHOT_PAIRS.pairs.find((candidate) => candidate.poolAddress === row.poolAddress)!;
+      expect(row.estimatedFeeAprPct).toBe(input.estimatedFeeAprPct);
+      if (row.apr7d.status === "ready") expect(row).not.toHaveProperty("warning");
+      else expect(row.warning).toBe(APR_24H_WARNING);
+    }
+    expect(value.pairs.find((row: { poolAddress: string }) => row.poolAddress === POOLS.newPool).warning).toBe(APR_24H_WARNING);
+    expect(APR_24H_WARNING).toMatch(/24-hour figure/);
+    const description = listToolDefinitions("http").find((tool) => tool.name === "list_rwa_pairs")!.description ?? "";
+    expect(description).toMatch(/estimatedFeeAprPct .*24-hour figure.*not a 7-day estimate/);
+  });
+
+  it("without the hosted store every pool gets the 24h warning", async () => {
+    backend.enabled.value = false;
+    backend.live.mockResolvedValue(undefined);
+    const { value } = await rpc("list_rwa_pairs", {});
+    expect(value.pairs.length).toBeGreaterThan(0);
+    for (const row of value.pairs) expect(row.warning).toBe(APR_24H_WARNING);
   });
 });
 

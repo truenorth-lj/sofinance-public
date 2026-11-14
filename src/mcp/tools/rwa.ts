@@ -16,6 +16,13 @@ const NO_STORE_APR: PoolApr7dSummary = {
   reason: "7-day estimates come from the hosted pools snapshot. Call get_pool_range_apr for one pool.",
 };
 
+export const APR_24H_WARNING =
+  "No 7-day estimate for this pool. estimatedFeeAprPct is a 24-hour figure (last 24h fees / current TVL, annualized), not a 7-day estimate; on a small or new pool it can swing far from what a position would collect.";
+
+function apr7dWarning(summary: PoolApr7dSummary | undefined): { warning?: string } {
+  return summary?.status === "ready" ? {} : { warning: APR_24H_WARNING };
+}
+
 async function apr7dFor(pairs: RwaPairRow[]): Promise<Map<string, PoolApr7dSummary>> {
   const out = new Map<string, PoolApr7dSummary>();
   if (!poolSnapshotEnabled()) {
@@ -95,6 +102,8 @@ export async function listRwaPairs(input: ListRwaPairsInput) {
       // Pool-level 24h figure kept for older clients; apr7d is the estimate the site shows.
       estimatedFeeAprPct: pair.estimatedFeeAprPct,
       estimatedFeeAprLabel: pair.estimatedFeeAprLabel,
+      estimatedFeeAprWindow: "24h" as const,
+      ...apr7dWarning(apr.get(pair.poolAddress)),
       token2022A: pair.token2022A,
       token2022B: pair.token2022B,
       freezeRisk: pair.freezeRisk,

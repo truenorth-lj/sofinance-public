@@ -13,8 +13,9 @@ import type { GetPoolRangeAprInput } from "../schemas";
 import { readListedPairs, readPoolApr } from "./pool-snapshot";
 
 export const WINDOW_LABEL = "7-day estimate: the last 7 full UTC days of pool volume against the pool's current liquidity";
+/** Same approved risk line the site's APR help uses ("Fees not guaranteed" is the one allowed form). */
 export const FEES_NOTE =
-  "Estimates from past trading, not a promise of future fees. Fees accrue only while the pool price is inside your range.";
+  "Estimates from past trading, not a promise of future fees. Fees not guaranteed. Fees accrue only while the pool price is inside your range.";
 
 /** The four candidate ranges the pools page prices, narrow to wide (Micro is ±2 price steps of the pool). */
 export const RANGE_PRESETS = OPEN_RANGE_UI_PRESETS.map(({ id, label, band }) => ({ id, label, band }));
