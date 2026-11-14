@@ -57,28 +57,44 @@ const TOOL_DEFINITIONS = {
     },
     list_rwa_pairs: {
         name: "list_rwa_pairs",
-        description: "Discover Raydium CLMM pools where BOTH sides are the same underlying RWA asset (wrapped vs unwrapped / xStock style), e.g. SPCXx/SPCX, MSTRx/MSTR, NVDAx/NVDA. Excludes RWA/USDC and unrelated meme collisions. Returns pool address, mint symbols, fee tier, TVL, 24h volume/fees, Raydium fee APR, estimated fee APR from (24h fees/TVL)*365*100 (labeled), Token-2022 and freeze-risk flags, openPositionUrl deep link (/app/rwa-pairs?pool=<id>&open=1), and recommendedRanges (tight ±0.05%, standard ±0.3% default, wide ±1%, B per 1 A). Chain: list_rwa_pairs → quote_open_position → prepare_open_position → sign via signUrl → list_positions. Read-only; no wallet required. Pairing rule: FOOx/FOO (or FOO-x / xFOO) symbol wrap + both mints Jupiter-tagged (stocks|rwa; prefer xstocks/backpack) or on the Backed xStocks Solana whitelist.",
+        title: "List same-stock pools",
+        description: "List the same-stock Solana pools on the SoFinance pools page (https://sofinancelab.xyz/app/rwa-pairs): Raydium CLMM and Meteora DLMM pools where both sides are the same stock from two issuers (e.g. TSLA/TSLAx, SPCX/SPCXx), plus the USDC/USDT pool. Served from the site's saved pools snapshot, the same list the page shows. Each pool has protocol, symbols, fee tier, TVL, 24h volume, apr7d (the highest 7-day range fee APR estimate and which of the 4 range presets it comes from: Micro, Tight, Standard, Wide), and an openPositionUrl. Filter with symbol (e.g. \"TSLA\"). Default order: 7-day APR, high to low. Estimates from past trading, not a promise of future fees. For the 4 presets of one pool call get_pool_range_apr. No wallet or token needed. Opening a position through MCP (quote_open_position / prepare_open_position) is Raydium CLMM only and needs a wallet token; Meteora pools open on the website.",
         inputSchema: {
             type: "object",
             properties: {
+                symbol: {
+                    type: "string",
+                    description: "Optional ticker filter, e.g. TSLA or TSLAx (case-insensitive; matches either token or the base ticker)",
+                },
                 minTvl: {
                     type: "number",
                     description: "Minimum pool TVL in USD (default 0)",
                     default: 0,
                 },
-                maxPages: {
-                    type: "number",
-                    description: "Max Raydium list pages to scan, page size 1000 (1-30, default 10)",
-                    default: 10,
-                },
                 sortBy: {
                     type: "string",
-                    enum: ["estimatedFeeApr", "tvl", "volume24h"],
-                    description: "Sort key. estimatedFeeApr uses (24h fees/TVL)*365*100 when available; also returns raydiumFeeApr24h from the API.",
-                    default: "estimatedFeeApr",
+                    enum: ["apr7d", "estimatedFeeApr", "tvl", "volume24h"],
+                    description: "Sort key (default apr7d, the 7-day estimate the site ranks by). estimatedFeeApr is the older pool-level 24h figure.",
+                    default: "apr7d",
+                },
+                maxPages: {
+                    type: "number",
+                    description: "Deprecated, ignored: the list comes from the saved snapshot.",
                 },
             },
             required: [],
+        },
+    },
+    get_pool_range_apr: {
+        name: "get_pool_range_apr",
+        title: "7-day range APR for a pool",
+        description: "Estimated 7-day fee APR of one listed pool (poolAddress from list_rwa_pairs, Raydium or Meteora) for each of the 4 range presets the site prices: Micro (±2 price steps), Tight (±0.05%), Standard (±0.3%), Wide (±1%). Per preset: price bounds (B per 1 A), APR %, share of the last 7 days' volume that traded inside the range, and fees per day at the site's $1,000 card basis. Also the highest-APR preset, the 7-day window, data freshness and confidence. Same saved snapshot as the pool cards on https://sofinancelab.xyz/app/rwa-pairs. New pools (too few days of data) and missing snapshots return a status with a reason and no APR. Estimates from past trading, not a promise of future fees. No wallet or token needed.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                poolId: { type: "string", description: "Pool address (poolAddress from list_rwa_pairs)" },
+            },
+            required: ["poolId"],
         },
     },
     list_positions: {
@@ -349,7 +365,7 @@ const TOOL_DEFINITIONS = {
             properties: {
                 wallet: { type: "string", description: "Wallet public key" },
                 poolId: { type: "string", description: "Raydium CLMM pool id (from list_rwa_pairs)" },
-                inputMint: { type: "string", description: "SOL, USDC, or a mint in the pool" },
+                inputMint: { type: "string", description: "\"SOL\" or \"USDC\" (resolved to So11111111111111111111111111111111111111112 / EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v), or a mint address in the pool" },
                 inputKind: { type: "string", enum: ["native", "token"], description: "'native' for SOL, 'token' otherwise" },
                 amount: { type: "string", description: "Amount in token units (e.g. '1.5')" },
                 rangePreset: {
@@ -382,7 +398,7 @@ const TOOL_DEFINITIONS = {
             properties: {
                 wallet: { type: "string", description: "Wallet public key" },
                 poolId: { type: "string", description: "Raydium CLMM pool id" },
-                inputMint: { type: "string", description: "Input asset mint" },
+                inputMint: { type: "string", description: "Input asset mint, or \"SOL\" / \"USDC\"" },
                 inputKind: { type: "string", enum: ["native", "token"] },
                 amount: { type: "string", description: "Amount in token units" },
                 rangePreset: {
@@ -422,8 +438,38 @@ const TOOL_DEFINITIONS = {
     },
 } satisfies Record<string, Tool>;
 export type ToolName = keyof typeof TOOL_DEFINITIONS;
+type ToolAnnotations = NonNullable<Tool["annotations"]>;
+/** Reads saved SoFinance pool snapshots only: no wallet, no chain call on the hosted server. */
+const SNAPSHOT_READ: ToolAnnotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+/** Reads chain state / quotes routes; changes nothing. */
+const CHAIN_READ: ToolAnnotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true };
+/** Builds and simulates an unsigned transaction and a sign link; nothing moves until the wallet signs. */
+const PREPARE: ToolAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true };
+/** Broadcasts a wallet-signed transaction: funds move and it cannot be undone. */
+const SUBMIT: ToolAnnotations = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true };
+/** MCP tool annotations (hints for clients and directories; never a security boundary). */
+const TOOL_ANNOTATIONS = {
+    list_rwa_pairs: SNAPSHOT_READ,
+    get_pool_range_apr: SNAPSHOT_READ,
+    list_positions: CHAIN_READ,
+    get_position_range_status: CHAIN_READ,
+    get_position_performance: CHAIN_READ,
+    quote_add_liquidity: CHAIN_READ,
+    quote_compound: CHAIN_READ,
+    quote_open_position: CHAIN_READ,
+    prepare_transaction: PREPARE,
+    prepare_compound_transaction: PREPARE,
+    prepare_open_position: PREPARE,
+    prepare_withdraw: PREPARE,
+    submit_signed_transaction: SUBMIT,
+    submit_compound_transaction: SUBMIT,
+    submit_open_position: SUBMIT,
+    submit_withdraw: SUBMIT,
+} as const satisfies Record<ToolName, ToolAnnotations>;
+/** Tools the remote server answers without a bearer token (read-only snapshot tools). Mirrors dispatch `access`. */
+export const PUBLIC_TOOL_NAMES = ["list_rwa_pairs", "get_pool_range_apr"] as const satisfies readonly ToolName[];
 export type McpSurface = "http" | "stdio";
-const HTTP_ORDER = ["prepare_withdraw", "submit_withdraw", "get_position_performance", "get_position_range_status", "list_rwa_pairs", "list_positions", "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction", "submit_signed_transaction", "submit_compound_transaction", "quote_open_position", "prepare_open_position", "submit_open_position"] as const satisfies readonly ToolName[];
+const HTTP_ORDER = ["prepare_withdraw", "submit_withdraw", "get_position_performance", "get_position_range_status", "list_rwa_pairs", "get_pool_range_apr", "list_positions", "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction", "submit_signed_transaction", "submit_compound_transaction", "quote_open_position", "prepare_open_position", "submit_open_position"] as const satisfies readonly ToolName[];
 const STDIO_ORDER: readonly ToolName[] = [
     ...HTTP_ORDER.filter(name => name !== "submit_compound_transaction"),
     "submit_compound_transaction",
@@ -445,6 +491,8 @@ const STDIO_OPEN_DEFINITION = {
 /** Return detached metadata so callers cannot mutate another transport's definitions. */
 export function listToolDefinitions(surface: McpSurface): Tool[] {
     const order = surface === "http" ? HTTP_ORDER : STDIO_ORDER;
-    return order.map(name => structuredClone(surface === "stdio" && name === "quote_open_position"
-        ? STDIO_OPEN_DEFINITION : TOOL_DEFINITIONS[name]));
+    return order.map(name => structuredClone({
+        ...(surface === "stdio" && name === "quote_open_position" ? STDIO_OPEN_DEFINITION : TOOL_DEFINITIONS[name]),
+        annotations: TOOL_ANNOTATIONS[name],
+    }));
 }

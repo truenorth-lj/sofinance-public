@@ -11,7 +11,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/mcp/tools", () => Object.fromEntries([
   "listPositions", "quoteAddLiquidity", "prepareTransaction", "quoteCompound", "prepareCompoundTransaction",
   "submitSignedTransaction", "submitCompoundTransaction", "listRwaPairs", "getPositionPerformance",
-  "getPositionRangeStatus", "quoteOpenPosition", "prepareOpenPosition", "submitOpenPosition", "prepareWithdraw", "submitWithdrawTransaction",
+  "getPositionRangeStatus", "quoteOpenPosition", "prepareOpenPosition", "submitOpenPosition", "prepareWithdraw", "submitWithdrawTransaction", "getPoolRangeApr",
 ].map((name) => [name, vi.fn()])));
 
 import { NextRequest } from "next/server";
@@ -19,7 +19,7 @@ import { POST } from "@/app/api/mcp/route";
 
 const EXPECTED_NAMES = [
   "prepare_withdraw", "submit_withdraw",
-  "get_position_performance", "get_position_range_status", "list_rwa_pairs", "list_positions",
+  "get_position_performance", "get_position_range_status", "list_rwa_pairs", "get_pool_range_apr", "list_positions",
   "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction",
   "submit_signed_transaction", "submit_compound_transaction", "quote_open_position", "prepare_open_position", "submit_open_position",
 ];
@@ -52,7 +52,7 @@ describe("stdio MCP server", () => {
   });
 
   it("identifies itself", () => {
-    expect(client.getServerVersion()).toMatchObject({ name: "sofinance-mcp-server", version: "0.1.0" });
+    expect(client.getServerVersion()).toMatchObject({ name: "sofinance-mcp-server", version: "0.2.0" });
     expect(client.getServerCapabilities()).toMatchObject({ tools: {} });
   });
 
@@ -61,9 +61,9 @@ describe("stdio MCP server", () => {
     return Object.assign({}, ...Object.entries(value).map(([key, item]) => flatten(item, prefix ? `${prefix}.${key}` : key)));
   }
 
-  it("lists the same 15 tool names as the HTTP route", async () => {
+  it("lists the same 16 tool names as the HTTP route", async () => {
     const stdio = await client.listTools();
-    expect(stdio.tools).toHaveLength(15);
+    expect(stdio.tools).toHaveLength(16);
     expect(stdio.tools.map((tool) => tool.name).sort()).toEqual([...EXPECTED_NAMES].sort());
   });
 
@@ -87,7 +87,7 @@ describe("stdio MCP server", () => {
     const names = (await client.listTools()).tools.map((tool) => tool.name);
     expect(names).toEqual([
       "prepare_withdraw", "submit_withdraw",
-  "get_position_performance", "get_position_range_status", "list_rwa_pairs", "list_positions",
+  "get_position_performance", "get_position_range_status", "list_rwa_pairs", "get_pool_range_apr", "list_positions",
       "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction",
       "submit_signed_transaction", "quote_open_position", "prepare_open_position", "submit_open_position",
       "submit_compound_transaction",

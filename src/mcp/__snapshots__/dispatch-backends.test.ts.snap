@@ -110,10 +110,7 @@ exports[`http real read/prepare handlers > list_rwa_pairs preserves backend argu
     {
       "args": [
         {
-          "feedKeys": [
-            "raydium-clmm-rwa-v1",
-          ],
-          "maxPages": 3,
+          "maxPages": 10,
           "minTvl": 0,
           "sortBy": "estimatedFeeApr",
         },
@@ -125,9 +122,33 @@ exports[`http real read/prepare handlers > list_rwa_pairs preserves backend argu
     "content": [
       {
         "text": "{
-  "source": "synthetic",
-  "scannedPools": 0,
-  "pagesFetched": 1,
+  "source": "SoFinance saved pools snapshot (same list as the pools page)",
+  "stale": false,
+  "aprWindow": "7-day estimate: the last 7 full UTC days of pool volume against the pool's current liquidity",
+  "note": "Estimates from past trading, not a promise of future fees. Fees accrue only while the pool price is inside your range.",
+  "poolsPage": "https://sofinancelab.xyz/app/rwa-pairs",
+  "rangePresets": [
+    {
+      "id": "micro",
+      "label": "Micro",
+      "band": "±2 steps"
+    },
+    {
+      "id": "tight",
+      "label": "Tight (±0.05%)",
+      "band": "±0.05%"
+    },
+    {
+      "id": "standard",
+      "label": "Standard (±0.3%)",
+      "band": "±0.3%"
+    },
+    {
+      "id": "wide",
+      "label": "Wide (±1%)",
+      "band": "±1%"
+    }
+  ],
   "count": 0,
   "pairs": []
 }",
@@ -634,10 +655,7 @@ exports[`stdio real read/prepare handlers > list_rwa_pairs preserves backend arg
     {
       "args": [
         {
-          "feedKeys": [
-            "raydium-clmm-rwa-v1",
-          ],
-          "maxPages": 3,
+          "maxPages": 10,
           "minTvl": 0,
           "sortBy": "estimatedFeeApr",
         },
@@ -649,9 +667,33 @@ exports[`stdio real read/prepare handlers > list_rwa_pairs preserves backend arg
     "content": [
       {
         "text": "{
-  "source": "synthetic",
-  "scannedPools": 0,
-  "pagesFetched": 1,
+  "source": "SoFinance saved pools snapshot (same list as the pools page)",
+  "stale": false,
+  "aprWindow": "7-day estimate: the last 7 full UTC days of pool volume against the pool's current liquidity",
+  "note": "Estimates from past trading, not a promise of future fees. Fees accrue only while the pool price is inside your range.",
+  "poolsPage": "https://sofinancelab.xyz/app/rwa-pairs",
+  "rangePresets": [
+    {
+      "id": "micro",
+      "label": "Micro",
+      "band": "±2 steps"
+    },
+    {
+      "id": "tight",
+      "label": "Tight (±0.05%)",
+      "band": "±0.05%"
+    },
+    {
+      "id": "standard",
+      "label": "Standard (±0.3%)",
+      "band": "±0.3%"
+    },
+    {
+      "id": "wide",
+      "label": "Wide (±1%)",
+      "band": "±1%"
+    }
+  ],
   "count": 0,
   "pairs": []
 }",
