@@ -1,7 +1,7 @@
 "use client";
 import "@/lib/engine-host";
 
-import { CircleAlert, LoaderCircle, Sprout } from "lucide-react";
+import { CircleAlert } from "lucide-react";
 import { useState } from "react";
 import { CompoundProtocolFee } from "./compound-overview";
 import { CompoundSubmitDialog } from "./compound-submit-dialog";
@@ -14,7 +14,7 @@ import { solscanTxUrl, solscanAccountUrl } from "@/lib/format/explorer";
 import { APP_ROUTES } from "@/lib/public-urls";
 import { positionKey } from "@/lib/unified-positions/model";
 import { raydiumPositionSource } from "@/lib/unified-positions/sources/raydium";
-import { ROW_COMPOUND_CLASS, RowActionsBar, RowStatus, type RowCompoundSlot } from "./portfolio/portfolio-rows";
+import { ROW_COMPOUND_CLASS, RowActionsBar, RowCompoundLabel, RowStatus, type RowCompoundSlot } from "./portfolio/portfolio-rows";
 
 const short = shortAddress;
 
@@ -54,8 +54,8 @@ export function RaydiumRowCompound({ controller: c, positionMint, pending, onCom
   return <>
     <RowActionsBar>
       <button type="button" data-testid="position-row-action" data-tool="compound" aria-busy={running || waiting}
-        disabled={running || waiting || (slot.disabled && !running) || blocked} onClick={onCompound} className={ROW_COMPOUND_CLASS}>
-        {running || waiting ? <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin motion-reduce:animate-none" /> : <Sprout aria-hidden="true" className="size-3.5" />}{action}
+        disabled={running || waiting || (slot.disabled && !running) || blocked} onClick={onCompound} title={action} className={ROW_COMPOUND_CLASS}>
+        <RowCompoundLabel busy={running || waiting} label={action} />
       </button>
       {slot.otherActions}
     </RowActionsBar>

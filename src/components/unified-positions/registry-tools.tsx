@@ -8,7 +8,7 @@
  * Every send goes through the shared tx pipeline (`useTxPipeline` + `dexTxAdapter`): wallet signAndSend, loading →
  * success / failure with a Solscan link, balances refresh; the pipeline's success notice stays until dismissed.
  */
-import { CircleAlert, LoaderCircle, Sprout } from "lucide-react";
+import { CircleAlert, LoaderCircle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatAmount, parseTokenAmount } from "@sofinance/engine/amount";
 import { DEPOSIT_MINIMUM_UNAVAILABLE, depositTooSmallMessage, dexTxAdapter, fetchAddQuote, type AddQuote, type DexCapabilities, type DexPreparedStep, type DexDescriptor, type DexStepInput, type DexStepOp, type FeeRule, type RentQuote } from "@/lib/dex/client";
@@ -21,7 +21,7 @@ import { useTxWallet } from "../use-tx-wallet";
 import { RegistryPerformancePanel } from "./registry-performance";
 import type { PositionPerformanceReport } from "@/lib/position-performance-report";
 import { beginPositionOp, trackPositionSignature, usePositionOpLock } from "./position-op-lock";
-import { ROW_COMPOUND_CLASS, RowActionsBar, RowStatus, type RowCompoundSlot } from "../portfolio/portfolio-rows";
+import { ROW_COMPOUND_CLASS, RowActionsBar, RowCompoundLabel, RowStatus, type RowCompoundSlot } from "../portfolio/portfolio-rows";
 
 /** A wallet balance the Add panel can check against (raw atomic string). */
 export type ToolBalance = { balance: string; decimals: number };
@@ -432,8 +432,8 @@ export function RegistryRowCompound({ position, descriptor, symbolOf, onConfirme
   return <>
     <RowActionsBar>
       <button type="button" data-testid="position-row-action" data-tool="compound" aria-busy={tx.locked}
-        disabled={locked || blocked !== null || (slot.disabled && !tx.locked)} onClick={submit} className={ROW_COMPOUND_CLASS}>
-        {tx.locked ? <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin motion-reduce:animate-none" /> : <Sprout aria-hidden="true" className="size-3.5" />}{tx.locked ? "Compounding…" : "Compound"}
+        disabled={locked || blocked !== null || (slot.disabled && !tx.locked)} onClick={submit} title={tx.locked ? "Compounding…" : "Compound"} className={ROW_COMPOUND_CLASS}>
+        <RowCompoundLabel busy={tx.locked} label={tx.locked ? "Compounding…" : "Compound"} />
       </button>
       {slot.otherActions}
     </RowActionsBar>

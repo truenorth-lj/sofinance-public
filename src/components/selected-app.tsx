@@ -3,6 +3,7 @@ import "@/lib/engine-host";
 import { notEnoughBalanceMessage } from "@sofinance/engine/balance-message";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useFormAtViewportBottom } from "./use-form-at-viewport-bottom";
 import { ArrowDown, ArrowUpRight, LoaderCircle, RefreshCw } from "lucide-react";
 import { assetMetadata, assetSymbol } from "./token-picker";
 import { formatAmount } from "@sofinance/engine/amount";
@@ -163,7 +164,10 @@ export function SelectedApp({ initialView = DEFAULT_DETAIL_VIEW, initialMint: in
   // Toasts sit above the phone-only bottom action bar instead of covering its button.
   // The same measured height (incl. the iPhone home-bar inset) pads the page bottom on phones, so the bar never hides content.
   const actionBarRef = useRef<HTMLDivElement | null>(null);
-  useNoticeBottomOffset(actionBarRef, activeView === "deposit");
+  // The phone bar shows only once the Add form's top is on screen (opened or scrolled to), so it never covers the
+  // positions list above the form.
+  const barOverForm = useFormAtViewportBottom("deposit-view", activeView === "deposit");
+  useNoticeBottomOffset(actionBarRef, activeView === "deposit" && barOverForm);
   // Performance is a tab inside /app (the URL does not change), so $pageview cannot see it.
   useEffect(() => {
     if (activeView === "performance") captureGrowthEvent(GROWTH_EVENTS.performanceView);
@@ -500,7 +504,7 @@ export function SelectedApp({ initialView = DEFAULT_DETAIL_VIEW, initialMint: in
     <TransactionStatusDialog attempt={visibleAttempt} status={attemptStatus} error={error} open={statusDialogOpen}
       onOpenChange={setStatusDialogOpen}
       onRetry={selectionAligned && !busy && retryAdd ? () => { if (!selectionAligned || busy) return; setStatusDialogOpen(false); retryAdd(); } : undefined} />
-    {showTools && activeView === "deposit" && !otherSelected && !unavailableReason && <div ref={actionBarRef} data-testid="mobile-action-bar" className="fixed inset-x-0 bottom-0 z-10 border-t border-white/12 bg-canvas/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] backdrop-blur sm:hidden"><button className={buttonClass} disabled={actionDisabled} aria-busy={actionLoading} onClick={primaryAction}>{actionLoading ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <ArrowDown aria-hidden="true" className="h-4 w-4" />}{buttonLabel}</button></div>}
+    {showTools && activeView === "deposit" && barOverForm && !otherSelected && !unavailableReason && <div ref={actionBarRef} data-testid="mobile-action-bar" className="fixed inset-x-0 bottom-0 z-10 border-t border-white/12 bg-canvas/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] backdrop-blur sm:hidden"><button className={buttonClass} disabled={actionDisabled} aria-busy={actionLoading} onClick={primaryAction}>{actionLoading ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <ArrowDown aria-hidden="true" className="h-4 w-4" />}{buttonLabel}</button></div>}
   </div>;
 }
 

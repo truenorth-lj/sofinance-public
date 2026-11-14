@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { LoaderCircle, Sprout } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { formatUsd } from "@/lib/format/usd";
 import type { PositionFigures } from "@/lib/portfolio/figures";
@@ -43,20 +44,31 @@ export type PortfolioRow = {
 
 export type RowCompoundSlot = { otherActions: ReactNode; disabled: boolean };
 
-/** The row actions bar (phone: under the card, the first action filling its width). */
+/**
+ * The row actions bar (phone: under the card, the first action filling its width). Always one line: the Compound button
+ * has a fixed width on desktop (and takes the leftover width on a phone) and truncates a long status label instead.
+ */
 export function RowActionsBar({ children }: { children: ReactNode }) {
-  return <div className="flex flex-wrap gap-2 border-t border-white/10 px-4 py-3 lg:border-0 lg:px-0 lg:py-0 lg:pr-4">{children}</div>;
+  return <div data-testid="row-actions" className="flex flex-nowrap items-center gap-2 border-t border-white/10 px-4 py-3 lg:border-0 lg:px-0 lg:py-0 lg:pr-4 [&>button:not(:first-child)]:shrink-0 [&>button]:whitespace-nowrap">{children}</div>;
 }
 
-/** The row's Compound button look (lemon, filling a phone card's width). */
-export const ROW_COMPOUND_CLASS = "inline-flex items-center justify-center gap-1.5 rounded-full bg-lemon px-3 py-1.5 text-xs font-semibold text-ink transition-colors enabled:hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:opacity-40 max-lg:flex-1 max-lg:py-2.5";
+/** The row's Compound button look (lemon; a fixed width on desktop, the card's leftover width on a phone). */
+export const ROW_COMPOUND_CLASS = "inline-flex min-w-0 items-center justify-center gap-1.5 rounded-full border border-transparent bg-lemon px-3 py-1.5 text-xs font-semibold text-ink transition-colors enabled:hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:opacity-40 max-lg:flex-1 max-lg:py-2.5 lg:w-[11rem] lg:shrink-0";
+
+/** The Compound button's icon and label: a long status ("Confirming in wallet…") truncates, never wraps the row. */
+export function RowCompoundLabel({ busy, label }: { busy: boolean; label: string }) {
+  return <>
+    {busy ? <LoaderCircle aria-hidden="true" className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none" /> : <Sprout aria-hidden="true" className="size-3.5 shrink-0" />}
+    <span className="min-w-0 truncate">{label}</span>
+  </>;
+}
 
 /** Under a row, full width: its compound progress, disclosures and errors. */
 export function RowStatus({ children, testId }: { children: ReactNode; testId: string }) {
   return <div data-testid={testId} className="border-t border-white/10 px-4 pb-3 text-xs leading-5 text-cream/80 lg:col-span-6 [&>*:first-child]:mt-3">{children}</div>;
 }
 
-const COLS = "lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.7fr)_minmax(0,0.8fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1.5fr)]";
+const COLS = "lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.7fr)_minmax(0,0.8fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(21rem,1.5fr)]";
 const usd = (value: number | null | undefined) => formatUsd(value ?? null);
 
 function Badge({ item }: { item: UnifiedPosition }) {
@@ -127,7 +139,7 @@ function PositionRow({ row, selected, disabled, onSelect, onAction }: {
       ? row.compound({ disabled, otherActions: rest.map((target) => action(target, "border border-white/25 text-cream enabled:hover:border-white/50")) })
       : primary && <RowActionsBar>
         {/* Phone: the first action (Compound where the DEX has it) fills the bottom of the card. */}
-        {action(primary, cn(primaryClass(primary.tool), "max-lg:flex-1 max-lg:py-2.5"))}
+        {action(primary, cn(primaryClass(primary.tool), "max-lg:min-w-0 max-lg:flex-1 max-lg:py-2.5"))}
         {rest.map((target) => action(target, "border border-white/25 text-cream enabled:hover:border-white/50"))}
       </RowActionsBar>}
   </li>;
