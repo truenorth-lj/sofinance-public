@@ -50,6 +50,15 @@ describe("SiteHeader", () => {
     }
   });
 
+  it("renders the cream squircle H mark at 28px and drops the ink circle", () => {
+    const html = renderToStaticMarkup(createElement(SiteHeader));
+    expect(html).toContain('src="/navbar-mark-squircle-cream.svg"');
+    expect(html).toContain("h-7 w-7");
+    expect(html).toContain("pl-[7px]");
+    expect(html).not.toContain("bg-ink");
+    expect(html).not.toContain("text-lemon");
+  });
+
   it("the homepage renders SiteHeader and the app bar has no Blog tab", () => {
     expect(readFileSync(resolve("src/components/landing-page.tsx"), "utf8")).toContain("<SiteHeader onHomepage />");
     const nav = readFileSync(resolve("src/components/ink/InkNav.tsx"), "utf8");
