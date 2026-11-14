@@ -44,7 +44,7 @@ async function setup(browser: Browser, baseURL: string | undefined, width: numbe
 
 /** Every row's action buttons share one line (same vertical middle), and no button's label wraps (one text line tall). */
 async function expectOneLine(page: Page, label: string) {
-  const rows = await page.getByTestId("row-actions").evaluateAll((bars) => bars.map((bar) => [...bar.querySelectorAll("button")].map((button) => {
+  const rows = await page.getByTestId("row-actions").evaluateAll((bars) => bars.map((bar) => Array.from(bar.querySelectorAll("button")).map((button) => {
     const box = button.getBoundingClientRect();
     return { text: button.textContent, middle: Math.round(box.top + box.height / 2), height: Math.round(box.height), right: Math.round(box.right),
       barRight: Math.round(bar.getBoundingClientRect().right) };
