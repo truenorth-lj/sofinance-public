@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { Geist_Mono, Host_Grotesk } from "next/font/google";
 import { AnalyticsRoot } from "@/components/analytics-root";
-import { RegionNotice } from "@/components/region-notice";
 import { OG_IMAGE, SITE_DEFAULT_DESCRIPTION, SITE_DEFAULT_TITLE, SITE_NAME, SITE_TITLE_TEMPLATE, SITE_X_HANDLE, siteMetadataBase } from "@/lib/seo";
 import "./globals.css";
 
@@ -38,7 +37,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Suspense fallback={null}>
           <AnalyticsRoot />
         </Suspense>
-        <RegionNotice />
         {children}
       </body>
     </html>

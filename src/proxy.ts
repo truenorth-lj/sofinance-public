@@ -3,11 +3,14 @@ import type { NextRequest } from "next/server";
 import { FLAG_OFF_NOT_FOUND_PATH, isFlaggedOffPage } from "@/lib/flagged-pages";
 import { appSubdomainRewritePath, isAppSubdomainHost, trailingSlashRedirectPath } from "@/lib/app-host";
 import { unifiedAppRedirect } from "@/lib/unified-pools/deep-link";
-import { REGION_NOTICE_COOKIE, REGION_NOTICE_COOKIE_MAX_AGE, regionNoticeForCountry } from "@/lib/region-notice";
+import {
+  REGION_NOTICE_COOKIE, REGION_NOTICE_COOKIE_MAX_AGE, REGION_NOTICE_REQUEST_HEADER,
+  regionNoticeForCountry, resolveNoticeCountry, shouldShowRegionNotice,
+} from "@/lib/region-notice";
 
 /**
- * Next.js 16 Proxy (formerly middleware). Host-based App rewrite, plus the region-notice flag cookie
- * (notice only; it never blocks or redirects — see src/lib/region-notice.ts).
+ * Next.js 16 Proxy (formerly middleware). Host-based App rewrite, plus the region-notice flag
+ * cookie and request header (notice only; it never blocks or redirects — see src/lib/region-notice.ts).
  *
  * On a future custom domain, `app.<domain>/<path>` → `/app/<path>`.
  * No effect on `*.vercel.app`.
@@ -27,27 +30,46 @@ export function proxy(request: NextRequest) {
 
   const host = request.headers.get("host");
   const rewritePath = isAppSubdomainHost(host) ? appSubdomainRewritePath(request.nextUrl.pathname) : null;
-  if (isFlaggedOffPage(rewritePath ?? request.nextUrl.pathname)) {
+  const pathname = rewritePath ?? request.nextUrl.pathname;
+  if (isFlaggedOffPage(pathname)) {
     // Real 404 status for flag-off pages (a dynamic page's notFound() streams as 200 under the root Suspense).
     const url = request.nextUrl.clone();
     url.pathname = FLAG_OFF_NOT_FOUND_PATH;
-    return withRegionNotice(request, NextResponse.rewrite(url));
+    return withRegionNotice(request, NextResponse.rewrite(url, { request: { headers: noticeRequestHeaders(request, pathname) } }));
   }
   // `/app/rhc` and old `/app?openPool=` links → the pools page (flag-off pages above stay 404). A real 307.
-  const moved = unifiedAppRedirect(rewritePath ?? request.nextUrl.pathname, request.nextUrl.search);
+  const moved = unifiedAppRedirect(pathname, request.nextUrl.search);
   if (moved) return withRegionNotice(request, NextResponse.redirect(new URL(moved, request.url), 307));
   if (!rewritePath) {
-    return withRegionNotice(request, NextResponse.next());
+    return withRegionNotice(request, NextResponse.next({ request: { headers: noticeRequestHeaders(request, pathname) } }));
   }
 
   const url = request.nextUrl.clone();
   url.pathname = rewritePath;
-  return withRegionNotice(request, NextResponse.rewrite(url));
+  return withRegionNotice(request, NextResponse.rewrite(url, { request: { headers: noticeRequestHeaders(request, pathname) } }));
+}
+
+function noticeRequestHeaders(request: NextRequest, pathname: string): Headers {
+  const headers = new Headers(request.headers);
+  headers.delete(REGION_NOTICE_REQUEST_HEADER);
+  if (shouldShowRegionNotice({
+    countryHeader: request.headers.get("x-vercel-ip-country"),
+    pathname,
+    searchParams: request.nextUrl.searchParams,
+    vercelEnv: process.env.VERCEL_ENV,
+  })) {
+    headers.set(REGION_NOTICE_REQUEST_HEADER, "1");
+  }
+  return headers;
 }
 
 /** Sets (or clears) the readable notice flag from Vercel's geo header. Never changes status or path. */
 function withRegionNotice(request: NextRequest, response: NextResponse) {
-  const show = regionNoticeForCountry(request.headers.get("x-vercel-ip-country"));
+  const show = regionNoticeForCountry(resolveNoticeCountry(
+    request.headers.get("x-vercel-ip-country"),
+    request.nextUrl.searchParams,
+    process.env.VERCEL_ENV,
+  ));
   const hasFlag = request.cookies.get(REGION_NOTICE_COOKIE)?.value === "1";
   if (show && !hasFlag) {
     response.cookies.set(REGION_NOTICE_COOKIE, "1", {
