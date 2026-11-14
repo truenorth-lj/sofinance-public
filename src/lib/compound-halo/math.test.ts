@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  HALO_BAND_PX, HALO_DURATION_MS, HALO_EASE_K, HALO_MAX_DPR, HALO_PALETTE, HALO_PUNCH_T, HALO_PUNCH_TRAVEL, HALO_SHAKE_MS, HALO_SHAKE_PX,
+  HALO_BAND_PX, HALO_DURATION_MS, HALO_EASE_K, HALO_MAX_DPR, HALO_PALETTE, HALO_PUNCH_T, HALO_PUNCH_TRAVEL, HALO_RISE_MAX_PX,
+  HALO_RISE_MIN_PX, HALO_SHAKE_MS, HALO_SHAKE_PX, haloRiseCenter,
   HALO_TRAIL_DELAY, HALO_TRAIL_STRENGTH, haloBandWeight, haloCanvasScale, haloVisibleSlice, haloEase, haloGlintAlpha,
   haloOriginPoint, haloProgress, haloRadius, haloReach, haloReducedStrength, haloRingAlpha, haloShake, haloStrength,
   haloTrailStrength, haloTrailTime, nextHaloTrigger, parseOpaqueRgb, schemeForBackground, shouldPlayHalo,
@@ -63,6 +64,25 @@ describe("halo geometry", () => {
     expect(haloReach({ x: 250, y: 100 }, { width: 300, height: 400 })).toBeCloseTo(Math.hypot(250, 300) + HALO_BAND_PX / 2, 9);
     expect(haloRadius(0, 800)).toBe(0);
     expect(haloRadius(1, 800)).toBeCloseTo(800, 9);
+    expect(haloRadius(0, 800, 300)).toBe(300);
+    expect(haloRadius(1, 800, 300)).toBeCloseTo(800, 9);
+    expect(haloRadius(0.5, 800, 300)).toBeGreaterThan(300);
+  });
+  it("rises from the button: centred below it by two thirds of the width (240–650 px), starting at the button", () => {
+    expect([HALO_RISE_MIN_PX, HALO_RISE_MAX_PX]).toEqual([240, 650]);
+    // Desktop (1240 px wide): 827 px clamps to 650.
+    expect(haloRiseCenter({ x: 120, y: 400 }, { width: 1240 })).toEqual({ x: 120, y: 1050, start: 650 });
+    // Phone (390 px wide): 260 px below the button.
+    expect(haloRiseCenter({ x: 195, y: 400 }, { width: 390 })).toEqual({ x: 195, y: 660, start: 260 });
+    // Very narrow: never tighter than 240 px.
+    expect(haloRiseCenter({ x: 150, y: 400 }, { width: 300 }).start).toBe(240);
+    const center = haloRiseCenter({ x: 120, y: 400 }, { width: 1240 });
+    // At t = 0 the front passes through the button; content straight below the button is already inside the circle.
+    expect(Math.hypot(120 - center.x, 400 - center.y)).toBe(haloRadius(0, 2000, center.start));
+    expect(Math.hypot(120 - center.x, 600 - center.y)).toBeLessThan(center.start);
+    // It travels to just past the top corners, the farthest from a centre below the button.
+    const slice = { width: 1240, height: 900 };
+    expect(haloReach(center, slice)).toBeCloseTo(Math.hypot(1240 - 120, 1050) + HALO_BAND_PX / 2, 9);
   });
   it("weights a 150 px band around the front with (1 − x²)²", () => {
     expect(HALO_BAND_PX).toBe(150);
@@ -85,19 +105,20 @@ describe("halo geometry", () => {
 });
 
 describe("halo colour by scheme", () => {
-  it("uses the frost palettes", () => {
-    expect(HALO_PALETTE.dark).toEqual([[90, 235, 190], [80, 215, 245], [200, 255, 165], [245, 255, 250]]);
-    expect(HALO_PALETTE.light).toEqual([[40, 190, 150], [50, 170, 210], [140, 210, 90], [180, 235, 215]]);
+  it("uses the Halo (orange to gold) palettes", () => {
+    expect(HALO_PALETTE.dark).toEqual([[255, 150, 60], [255, 190, 70], [255, 225, 120], [255, 245, 210]]);
+    expect(HALO_PALETTE.light).toEqual([[255, 140, 50], [255, 175, 60], [245, 200, 80], [255, 225, 150]]);
   });
-  it("tints at alpha × 0.3 in light mode and adds full light in dark mode", () => {
-    expect(haloRingAlpha(1, "light")).toBeCloseTo(0.3, 12);
-    expect(haloRingAlpha(0.5, "light")).toBeCloseTo(0.15, 12);
-    expect(haloRingAlpha(0.5, "dark")).toBe(0.5);
+  it("tints at alpha × 0.24 in light mode and adds a low glow (× 0.45) in dark mode", () => {
+    expect(haloRingAlpha(1, "light")).toBeCloseTo(0.24, 12);
+    expect(haloRingAlpha(0.5, "light")).toBeCloseTo(0.12, 12);
+    expect(haloRingAlpha(1, "dark")).toBeCloseTo(0.45, 12);
+    expect(haloRingAlpha(0.5, "dark")).toBeCloseTo(0.225, 12);
   });
-  it("glints at 0.4 (light) / 0.24 (dark), never under reduced motion", () => {
-    expect(haloGlintAlpha(1, "light", false)).toBeCloseTo(0.4, 12);
-    expect(haloGlintAlpha(1, "dark", false)).toBeCloseTo(0.24, 12);
-    expect(haloGlintAlpha(0.5, "dark", false)).toBeCloseTo(0.12, 12);
+  it("glints at 0.3 (light) / 0.14 (dark), never under reduced motion", () => {
+    expect(haloGlintAlpha(1, "light", false)).toBeCloseTo(0.3, 12);
+    expect(haloGlintAlpha(1, "dark", false)).toBeCloseTo(0.14, 12);
+    expect(haloGlintAlpha(0.5, "dark", false)).toBeCloseTo(0.07, 12);
     expect(haloGlintAlpha(1, "light", true)).toBe(0);
   });
   it("picks light or dark from the page background", () => {
@@ -112,19 +133,17 @@ describe("halo colour by scheme", () => {
 });
 
 describe("halo shake", () => {
-  it("is two kicks of at most 3 px, settled by 150 ms, and never moves under reduced motion", () => {
+  it("is a 1 px kick up with the wave and one back, settled by 150 ms, and never moves under reduced motion", () => {
     expect(HALO_SHAKE_MS).toBe(150);
-    expect(HALO_SHAKE_PX).toBe(3);
+    expect(HALO_SHAKE_PX).toBe(1);
     expect(haloShake(-1)).toEqual({ x: 0, y: 0 });
-    expect(haloShake(0)).toEqual({ x: 3, y: -2 });
-    expect(haloShake(49)).toEqual({ x: 3, y: -2 });
-    expect(haloShake(50)).toEqual({ x: -2, y: 2 });
-    expect(haloShake(99)).toEqual({ x: -2, y: 2 });
+    expect(haloShake(0)).toEqual({ x: 0, y: -1 });
+    expect(haloShake(49)).toEqual({ x: 0, y: -1 });
+    expect(haloShake(50)).toEqual({ x: 0, y: 1 });
+    expect(haloShake(99)).toEqual({ x: 0, y: 1 });
     expect(haloShake(100)).toEqual({ x: 0, y: 0 });
     expect(haloShake(150)).toEqual({ x: 0, y: 0 });
-    expect(Math.hypot(haloShake(20).x, haloShake(20).y)).toBeLessThanOrEqual(Math.hypot(3, 2));
-    expect(Math.abs(haloShake(20).x)).toBeLessThanOrEqual(3);
-    expect(Math.abs(haloShake(20).y)).toBeLessThanOrEqual(3);
+    expect(Math.hypot(haloShake(20).x, haloShake(20).y)).toBeLessThanOrEqual(1);
     expect(haloShake(20, true)).toEqual({ x: 0, y: 0 });
     expect(haloShake(70, true)).toEqual({ x: 0, y: 0 });
   });

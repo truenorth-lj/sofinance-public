@@ -205,7 +205,7 @@ describe("compound success halo trigger", () => {
     expect(halo()).toBeNull();
   });
 
-  it("a short screen shake of at most 3px is cleared by 150 ms, and reduced motion never shakes", async () => {
+  it("a short screen shake of at most 1px is cleared by 150 ms, and reduced motion never shakes", async () => {
     await act(async () => root.render(createElement(Harness)));
     const surface = container.querySelector<HTMLElement>('[data-testid="surface"]')!;
     await act(async () => setFeedback({ phase: "success", signature: "sig1" }));
@@ -215,11 +215,45 @@ describe("compound success halo trigger", () => {
     expect(transform).toMatch(/translate\(/);
     const nums = [...transform.matchAll(/-?\d+(?:\.\d+)?/g)].map((match) => Number(match[0]));
     expect(nums.length).toBeGreaterThan(0);
-    expect(Math.max(...nums.map(Math.abs))).toBeLessThanOrEqual(3);
+    expect(Math.max(...nums.map(Math.abs))).toBeLessThanOrEqual(1);
     await advance(150);
     expect(surface.style.transform).toBe("");
     await advance(1200);
     expect(halo()).toBeNull();
+  });
+
+  it("measures the text mask again when the content area resizes mid-play, so no ghost text is left behind", async () => {
+    const observers: ResizeObserverCallback[] = [];
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(private readonly callback: ResizeObserverCallback) {}
+      observe() { observers.push(this.callback); }
+      unobserve() {}
+      disconnect() { observers.splice(observers.indexOf(this.callback), 1); }
+    });
+    let height = 3000, textLeft = 110;
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(() => height);
+    vi.spyOn(Range.prototype, "getBoundingClientRect").mockImplementation(() => rect(textLeft, 310, 8, 16));
+    const glyphsAt = (x: number) => calls.filter((call) => call.startsWith("fillText:") && call.split(",")[1] === String(x)).length;
+    // No timer advance: the observer fires after layout and before paint, so the redraw must happen right there.
+    const notify = async () => { await act(async () => { observers.forEach((callback) => callback([], {} as ResizeObserver)); }); };
+    await act(async () => root.render(createElement(Harness)));
+    await act(async () => setFeedback({ phase: "success", signature: "sig1" }));
+    await advance(16);
+    expect(halo()).not.toBeNull();
+    const first = glyphsAt(110);
+    expect(first).toBeGreaterThan(0);
+    // Same size: nothing is measured again or redrawn.
+    let before = draws;
+    await notify();
+    expect(glyphsAt(110)).toBe(first);
+    expect(draws).toBe(before);
+    // A status line under the button goes away: the text moves and the content area gets shorter. The new cut-outs
+    // are in place and the frame is redrawn within the same frame, so no stale (ghost) cut-out is ever painted.
+    height = 2984; textLeft = 140; before = draws;
+    await notify();
+    expect(glyphsAt(140)).toBe(first);
+    expect(draws).toBe(before + 1);
+    expect(halo()).not.toBeNull();
   });
 
   it("reduced motion fades in place over 600 ms and never shakes the surface", async () => {

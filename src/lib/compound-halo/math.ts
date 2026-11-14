@@ -10,10 +10,12 @@ export const HALO_DURATION_MS = 1200;
 export const HALO_REDUCED_DURATION_MS = 600;
 /** Width of the colour ring band in CSS px. */
 export const HALO_BAND_PX = 150;
-/** Peak strength of the border/divider glints. */
-export const HALO_GLINT_STRENGTH: Record<HaloScheme, number> = { light: 0.4, dark: 0.24 };
-/** Light mode tints the page: the ring is mixed in at alpha × this. Dark mode adds light with a screen blend instead. */
-export const HALO_LIGHT_TINT = 0.3;
+/** Peak strength of the border/divider glints: a faint glint, weaker in dark mode. */
+export const HALO_GLINT_STRENGTH: Record<HaloScheme, number> = { light: 0.3, dark: 0.14 };
+/** Light mode tints the page: the ring is mixed in at alpha × this. */
+export const HALO_LIGHT_TINT = 0.24;
+/** Dark mode adds light with a screen blend, at alpha × this (0.3 × 1.5): a low glow, not a solid band. */
+export const HALO_DARK_GLOW = 0.45;
 /** Reduced motion: fades in and out in place at half strength. */
 export const HALO_REDUCED_PEAK = 0.5;
 /** Ease exponent of the opening punch (higher is a sharper launch). */
@@ -28,12 +30,22 @@ export const HALO_TRAIL_STRENGTH = 0.55;
 /** Screen-shake window: two short kicks, then settle; never longer than this. */
 export const HALO_SHAKE_MS = 150;
 /** Peak translation of a kick, in CSS px. */
-export const HALO_SHAKE_PX = 3;
+export const HALO_SHAKE_PX = 1;
+/**
+ * The ring rises from the Compound button like a wave rising from a bottom edge: its centre sits this far below the
+ * button (two thirds of the visible width, clamped), and it starts with its top at the button, so what shows is a wide
+ * arc moving up. Content just below the button is inside the circle from the start and is never crossed.
+ */
+export const HALO_RISE_MIN_PX = 240;
+export const HALO_RISE_MAX_PX = 650;
 
-/** Frost palette, outer ring colour → inner highlight. */
+/**
+ * Halo palette (orange through amber to gold, like low sun through a lens). Slots: [0] main body, [1] outer fringe,
+ * [2] trailing inner edge, [3] bright front. Brighter on dark, softer on light.
+ */
 export const HALO_PALETTE: Record<HaloScheme, readonly [Rgb, Rgb, Rgb, Rgb]> = {
-  dark: [[90, 235, 190], [80, 215, 245], [200, 255, 165], [245, 255, 250]],
-  light: [[40, 190, 150], [50, 170, 210], [140, 210, 90], [180, 235, 215]],
+  dark: [[255, 150, 60], [255, 190, 70], [255, 225, 120], [255, 245, 210]],
+  light: [[255, 140, 50], [255, 175, 60], [245, 200, 80], [255, 225, 150]],
 };
 
 const clamp01 = (value: number) => (value <= 0 ? 0 : value >= 1 ? 1 : value);
@@ -77,9 +89,18 @@ export function haloReach(origin: { x: number; y: number }, size: { width: numbe
   return Math.hypot(dx, dy) + band / 2;
 }
 
-/** Ring radius at time t. */
-export function haloRadius(t: number, reach: number): number {
-  return haloEase(t) * reach;
+/** Ring radius at time t: from `start` (0 for a point origin) out to `reach`. */
+export function haloRadius(t: number, reach: number, start = 0): number {
+  return start + haloEase(t) * (reach - start);
+}
+
+/**
+ * Centre and starting radius of the rising ring, in slice coordinates: straight below the button by two thirds of the
+ * slice width (clamped to HALO_RISE_MIN_PX..HALO_RISE_MAX_PX), starting with its top edge at the button.
+ */
+export function haloRiseCenter(origin: { x: number; y: number }, size: { width: number }): { x: number; y: number; start: number } {
+  const depth = clamp(size.width * (2 / 3), HALO_RISE_MIN_PX, HALO_RISE_MAX_PX);
+  return { x: origin.x, y: origin.y + depth, start: depth };
 }
 
 /**
@@ -107,9 +128,9 @@ export function haloBandWeight(distance: number, radius: number, band = HALO_BAN
   return inner * inner;
 }
 
-/** Final alpha of the ring colour for a scheme: light tints (× 0.3), dark adds light at full strength (screen blend). */
+/** Final alpha of the ring colour for a scheme: light tints (× 0.24), dark adds light (× 0.45, screen blend). */
 export function haloRingAlpha(strength: number, scheme: HaloScheme): number {
-  return clamp01(strength) * (scheme === "light" ? HALO_LIGHT_TINT : 1);
+  return clamp01(strength) * (scheme === "light" ? HALO_LIGHT_TINT : HALO_DARK_GLOW);
 }
 
 /** Glint alpha on borders and dividers; none under reduced motion. */
@@ -118,13 +139,14 @@ export function haloGlintAlpha(strength: number, scheme: HaloScheme, reducedMoti
 }
 
 /**
- * A very short screen shake: two kicks of at most HALO_SHAKE_PX, then settle, all within HALO_SHAKE_MS.
+ * A very short, light screen shake: an upward kick with the rising wave and one back, each HALO_SHAKE_PX, then settle,
+ * all within HALO_SHAKE_MS.
  * Reduced motion never shakes.
  */
 export function haloShake(elapsedMs: number, reducedMotion = false): { x: number; y: number } {
   if (reducedMotion || elapsedMs < 0 || elapsedMs >= HALO_SHAKE_MS) return { x: 0, y: 0 };
-  if (elapsedMs < 50) return { x: HALO_SHAKE_PX, y: -2 };
-  if (elapsedMs < 100) return { x: -2, y: 2 };
+  if (elapsedMs < 50) return { x: 0, y: -HALO_SHAKE_PX };
+  if (elapsedMs < 100) return { x: 0, y: HALO_SHAKE_PX };
   return { x: 0, y: 0 };
 }
 

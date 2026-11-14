@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "re
 import { createPortal } from "react-dom";
 import {
   HALO_BAND_PX, HALO_DURATION_MS, HALO_PALETTE, HALO_REDUCED_DURATION_MS, haloCanvasScale, haloGlintAlpha, haloOriginPoint,
-  haloProgress, haloRadius, haloReach, haloReducedStrength, haloRingAlpha, haloShake, haloStrength, haloTrailStrength,
+  haloProgress, haloRadius, haloReach, haloReducedStrength, haloRingAlpha, haloRiseCenter, haloShake, haloStrength, haloTrailStrength,
   haloTrailTime, haloVisibleSlice, nextHaloTrigger, parseOpaqueRgb, schemeForBackground,
   type HaloScheme, type HaloSlice, type HaloTriggerState, type Rgb,
 } from "@/lib/compound-halo/math";
@@ -141,6 +141,17 @@ function visuallyHidden(element: Element, surface: HTMLElement, seen: Map<Elemen
 }
 
 export async function buildHaloMask(surface: HTMLElement, frame: HaloFrame, scale: number): Promise<HTMLCanvasElement | null> {
+  const started = startHaloMask(surface, frame, scale);
+  if (!started) return null;
+  await started.icons;
+  return started.mask;
+}
+
+/**
+ * Same mask, usable at once: text, select labels and raster images are drawn synchronously; inline SVG icons land in
+ * the same canvas when `icons` resolves. Used to swap in a fresh mask within the frame the layout moved.
+ */
+function startHaloMask(surface: HTMLElement, frame: HaloFrame, scale: number): { mask: HTMLCanvasElement; icons: Promise<void> } | null {
   const mask = document.createElement("canvas");
   mask.width = Math.ceil(frame.width * scale); mask.height = Math.ceil(frame.height * scale);
   const context = mask.getContext("2d");
@@ -207,12 +218,11 @@ export async function buildHaloMask(surface: HTMLElement, frame: HaloFrame, scal
     context.drawImage(image, rect.left - frame.left, rect.top - frame.top, rect.width, rect.height);
     context.restore();
   }
-  await Promise.all(icons);
-  return mask;
+  return { mask, icons: Promise.all(icons).then(() => undefined) };
 }
 
 type Run = { surface: HTMLElement; scheme: HaloScheme; reduced: boolean; radius: string; slice: HaloSlice;
-  origin: { x: number; y: number }; edges: Edge[] };
+  origin: { x: number; y: number }; center: { x: number; y: number; start: number }; edges: Edge[] };
 
 function protectTextAndIcons(context: CanvasRenderingContext2D, mask: HTMLCanvasElement | null, run: Run) {
   if (!mask) return;
@@ -223,17 +233,18 @@ function protectTextAndIcons(context: CanvasRenderingContext2D, mask: HTMLCanvas
 
 function paintRing(context: CanvasRenderingContext2D, run: Run, t: number, strength: number, band: number, glints: boolean) {
   if (strength <= 0 || t <= 0) return;
-  const { origin, scheme } = run;
+  const { center, scheme } = run;
   const { width, height } = run.slice;
   const palette = HALO_PALETTE[scheme];
-  const reach = haloReach(origin, { width, height }, band);
-  const radius = haloRadius(t, reach);
+  // The ring rises from the button: centred below it, starting with its top edge at the button.
+  const reach = haloReach(center, { width, height }, band);
+  const radius = haloRadius(t, reach, center.start);
   const half = band / 2;
   const inner = Math.max(0, radius - half), outer = radius + half;
   if (outer <= 0) return;
   const at = (distance: number) => Math.max(0, Math.min(1, (distance - inner) / (outer - inner)));
   const ringAlpha = haloRingAlpha(strength, scheme);
-  const ring = context.createRadialGradient(origin.x, origin.y, inner, origin.x, origin.y, outer);
+  const ring = context.createRadialGradient(center.x, center.y, inner, center.x, center.y, outer);
   ring.addColorStop(0, rgba(palette[2], 0));
   ring.addColorStop(at(radius - half * 0.55), rgba(palette[2], ringAlpha * 0.55));
   ring.addColorStop(at(radius - half * 0.18), rgba(palette[0], ringAlpha));
@@ -245,7 +256,7 @@ function paintRing(context: CanvasRenderingContext2D, run: Run, t: number, stren
   if (!glints) return;
   const glintAlpha = haloGlintAlpha(strength, scheme, run.reduced);
   if (!glintAlpha || !run.edges.length) return;
-  const glint = context.createRadialGradient(origin.x, origin.y, inner, origin.x, origin.y, outer);
+  const glint = context.createRadialGradient(center.x, center.y, inner, center.x, center.y, outer);
   glint.addColorStop(0, rgba(palette[3], 0));
   glint.addColorStop(at(radius - half * 0.4), rgba(palette[0], glintAlpha * 0.6));
   glint.addColorStop(at(radius), rgba(palette[3], glintAlpha));
@@ -285,10 +296,12 @@ function drawFrame(context: CanvasRenderingContext2D, run: Run, t: number) {
 }
 
 /**
- * Transparent canvas overlay for the confirmed-compound halo: colour rings spreading from the Compound button that is
- * visible after the result dialog closes, plus faint glints on borders and dividers. The canvases cover only the
+ * Transparent canvas overlay for the confirmed-compound halo: a wide arc of colour rising from the Compound button that
+ * is visible after the result dialog closes, plus faint glints on borders and dividers. The canvases cover only the
  * visible slice of the content area. It ignores the pointer, ends on a window resize, and is removed from the DOM at
- * rest. A very short translate (≤ 3px, ≤ 150ms) shakes the surface; reduced motion never shakes or moves the ring.
+ * rest. If the content area resizes mid-play (OK refreshes the Harvest, so a status line can come and go), the text
+ * mask and the edges are measured again so cut-outs and glints stay on the text and borders. A very short translate
+ * (≤ 1px, ≤ 150ms) shakes the surface; reduced motion never shakes or moves the ring.
  */
 export function CompoundSuccessHalo({ play, originRef }: { play: number; originRef: RefObject<HTMLElement | null> }) {
   const [run, setRun] = useState<Run | null>(null);
@@ -307,8 +320,8 @@ export function CompoundSuccessHalo({ play, originRef }: { play: number; originR
     const reduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const surfaceStyle = getComputedStyle(surface);
     const radius = parseFloat(surfaceStyle.borderTopLeftRadius) > 0 ? surfaceStyle.borderTopLeftRadius : "var(--radius-surface, 28px)";
-    setRun({ surface, scheme: resolveScheme(surface), reduced, radius, slice,
-      origin: haloOriginPoint(target && target.width && target.height ? target : null, frame),
+    const origin = haloOriginPoint(target && target.width && target.height ? target : null, frame);
+    setRun({ surface, scheme: resolveScheme(surface), reduced, radius, slice, origin, center: haloRiseCenter(origin, slice),
       edges: reduced ? [] : collectEdges(surface, frame) });
   }, [play, originRef]);
   useEffect(() => {
@@ -326,26 +339,54 @@ export function CompoundSuccessHalo({ play, originRef }: { play: number; originR
     const scale = haloCanvasScale(window.devicePixelRatio);
     canvas.width = Math.ceil(run.slice.width * scale); canvas.height = Math.ceil(run.slice.height * scale);
     context.setTransform(scale, 0, 0, scale, 0, 0);
-    const box = run.surface.getBoundingClientRect();
-    const frameBox = { left: box.left + run.slice.x, top: box.top + run.slice.y, width: run.slice.width, height: run.slice.height };
+    const frameBox = (): HaloFrame => {
+      const box = run.surface.getBoundingClientRect();
+      return { left: box.left + run.slice.x, top: box.top + run.slice.y, width: run.slice.width, height: run.slice.height };
+    };
     const duration = run.reduced ? HALO_REDUCED_DURATION_MS : HALO_DURATION_MS;
     const previousTransform = run.surface.style.transform;
     const applyShake = (elapsed: number) => {
       const { x, y } = haloShake(elapsed, run.reduced);
       run.surface.style.transform = x || y ? `translate(${x}px, ${y}px)` : previousTransform;
     };
+    // Drawn from a copy whose edges can be measured again mid-play; the overlay itself never moves.
+    const live: Run = { ...run };
     let mask: HTMLCanvasElement | null = null;
-    let frame = 0, cancelled = false;
-    void buildHaloMask(run.surface, frameBox, scale).then((built) => {
-      if (cancelled) { if (built) built.width = 0; return; }
-      mask = built;
+    let frame = 0, cancelled = false, started = false, lastT = 0;
+    let measured = { width: run.surface.offsetWidth, height: run.surface.offsetHeight };
+    const paint = (t: number) => {
+      drawFrame(context, live, t);
+      protectTextAndIcons(context, mask, live);
+    };
+    // Layout moved under the overlay (OK refreshes the Harvest, so a status line can come and go): measure the text and
+    // borders again. ResizeObserver runs after layout and before paint, so the swapped mask and a redraw land in the
+    // same frame as the move; icons follow when decoded.
+    const remeasure = () => {
+      if (cancelled) return;
+      measured = { width: run.surface.offsetWidth, height: run.surface.offsetHeight };
+      const now = frameBox();
+      if (!run.reduced) live.edges = collectEdges(run.surface, now);
+      const next = startHaloMask(run.surface, now, scale);
+      if (mask && mask !== next?.mask) { mask.width = 0; mask.height = 0; }
+      mask = next?.mask ?? null;
+      if (started) paint(lastT);
+    };
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(() => {
+      if (run.surface.offsetWidth !== measured.width || run.surface.offsetHeight !== measured.height) remeasure();
+    }) : null;
+    observer?.observe(run.surface);
+    const first = startHaloMask(run.surface, frameBox(), scale);
+    mask = first?.mask ?? null;
+    void (first?.icons ?? Promise.resolve()).then(() => {
+      if (cancelled) return;
+      started = true;
       const start = performance.now();
       const tick = (now: number) => {
         const elapsed = now - start;
         const t = haloProgress(elapsed, duration);
+        lastT = t;
         applyShake(elapsed);
-        drawFrame(context, run, t);
-        protectTextAndIcons(context, mask, run);
+        paint(t);
         if (t >= 1) { applyShake(duration); setRun(null); return; }
         frame = requestAnimationFrame(tick);
       };
@@ -353,6 +394,7 @@ export function CompoundSuccessHalo({ play, originRef }: { play: number; originR
     });
     return () => {
       cancelled = true;
+      observer?.disconnect();
       cancelAnimationFrame(frame);
       run.surface.style.transform = previousTransform;
       if (mask) { mask.width = 0; mask.height = 0; mask = null; }
