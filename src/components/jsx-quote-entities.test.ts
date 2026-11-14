@@ -20,9 +20,9 @@ describe("JSX quote entities", () => {
     }
   });
 
-  it("uses the shared wallet prompt without setup or extension warnings", () => {
+  it("uses the one positions empty state without setup or extension warnings", () => {
     const src = readFileSync(resolve("src/components/selected-app.tsx"), "utf8");
-    expect(src).toContain("ConnectWalletPrompt");
+    expect(src).toContain("PositionsEmptyState");
     expect(src).not.toContain("Reown Project ID");
     expect(src).not.toContain("Wallet extensions not detected");
   });

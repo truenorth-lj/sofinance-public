@@ -392,7 +392,7 @@ describe("automatic cleanup after a new compound", () => {
     expect(harvest().textContent).toContain(freshAmounts);
     expect(controller.preview).toBeNull();
     expect(container.textContent).toContain("Approve cleanup in wallet…");
-    expect(container.textContent).toContain("Previous transaction simulation record");
+    expect(container.textContent).not.toContain("Previous transaction simulation record");
     await act(async () => { rejectCleanup(new Error("User rejected cleanup")); });
     expect(harvest().textContent).toContain(freshAmounts);
     expect(controller.attemptStatus).toBe("success"); expect(controller.receipts).toHaveLength(1);

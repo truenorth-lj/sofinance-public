@@ -107,8 +107,8 @@ describe("/app My positions with registry DEXes", () => {
     // PR8: the page's default tool (Compound) now has a registry panel, never the Raydium one.
     expect(container.querySelector("[data-testid=registry-compound]")).toBeTruthy();
     expect(container.querySelector("#compound-view")?.textContent).not.toContain("Meteora");
-    // Compound fees has no All positions card, and one position needs no dropdown beside its title.
-    expect(container.querySelector('[aria-labelledby="all-positions-heading"]')).toBeNull();
+    // All positions stays on every tool; the Compound panel has no position dropdown of its own.
+    expect(container.querySelector('[aria-labelledby="all-positions-heading"]')).not.toBeNull();
     expect(container.querySelector("#compound-position")).toBeNull();
     await act(async () => tab("Add to position").click());
     await settle();
@@ -121,7 +121,7 @@ describe("/app My positions with registry DEXes", () => {
     expect(container.querySelector("#performance-view [data-testid=registry-performance]")).toBeTruthy();
   });
 
-  it("Performance: the adapter's report in the shared summary, the pool chart with the realized fee overlay, and the exit estimate greyed with its reason", async () => {
+  it("Performance: the adapter's report in the shared summary and the pool chart with the realized fee overlay; the greyed exit estimate sits in Withdraw", async () => {
     const meteora = dexDescriptors.descriptorFor("meteora-dlmm")!.capabilities;
     expect(meteora.performance).toEqual({ supported: true });
     expect(meteora.exitPreview).toEqual({ supported: false, reason: "Not available for this pool yet" });
@@ -134,10 +134,13 @@ describe("/app My positions with registry DEXes", () => {
     const chart = panel.querySelector("[data-testid=pool-daily-apr-chart]")!;
     expect(chart.getAttribute("data-pool")).toBe(POOL);
     expect(chart.getAttribute("data-overlay")).toBe("1");
-    const exit = panel.querySelector("[data-testid=exit-preview-unavailable]")!;
+    expect(panel.querySelector("[data-testid=exit-preview-unavailable]")).toBeNull();
+    expect(panel.textContent).not.toContain("Meteora");
+    await act(async () => tab("Withdraw").click());
+    await settle();
+    const exit = container.querySelector("#withdraw-view [data-testid=exit-preview-unavailable]")!;
     expect(exit.getAttribute("aria-disabled")).toBe("true");
     expect(exit.textContent).toBe("Exit estimateNot available for this pool yet");
-    expect(panel.textContent).not.toContain("Meteora");
   });
 
   it("Performance: a stock represented in the overview keeps registry position details without duplicate stock cards", async () => {

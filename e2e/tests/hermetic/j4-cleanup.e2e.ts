@@ -69,6 +69,8 @@ for (const scenario of ["packed", "chunked", "interrupted-confirmation"] as cons
     await page.route("**/api/protocol-pools**", route => route.fulfill({ json: { pairs: [], pools: [] } }));
     await page.goto("/app", { waitUntil: "domcontentloaded" });
     await new ConnectModal(page, wallet).connect();
+    // A wallet with no open position keeps harvest account management in one collapsed section under All positions.
+    await page.getByTestId("harvest-accounts-standalone").locator("summary").first().click();
     await expect(page.getByRole("heading", { name: "Clean up leftover fees" })).toBeVisible();
     await page.getByRole("button", { name: "Find leftover fees" }).click();
     await expect(page.getByText(/Wallet scan complete/)).toBeVisible();

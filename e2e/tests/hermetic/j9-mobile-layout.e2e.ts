@@ -78,8 +78,8 @@ for (const width of widths) {
       const check = checker(page, width, phone);
       await page.goto("/app", { waitUntil: "domcontentloaded" });
       await new ConnectModal(page, wallet).connect();
-      // Compound fees (the default view) has no All positions card, so the range chip shows on the other tabs only.
-      await page.getByRole("region", { name: "Compound fees", exact: true }).getByLabel("Position to compound", { exact: true }).waitFor();
+      // All positions lists the wallet's positions on every tool; the first one opens with the tool tabs.
+      await page.getByRole("region", { name: "All positions", exact: true }).getByTestId("position-fallback-select").first().waitFor();
       const show = async (view: string) => {
         if (phone) await page.locator("#position-action").selectOption(view);
         else {
@@ -98,7 +98,7 @@ for (const width of widths) {
         // Non-Performance tools expose every position as a lightweight All positions row.
         await show("deposit");
         await selectPosition(page, position);
-        await page.getByText(/^(Price within range|In range)$/).first().waitFor();
+        await page.getByTestId("range-badge").first().waitFor();
         const source = position.startsWith("meteora") ? "meteora" : "raydium";
         const positionViews = await views();
         expect(positionViews).toContain("performance");

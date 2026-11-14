@@ -2,12 +2,13 @@
 
 import { Collapsible } from "../collapsible";
 import { useEffect, useMemo, useState } from "react";
-import { dexDescriptors, dexPositionLabel, dexPositionRangeText, dexRangeStatusText, fetchDexPositions, positionDescriptorsFor,
+import { dexDescriptors, dexPositionLabel, dexPositionRangeText, fetchDexPositions, positionDescriptorsFor,
   type DexCapabilities, type DexDescriptor, type DexSigner } from "@/lib/dex/client";
 import { tokenSymbol, type PositionLabelMetadata } from "@/lib/position-label";
 import { iconFor, type IconChain, type TokenIconMap } from "@/lib/token-icons/map";
 import type { ChainId, PositionSourceId, UnifiedPosition } from "@/lib/unified-positions/model";
 import { PositionAssetRow } from "../position-asset-row";
+import { RangeBadge } from "./range-badge";
 
 /**
  * My positions from DEXes served through the registry (PR5): every descriptor whose signer is the connected wallet's,
@@ -85,12 +86,11 @@ export function RegistryPositionHeader({ position, metadata = {}, icons, showAss
   /** False on the Performance tab, which already shows the position's value and fees: the rows fold away. */
   showAssets?: boolean;
 }) {
-  const status = dexRangeStatusText(position);
   const tokens = [position.tokenA, position.tokenB] as const;
   const sides = ["a", "b"] as const;
   return <>
     <div className="mt-3 flex flex-wrap items-center gap-2 text-xs" data-testid="registry-position-header">
-      {status ? <span className={`rounded-full border px-2.5 py-1 ${position.rangeStatus === "in" ? "border-white/40 bg-white/[0.07] text-cream/80" : "border-white/20 bg-white/[0.05] text-smoke"}`}>{status}</span> : null}
+      <RangeBadge status={position.rangeStatus} />
       <span className="rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-cream/80">{dexPositionRangeText(position).replace(/^range/, "Range").replace(/^ticks/, "Ticks")}</span>
     </div>
     <Collapsible open={showAssets} testId="registry-position-assets-collapse">
@@ -103,12 +103,7 @@ export function RegistryPositionHeader({ position, metadata = {}, icons, showAss
   </>;
 }
 
-/** "Learn more details" lines for a selected registry position. */
+/** "Learn more details" lines for a selected registry position: the pool only (no position key or mints). */
 export function RegistryPositionDetails({ position }: { position: UnifiedPosition }) {
-  return <>
-    <p>Pool: {position.poolId}</p>
-    <p>Position: {position.nativeId}</p>
-    <p>Pool A mint: {position.tokenA.id}</p>
-    <p>Pool B mint: {position.tokenB.id}</p>
-  </>;
+  return <p>Pool: {position.poolId}</p>;
 }

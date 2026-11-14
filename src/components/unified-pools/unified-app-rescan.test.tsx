@@ -46,14 +46,14 @@ const settle = async () => { for (let i = 0; i < 5; i++) await act(async () => {
 async function render(rhc = true) {
   const session = createEvmSession({ discover });
   await act(async () => { root.render(createElement(EvmWalletProvider, { enabled: true, session },
-    // Rescan wallet lives in All positions, which the Compound fees tab hides once a Solana wallet is connected.
+    // The page's one Refresh button rescans every connected wallet.
     createElement(UnifiedApp, { selected: { initialView: "deposit" }, flags: { orca: false, meteora: false, rhc }, rhcSigningEnabled: false }))); });
   await settle();
 }
-const rescanButton = () => [...container.querySelectorAll("button")].find((b) => b.textContent === "Rescan wallet")!;
+const rescanButton = () => [...container.querySelectorAll("button")].find((b) => b.textContent === "Refresh")!;
 async function clickRescan() { await act(async () => { rescanButton().click(); }); await settle(); }
 
-describe("/app Rescan wallet", () => {
+describe("/app Refresh (rescan wallets)", () => {
   it("first load: one Solana scan and one cached (not fresh) Robinhood Chain scan", async () => {
     await render();
     expect(calls("/api/wallet")).toHaveLength(1);
@@ -86,7 +86,7 @@ describe("/app Rescan wallet", () => {
     expect(container.querySelector("[data-testid=positions-scanning]")).not.toBeNull();
     await act(async () => { finish(); }); await settle();
     expect(container.querySelector("[data-testid=positions-scanning]")).toBeNull();
-    expect(container.querySelector("[data-testid=positions-empty]")).not.toBeNull();
+    expect(container.querySelector("[data-testid=positions-empty-state]")).not.toBeNull();
   });
 
   it("Robinhood Chain off: the button only rescans Solana, as before", async () => {

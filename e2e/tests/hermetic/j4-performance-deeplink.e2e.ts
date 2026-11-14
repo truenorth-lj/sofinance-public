@@ -1,5 +1,5 @@
-// J4: Performance deep link /app?view=performance&mint=<position NFT> must never leave the exit estimate waiting forever
-// when the connected wallet (or no wallet) cannot supply the position's NFT token account. Read-only: no signing, no
+// J4: Performance deep link /app?view=performance&mint=<position NFT> opens the report and never waits on an exit estimate
+// (that moved to the Withdraw tool). Read-only: no signing, no
 // broadcast. The server's performance / exit-preview answers are mocked (hermetic lane: no live RPC).
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -30,30 +30,26 @@ async function mockPerformanceApis(page: Page) {
 }
 
 test.describe("J4 performance deep link", () => {
-  test("no wallet connected: explains why and offers a manual preview instead of waiting forever", async ({ page, wallet }) => {
+  // The exit estimate now lives in the Withdraw tool (for a position this wallet holds), so the Performance deep link
+  // shows the report only and never reads an exit estimate or waits for position accounts.
+  test("no wallet connected: Performance opens without an exit estimate or a wait", async ({ page, wallet }) => {
     const exitRequests = await mockPerformanceApis(page);
     await page.goto(`/app?view=performance&mint=${MINT}`, { waitUntil: "domcontentloaded" });
-    const section = page.getByRole("region", { name: "Exit estimates" });
-    await expect(section).toContainText("Connect that wallet, or preview this position manually");
+    await expect(page.locator("#performance-view")).toBeVisible();
+    await expect(page.getByRole("region", { name: "Exit estimates" })).toHaveCount(0);
     await expect(page.getByText("Waiting for position accounts…")).toHaveCount(0);
     expect(exitRequests).toHaveLength(0);
-
-    await section.getByRole("button", { name: "Preview exit: USDC + SOL" }).click();
-    await expect(section).toContainText("1.000000 USDC + 0.008580200 SOL");
-    expect(exitRequests).toHaveLength(1);
-    expect(exitRequests[0]!.searchParams.get("positionId")).toBe(MINT);
-    expect(exitRequests[0]!.searchParams.has("nftAccount")).toBe(false);
     expect(wallet.ledger).toEqual([]);
   });
 
-  test("connected wallet that holds no positions: same fallback after connecting", async ({ page, wallet }) => {
+  test("connected wallet that holds no positions: same after connecting", async ({ page, wallet }) => {
     const exitRequests = await mockPerformanceApis(page);
     await page.goto(`/app?view=performance&mint=${MINT}`, { waitUntil: "domcontentloaded" });
     const modal = new ConnectModal(page, wallet);
     await modal.connect();
     await expect(modal.navAddress).toBeVisible();
-    const section = page.getByRole("region", { name: "Exit estimates" });
-    await expect(section).toContainText("Connect that wallet, or preview this position manually");
+    await expect(page.locator("#performance-view")).toBeVisible();
+    await expect(page.getByRole("region", { name: "Exit estimates" })).toHaveCount(0);
     await expect(page.getByText("Waiting for position accounts…")).toHaveCount(0);
     expect(exitRequests).toHaveLength(0);
     expect(wallet.ledger).toEqual([]);

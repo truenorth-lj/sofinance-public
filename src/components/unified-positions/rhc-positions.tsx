@@ -3,7 +3,6 @@
 import type { PositionLookup } from "@sofinance/engine/protocols/uniswap-v4/exit-flow";
 import { useEffect, useMemo, useState } from "react";
 import { trackedPositionIds, trackPositionId, untrackPositionId } from "@/lib/rhc-wallet/exit-execute";
-import { APP_ROUTES } from "@/lib/public-urls";
 import { rhcPositionSource, type RhcNative } from "@/lib/unified-positions/sources/rhc";
 import type { ToolId, UnifiedPosition } from "@/lib/unified-positions/model";
 import { useOptionalEvmWalletConnection } from "../evm-wallet-connection";
@@ -63,9 +62,7 @@ export function useRhcPositions({ wallet, signingEnabled, refreshKey, receiptPol
         intro={<p className="mt-1 text-xs text-smoke">Uniswap v4 positions this wallet holds on Robinhood Chain show up automatically. Missing one? Add its position NFT number.</p>}
         addId={addId} onAddId={setAddId} onAdd={add} loading={loading} scanning={scanning}
         scanError={scan?.error} loadError={loadError}
-        empty={!loading && !scanning && !positions.length && !loadError && !scan?.error
-          ? <p className="mt-2 text-xs text-smoke" data-testid="positions-empty">
-            No Robinhood Chain positions in this wallet. <a href={APP_ROUTES.rwaPairs} className="font-semibold text-cream underline underline-offset-4">Open a new position</a></p> : null} />
+        empty={null} />
       {sentElsewhere ? <CloseStatus sent={sentElsewhere} symbols={["SPCX", "SPCXon"]} /> : null}
     </>}
   </div>;
@@ -76,7 +73,6 @@ export function useRhcPositions({ wallet, signingEnabled, refreshKey, receiptPol
     source: rhcPositionSource as never,
     positions: wrongNetwork ? [] : positions,
     status,
-    emptyOption: wrongNetwork ? "Switch to Robinhood Chain to see positions" : scanning ? "Checking Robinhood Chain…" : "No positions found",
     busy: close.busy !== null,
     header: (position) => {
       const { lookup, held, priceRange } = nativeOf(position);
@@ -93,13 +89,11 @@ export function useRhcPositions({ wallet, signingEnabled, refreshKey, receiptPol
       </div>;
     },
     details: (position) => {
-      const { lookup, priceRange } = nativeOf(position);
+      const { lookup } = nativeOf(position);
       const p = lookup.position;
       return <>
         <p>Position NFT: #{lookup.tokenId}</p>
-        {p ? <p data-testid="rhc-ticks">Ticks {p.tickLower} to {p.tickUpper}{priceRange ? ` (price ${priceRange.text})` : ""} · liquidity {p.liquidity}</p> : null}
         {p?.poolId ? <p>Pool: {p.poolId}</p> : null}
-        {p ? <p>Owner: {p.owner}</p> : null}
       </>;
     },
     tool: (position, tool: ToolId) => {

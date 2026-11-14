@@ -28,7 +28,7 @@ function render(wallet = walletA, initialMint = "", sharedMint?: string) {
     walletsCount: 1, connectionError: "", signTransaction: async (tx) => tx,
   };
   root.render(createElement(WalletConnectionContext.Provider, { value: connection },
-    createElement(PositionPerformancePanel, { initialMint, embedded: sharedMint !== undefined, selectedMint: sharedMint, selectedNftAccount: sharedMint ? secondMint : undefined })));
+    createElement(PositionPerformancePanel, { initialMint, embedded: sharedMint !== undefined, selectedMint: sharedMint })));
 }
 /** Polls (real timers) until the condition holds, so timing on a slow CI box does not decide the test. */
 async function until(condition: () => boolean, timeoutMs = 2000) {
@@ -232,7 +232,7 @@ describe("position performance workflow", () => {
     expect(container.textContent).toContain("No positive deposit amount");
     expect(container.textContent).toContain("No deposit history was found");
     expect(container.textContent).not.toContain(`${response.tokenNative.tokenEquivalent.metrics.pnl.toPrecision(6)} ${response.tokenNative.tokenEquivalent.baseSymbol}`);
-    expect(container.textContent).toContain("Amounts shown in");
+    expect(container.textContent).not.toContain("Amounts shown in");
     expect(container.textContent).toContain("Position assets");
 
   });
@@ -272,7 +272,7 @@ describe("position performance workflow", () => {
     expect(grid.children).toHaveLength(5);
   });
 
-  it("keeps one APR and shows exit estimates alongside the key metrics", async () => {
+  it("keeps one APR and leaves the exit estimate to the Withdraw tool", async () => {
     Object.assign(response.metrics, { feesEarnedUsd: 0.125 });
     await scan();
     await compute();
@@ -280,9 +280,8 @@ describe("position performance workflow", () => {
     expect(cardLabels().filter((label) => label.includes("APR"))).toEqual(["Est. trading-fee APR · not a prediction"]);
     expect(results.textContent).toContain("$0.1250 USD");
     expect(results.textContent).toContain("In range");
-    const exit = results.querySelector('[aria-label="Exit estimates"]')!;
-    expect(exit.closest("details")).toBeNull();
-    expect(exit.textContent).toContain("Preview exit: USDC + SOL");
+    expect(results.querySelector('[aria-label="Exit estimates"]')).toBeNull();
+    expect(results.textContent).not.toContain("Preview exit: USDC + SOL");
     expect(results.textContent).not.toMatch(/Read ledger, history and HODL|Verified, read-only|Details: position ledger|USD \(secondary|Details: data sources/);
   });
 
@@ -291,7 +290,9 @@ describe("position performance workflow", () => {
     await compute();
     const results = container.querySelector('[aria-label="Performance results"]')!;
     expect(results.textContent).toContain("Not a forecast or a promised return");
-    expect(results.textContent).toContain("it is not a promised return");
+    // The long APR explanation is one footnote now.
+    expect(results.textContent).toContain("Estimate, not a promised return.");
+    expect(results.textContent).not.toContain("Additional deposits are not time-weighted");
     const te = response.tokenNative!.tokenEquivalent!;
     expect(results.textContent).toContain(`Liquidity ${te.metrics.liquidity.toPrecision(6)} + unclaimed fees ${te.metrics.uncollectedFees.toPrecision(6)} ${te.baseSymbol}`);
     expect(te.metrics.liquidity + te.metrics.uncollectedFees).toBeCloseTo(te.metrics.equity, 6);
@@ -309,17 +310,17 @@ describe("position performance workflow", () => {
 
   it("uses the shared position in embedded mode without rescanning the wallet", async () => {
     await act(async () => { render(walletA, "", firstMint); });
-    await until(() => fetchMock.mock.calls.length >= 2 && Boolean(container.textContent?.includes("1.000000 USDC")));
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await until(() => fetchMock.mock.calls.length >= 1 && Boolean(container.querySelector('[aria-label="Performance results"] .grid')));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls.some(([url]) => url.startsWith("/api/wallet?"))).toBe(false);
     expect(container.querySelector("#perf-position")).toBeNull();
     expect(container.textContent).not.toContain("Look up another position by NFT mint");
     expect(container.textContent).not.toContain("Compute performance");
     expect(fetchMock.mock.calls[0]?.[0]).toContain(`positionMint=${firstMint}`);
     expect(container.querySelector('[aria-label="Performance results"]')).not.toBeNull();
+    // No exit estimate here (it moved to Withdraw): no exit-preview read either.
     expect(container.textContent).not.toContain("Preview exit: USDC + SOL");
-    expect(container.textContent).toContain("1.000000 USDC + 0.008580200 SOL");
-    expect(fetchMock.mock.calls.at(-1)?.[0]).toContain(`nftAccount=${secondMint}`);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith("/api/lp-decision/exit-preview"))).toBe(false);
     response = { ...response, positionMint: secondMint };
     await act(async () => { render(walletA, "", secondMint); });
     expect(container.querySelector("#perf-heading")).toBeNull();
@@ -339,7 +340,7 @@ describe("position performance workflow", () => {
     await act(async () => { retry!.click(); });
     expect(container.querySelector('[aria-label="Performance results"]')).not.toBeNull();
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("ignores the previous position response when selection changes during loading", async () => {

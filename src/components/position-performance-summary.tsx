@@ -61,7 +61,6 @@ export function PerformanceSummary({ data, embedded, metadata, showStockPerforma
           </dl>}
           {stock && showStockPerformance && <StockPerformanceTiles stock={stock} pairLabel={tn?.symbolA && tn?.symbolB ? `${tn.symbolA} / ${tn.symbolB}` : null} />}
           {!hasRecordedDeposits && <p role="status" className="rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs leading-5 text-cream/80">No deposit history was found. Current inventory is available, but trading-fee APR needs opening or deposit records.</p>}
-          {te && <p className="text-xs leading-5 text-smoke">Amounts shown in {te.baseSymbol} equivalent.</p>}
           <div className="grid gap-3 sm:grid-cols-2">
             <Stat label={holdingTime.label} value={holdingTime.value} description="Time since the earliest recorded position event." />
             {/* Embedded in My positions, the range badge above the tabs already says this. */}
@@ -98,8 +97,7 @@ export function PerformanceSummary({ data, embedded, metadata, showStockPerforma
           </div>
 
           <p className="text-xs leading-5 text-smoke">
-            Estimated APR annualizes the trading fees accrued so far (collected plus unclaimed) over recorded deposits and holding time, at current prices. Additional deposits are not time-weighted, and future fees can be higher or lower: it is not a promised return. Compounded fees count as new deposits, so after a compound this APR reads slightly low.
-            {data.truncated && " Earlier transactions may be missing, so the estimate may be incomplete."}
+            Estimate, not a promised return.{data.truncated && " Earlier transactions may be missing, so it may be incomplete."}
           </p>
           {data.truncated && data.historyFetch?.canContinue && onLoadRemaining && (
             <button type="button" disabled={loadingRemaining} onClick={onLoadRemaining}

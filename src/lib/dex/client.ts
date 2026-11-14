@@ -36,7 +36,7 @@ export async function fetchOpenRanges(dexId: string, poolId: string, signal?: Ab
   return body;
 }
 export { dexTxAdapter, DEX_PREPARE_TIMEOUT_MS, type DexPreparedStep, type DexStepInput, type DexStepOp } from "./tx-adapter";
-export { dexPositionLabel, dexPositionRangeText, dexRangeStatusText, fetchDexPerformance, fetchDexPositions, positionDescriptorsFor } from "./positions-client";
+export { dexPositionLabel, dexPositionRangeText, fetchDexPerformance, fetchDexPositions, positionDescriptorsFor } from "./positions-client";
 
 /**
  * Pre-build check of an Add (POST /api/dex/[dex]/quote-add): today the "too small for this range" minimum. Resolves

@@ -35,32 +35,27 @@ function render(
   );
 }
 
-describe("PositionPerformancePanel wallet defaults", () => {
-  it("pre-fills the wallet field from the connected wallet and offers a position picker", () => {
+describe("PositionPerformancePanel without the NFT-mint lookup", () => {
+  it("offers the connected wallet's positions and no manual mint or wallet fields", () => {
     const markup = render();
-    expect(markup).toContain(`value="${connectedWallet}"`);
-    expect(markup).toContain("Defaults to the connected wallet");
-    expect(markup).toContain("Pre-filled from the connected wallet");
     expect(markup).toContain("Connected wallet positions");
     expect(markup).toContain('id="perf-position"');
-    expect(markup).toContain("Position NFT mint (base58)");
-    expect(markup).toContain("or pick one from the connected wallet");
-    expect(markup).not.toContain("Use connected wallet");
+    expect(markup).not.toContain("Look up another position by NFT mint");
+    expect(markup).not.toContain("Position NFT mint (base58)");
+    expect(markup).not.toContain('id="perf-wallet"');
   });
 
-  it("lets URL mint and wallet take precedence and shows a reset affordance", () => {
+  it("a URL mint and wallet still drive the read without showing the lookup", () => {
     const markup = render({ initialMint: urlMint, initialWallet: urlWallet });
-    expect(markup).toContain(`value="${urlMint}"`);
-    expect(markup).toContain(`value="${urlWallet}"`);
-    expect(markup).toContain("Use connected wallet");
+    expect(markup).not.toContain("Look up another position by NFT mint");
+    expect(markup).not.toContain('id="perf-wallet"');
+    expect(markup).not.toContain("Use connected wallet");
   });
 
-  it("stays empty when disconnected and no URL wallet is provided", () => {
+  it("disconnected: no picker and no manual fields", () => {
     const markup = render({}, { connected: false, address: undefined });
-    expect(markup).toContain('id="perf-wallet"');
-    expect(markup).toContain("Defaults to the connected wallet");
+    expect(markup).not.toContain('id="perf-wallet"');
     expect(markup).not.toContain(`value="${connectedWallet}"`);
-    expect(markup).not.toContain("Use connected wallet");
     expect(markup).not.toContain("Connected wallet positions");
   });
 });
