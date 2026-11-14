@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { BrandMark } from "@/components/brand-mark";
 import { HomepageConnectButton } from "@/components/homepage-wallet-island";
 import { APP_ROUTES, BLOG_ROUTES } from "@/lib/public-urls";
 
@@ -18,10 +17,19 @@ export function SiteHeader({ onHomepage = false }: { onHomepage?: boolean }) {
     <header data-testid="site-header" className="flex flex-wrap items-center justify-between gap-2">
       <Link
         href="/"
-        className="flex h-10 items-center gap-2 rounded-full bg-lemon pl-1.5 pr-4 text-[13px] font-semibold text-ink outline-none focus-visible:shadow-[0_0_0_2px_var(--color-cream)]"
+        className="flex shrink-0 items-center gap-2.5 whitespace-nowrap font-display text-[20px] font-bold leading-none text-cream outline-none focus-visible:shadow-[0_0_0_2px_var(--color-cream)]"
       >
-        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-ink">
-          <BrandMark className="h-5 w-5 text-lemon" />
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-visible">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/navbar-mark-squircle-cream.svg"
+            alt=""
+            width={36}
+            height={36}
+            className="block h-9 w-9 max-w-none shrink-0 object-contain"
+            aria-hidden
+            data-testid="site-header-mark"
+          />
         </span>
         SoFinance
       </Link>

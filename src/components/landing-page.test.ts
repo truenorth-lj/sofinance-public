@@ -121,11 +121,25 @@ describe("landing page copy and routes", () => {
     }
   });
 
-  it("uses the inline C3 BrandMark, not the old square logo image", () => {
+  it("uses the cream squircle H mark in the header, not the old square logo image", () => {
     // The header moved to SiteHeader (shared with blog, docs, FAQ and terms).
     expect(src).toContain("<SiteHeader onHomepage />");
     const header = readFileSync(resolve("src/components/site-header.tsx"), "utf8");
-    expect(header).toContain("BrandMark");
+    expect(header).toContain("/navbar-mark-squircle-cream.svg");
+    expect(header).toContain("h-9 w-9");
+    expect(header).toContain("max-w-none");
+    expect(header).toContain("shrink-0");
+    expect(header).toContain("object-contain");
+    expect(header).toContain("gap-2.5");
+    expect(header).toContain("font-display");
+    expect(header).toContain("text-[20px]");
+    expect(header).toContain("font-bold");
+    expect(header).toContain("text-cream");
+    expect(header).not.toContain("BrandMark");
+    expect(header).not.toContain("text-lemon");
+    expect(header).not.toContain("bg-lemon");
+    expect(header).not.toContain("pl-[7px]");
+    expect(header).not.toContain("pl-1.5");
     expect(header).not.toContain("/logo.png");
     expect(src).not.toContain("/logo.png");
     expect(src).not.toContain("next/image");

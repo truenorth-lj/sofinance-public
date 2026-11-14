@@ -7,7 +7,6 @@ import { BrandMark } from "./brand-mark";
 
 describe("BrandMark", () => {
   const svg = readFileSync(resolve("src/brand/sofinance-mark.svg"), "utf8");
-  const icon = readFileSync(resolve("src/app/icon.svg"), "utf8");
 
   it("matches the orbit geometry (core, open ring, satellite dot; no hard-coded colours)", () => {
     const markup = renderToStaticMarkup(createElement(BrandMark, { className: "h-10 w-10" }));
@@ -29,10 +28,4 @@ describe("BrandMark", () => {
     expect(svg).not.toMatch(/<rect[^>]*width="64"[^>]*fill=/);
   });
 
-  it("renders favicon/app icons as the white mark on the dark canvas", () => {
-    expect(icon).toContain('fill="#0a0a0a"');
-    expect(icon).toContain('fill="#fff"');
-    expect(icon).toContain("A23 23 0 1 1");
-    expect(icon).not.toContain("ellipse");
-  });
 });

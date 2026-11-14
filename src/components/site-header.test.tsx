@@ -50,6 +50,32 @@ describe("SiteHeader", () => {
     }
   });
 
+  it("renders a bare cream squircle H mark and wordmark, with no lemon capsule", () => {
+    const html = renderToStaticMarkup(createElement(SiteHeader));
+    expect(html).toContain('src="/navbar-mark-squircle-cream.svg"');
+    expect(html).toContain('width="36"');
+    expect(html).toContain('height="36"');
+    expect(html).toContain("h-9 w-9 max-w-none shrink-0 object-contain");
+    expect(html).toContain("flex h-9 w-9 shrink-0 items-center justify-center overflow-visible");
+    expect(html).toContain("flex shrink-0 items-center gap-2.5");
+    expect(html).toContain("gap-2.5");
+    expect(html).toContain("font-display");
+    expect(html).toContain("text-[20px]");
+    expect(html).toContain("font-bold");
+    expect(html).toContain("text-cream");
+    expect(html).toContain("SoFinance");
+    expect(html).not.toContain("bg-lemon");
+    expect(html).not.toContain("pl-[7px]");
+    expect(html).not.toContain("text-lemon");
+    expect(html).not.toContain('preserveAspectRatio="none"');
+  });
+
+  it("the navbar mark SVG has a viewBox and does not stretch with preserveAspectRatio=none", () => {
+    const svg = readFileSync(resolve("public/navbar-mark-squircle-cream.svg"), "utf8");
+    expect(svg).toMatch(/viewBox="0 0 \d+ \d+"/);
+    expect(svg).not.toContain('preserveAspectRatio="none"');
+  });
+
   it("the homepage renders SiteHeader and the app bar has no Blog tab", () => {
     expect(readFileSync(resolve("src/components/landing-page.tsx"), "utf8")).toContain("<SiteHeader onHomepage />");
     const nav = readFileSync(resolve("src/components/ink/InkNav.tsx"), "utf8");
