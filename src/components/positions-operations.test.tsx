@@ -4,13 +4,15 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SelectedApp } from "./selected-app";
 
-const mocks = vi.hoisted(() => ({ connect: vi.fn(), deposit: vi.fn(), compound: vi.fn(), depositQuote: false }));
+const mocks = vi.hoisted(() => ({ connect: vi.fn(), deposit: vi.fn(), compound: vi.fn(), depositQuote: false, connected: false }));
+const WALLET = "11111111111111111111111111111112", POSITION = "So11111111111111111111111111111111111111112";
 vi.mock("./use-sol-usdc-price", () => ({ useSolUsdcPrices: () => ({ rate: null, usdcUsd: null }) }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/app" }));
 vi.mock("./use-token-metadata", () => ({ useTokenMetadata: () => ({}) }));
 vi.mock("./wallet-connection", () => ({ useWalletConnection: () => ({ connected: false, connect: mocks.connect }) }));
 vi.mock("./use-selected-controller", () => ({ useSelectedController: () => ({
-  connected: false, wallet: "", connect: mocks.connect, disconnect: vi.fn(), discovery: null, state: null,
+  connected: mocks.connected, wallet: mocks.connected ? WALLET : "", connect: mocks.connect, disconnect: vi.fn(), discovery: null, state: null,
+  selection: mocks.connected ? { positionMint: POSITION, inputMint: POSITION, inputKind: "token" } : null,
   quote: mocks.depositQuote ? { requested: "10000000", roundtripCostInput: "137000",
     resaleInput: "9863000", passesFloor: false, inputDecimals: 9, spendA: "0", spendB: "0",
     minOutA: "0", minOutB: "0", expiresAt: Date.now() + 30000 } : null,
@@ -35,53 +37,56 @@ function button(label: string, scope: Element = container) {
 }
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.clearAllMocks(); mocks.depositQuote = false;
+  vi.clearAllMocks(); mocks.depositQuote = false; mocks.connected = false;
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
   await act(async () => root.render(createElement(SelectedApp)));
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
 
-describe("Positions operations while disconnected", () => {
-  it("orders the operations and keeps Performance inside Positions", async () => {
-    expect(Array.from(container.querySelectorAll('nav[aria-label="Position operations"] button')).map((b) => b.textContent?.trim()))
-      .toEqual(["Compound fees", "Performance", "Add to position", "Withdraw"]);
-    // Mobile uses the same action list as a dropdown, including Withdraw.
-    expect(Array.from(container.querySelectorAll<HTMLOptionElement>("select#position-action option")).map((o) => [o.textContent, o.disabled]))
-      .toEqual([["Compound fees", false], ["Performance", false], ["Add to position", false], ["Withdraw", true]]);
+describe("Positions while disconnected", () => {
+  it("shows the one empty state: no tool tabs, no Compound panel, no Auto Copilot", async () => {
+    const list = container.querySelector('[aria-labelledby="all-positions-heading"]')!;
+    const empty = list.querySelector('[data-testid="positions-empty-state"]')!;
+    expect(empty.textContent).toContain("Connect your wallet to see your positions.");
+    expect(empty.querySelector('a[href="/app/rwa-pairs"]')?.textContent).toBe("Go to Pools");
+    expect(container.querySelector('nav[aria-label="Position operations"]')).toBeNull();
+    expect(container.querySelector("select#position-action")).toBeNull();
+    expect(container.querySelector("#compound-view")).toBeNull();
+    expect(container.querySelector("#deposit-view")).toBeNull();
+    expect(container.textContent).not.toContain("Auto Copilot");
+    expect(container.textContent).not.toContain("Manage my liquidity positions");
     expect(Array.from(container.querySelectorAll('nav[aria-label="App"] a')).map((a) => a.textContent)).not.toContain("Performance");
+    expect(container.textContent).not.toContain("Please connect wallet first");
+    expect(container.textContent).not.toContain("Wallet extensions not detected");
+    expect(container.textContent).not.toContain("Reown Project ID");
+  });
+  it("connects from the empty state without starting anything", async () => {
+    await act(async () => button("Connect wallet", container.querySelector('[data-testid="positions-empty-state"]')!).click());
+    expect(mocks.connect).toHaveBeenCalledOnce(); expect(mocks.deposit).not.toHaveBeenCalled(); expect(mocks.compound).not.toHaveBeenCalled();
+  });
+});
+
+describe("Positions operations for a selected position", () => {
+  it("orders the tool tabs inside the selected position's detail", async () => {
+    mocks.connected = true;
+    await act(async () => root.render(createElement(SelectedApp)));
+    const detail = container.querySelector('[data-testid="selected-position-detail"]')!;
+    expect(Array.from(detail.querySelectorAll('nav[aria-label="Position operations"] button')).map((b) => b.textContent?.trim()))
+      .toEqual(["Compound fees", "Performance", "Add to position", "Withdraw"]);
+    expect(Array.from(detail.querySelectorAll<HTMLOptionElement>("select#position-action option")).map((o) => [o.textContent, o.disabled]))
+      .toEqual([["Compound fees", false], ["Performance", false], ["Add to position", false], ["Withdraw", true]]);
     await act(async () => button("Performance").click());
     expect(container.querySelector<HTMLElement>("#performance-view")?.hidden).toBe(false);
     expect(container.querySelector<HTMLElement>("#compound-view")?.hidden).toBe(true);
     expect(container.querySelector("#perf-position")).toBeNull();
     expect(container.querySelector("#perf-heading")).toBeNull();
-    expect(container.querySelector('[aria-label="Performance results"]')?.textContent).toContain("Connect your wallet above to view performance.");
     expect(container.textContent).not.toContain("Compute performance");
-    await act(async () => button("Connect Solana wallet", container.querySelector('[aria-labelledby="all-positions-heading"]')!).click());
-    expect(mocks.connect).toHaveBeenCalledOnce();
-  });
-  it("connects on compound without starting a transaction and links Auto Copilot to Use AI", async () => {
-    const compound = button("One-click compound");
-    expect(compound.disabled).toBe(false);
-    await act(async () => compound.click());
-    expect(mocks.connect).toHaveBeenCalledOnce(); expect(mocks.compound).not.toHaveBeenCalled();
-    expect(container.querySelector('#compound-view a[href="/app/ai"]')?.textContent).toContain("Auto Copilot");
-    expect(container.textContent).not.toContain("Please connect wallet first");
-    expect(container.textContent).not.toContain("Wallet extensions not detected");
-    expect(container.textContent).not.toContain("Reown Project ID");
-  });
-  it("connects on deposit and shows the shared wallet prompt", async () => {
-    await act(async () => button("Add to position", container.querySelector('nav[aria-label="Position operations"]')!).click());
-    const deposit = button("Connect wallet", container.querySelector("#deposit-view")!);
-    expect(deposit.disabled).toBe(false);
-    await act(async () => deposit.click());
-    expect(mocks.connect).toHaveBeenCalledOnce(); expect(mocks.deposit).not.toHaveBeenCalled();
-    expect(container.textContent).toContain("Connect your Solana wallet to find your Solana liquidity positions.");
-    expect(container.textContent).not.toContain("Please connect wallet first");
+    expect(container.textContent).not.toContain("Auto Copilot");
   });
 });
 
 it("shows Total cost as a reminder without a resale threshold setting", async () => {
-  mocks.depositQuote = true;
+  mocks.depositQuote = true; mocks.connected = true;
   await act(async () => root.render(createElement(SelectedApp)));
   const deposit = container.querySelector("#deposit-view")!;
   expect(deposit.textContent).toContain("Total cost");

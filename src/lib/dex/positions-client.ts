@@ -131,6 +131,3 @@ export function dexPositionLabel(position: UnifiedPosition, metadata?: PositionL
   return parts.join(" · ");
 }
 
-export function dexRangeStatusText(position: Pick<UnifiedPosition, "rangeStatus">): string | null {
-  return STATUS_TEXT[position.rangeStatus];
-}

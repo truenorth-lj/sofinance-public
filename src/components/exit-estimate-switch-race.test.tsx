@@ -3,7 +3,6 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PositionPerformancePanel } from "./position-performance-panel";
 import { PositionExitEstimate } from "./position-exit-estimate";
 import { WalletConnectionContext, type WalletConnection } from "./wallet-connection";
 import fixture from "./__fixtures__/position-performance-sample.json";
@@ -38,8 +37,9 @@ function stubFetch() {
 }
 const connection: WalletConnection = { address: WALLET, connected: true, connect: vi.fn(), disconnect: vi.fn(), isMobile: false,
   walletsCount: 1, connectionError: "", signTransaction: async (tx) => tx };
+// The Withdraw tool's exit estimate, mounted the way position-tools-section.tsx mounts it (keyed by the position).
 const panel = (mint: string, account: string) => act(async () => root.render(createElement(WalletConnectionContext.Provider, { value: connection },
-  createElement(PositionPerformancePanel, { embedded: true, selectedMint: mint, selectedNftAccount: account }))));
+  createElement(PositionExitEstimate, { key: mint, positionId: mint, nftAccount: account, autoExit: true }))));
 
 beforeEach(() => {
   vi.useFakeTimers(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); pending = []; stubFetch();
@@ -48,7 +48,7 @@ beforeEach(() => {
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("position switch while an exit-preview is in flight", () => {
-  it("panel: stale response for position A never renders for position B (transport ignores abort)", async () => {
+  it("withdraw estimate: stale response for position A never renders for position B (transport ignores abort)", async () => {
     await panel(MINT_A, ATA_A); await flush(); await flush();
     expect(pending.map((p) => [p.mint, p.account])).toEqual([[MINT_A, ATA_A]]);
     await panel(MINT_B, ATA_B); await flush(); await flush();
@@ -63,7 +63,7 @@ describe("position switch while an exit-preview is in flight", () => {
     expect(container.textContent).not.toContain("999.000000 USDC");
   });
 
-  it("panel: B answers first, then A's stale answer arrives", async () => {
+  it("withdraw estimate: B answers first, then A's stale answer arrives", async () => {
     await panel(MINT_A, ATA_A); await flush(); await flush();
     await panel(MINT_B, ATA_B); await flush(); await flush();
     await act(async () => pending[1]!.resolve("2000000"));

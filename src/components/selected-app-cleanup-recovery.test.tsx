@@ -92,7 +92,9 @@ describe("All positions wallet-wide leftover recovery", () => {
     expect(probe.current?.canCompound).toBe(false);
     expect(probe.current?.canCleanup).toBe(true);
     expect(probe.current?.ready).toBe(true);
-    expect(button("One-click compound").disabled).toBe(true);
+    // With a Raydium row the Compound fees panel carries the harvest tools; with none they stay reachable on their own.
+    if (hasPosition) expect(button("One-click compound").disabled).toBe(true);
+    else expect(container.querySelector('[data-testid="harvest-accounts-standalone"]')).not.toBeNull();
     expect(button("Clean up all balances").disabled).toBe(false);
     expect(button("Retrieve this balance").disabled).toBe(false);
     await act(async () => button(label).click()); await settle();
@@ -105,15 +107,14 @@ describe("All positions wallet-wide leftover recovery", () => {
   it("keeps position compound fenced during read-only B to eligible-input reconciliation", async () => {
     positions = [fixture.state.positionMint, otherMint];
     await mount();
-    // Compound fees has no All positions card: the position comes from the dropdown beside its title.
-    const select = container.querySelector<HTMLSelectElement>("#compound-position")!;
-    await act(async () => { select.value = `raydium-clmm:${otherMint}`; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    // All positions is always shown: pick B from its row while on Compound fees.
+    await act(async () => container.querySelector<HTMLButtonElement>(`[data-testid="position-fallback-select"][data-position-key="raydium-clmm:${otherMint}"]`)!.click());
     await settle();
     const before = probe.commits.length;
     eligible = true;
-    // Rescan wallet lives in All positions, on the other tabs; the Compound controller stays mounted across tabs.
+    // The page's one Refresh rescans the wallet; the Compound controller stays mounted across tabs.
     await act(async () => button("Add to position").click()); await settle();
-    await act(async () => button("Rescan wallet").click()); await settle();
+    await act(async () => button("Refresh").click()); await settle();
     const transition = probe.commits.slice(before);
     expect(transition.some(c => c.mint === undefined)).toBe(true);
     expect(transition.filter(c => !c.mint).every(c => !c.canCompound && c.canCleanup)).toBe(true);

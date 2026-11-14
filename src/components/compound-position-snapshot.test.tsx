@@ -183,13 +183,14 @@ describe("compound snapshot preservation through the real controller and panel",
     expect(mocks.sign).not.toHaveBeenCalled();
   });
 
-  it("StrictMode replay and callback rerenders keep one initial yield read and a working reload button", async () => {
+  it("StrictMode replay and callback rerenders keep one initial yield read and a working refresh", async () => {
     await start(true); const refresh = controller.refreshState;
     for (let i = 0; i < 3; i++) { onConfirmed = vi.fn(); await render(true); await advance(1); }
     expect(stateCalls()).toHaveLength(1); expect(controller.refreshState).toBe(refresh);
     read = () => Response.json(snapshot("66"));
-    const reload = [...container.querySelectorAll("button")].find(button => button.textContent?.includes("Reload fees"))!;
-    expect(reload.disabled).toBe(false); await act(async () => reload.click());
+    // The page's one Refresh button calls this (the panel's own "Reload fees" button is gone).
+    expect([...container.querySelectorAll("button")].some(button => button.textContent?.includes("Reload fees"))).toBe(false);
+    await act(async () => { await controller.refreshState(); });
     expect(controller.state?.fees.a).toBe("66"); expect(stateCalls()).toHaveLength(2); noTransactions();
   });
 

@@ -6,6 +6,7 @@ import { ActionSelector } from "./action-selector";
 import { CompoundPanel } from "./compound-panel";
 import type { CompoundController } from "./use-compound-controller";
 import { PositionPerformancePanel } from "./position-performance-panel";
+import { PositionExitEstimate } from "./position-exit-estimate";
 import { WithdrawPanel } from "./withdraw-panel";
 import { UnavailableTool } from "./unified-positions/unavailable-tool";
 import { toolOptions, type ToolMeta } from "@/lib/unified-positions/capabilities";
@@ -48,17 +49,16 @@ export function PositionToolsSection({
   onWithdrawConfirmed,
   compound,
   onConnect,
-  compoundPicker,
   linkedForeignPosition,
   initialMint,
   performanceMint,
-  selectedNftAccount,
-  nftAccountPending,
+  exitEstimate,
   initialWallet,
   previewPoolId,
   stockShownInOverview,
   onPerformanceResult,
   addLiquidity,
+  showTools,
   children,
 }: {
   activeView: ToolId;
@@ -77,38 +77,43 @@ export function PositionToolsSection({
   onWithdrawConfirmed: () => void;
   compound: CompoundController;
   onConnect: () => void;
-  compoundPicker: ReactNode;
   linkedForeignPosition: boolean;
   initialMint: string;
   performanceMint: string;
-  selectedNftAccount: string | undefined;
-  nftAccountPending: boolean;
+  /** Exit estimate shown in the Withdraw tool for the selected Solana position (null while a withdrawal runs). */
+  exitEstimate: { positionMint: string; nftAccount: string | undefined; pending: boolean; poolMints: readonly [string, string] } | null;
   initialWallet: string;
   previewPoolId: string;
   stockShownInOverview: boolean;
   onPerformanceResult: (mint: string, result: { report: PositionPerformanceReport | null; error: boolean }) => void;
   addLiquidity: ReactNode;
-  children?: ReactNode;
+  /** A position is selected (or a Performance deep link is shown): render the tool panel below the position list. */
+  showTools: boolean;
+  /** The position list; the tool tabs are handed in so they sit inside the selected position's detail. */
+  children: (tabs: ReactNode) => ReactNode;
 }) {
+  const tabs = <ActionSelector value={activeView} onChange={onChangeView} options={toolOptions(capabilities, TOOL_META,
+    otherSelected ? {} : { withdraw: !state || !wallet || (busy && activeView !== "withdraw") })} />;
   return <>
-    <ActionSelector value={activeView} onChange={onChangeView} options={toolOptions(capabilities, TOOL_META,
-      otherSelected ? {} : { withdraw: !state || !wallet || (busy && activeView !== "withdraw") })} />
-    {children}
-    {unavailableReason ? <UnavailableTool id={`${activeView}-view`} reason={unavailableReason} />
+    {children(tabs)}
+    {!showTools ? null : unavailableReason ? <UnavailableTool id={`${activeView}-view`} reason={unavailableReason} />
       : otherSelected && otherBinding ? <div id={`${activeView}-view`}>{otherBinding.tool(otherSelected, activeView)}</div> : <>
-      {activeView === "withdraw" && <div id="withdraw-view">{shownWithdraw ? <WithdrawPanel key={`${shownWithdraw.wallet}:${shownWithdraw.positionMint}`} wallet={shownWithdraw.wallet} positionMint={shownWithdraw.positionMint} mintA={shownWithdraw.mintA} mintB={shownWithdraw.mintB} label={poolLabel} outputs={capabilities.withdrawOutputs} onClose={onCloseWithdraw} onBusyChange={onWithdrawBusy} onConfirmed={onWithdrawConfirmed} /> : <p className="mt-4 text-sm text-smoke">Connect your wallet and choose a position to withdraw.</p>}</div>}
+      {activeView === "withdraw" && <div id="withdraw-view">{shownWithdraw ? <WithdrawPanel key={`${shownWithdraw.wallet}:${shownWithdraw.positionMint}`} wallet={shownWithdraw.wallet} positionMint={shownWithdraw.positionMint} mintA={shownWithdraw.mintA} mintB={shownWithdraw.mintB} label={poolLabel} outputs={capabilities.withdrawOutputs} onClose={onCloseWithdraw} onBusyChange={onWithdrawBusy} onConfirmed={onWithdrawConfirmed} /> : <p className="mt-4 text-sm text-smoke">Connect your wallet and choose a position to withdraw.</p>}
+        {shownWithdraw && exitEstimate && exitEstimate.positionMint === shownWithdraw.positionMint && <div data-testid="withdraw-exit-estimate" className="mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-7">
+          <PositionExitEstimate key={exitEstimate.positionMint} positionId={exitEstimate.positionMint} nftAccount={exitEstimate.nftAccount}
+            nftAccountPending={exitEstimate.pending} autoExit poolMints={exitEstimate.poolMints} className="border-t-0! pt-0!" />
+        </div>}</div>}
       {compound.historyWarning && <div role="status" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80"><span>{compound.historyWarning}</span><button type="button" className="font-semibold underline" onClick={onCloseWithdraw}>View compound status</button></div>}
       <main>
         <div id="compound-view" hidden={activeView !== "compound"}>
-          <CompoundPanel controller={compound} tokenLabel={poolLabel} onConnect={onConnect} positionPicker={compoundPicker} />
+          <CompoundPanel controller={compound} tokenLabel={poolLabel} onConnect={onConnect} />
         </div>
         <div id="performance-view" hidden={activeView !== "performance"} className="mt-3 space-y-3">
           {activeView === "performance" && linkedForeignPosition && <p role="status" className="rounded-2xl border border-white/15 bg-white/[0.04] px-4 py-3 text-xs leading-5 text-smoke">
             Showing the linked position {shortAddress(initialMint)}. It is not held by the connected wallet, so only public data is shown.
           </p>}
-          {activeView === "performance" && <PositionPerformancePanel embedded showStockPerformance={!stockShownInOverview} selectedMint={performanceMint} selectedNftAccount={selectedNftAccount}
-            onResult={onPerformanceResult}
-            nftAccountPending={nftAccountPending} initialWallet={initialWallet} previewPoolId={previewPoolId} />}
+          {activeView === "performance" && <PositionPerformancePanel embedded showStockPerformance={!stockShownInOverview} selectedMint={performanceMint}
+            onResult={onPerformanceResult} initialWallet={initialWallet} previewPoolId={previewPoolId} />}
         </div>
         {addLiquidity}
       </main>

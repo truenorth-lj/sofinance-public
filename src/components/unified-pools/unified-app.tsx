@@ -19,7 +19,7 @@ export function UnifiedApp({ selected, flags, rhcSigningEnabled }: {
   rhcSigningEnabled: boolean;
 }) {
   const { wallet: evmWallet } = useEvmWalletConnection();
-  // Shared refresh counter: "Rescan wallet" bumps it, and the Robinhood Chain panel rescans (fresh=1) whenever it changes.
+  // Shared refresh counter: "Refresh" bumps it, and the Robinhood Chain panel rescans (fresh=1) whenever it changes.
   // It belongs to one EVM address, so a newly connected wallet starts at 0 (first load keeps the server's cached scan).
   const address = evmWallet?.address ?? "";
   const [rescans, setRescans] = useState({ address: "", count: 0 });

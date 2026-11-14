@@ -9,7 +9,6 @@ import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap
 import { UnifiedApp } from "./unified-app";
 import { EvmWalletProvider } from "../evm-wallet-connection";
 import { createEvmSession } from "@/lib/rhc-wallet/evm-session";
-import { SOLANA_CONNECT_EMPTY_OPTION } from "@/lib/unified-positions/rows";
 
 const SOL_WALLET = "EweTgJ6vaQDZyH5nk5uaK5iD7n1qr7BXTaxewcjQNEjb";
 const EVM_WALLET = "0xb95b77e9429643cbafde865fa2a9f687e8d21b04";
@@ -80,9 +79,9 @@ describe("/app unified All positions", () => {
     expect(container.querySelector('[data-testid="tool-unavailable"]')).not.toBeNull();
     expect(new URL(window.location.href).searchParams.get("position")).toBe("uniswap-v4-rhc:7");
   });
-  it("EVM wallet only: Solana group says connect, Robinhood Chain group with Closed last, first position selected on its Withdraw", async () => {
+  it("EVM wallet only: no empty Solana group, Robinhood Chain group with Closed last, first position selected on its Withdraw", async () => {
     await render();
-    expect(groups()).toEqual([["Solana", [SOLANA_CONNECT_EMPTY_OPTION]], ["Robinhood Chain", [
+    expect(groups()).toEqual([["Robinhood Chain", [
       expect.stringMatching(/^#9 · .+ · range 0\.98778–1\.0077 SPCXon per SPCX$/),
       "#7 · ticks -123 to 77",
       expect.stringMatching(/^#8 · .+ · Closed$/)]]]);
@@ -123,27 +122,32 @@ describe("/app unified All positions", () => {
     expect(tab("Withdraw").getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("Learn more details shows the ticks behind the price range", async () => {
+  it("Learn more details shows the position number and pool, without ticks or the owner", async () => {
     await render();
     await click([...container.querySelectorAll("button")].find((b) => b.textContent?.includes("Learn more"))!);
-    expect(document.body.querySelector("[data-testid=rhc-ticks]")!.textContent).toContain("Ticks -123 to 77 (price 0.98778–1.0077 SPCXon per SPCX)");
+    expect(document.body.textContent).toContain("Position NFT: #9");
+    expect(document.body.querySelector("[data-testid=rhc-ticks]")).toBeNull();
+    expect(document.body.textContent).not.toContain("Ticks -123 to 77");
   });
 
-  it("Solana + EVM wallets: Solana group first (empty row when none), then Robinhood Chain; no source names with one source", async () => {
+  it("Solana + EVM wallets: an empty Solana group is hidden, Robinhood Chain shows; no source names with one source", async () => {
     state.solWallet = SOL_WALLET;
     await render();
-    expect(groups().map(([label]) => label)).toEqual(["Solana", "Robinhood Chain"]);
-    expect(groups()[0]![1]).toEqual(["No positions found"]);
-    expect((groups()[1]![1] as string[]).every((label) => !label.startsWith("Uniswap v4"))).toBe(true);
+    expect(groups().map(([label]) => label)).toEqual(["Robinhood Chain"]);
+    expect((groups()[0]![1] as string[]).every((label) => !label.startsWith("Uniswap v4"))).toBe(true);
     expect(selectedKey()).toBe("uniswap-v4-rhc:9");
   });
 
-  it("empty Robinhood Chain wallet: the group stays with a disabled 'No positions found' row and the open-a-position link", async () => {
+  it("empty Solana and Robinhood Chain wallets: one empty state with the open-a-position link, no empty groups", async () => {
     state.solWallet = SOL_WALLET; state.scan = [];
     await render({ initialView: "deposit" });
-    expect(groups()).toEqual([["Solana", ["No positions found"]], ["Robinhood Chain", ["No positions found"]]]);
+    expect(groups()).toEqual([]);
     expect(rows()).toHaveLength(0);
-    expect(container.querySelector("[data-testid=positions-empty]")).not.toBeNull();
+    const empty = container.querySelectorAll("[data-testid=positions-empty-state]");
+    expect(empty).toHaveLength(1);
+    expect(empty[0]!.textContent).toContain("No positions in this wallet yet.");
+    expect(empty[0]!.querySelector("a")?.textContent).toBe("Go to Pools");
+    expect(container.textContent).not.toContain("No positions found");
   });
 });
 
@@ -157,19 +161,18 @@ describe("/app Closed positions", () => {
 });
 
 describe("/app shared detail panel for a Robinhood Chain position (PM review of #270)", () => {
-  it("no Solana connect prompt inside the panel while a Robinhood Chain position is selected; it is the Solana group's empty row", async () => {
+  it("no connect prompt or empty Solana group while a Robinhood Chain position is selected", async () => {
     await render();
     expect(selectedKey()).toBe("uniswap-v4-rhc:9");
-    expect(container.textContent).not.toContain("Connect your Solana wallet to find your Solana liquidity positions");
-    const solana = container.querySelector('[data-testid="position-chain-group"][aria-label="Solana"]')!;
-    expect(solana.querySelector("p")?.textContent).toBe(SOLANA_CONNECT_EMPTY_OPTION);
-    expect(solana.querySelector("button")).toBeNull();
+    expect(container.querySelector("[data-testid=positions-empty-state]")).toBeNull();
+    expect(container.querySelector('[data-testid="position-chain-group"][aria-label="Solana"]')).toBeNull();
   });
 
-  it("with nothing selected (no Robinhood Chain positions) the Solana connect prompt still shows", async () => {
+  it("with nothing selected (no Robinhood Chain positions) the one empty state asks to connect", async () => {
     state.scan = [];
     await render();
-    expect(container.textContent).toContain("Connect your Solana wallet to find your Solana liquidity positions");
+    expect(container.querySelectorAll("[data-testid=positions-empty-state]")).toHaveLength(1);
+    expect(container.textContent).toContain("Connect your wallet to see your positions.");
   });
 
   it("Liquidity and Unclaimed fees rows in Solana's format with amounts and USD when the read and indexer have them", async () => {

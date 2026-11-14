@@ -13,8 +13,6 @@ export type ExternalPositions = {
   positions: UnifiedPosition[];
   /** Under the dropdown: wallet, manual "Position NFT #", scan status, wrong-network prompt, last close status. */
   status: ReactNode;
-  /** Disabled row in an empty group. */
-  emptyOption: string;
   busy: boolean;
   header(position: UnifiedPosition): ReactNode;
   details(position: UnifiedPosition): ReactNode;

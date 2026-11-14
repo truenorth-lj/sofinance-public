@@ -3,8 +3,8 @@
 /**
  * Performance tab (PR9) for "My positions" rows served through the DEX registry: the adapter's report
  * (`POST /api/dex/<id>/performance`) drawn with the same summary and pool daily APR chart as the Raydium panel. Decided
- * from the descriptor only (no DEX id): the tab exists when `capabilities.performance` is supported, and the exit
- * estimate is greyed with `capabilities.exitPreview.reason` until a DEX supports it.
+ * from the descriptor only (no DEX id): the tab exists when `capabilities.performance` is supported. The exit estimate
+ * lives in the Withdraw tool.
  */
 import { LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -18,7 +18,7 @@ const CARD = "mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-7";
 
 type Loaded = { key: string; attempt: number; data: PositionPerformance | null; error: string | null };
 
-export function RegistryPerformancePanel({ position, descriptor, capabilities, onPerformance, showStockPerformance = true }: Pick<RegistryToolProps, "position" | "descriptor" | "capabilities" | "onPerformance" | "showStockPerformance">) {
+export function RegistryPerformancePanel({ position, descriptor, onPerformance, showStockPerformance = true }: Pick<RegistryToolProps, "position" | "descriptor" | "onPerformance" | "showStockPerformance">) {
   const [attempt, setAttempt] = useState(0);
   const onPerformanceRef = useLatest(onPerformance);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
@@ -41,7 +41,6 @@ export function RegistryPerformancePanel({ position, descriptor, capabilities, o
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
   const current = loaded && loaded.key === position.key && loaded.attempt === attempt ? loaded : null;
   const report = current?.data?.report ?? null;
-  const exitPreview = capabilities.exitPreview;
 
   return <section aria-label={showStockPerformance ? "Performance results" : "Position details"} data-testid="registry-performance" className={CARD}>
     <h3 className="mb-5 text-base font-semibold text-cream">{showStockPerformance ? "Performance results" : "Position details"}</h3>
@@ -55,11 +54,6 @@ export function RegistryPerformancePanel({ position, descriptor, capabilities, o
         <div><dt className="text-[11px] uppercase tracking-wide text-smoke">Current value (USD)</dt><dd>{money(current.data.currentValueUsd)}</dd></div>
         <div><dt className="text-[11px] uppercase tracking-wide text-smoke">PnL (USD)</dt><dd>{money(current.data.pnlUsd)}</dd></div>
       </dl> : null}
-    {current?.data && !exitPreview.supported ? <div aria-disabled="true" data-testid="exit-preview-unavailable"
-      className="mt-5 rounded-2xl border border-white/10 bg-white/[0.02] p-4 opacity-60">
-      <h4 className="text-[11px] font-semibold uppercase tracking-wide text-smoke">Exit estimate</h4>
-      <p className="mt-1 text-xs leading-5 text-smoke">{exitPreview.reason}</p>
-    </div> : null}
     <PerformancePoolChart poolId={position.poolId} data={report} />
   </section>;
 }

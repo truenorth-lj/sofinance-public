@@ -8,14 +8,12 @@ import { useWalletConnection } from "./wallet-connection";
 import {
   parseListedPositions,
   resolveWalletField,
-  showUseConnectedWallet,
   type ListedPosition,
 } from "../lib/position-performance-form";
 import { PositionSelect } from "./position-select";
 import { useTokenMetadata } from "./use-token-metadata";
 import { DecisionSession } from "@/lib/lp-decision-session";
 import { clearPositionHistoryRefresh, readPositionHistoryRefresh, subscribePositionHistoryRefresh } from "@/lib/position-history-refresh";
-import { PositionExitEstimate } from "./position-exit-estimate";
 import { PerformancePoolChart, PerformanceSummary, type PerformanceResponse } from "./position-performance-summary";
 
 export function PositionPerformancePanel({
@@ -24,8 +22,6 @@ export function PositionPerformancePanel({
   previewPoolId = "",
   embedded = false,
   selectedMint,
-  selectedNftAccount,
-  nftAccountPending = false,
   onResult,
   showStockPerformance = true,
 }: {
@@ -35,9 +31,6 @@ export function PositionPerformancePanel({
   embedded?: boolean;
   showStockPerformance?: boolean;
   selectedMint?: string;
-  selectedNftAccount?: string;
-  /** The parent is still resolving the holder's NFT token account (see resolveNftAccountLookup). */
-  nftAccountPending?: boolean;
   /** A read finished (report null on failure), so the all-stocks overview need not read this position again. */
   onResult?: (positionMint: string, result: { report: PerformanceResponse | null; error: boolean }) => void;
 }) {
@@ -46,8 +39,6 @@ export function PositionPerformancePanel({
   const [positionChoice, setPositionChoice] = useState<{ value: string; wallet: string | null; sharedMint?: string } | null>(
     initialMint ? { value: initialMint, wallet: null } : null,
   );
-  const [manualWallet, setManualWallet] = useState<string | null>(null);
-  const [ignoreUrlWallet, setIgnoreUrlWallet] = useState(false);
   const [fetchedPositions, setFetchedPositions] = useState<{
     wallet: string;
     positions: ListedPosition[];
@@ -61,8 +52,8 @@ export function PositionPerformancePanel({
   const walletField = resolveWalletField({
     urlWallet: initialWallet,
     connectedAddress,
-    manualValue: manualWallet,
-    ignoreUrl: ignoreUrlWallet,
+    manualValue: null,
+    ignoreUrl: false,
   });
   const wallet = walletField.value;
   const listedPositions =
@@ -217,58 +208,6 @@ export function PositionPerformancePanel({
           <p className="mt-1 text-xs leading-5 text-smoke">Explore RWA pairs and open a position to start tracking performance.</p>
           <a href="/app/rwa-pairs" className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-cream hover:bg-white/10">Explore RWA Pairs <ArrowUpRight className="h-4 w-4" /></a>
         </div>}
-        {!embedded && <details className="rounded-2xl border border-white/10 p-3">
-          <summary className="cursor-pointer text-xs font-medium text-smoke">Look up another position by NFT mint</summary>
-          <div className="mt-3 space-y-3">
-            <label className="block text-xs text-smoke">
-              Position mint
-              <input
-                className="mt-1 w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-2 text-base sm:text-sm text-cream focus:border-white/40 focus:outline-none"
-                value={positionMint}
-                onChange={(event) => changePositionMint(event.target.value)}
-                placeholder="Position NFT mint (base58)"
-                spellCheck={false}
-                autoComplete="off"
-              />
-            </label>
-            <p className="text-[11px] leading-4 text-smoke/70">
-              Paste any position NFT mint
-              {connectedAddress ? ", or pick one from the connected wallet." : "."}
-            </p>
-            <div>
-              <div className="flex items-center justify-between gap-3">
-                <label htmlFor="perf-wallet" className="text-xs text-smoke">
-                  Wallet (optional ownership check)
-                </label>
-                {showUseConnectedWallet(wallet, connectedAddress) && connectedAddress && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setManualWallet(null);
-                      setIgnoreUrlWallet(true);
-                    }}
-                    className="text-[11px] font-medium text-smoke transition-colors hover:text-cream/80"
-                  >
-                    Use connected wallet
-                  </button>
-                )}
-              </div>
-              <input
-                id="perf-wallet"
-                className="mt-1 w-full rounded-2xl border border-white/20 bg-white/[0.06] px-3 py-2 text-base sm:text-sm text-cream focus:border-white/40 focus:outline-none"
-                value={wallet}
-                onChange={(event) => setManualWallet(event.target.value)}
-                placeholder="Defaults to the connected wallet"
-                spellCheck={false}
-                autoComplete="off"
-              />
-              <p className="mt-1 text-[11px] leading-4 text-smoke/70">
-                Optional ownership check. Pre-filled from the connected wallet; clear or paste another
-                pubkey to override.
-              </p>
-            </div>
-          </div>
-        </details>}
         {autoLoadSharedPosition && !error ? (
           (!data || loading) && <div role="status" className="flex items-center gap-2 border-t border-white/10 pt-5 text-sm text-smoke">
             <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -316,8 +255,6 @@ export function PositionPerformancePanel({
         loadingRemaining={Boolean(loadingContext)} onLoadRemaining={() => void load()} />}
 
 
-      {data && decisionMint && <PositionExitEstimate key={decisionMint} positionId={decisionMint} nftAccount={decisionMint === selectedMint ? selectedNftAccount : undefined}
-        nftAccountPending={decisionMint === selectedMint && nftAccountPending} autoExit={embedded} poolMints={[data.mintA, data.mintB]} className="mt-5" />}
 
       {(data?.poolId || previewPoolId) && <PerformancePoolChart poolId={data?.poolId || previewPoolId} data={data} />}
     </section>

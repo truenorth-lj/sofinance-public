@@ -91,10 +91,11 @@ it("prepares and prompts step 2 after step 1 confirms, even though the closed po
   expect(Array.from(view.querySelectorAll("button")).some((b) => b.textContent === "Resume withdrawal")).toBe(true);
 });
 
-it("still shows the connect/choose prompt when no position was ever selected", async () => {
+it("shows no Withdraw tool when no position was ever selected", async () => {
   mocks.select({ state: null, selection: null });
   await act(async () => root.render(<SelectedApp initialView="withdraw" />));
-  expect(container.querySelector("#withdraw-view")?.textContent).toContain("Connect your wallet and choose a position to withdraw");
+  expect(container.querySelector("#withdraw-view")).toBeNull();
+  expect(container.querySelector('nav[aria-label="Position operations"]')).toBeNull();
 });
 
 it("does not keep the old position's Withdraw panel when another position is selected and still loading", async () => {

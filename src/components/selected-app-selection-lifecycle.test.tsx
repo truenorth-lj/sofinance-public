@@ -33,7 +33,7 @@ vi.mock("./use-selected-controller", async (importOriginal) => {
 vi.mock("./transaction-status-dialog", () => ({ TransactionStatusDialog: (props: { onRetry?: () => void }) => {
   useLayoutEffect(() => {
     if (!safety.enabled) return;
-    const selected = document.querySelector('[data-testid="selected-position-detail"] > p')?.textContent ?? "";
+    const selected = document.querySelector('[data-testid="selected-position-detail"]')?.getAttribute('data-selected-key') ?? "";
     const buttons = [...document.querySelectorAll<HTMLButtonElement>('button')].filter(b => b.textContent === 'Add liquidity');
     safety.commits.push({ selected, target: safety.selection, compound: safety.compoundTarget,
       blocked: safety.blocked, addDisabled: buttons.length > 0 && buttons.every(b => b.disabled), retry: !!props.onRetry,
@@ -116,7 +116,7 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 describe("All positions selection lifecycle", () => {
- const chosen = () => container.querySelector('[data-testid="selected-position-detail"]')?.textContent;
+ const chosen = () => container.querySelector('[data-testid="selected-position-detail"]')?.getAttribute('data-selected-key');
  const lastState = () => calls.filter(u => u.startsWith('/api/selected-state?')).at(-1);
  const pickB = async () => { await act(async () => container.querySelector<HTMLButtonElement>(`[data-testid="position-fallback-select"][data-position-key="raydium-clmm:${OTHER_OWNED_MINT}"]`)!.click()); await settle(); };
  const tab = async (label: string) => { await act(async () => [...container.querySelectorAll<HTMLButtonElement>('nav[aria-label="Position operations"] button')].find(b => b.textContent === label)!.click()); await settle(); };
@@ -130,7 +130,7 @@ describe("All positions selection lifecycle", () => {
   expect(safety.performanceMint).toBe(mint);
   expect(calls.some(url => url.startsWith('/api/position-performance?') && param(url, 'positionMint') === mint)).toBe(true);
  };
- const rescan = async () => { await act(async () => [...container.querySelectorAll('button')].find(b => b.textContent === 'Rescan wallet')!.click()); await settle(); };
+ const rescan = async () => { await act(async () => [...container.querySelectorAll('button')].find(b => b.textContent === 'Refresh')!.click()); await settle(); };
  it('eligible input arrives after read-only pick', async () => {
   const mode: Mode = { wallet: OWN_WALLET, positions: [OWNED_MINT, OTHER_OWNED_MINT], stateOk: true, initialMint: '', initialView: 'deposit', eligible: false };
   await mount(mode); await settle(); await pickB();
