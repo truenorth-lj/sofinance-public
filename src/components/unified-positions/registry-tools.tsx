@@ -21,6 +21,7 @@ import { useTxWallet } from "../use-tx-wallet";
 import { RegistryPerformancePanel } from "./registry-performance";
 import type { PositionPerformanceReport } from "@/lib/position-performance-report";
 import { beginPositionOp, trackPositionSignature, usePositionOpLock } from "./position-op-lock";
+import { CompoundSuccessHalo, useCompoundSuccessHalo } from "../compound-halo";
 
 /** A wallet balance the Add panel can check against (raw atomic string). */
 export type ToolBalance = { balance: string; decimals: number };
@@ -420,6 +421,9 @@ function RegistryCompoundPanel({ position, descriptor, symbolOf, onConfirmed }: 
   const tokenFor = (mint: string) => [position.tokenA, position.tokenB].find((token) => token.id === mint);
   const rentLine = tokenAccountRentLine(op.prepared?.createsTokenAccounts, (mint) => { const token = tokenFor(mint); return token ? symbolOf(token) : "pool token"; });
   const submit = () => void send({ descriptor, positionKey: position.key });
+  // The pipeline's "success" is the confirmed landing (never the click); the halo plays once per signature.
+  const compoundButtonRef = useRef<HTMLButtonElement>(null);
+  const haloPlay = useCompoundSuccessHalo(tx.status === "success" && tx.signature ? { phase: "success", signature: tx.signature } : null);
   return <section className={CARD} data-testid="registry-compound" aria-labelledby="registry-compound-heading">
     <h2 id="registry-compound-heading" className="text-lg font-semibold text-cream">Compound fees</h2>
     <p className="mt-2 text-xs leading-5 text-smoke">Claims the unclaimed swap fees and adds them back into this position at its current price range, in one transaction. No swap is needed. {feeLine(descriptor.meta.feePolicy.compound, "")}</p>
@@ -428,9 +432,10 @@ function RegistryCompoundPanel({ position, descriptor, symbolOf, onConfirmed }: 
     {poolFeeLine ? <p data-testid="registry-compound-pool-fee" className="mt-3 text-xs leading-5 text-smoke">{poolFeeLine}</p> : null}
     {!connected ? <NotConnected /> : <>
       {blocked ? <p data-testid="registry-compound-blocked" className="mt-4 text-sm text-cream/80">{blocked}</p> : null}
-      <button type="button" disabled={locked || blocked !== null} onClick={submit} className={BUTTON}>
+      <button ref={compoundButtonRef} type="button" disabled={locked || blocked !== null} onClick={submit} className={BUTTON}>
         {tx.locked ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : null}{blocked ? "Nothing to compound" : "Compound fees"}
       </button>
+      <CompoundSuccessHalo play={haloPlay} originRef={compoundButtonRef} />
       <LockNote lock={op} />
       <TxStatus tx={tx} successText="Fees compounded." walletNote={rentLine} />
     </>}

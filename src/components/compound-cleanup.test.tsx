@@ -353,6 +353,21 @@ describe("automatic cleanup after a new compound", () => {
       return handler(url, init);
     });
   }
+  it.each(["success", "failed"] as const)("plays the success halo only after a confirmed compound (confirmation: %s)", async status => {
+    const context = new Proxy({}, { get: (_target, key) => (key === "createRadialGradient" ? () => ({ addColorStop: () => {} }) : () => {}), set: () => true });
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(() => context as never);
+    // happy-dom has no layout: give the panel a visible box so the overlay has a slice to cover.
+    const box = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() =>
+      ({ left: 0, top: 0, width: 400, height: 600, right: 400, bottom: 600, x: 0, y: 0, toJSON() {} }) as DOMRect);
+    confirmationStatus = status;
+    enableCompound(); await render();
+    expect(container.querySelector('[data-testid="compound-halo"]')).toBeNull();
+    await act(async () => { controller.compound(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(16); });
+    expect(controller.attemptStatus).toBe(status);
+    expect(Boolean(container.querySelector('[data-testid="compound-halo"]'))).toBe(status === "success");
+    getContext.mockRestore(); box.mockRestore();
+  });
   it("automatically prompts cleanup only after the initiated compound is verified successful", async () => {
     enableCompound(); await render();
     await act(async () => { controller.compound(); });
