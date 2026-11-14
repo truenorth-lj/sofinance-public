@@ -4,8 +4,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "re
 import { createPortal } from "react-dom";
 import {
   HALO_BAND_PX, HALO_DURATION_MS, HALO_PALETTE, HALO_REDUCED_DURATION_MS, haloCanvasScale, haloGlintAlpha, haloOriginPoint,
-  haloProgress, haloRadius, haloReach, haloReducedStrength, haloRingAlpha, haloRiseCenter, haloShake, haloStrength, haloTrailStrength,
-  haloTrailTime, haloVisibleSlice, nextHaloTrigger, parseOpaqueRgb, schemeForBackground,
+  haloProgress, haloRadius, haloReach, haloReducedStrength, haloRingAlpha, haloRiseCenter, haloShake, haloStrength,
+  haloVisibleSlice, nextHaloTrigger, parseOpaqueRgb, schemeForBackground,
   type HaloScheme, type HaloSlice, type HaloTriggerState, type Rgb,
 } from "@/lib/compound-halo/math";
 
@@ -231,7 +231,8 @@ function protectTextAndIcons(context: CanvasRenderingContext2D, mask: HTMLCanvas
   context.restore();
 }
 
-function paintRing(context: CanvasRenderingContext2D, run: Run, t: number, strength: number, band: number, glints: boolean) {
+function paintRing(context: CanvasRenderingContext2D, run: Run, t: number, strength: number) {
+  const band = HALO_BAND_PX;
   if (strength <= 0 || t <= 0) return;
   const { center, scheme } = run;
   const { width, height } = run.slice;
@@ -253,7 +254,6 @@ function paintRing(context: CanvasRenderingContext2D, run: Run, t: number, stren
   ring.addColorStop(1, rgba(palette[1], 0));
   context.fillStyle = ring;
   context.fillRect(0, 0, width, height);
-  if (!glints) return;
   const glintAlpha = haloGlintAlpha(strength, scheme, run.reduced);
   if (!glintAlpha || !run.edges.length) return;
   const glint = context.createRadialGradient(center.x, center.y, inner, center.x, center.y, outer);
@@ -289,10 +289,8 @@ function drawFrame(context: CanvasRenderingContext2D, run: Run, t: number) {
     context.fillRect(0, 0, width, height);
     return;
   }
-  // Trailing wave first (behind), then the brighter, thicker front wave with glints.
-  const trailT = haloTrailTime(t);
-  paintRing(context, run, trailT, haloTrailStrength(t), HALO_BAND_PX * 1.15, false);
-  paintRing(context, run, t, haloStrength(t), HALO_BAND_PX, true);
+  // One wave, with glints.
+  paintRing(context, run, t, haloStrength(t));
 }
 
 /**

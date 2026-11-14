@@ -11,11 +11,11 @@ export const HALO_REDUCED_DURATION_MS = 600;
 /** Width of the colour ring band in CSS px. */
 export const HALO_BAND_PX = 150;
 /** Peak strength of the border/divider glints: a faint glint, weaker in dark mode. */
-export const HALO_GLINT_STRENGTH: Record<HaloScheme, number> = { light: 0.3, dark: 0.14 };
+export const HALO_GLINT_STRENGTH: Record<HaloScheme, number> = { light: 0.2, dark: 0.1 };
 /** Light mode tints the page: the ring is mixed in at alpha × this. */
-export const HALO_LIGHT_TINT = 0.24;
-/** Dark mode adds light with a screen blend, at alpha × this (0.3 × 1.5): a low glow, not a solid band. */
-export const HALO_DARK_GLOW = 0.45;
+export const HALO_LIGHT_TINT = 0.16;
+/** Dark mode adds light with a screen blend, at alpha × this: a thin wash of light, not a solid band. */
+export const HALO_DARK_GLOW = 0.3;
 /** Reduced motion: fades in and out in place at half strength. */
 export const HALO_REDUCED_PEAK = 0.5;
 /** Ease exponent of the opening punch (higher is a sharper launch). */
@@ -23,10 +23,6 @@ export const HALO_EASE_K = 16;
 /** Opening punch: this fraction of the play covers this fraction of the travel; the rest coasts. */
 export const HALO_PUNCH_T = 0.18;
 export const HALO_PUNCH_TRAVEL = 0.42;
-/** Trailing wave starts this fraction of the play after the front wave. */
-export const HALO_TRAIL_DELAY = 0.15;
-/** Trailing wave peak, relative to the front wave. */
-export const HALO_TRAIL_STRENGTH = 0.55;
 /** Screen-shake window: two short kicks, then settle; never longer than this. */
 export const HALO_SHAKE_MS = 150;
 /** Peak translation of a kick, in CSS px. */
@@ -41,7 +37,7 @@ export const HALO_RISE_MAX_PX = 650;
 
 /**
  * Halo palette (orange through amber to gold, like low sun through a lens). Slots: [0] main body, [1] outer fringe,
- * [2] trailing inner edge, [3] bright front. Brighter on dark, softer on light.
+ * [2] inner edge of the band, [3] bright front. Brighter on dark, softer on light.
  */
 export const HALO_PALETTE: Record<HaloScheme, readonly [Rgb, Rgb, Rgb, Rgb]> = {
   dark: [[255, 150, 60], [255, 190, 70], [255, 225, 120], [255, 245, 210]],
@@ -103,23 +99,6 @@ export function haloRiseCenter(origin: { x: number; y: number }, size: { width: 
   return { x: origin.x, y: origin.y + depth, start: depth };
 }
 
-/**
- * Normalised time of the trailing wave: 0 until `delay`, then the same 0..1 ease window over the remainder.
- * A delay of 0 is the front wave.
- */
-export function haloTrailTime(t: number, delay = HALO_TRAIL_DELAY): number {
-  const x = clamp01(t);
-  if (delay <= 0) return x;
-  if (delay >= 1) return 0;
-  return x <= delay ? 0 : (x - delay) / (1 - delay);
-}
-
-/** Trailing-wave strength: the usual envelope, scaled down, silent before the delay. */
-export function haloTrailStrength(t: number, delay = HALO_TRAIL_DELAY, scale = HALO_TRAIL_STRENGTH): number {
-  const trail = haloTrailTime(t, delay);
-  return trail <= 0 ? 0 : scale * haloStrength(trail);
-}
-
 /** 0..1 weight of a point `distance` px from the origin inside the band around `radius`: (1 − x²)², 0 outside the band. */
 export function haloBandWeight(distance: number, radius: number, band = HALO_BAND_PX): number {
   const x = (distance - radius) / (band / 2);
@@ -128,7 +107,7 @@ export function haloBandWeight(distance: number, radius: number, band = HALO_BAN
   return inner * inner;
 }
 
-/** Final alpha of the ring colour for a scheme: light tints (× 0.24), dark adds light (× 0.45, screen blend). */
+/** Final alpha of the ring colour for a scheme: light tints (× 0.16), dark adds light (× 0.3, screen blend). */
 export function haloRingAlpha(strength: number, scheme: HaloScheme): number {
   return clamp01(strength) * (scheme === "light" ? HALO_LIGHT_TINT : HALO_DARK_GLOW);
 }

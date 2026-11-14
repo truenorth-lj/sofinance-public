@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   HALO_BAND_PX, HALO_DURATION_MS, HALO_EASE_K, HALO_MAX_DPR, HALO_PALETTE, HALO_PUNCH_T, HALO_PUNCH_TRAVEL, HALO_RISE_MAX_PX,
   HALO_RISE_MIN_PX, HALO_SHAKE_MS, HALO_SHAKE_PX, haloRiseCenter,
-  HALO_TRAIL_DELAY, HALO_TRAIL_STRENGTH, haloBandWeight, haloCanvasScale, haloVisibleSlice, haloEase, haloGlintAlpha,
+  haloBandWeight, haloCanvasScale, haloVisibleSlice, haloEase, haloGlintAlpha,
   haloOriginPoint, haloProgress, haloRadius, haloReach, haloReducedStrength, haloRingAlpha, haloShake, haloStrength,
-  haloTrailStrength, haloTrailTime, nextHaloTrigger, parseOpaqueRgb, schemeForBackground, shouldPlayHalo,
+  nextHaloTrigger, parseOpaqueRgb, schemeForBackground, shouldPlayHalo,
 } from "./math";
 
 describe("halo timing", () => {
@@ -43,18 +43,6 @@ describe("halo timing", () => {
     expect(haloReducedStrength(0.5)).toBeCloseTo(0.5, 12);
     expect(haloReducedStrength(1)).toBeCloseTo(0, 12);
     expect(haloReducedStrength(0.25)).toBeCloseTo(haloReducedStrength(0.75), 12);
-  });
-  it("the trailing wave is silent until the delay, then follows the same envelope at lower strength", () => {
-    expect(haloTrailTime(0)).toBe(0);
-    expect(haloTrailTime(HALO_TRAIL_DELAY)).toBe(0);
-    expect(haloTrailTime(1)).toBeCloseTo(1, 12);
-    expect(haloTrailTime(HALO_TRAIL_DELAY + (1 - HALO_TRAIL_DELAY) * 0.5)).toBeCloseTo(0.5, 12);
-    expect(haloTrailStrength(0)).toBe(0);
-    expect(haloTrailStrength(HALO_TRAIL_DELAY)).toBe(0);
-    expect(haloTrailStrength(1)).toBe(0);
-    const mid = HALO_TRAIL_DELAY + (1 - HALO_TRAIL_DELAY) * 0.03;
-    expect(haloTrailStrength(mid)).toBeCloseTo(HALO_TRAIL_STRENGTH * haloStrength(0.03), 12);
-    expect(haloTrailStrength(mid)).toBeLessThan(haloStrength(0.03));
   });
 });
 
@@ -109,16 +97,16 @@ describe("halo colour by scheme", () => {
     expect(HALO_PALETTE.dark).toEqual([[255, 150, 60], [255, 190, 70], [255, 225, 120], [255, 245, 210]]);
     expect(HALO_PALETTE.light).toEqual([[255, 140, 50], [255, 175, 60], [245, 200, 80], [255, 225, 150]]);
   });
-  it("tints at alpha × 0.24 in light mode and adds a low glow (× 0.45) in dark mode", () => {
-    expect(haloRingAlpha(1, "light")).toBeCloseTo(0.24, 12);
-    expect(haloRingAlpha(0.5, "light")).toBeCloseTo(0.12, 12);
-    expect(haloRingAlpha(1, "dark")).toBeCloseTo(0.45, 12);
-    expect(haloRingAlpha(0.5, "dark")).toBeCloseTo(0.225, 12);
+  it("tints at alpha × 0.16 in light mode and adds a thin wash of light (× 0.3) in dark mode", () => {
+    expect(haloRingAlpha(1, "light")).toBeCloseTo(0.16, 12);
+    expect(haloRingAlpha(0.5, "light")).toBeCloseTo(0.08, 12);
+    expect(haloRingAlpha(1, "dark")).toBeCloseTo(0.3, 12);
+    expect(haloRingAlpha(0.5, "dark")).toBeCloseTo(0.15, 12);
   });
-  it("glints at 0.3 (light) / 0.14 (dark), never under reduced motion", () => {
-    expect(haloGlintAlpha(1, "light", false)).toBeCloseTo(0.3, 12);
-    expect(haloGlintAlpha(1, "dark", false)).toBeCloseTo(0.14, 12);
-    expect(haloGlintAlpha(0.5, "dark", false)).toBeCloseTo(0.07, 12);
+  it("glints at 0.2 (light) / 0.1 (dark), never under reduced motion", () => {
+    expect(haloGlintAlpha(1, "light", false)).toBeCloseTo(0.2, 12);
+    expect(haloGlintAlpha(1, "dark", false)).toBeCloseTo(0.1, 12);
+    expect(haloGlintAlpha(0.5, "dark", false)).toBeCloseTo(0.05, 12);
     expect(haloGlintAlpha(1, "light", true)).toBe(0);
   });
   it("picks light or dark from the page background", () => {
