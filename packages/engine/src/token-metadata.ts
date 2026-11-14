@@ -19,7 +19,7 @@ export type TokenMetadata = {
  * `ipfs.filebase.io` is the public gateway the browser loads ipfs.io icons from (`displayIconUrl` in the web app).
  */
 export const ICON_HOSTS: ReadonlySet<string> = new Set([
-  "static.jup.ag", "raw.githubusercontent.com", "ipfs.io", "upload.wikimedia.org",
+  "static.jup.ag", "static.datapi.jup.ag", "raw.githubusercontent.com", "ipfs.io", "upload.wikimedia.org",
   "storage.googleapis.com", "s3-symbol-logo.tradingview.com", "xstocks-metadata.backed.fi",
   "arweave.net", "gateway.pinata.cloud", "ipfs.filebase.io", "backpack.exchange",
   "img-v1.raydium.io", "dd.dexscreener.com", "cdn.dexscreener.com", "coin-images.coingecko.com", "assets.coingecko.com",

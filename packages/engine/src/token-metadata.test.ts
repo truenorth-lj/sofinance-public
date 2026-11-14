@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { getTokenMetadata } from "./token-metadata";
+import { getTokenMetadata, trustedIcon } from "./token-metadata";
 
 describe("getTokenMetadata", () => {
   it("keeps only exact requested mints and trusted icon URLs", async () => {
@@ -25,6 +25,16 @@ describe("getTokenMetadata", () => {
     const icon = "https://backpack.exchange/api/stock-logo/HOOD";
     const fetcher = vi.fn(async () => new Response(JSON.stringify([
       { id: mint, name: "Robinhood Markets - Backpack Securities", symbol: "HOOD", decimals: 8, icon },
+    ]))) as unknown as typeof fetch;
+    expect((await getTokenMetadata([mint], fetcher, "test-key"))[mint]).toMatchObject({ icon });
+  });
+
+  it("keeps Jupiter stock icons served from static.datapi.jup.ag", async () => {
+    const mint = "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB";
+    const icon = "https://static.datapi.jup.ag/token-icons/e1d90902b191d70826c331e81dee1c19bf7d8884e436626153ff09397c36d278.webp";
+    expect(trustedIcon(icon)).toBe(icon);
+    const fetcher = vi.fn(async () => new Response(JSON.stringify([
+      { id: mint, name: "Tesla xStock", symbol: "TSLAx", decimals: 8, icon },
     ]))) as unknown as typeof fetch;
     expect((await getTokenMetadata([mint], fetcher, "test-key"))[mint]).toMatchObject({ icon });
   });
