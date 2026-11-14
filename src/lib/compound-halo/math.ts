@@ -104,3 +104,23 @@ export function parseOpaqueRgb(value: string): Rgb | null {
 export function shouldPlayHalo(feedback: { phase: string; signature: string } | null, lastPlayedSignature: string | null): boolean {
   return feedback?.phase === "success" && Boolean(feedback.signature) && feedback.signature !== lastPlayedSignature;
 }
+
+/** Device-pixel cap for the halo canvases: sharp on retina, bounded memory on 3× phones. */
+export const HALO_MAX_DPR = 2;
+export function haloCanvasScale(devicePixelRatio: number | undefined): number {
+  const dpr = devicePixelRatio && Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
+  return Math.min(dpr, HALO_MAX_DPR);
+}
+
+export type HaloSlice = { x: number; y: number; width: number; height: number };
+
+/**
+ * The part of the content area the user can see (content area ∩ viewport), in content-area coordinates. The halo's
+ * canvases cover only this slice, and the ring travels to just past its farthest corner.
+ */
+export function haloVisibleSlice(surface: { left: number; top: number; width: number; height: number },
+  viewport: { width: number; height: number }): HaloSlice {
+  const left = Math.max(surface.left, 0), top = Math.max(surface.top, 0);
+  const right = Math.min(surface.left + surface.width, viewport.width), bottom = Math.min(surface.top + surface.height, viewport.height);
+  return { x: left - surface.left, y: top - surface.top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
+}

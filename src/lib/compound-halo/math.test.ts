@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  HALO_BAND_PX, HALO_PALETTE, haloBandWeight, haloEase, haloGlintAlpha, haloProgress, haloRadius, haloReach,
+  HALO_BAND_PX, HALO_MAX_DPR, HALO_PALETTE, haloBandWeight, haloCanvasScale, haloVisibleSlice, haloEase, haloGlintAlpha, haloProgress, haloRadius, haloReach,
   haloReducedStrength, haloRingAlpha, haloStrength, parseOpaqueRgb, schemeForBackground, shouldPlayHalo,
 } from "./math";
 
@@ -89,5 +89,32 @@ describe("halo trigger", () => {
     expect(shouldPlayHalo({ phase: "success", signature: "sig1" }, null)).toBe(true);
     expect(shouldPlayHalo({ phase: "success", signature: "sig1" }, "sig1")).toBe(false);
     expect(shouldPlayHalo({ phase: "success", signature: "sig2" }, "sig1")).toBe(true);
+  });
+});
+
+describe("halo canvas size", () => {
+  it("caps the device pixel ratio at 2", () => {
+    expect(HALO_MAX_DPR).toBe(2);
+    expect(haloCanvasScale(1)).toBe(1);
+    expect(haloCanvasScale(1.5)).toBe(1.5);
+    expect(haloCanvasScale(2)).toBe(2);
+    expect(haloCanvasScale(3)).toBe(2);
+    expect(haloCanvasScale(undefined)).toBe(1);
+    expect(haloCanvasScale(0)).toBe(1);
+  });
+  it("covers only the visible slice of the content area (content area ∩ viewport)", () => {
+    // A 2400 px tall content area scrolled 700 px down in a 900 px viewport, below a 60 px nav at the top of the page.
+    expect(haloVisibleSlice({ left: 20, top: -700, width: 1240, height: 2400 }, { width: 1280, height: 900 }))
+      .toEqual({ x: 0, y: 700, width: 1240, height: 900 });
+    // Not scrolled: the slice starts at the content area's top and stops at the viewport bottom.
+    expect(haloVisibleSlice({ left: 12, top: 80, width: 351, height: 3000 }, { width: 375, height: 812 }))
+      .toEqual({ x: 0, y: 0, width: 351, height: 732 });
+    expect(haloVisibleSlice({ left: 0, top: 1000, width: 100, height: 100 }, { width: 375, height: 812 }).height).toBe(0);
+  });
+  it("measures the reach to the far corner of the visible slice, not the whole content area", () => {
+    const slice = haloVisibleSlice({ left: 20, top: -700, width: 1240, height: 2400 }, { width: 1280, height: 900 });
+    const origin = { x: 120, y: 450 }; // the Compound button, in slice coordinates
+    expect(haloReach(origin, slice)).toBeCloseTo(Math.hypot(1240 - 120, 450) + HALO_BAND_PX / 2, 9);
+    expect(haloReach(origin, slice)).toBeLessThan(haloReach({ x: 120, y: 1150 }, { width: 1240, height: 2400 }));
   });
 });
