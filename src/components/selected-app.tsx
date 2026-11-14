@@ -312,6 +312,8 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
     <div className="relative mx-auto max-w-[1280px] px-3 pb-32 pt-3 max-sm:pb-[max(8rem,calc(var(--tx-notice-bottom-offset,0px)+2rem))] sm:px-5 sm:pt-5">
       <InkNav wallet={wallet} connected={connected} onConnect={connect} onDisconnect={disconnect} />
 
+      {/* The page content area below the nav: the compound success halo is clipped to it. */}
+      <div className="relative" data-halo-surface="">
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 px-1">
         <h1 className="text-xl font-semibold text-cream sm:text-2xl">Positions</h1>
         <button type="button" disabled={(!wallet && !(external && onRescan)) || anyBusy} onClick={refreshAll}
@@ -423,6 +425,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
         <summary className="cursor-pointer font-semibold">Leftover compound balances</summary>
         <HarvestAccountManagement controller={compound} tokenLabel={poolLabel} standalone />
       </details>}
+      </div>
       <InkFooter />
     </div>
     <AssetRisksDialog open={hasSelection && assetRisksOpen} onOpenChange={setAssetRisksOpen}>
