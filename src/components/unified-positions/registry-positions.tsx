@@ -1,14 +1,10 @@
 "use client";
 
-import { Collapsible } from "../collapsible";
 import { useEffect, useMemo, useState } from "react";
 import { dexDescriptors, dexPositionLabel, dexPositionRangeText, fetchDexPositions, positionDescriptorsFor,
   type DexCapabilities, type DexDescriptor, type DexSigner } from "@/lib/dex/client";
-import { tokenSymbol, type PositionLabelMetadata } from "@/lib/position-label";
-import { iconFor, type IconChain, type TokenIconMap } from "@/lib/token-icons/map";
-import type { ChainId, PositionSourceId, UnifiedPosition } from "@/lib/unified-positions/model";
-import { PositionAssetRow } from "../position-asset-row";
-import { RangeBadge } from "./range-badge";
+import type { PositionLabelMetadata } from "@/lib/position-label";
+import type { PositionSourceId, UnifiedPosition } from "@/lib/unified-positions/model";
 
 /**
  * My positions from DEXes served through the registry (PR5): every descriptor whose signer is the connected wallet's,
@@ -71,36 +67,14 @@ export function useRegistryPositions({ owner, signer, exclude, refresh }: {
   };
 }
 
-type AssetMetadata = Record<string, { symbol?: string | null; icon?: string | null } | undefined>;
-/** Icon map chain for a position's chain. */
-const ICON_CHAIN: Record<ChainId, IconChain> = { solana: "solana", "robinhood-chain": "robinhood" };
-
 /**
- * Under the dropdown for a selected registry position: range status, range, and the shared Liquidity / Unclaimed fees
- * rows (same component and rule as Raydium and Robinhood Chain: a value that was not read is a dash, never zero; no USD
- * until the DEX reports a price). Token icons come from the stored icon map first (same source as the pairs list), then
- * token metadata.
+ * Under the selected registry position's row: its range (price or ticks). The range status badge and the per-token
+ * Liquidity / Unclaimed fees rows were dropped (LJ 11/14): the row above already shows its shares, value and fees.
  */
-export function RegistryPositionHeader({ position, metadata = {}, icons, showAssets = true }: {
-  position: UnifiedPosition; metadata?: AssetMetadata; icons?: Partial<TokenIconMap>;
-  /** False on the Performance tab, which already shows the position's value and fees: the rows fold away. */
-  showAssets?: boolean;
-}) {
-  const tokens = [position.tokenA, position.tokenB] as const;
-  const sides = ["a", "b"] as const;
-  return <>
-    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs" data-testid="registry-position-header">
-      <RangeBadge status={position.rangeStatus} />
-      <span className="rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-cream/80">{dexPositionRangeText(position).replace(/^range/, "Range").replace(/^ticks/, "Ticks")}</span>
-    </div>
-    <Collapsible open={showAssets} testId="registry-position-assets-collapse">
-      <div aria-label="Position assets" className="mt-5 divide-y divide-white/10" data-testid="registry-position-assets">
-        {tokens.map((token, i) => <PositionAssetRow key={token.id} symbol={tokenSymbol(token.id, metadata, token.symbol)} icon={iconFor(icons, ICON_CHAIN[position.chain], token.id) ?? metadata[token.id]?.icon ?? null}
-          decimals={token.decimals} liquidityRaw={position.holdings?.liquidityRaw?.[sides[i]!] ?? null}
-          unclaimedFeesRaw={position.holdings?.unclaimedFeesRaw?.[sides[i]!] ?? null} priceUsd={null} />)}
-      </div>
-    </Collapsible>
-  </>;
+export function RegistryPositionHeader({ position }: { position: UnifiedPosition }) {
+  return <div className="mt-3 flex flex-wrap items-center gap-2 text-xs" data-testid="registry-position-header">
+    <span className="rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-cream/80">{dexPositionRangeText(position).replace(/^range/, "Range").replace(/^ticks/, "Ticks")}</span>
+  </div>;
 }
 
 /** "Learn more details" lines for a selected registry position: the pool only (no position key or mints). */

@@ -73,7 +73,7 @@ describe("/app Refresh (rescan wallets)", () => {
     expect(calls("/api/rhc-univ4-positions").map((url) => url.searchParams.get("fresh"))).toEqual([null, "1", "1"]);
   });
 
-  it("shows the Robinhood Chain scanning status while the fresh scan runs", async () => {
+  it("a wallet with no Robinhood Chain positions gets no Robinhood Chain section, during or after the fresh scan (LJ 11/14)", async () => {
     await render();
     let finish!: () => void;
     vi.mocked(fetch).mockImplementation(async (input) => {
@@ -83,8 +83,11 @@ describe("/app Refresh (rescan wallets)", () => {
         : { wallet: SOL_WALLET, slot: 1, fetchedAt: 1, positions: [], assets: [] });
     });
     await clickRescan();
-    expect(container.querySelector("[data-testid=positions-scanning]")).not.toBeNull();
+    expect(calls("/api/rhc-univ4-positions").at(-1)!.searchParams.get("fresh")).toBe("1");
+    expect(container.querySelector("[data-testid=rhc-positions-section]")).toBeNull();
+    expect(container.querySelector("[data-testid=positions-scanning]")).toBeNull();
     await act(async () => { finish(); }); await settle();
+    expect(container.querySelector("[data-testid=rhc-positions-section]")).toBeNull();
     expect(container.querySelector("[data-testid=positions-scanning]")).toBeNull();
     expect(container.querySelector("[data-testid=positions-empty-state]")).not.toBeNull();
   });

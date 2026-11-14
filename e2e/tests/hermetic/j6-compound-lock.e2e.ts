@@ -113,15 +113,13 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     });
     await showCompound(page);
     const panel = page.getByRole("region", { name: "Compound fees", exact: true });
-    const harvest = panel.getByRole("region", { name: "Fees to compound", exact: true }).first();
-    await expect(harvest).toContainText(/0\.00001 \S+ \+ 0\.00002 \S+/);
+    // No "Fees to compound" card (LJ 11/14): the position's row shows its fees.
+    await expect(panel.getByRole("region", { name: "Fees to compound", exact: true })).toHaveCount(0);
     await panel.getByRole("button", { name: "One-click compound", exact: true }).click();
     await expect(panel.getByRole("button", { name: "Preparing cleanup…", exact: true })).toBeVisible();
-    await expect(harvest).toContainText(/0 \S+ \+ 0\.000002 \S+/);
     await expect(panel.getByText("Compound confirmed on-chain", { exact: true })).toBeVisible();
     finishCleanup();
     await expect(panel.getByText("Cleanup paused.", { exact: false }).first()).toBeVisible();
-    await expect(harvest).toContainText(/0 \S+ \+ 0\.000002 \S+/);
     expect(wallet.signedTransactions).toHaveLength(1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });

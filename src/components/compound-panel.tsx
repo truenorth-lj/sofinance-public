@@ -4,9 +4,8 @@ import "@/lib/engine-host";
 import { CircleAlert, LoaderCircle, Sprout } from "lucide-react";
 import { useRef, useState } from "react";
 import { CompoundTokenBurst, useCompoundCelebration } from "./compound-celebration";
-import { CompoundOverview } from "./compound-overview";
+import { CompoundProtocolFee } from "./compound-overview";
 import { CompoundSubmitDialog } from "./compound-submit-dialog";
-import { useSolUsdcPrices } from "./use-sol-usdc-price";
 import { formatAmount } from "@sofinance/engine/amount";
 import type { CompoundController } from "./use-compound-controller";
 import { CANCEL_CHECK_PENDING_COPY, CHECKING_SOLANA_COPY } from "@/lib/tx-pipeline";
@@ -31,7 +30,6 @@ const statusText = {
 export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: {
   controller: CompoundController; tokenLabel?: (mint: string) => string; onConnect?: () => void;
 }) {
-  const prices = useSolUsdcPrices();
   const state = c.state;
   const preview = c.preview;
   const amount = (value: string, decimals: number) => formatAmount(value, decimals, Math.min(decimals, 9));
@@ -49,7 +47,8 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: 
       <p className="mt-2 text-xs leading-5 text-smoke">Adds this position&apos;s fees back into the same range.</p>
     </div>
     {state && <>
-      <CompoundOverview state={state} summary={preview} tokenLabel={tokenLabel} prices={prices} />
+      {/* No "Fees to compound" card (LJ 11/14): the position's row shows its fees. The protocol fee is still stated. */}
+      <CompoundProtocolFee summary={preview} tokenLabel={tokenLabel} />
       {c.priorReceipts.length > 0 && <p className="mt-3 text-xs leading-5 text-cream/80">Previous harvest accounts can be checked and recovered from <Link href={recoveryHref(c.positionMint)} className="underline underline-offset-2">Recover leftover compound balances</Link>.</p>}
       {state.rewards.some((reward) => reward.estimatedAmount !== "0") && <div className="mt-4 space-y-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
         <h3 className="text-xs font-medium text-smoke">Additional rewards</h3>
