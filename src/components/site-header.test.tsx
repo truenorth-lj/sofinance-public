@@ -11,6 +11,7 @@ import { BlogShell } from "./blog/blog-shell";
 import { DocsShell } from "./docs/docs-shell";
 import FaqPage from "@/app/faq/page";
 import TermsPage from "@/app/terms/page";
+import NotFound from "@/app/not-found";
 
 const hrefs = (html: string) => [...html.matchAll(/href="([^"]*)"/g)].map((m) => m[1]);
 
@@ -36,12 +37,13 @@ describe("SiteHeader", () => {
     expect(other).not.toContain('data-testid="home-wallet"');
   });
 
-  it("is the header on the blog, docs, FAQ and terms pages, not the app bar", () => {
+  it("is the header on the blog, docs, FAQ, terms and 404 pages, not the app bar", () => {
     const pages = {
       blog: createElement(BlogShell, null, "x"),
       docs: createElement(DocsShell, null, "x"),
       faq: createElement(FaqPage),
       terms: createElement(TermsPage),
+      notFound: createElement(NotFound),
     };
     for (const [name, el] of Object.entries(pages)) {
       const html = renderToStaticMarkup(el);

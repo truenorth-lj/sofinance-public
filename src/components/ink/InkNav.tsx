@@ -3,7 +3,7 @@
 import { useId, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BrandMark } from "@/components/brand-mark";
+import { SiteLogo } from "@/components/site-logo";
 import { Menu, Wallet, X as CloseIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { APP_ROUTES } from "@/lib/public-urls";
@@ -50,15 +50,7 @@ export function InkNav({ wallet, connected, onConnect, onDisconnect }: InkNavPro
     // Below sm: brand, X and Menu on the first row, the two wallet buttons on the second; the links open under them from
     // Menu. sm–lg: brand, X and wallets share the first row, links below. lg: one row.
     <header className="flex flex-wrap items-center justify-between gap-2">
-      <Link
-        href={APP_ROUTES.home}
-        className="order-1 flex h-10 items-center gap-2 rounded-full bg-lemon pl-1.5 pr-4 text-[13px] font-semibold text-ink outline-none focus-visible:shadow-[0_0_0_2px_var(--color-cream)]"
-      >
-        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-ink">
-          <BrandMark className="h-5 w-5 text-lemon" />
-        </span>
-        SoFinance
-      </Link>
+      <SiteLogo href={APP_ROUTES.home} className="order-1" />
 
       <nav aria-label="App" id={menuId}
         onKeyDown={(event) => { if (event.key === "Escape") setMenuOpen(false); }}

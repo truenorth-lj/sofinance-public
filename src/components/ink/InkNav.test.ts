@@ -3,9 +3,12 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("InkNav app routes", () => {
-  it("uses the inline C3 BrandMark, not the old square logo image", () => {
+  it("uses the shared cream SiteLogo, not the lemon BrandMark pill or the old square logo image", () => {
     const src = readFileSync(resolve("src/components/ink/InkNav.tsx"), "utf8");
-    expect(src).toContain("BrandMark");
+    expect(src).toContain("SiteLogo");
+    expect(src).toContain("APP_ROUTES.home");
+    expect(src).not.toContain("BrandMark");
+    expect(src).not.toContain("bg-lemon");
     expect(src).not.toContain("/logo.png");
     expect(src).not.toContain("next/image");
   });
