@@ -2,7 +2,7 @@
 title: "Zero performance fee, no vault, no extra contract: how SoFinance compares"
 description: "A factual comparison of SoFinance with automated LP managers and agents: performance fees, other protocol fees, custody, extra smart-contract layers, voting, and auto-rebalancing."
 datePublished: "2026-11-13"
-dateModified: "2026-11-13"
+dateModified: "2026-11-14"
 hero:
   src: /blog/competitor-comparison/comparison-table.png
   alt: Comparison table of SoFinance, Circuit, Kamino Liquidity, HawkFi, Steer Smart Pools, Beefy CLM, and Gamma on fees, custody, and auto-rebalance
@@ -31,7 +31,7 @@ That is a suggestion from recent fee data, not a model that invents a custom ran
 We do not take a performance fee on compounding or on the trading fees you collect. We do charge a protocol fee of 10 basis points (0.10%), and only when a swap is made for you.
 
 - Opening or adding on Solana: 10 bps of the part of your deposit that is swapped, in the token you deposit. The part deposited directly, with no swap, is not charged.
-- Compounding a Raydium position: 10 bps of the harvested tokens that are swapped to rebalance. If no swap is needed, there is no fee. One-click compound is a Raydium flow; it is not offered for Meteora or Robinhood Chain positions today.
+- Compounding a Raydium or Meteora position: 10 bps of the harvested tokens that are swapped to rebalance. If no swap is needed, there is no fee. One-click compound is not offered for Robinhood Chain positions today.
 - Withdrawing to USDC or another single token on Solana: 10 bps of the tokens that are converted.
 - Withdrawing as the two original pool tokens: 0.
 - Opening on Robinhood Chain: 10 bps of the tokens the swap returns, when part of your deposit is swapped. If there is no swap, there is no fee.
