@@ -13,9 +13,11 @@ import { RhcPositionsToolbar } from "../rhc-positions-toolbar";
 import { useRhcPositionList } from "../use-rhc-position-list";
 import { RhcWrongNetworkPrompt } from "../unified-pools/rhc-wrong-network-prompt";
 import { PositionAssetRow } from "../position-asset-row";
+import { RangeBadge } from "./range-badge";
 import type { ExternalPositions } from "./external-positions";
 import { fetchPositionValues, type RhcPositionValueRow } from "./rhc-values";
 import { shortAddress } from "@/lib/format/address";
+import type { PositionFigures } from "@/lib/portfolio/figures";
 
 const short = shortAddress;
 const nativeOf = (position: UnifiedPosition) => position.native as RhcNative;
@@ -74,6 +76,7 @@ export function useRhcPositions({ wallet, signingEnabled, refreshKey, receiptPol
     positions: wrongNetwork ? [] : positions,
     status,
     busy: close.busy !== null,
+    figures: (position) => rhcFigures(position, valueOf(position.nativeId)),
     header: (position) => {
       const { lookup, held, priceRange } = nativeOf(position);
       const p = lookup.position;
@@ -81,6 +84,8 @@ export function useRhcPositions({ wallet, signingEnabled, refreshKey, receiptPol
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-cream/80" data-testid="rhc-range">
             {priceRange ? `Range ${priceRange.text}` : p ? `Ticks ${p.tickLower} to ${p.tickUpper}` : "Range unknown"}</span>
+          {/* In/out of range is not read on Robinhood Chain (no pool price): the badge says so. Unread position: the pill does. */}
+          {p ? <RangeBadge status={position.rangeStatus} /> : null}
           {held ? <span className="rounded-full border border-white/15 px-1.5 py-0.5 text-[10px] text-smoke" data-testid="position-in-wallet">In your wallet</span> : null}
           {!held && (!p || !p.ownedByUser) ? <button type="button" onClick={() => remove(lookup.tokenId)} className="text-xs text-smoke underline">Remove</button> : null}
         </div>
@@ -130,4 +135,20 @@ function RhcAssetRows({ position, value }: { position: PositionLookup["position"
         priceUsd={token ? (i === 0 ? value?.priceUsd0 : value?.priceUsd1) ?? null : null} />;
     })}
   </div>;
+}
+
+/**
+ * Portfolio row numbers for a Robinhood Chain position: its USD value (liquidity plus unclaimed fees at the indexer's token
+ * prices) when every part was read. Fees stay dashes here: Robinhood Chain fees and Performance come later (canvas plan).
+ */
+function rhcFigures(position: UnifiedPosition, value: RhcPositionValueRow | null): PositionFigures | null {
+  if (!value) return null;
+  const tokens = [position.tokenA, position.tokenB] as const;
+  const parts = [[value.amount0, value.fees0, value.priceUsd0], [value.amount1, value.fees1, value.priceUsd1]] as const;
+  let valueUsd: number | null = 0;
+  parts.forEach(([amount, fees, price], i) => {
+    if (valueUsd === null || amount === null || fees === null || price === null || !tokens[i]!.id) { valueUsd = null; return; }
+    valueUsd += (Number(amount) + Number(fees)) / 10 ** tokens[i]!.decimals * price;
+  });
+  return { stock: null, shares: null, valueUsd, unclaimedFeesUsd: null, cumulativeFeesUsd: null };
 }

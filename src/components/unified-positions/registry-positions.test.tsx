@@ -97,13 +97,16 @@ const LISTED = { initialView: "deposit" } as const;
 const rows = () => [...container.querySelectorAll<HTMLButtonElement>('[data-testid="position-fallback-select"]')];
 const selectedKey = () => rows().find((row) => row.getAttribute("aria-pressed") === "true")?.getAttribute("data-position-key");
 const groups = () => [...container.querySelectorAll('[data-testid="position-chain-group"]')].map((group) => [group.getAttribute("aria-label"),
-  group.querySelector("button") ? [...group.querySelectorAll("button")].map((row) => row.firstChild?.textContent) : [...group.querySelectorAll("p")].map((row) => row.textContent)]);
+  [...group.querySelectorAll('[data-testid="position-fallback-select"]')].map((row) =>
+    `${row.querySelector('[data-testid="position-row-title"]')?.textContent} · ${row.querySelector('[data-testid="position-row-subtitle"]')?.textContent}`)]);
 const tab = (label: string) => [...container.querySelectorAll<HTMLButtonElement>("nav[aria-label='Position operations'] button")].find((b) => b.textContent === label)!;
 
 describe("/app My positions with registry DEXes", () => {
   it("lists the wallet's served-DEX positions in the Solana group and selects one when the scan has none", async () => {
     await render();
-    expect(state.dexCalls).toEqual([["/api/dex/meteora-dlmm/positions", { owner: WALLET }]]);
+    // Portfolio reads the position's Performance report once for its row and totals (value, unclaimed and cumulative fees).
+    expect(state.dexCalls).toEqual([["/api/dex/meteora-dlmm/positions", { owner: WALLET }],
+      ["/api/dex/meteora-dlmm/performance", { positionKey: `meteora-dlmm:${POSITION}` }]]);
     // PR8: the page's default tool (Compound) now has a registry panel, never the Raydium one.
     expect(container.querySelector("[data-testid=registry-compound]")).toBeTruthy();
     expect(container.querySelector("#compound-view")?.textContent).not.toContain("Meteora");
@@ -112,7 +115,7 @@ describe("/app My positions with registry DEXes", () => {
     expect(container.querySelector("#compound-position")).toBeNull();
     await act(async () => tab("Add to position").click());
     await settle();
-    expect(groups()).toEqual([["Solana", [`Meteora · TSLA/TSLAx · range 0.9800–1.0200 · In range · #${POSITION.slice(0, 4)}…${POSITION.slice(-4)}`]]]);
+    expect(groups()).toEqual([["Solana", [`TSLA / TSLAx · Meteora · #${POSITION.slice(0, 4)}…${POSITION.slice(-4)}`]]]);
     expect(selectedKey()).toBe(`meteora-dlmm:${POSITION}`);
     expect(container.querySelector("[data-testid=registry-position-header]")?.textContent).toBe("In rangeRange 0.9800–1.0200");
     // PR9: Performance has a registry panel too (never the Raydium one).
@@ -276,13 +279,14 @@ describe("/app My positions with registry DEXes", () => {
     state.op = { status: 400, body: { error: "This position has no unclaimed fees yet, so there is nothing to compound.", code: "INVALID_REQUEST" } };
     await render();
     const panel = container.querySelector("[data-testid=registry-compound]")!;
-    expect(panel.textContent).toContain("adds them back into this position at its current price range, in one transaction. No swap is needed. No platform fee.");
+    // Same note as the Raydium Compound fees panel (LJ 11/14), then this DEX's fee line.
+    expect(panel.textContent).toContain("Adds this position's fees back into the same range.No platform fee.");
     expect(panel.textContent).toContain("Unclaimed: 0.0015 TSLA · 0.0023 TSLAx");
     expect(container.querySelector("[data-testid=registry-compound-range]")).toBeNull(); // in range
     // In range the pool's own composition fee is stated (descriptor meta, not a DEX branch).
     expect(container.querySelector("[data-testid=registry-compound-pool-fee]")?.textContent).toContain("composition fee");
     expect(container.querySelector("[data-testid=registry-compound-blocked]")).toBeNull();
-    const button = [...panel.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "Compound fees")!;
+    const button = [...panel.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === "One-click compound")!;
     await act(async () => button.click());
     await settle();
     expect(state.dexCalls.at(-1)).toEqual(["/api/dex/meteora-dlmm/compound", { owner: WALLET, positionKey: `meteora-dlmm:${POSITION}`, step: 1, priorSignatures: [] }]);
@@ -293,7 +297,7 @@ describe("/app My positions with registry DEXes", () => {
     state.dex = { status: 200, body: { positions: [meteoraRow("5000", { liquidityRaw: HOLDINGS.liquidityRaw, unclaimedFeesRaw: { a: "0", b: "0" } })] } };
     await render();
     expect(container.querySelector("[data-testid=registry-compound-blocked]")?.textContent).toBe("This position has no unclaimed fees yet, so there is nothing to compound.");
-    const button = [...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-compound] button")].find((b) => b.textContent === "Nothing to compound")!;
+    const button = [...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-compound] button")].find((b) => b.textContent === "One-click compound")!;
     expect(button.disabled).toBe(true);
     await act(async () => button.click());
     await settle();
@@ -307,7 +311,7 @@ describe("/app My positions with registry DEXes", () => {
     expect(container.querySelector("[data-testid=registry-compound-range]")?.textContent)
       .toBe("The price is outside this position's range. Only TSLA fees go back into the position; TSLAx fees go to your wallet.");
     expect(container.querySelector("[data-testid=registry-compound-pool-fee]")).toBeNull(); // out of range: no active-bin deposit
-    const enabled = [...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-compound] button")].find((b) => b.textContent === "Compound fees")!;
+    const enabled = [...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-compound] button")].find((b) => b.textContent === "One-click compound")!;
     expect(enabled.disabled).toBe(false);
   });
 
@@ -316,7 +320,7 @@ describe("/app My positions with registry DEXes", () => {
     await render();
     expect(container.querySelector("[data-testid=registry-compound-blocked]")?.textContent)
       .toBe("There are no TSLA fees to put back while the price is outside the range. Claim the TSLAx fees to your wallet instead.");
-    expect([...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-compound] button")].find((b) => b.textContent === "Nothing to compound")!.disabled).toBe(true);
+    expect([...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-compound] button")].find((b) => b.textContent === "One-click compound")!.disabled).toBe(true);
   });
 
   it("one lock per position across ops: a Claim in flight locks Add / Withdraw / Compound, and switching tabs does not unlock", async () => {
@@ -334,7 +338,7 @@ describe("/app My positions with registry DEXes", () => {
     expect(container.querySelector("[data-testid=registry-withdraw] [data-testid=registry-position-locked]")?.textContent).toContain("Another transaction on this position is still in progress");
     // Another tab (the Claim panel unmounts): Compound and Add stay locked; nothing else is requested.
     await act(async () => tab("Compound fees").click());
-    const compound = [...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-compound] button")].find((b) => b.textContent === "Compound fees")!;
+    const compound = [...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-compound] button")].find((b) => b.textContent === "One-click compound")!;
     expect(compound.disabled).toBe(true);
     await act(async () => compound.click());
     await act(async () => tab("Add to position").click());
@@ -346,7 +350,7 @@ describe("/app My positions with registry DEXes", () => {
     await act(async () => finish());
     await settle();
     await act(async () => tab("Compound fees").click());
-    expect([...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-compound] button")].find((b) => b.textContent === "Compound fees")!.disabled).toBe(false);
+    expect([...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-compound] button")].find((b) => b.textContent === "One-click compound")!.disabled).toBe(false);
     expect(container.querySelector("[data-testid=registry-position-locked]")).toBeNull();
   });
 

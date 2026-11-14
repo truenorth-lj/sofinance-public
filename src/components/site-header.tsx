@@ -7,7 +7,7 @@ const navPill =
 
 /**
  * Marketing-site header (homepage, blog, docs, FAQ, terms). On the homepage Pools is an in-page anchor; elsewhere it
- * points back to the homepage's pools list. Positions opens the app's positions page; AI agents its agent page. There
+ * points back to the homepage's pools list. Portfolio opens the app's Portfolio page; AI agents its agent page. There
  * is no "Open app": on the homepage the right-hand button connects a wallet in place (the page stays, Sophie
  * 2026-11-10); the other pages have no wallet. In-app pages use InkNav instead.
  */
@@ -39,7 +39,7 @@ export function SiteHeader({ onHomepage = false }: { onHomepage?: boolean }) {
           Pools
         </a>
         <Link href={APP_ROUTES.home} className={`${navPill} flex-1`}>
-          Positions
+          Portfolio
         </Link>
         <Link href={APP_ROUTES.ai} className={`${navPill} hidden flex-1 sm:flex`}>
           AI agents

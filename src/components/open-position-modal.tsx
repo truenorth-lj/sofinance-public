@@ -225,7 +225,7 @@ export function OpenPositionModal({
             <a className="block text-cream/90 underline" href={solscanTxUrl(c.signature)} target="_blank" rel="noreferrer">
               View on Solscan
             </a>
-            <a className="block text-cream/90 underline" href="/app">
+            <a className="block text-cream/90 underline" href="/app/portfolio">
               Open in Positions{c.positionMint ? ` (${shortAddress(c.positionMint)})` : ""}
             </a>
             <button type="button" onClick={c.createAnother} className="text-cream/90 underline">Create another position</button>

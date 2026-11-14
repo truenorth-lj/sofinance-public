@@ -17,19 +17,19 @@ const hrefs = (html: string) => [...html.matchAll(/href="([^"]*)"/g)].map((m) =>
 describe("SiteHeader", () => {
   it("links Pools to the homepage list (in-page on the homepage) and AI agents to the app's agent page", () => {
     const home = hrefs(renderToStaticMarkup(createElement(SiteHeader, { onHomepage: true })));
-    expect(home).toEqual(expect.arrayContaining(["/", "#pools", "/app/ai", "/blog", "/app"]));
+    expect(home).toEqual(expect.arrayContaining(["/", "#pools", "/app/ai", "/blog", "/app/portfolio"]));
     const other = hrefs(renderToStaticMarkup(createElement(SiteHeader)));
-    expect(other).toEqual(expect.arrayContaining(["/", "/#pools", "/app/ai", "/blog", "/app"]));
+    expect(other).toEqual(expect.arrayContaining(["/", "/#pools", "/app/ai", "/blog", "/app/portfolio"]));
     expect(other).not.toContain("#pools");
     // The homepage has no agents section any more.
     expect([...home, ...other].some((href) => href?.endsWith("#agents"))).toBe(false);
   });
 
-  it("has Positions in the nav and no Open app; only the homepage has the wallet button (it connects in place)", () => {
+  it("has Portfolio in the nav and no Open app; only the homepage has the wallet button (it connects in place)", () => {
     const home = renderToStaticMarkup(createElement(SiteHeader, { onHomepage: true }));
     const other = renderToStaticMarkup(createElement(SiteHeader));
     for (const html of [home, other]) {
-      expect(html).toMatch(/<a[^>]*href="\/app"[^>]*>Positions<\/a>/);
+      expect(html).toMatch(/<a[^>]*href="\/app\/portfolio"[^>]*>Portfolio<\/a>/);
       expect(html).not.toContain("Open app");
     }
     expect(home).toMatch(/<button[^>]*data-testid="home-wallet"[^>]*>Connect wallet<\/button>/);

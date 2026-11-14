@@ -8,7 +8,7 @@
  * Every send goes through the shared tx pipeline (`useTxPipeline` + `dexTxAdapter`): wallet signAndSend, loading →
  * success / failure with a Solscan link, balances refresh; the pipeline's success notice stays until dismissed.
  */
-import { CircleAlert, LoaderCircle } from "lucide-react";
+import { CircleAlert, LoaderCircle, Sprout } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatAmount, parseTokenAmount } from "@sofinance/engine/amount";
 import { DEPOSIT_MINIMUM_UNAVAILABLE, depositTooSmallMessage, dexTxAdapter, fetchAddQuote, type AddQuote, type DexCapabilities, type DexPreparedStep, type DexDescriptor, type DexStepInput, type DexStepOp, type FeeRule, type RentQuote } from "@/lib/dex/client";
@@ -42,6 +42,8 @@ export type RegistryToolProps = {
 };
 
 const CARD = "mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-8";
+/** The Raydium Compound fees panel's button (compound-panel.tsx), so both DEXes' compound looks the same. */
+const COMPOUND_BUTTON = "inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-3.5 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:min-w-48";
 export const BUTTON = "mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-4 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-cream/40 disabled:hover:bg-white/10";
 export const FIELD = "w-full rounded-inset border border-white/20 bg-white/10 px-4 py-3 text-base font-semibold text-cream outline-none focus:border-white/40 disabled:opacity-60 sm:text-sm";
 export const LABEL = "mt-5 block text-xs font-medium uppercase tracking-[0.16em] text-smoke";
@@ -425,16 +427,20 @@ function RegistryCompoundPanel({ position, descriptor, symbolOf, onConfirmed }: 
   const compoundButtonRef = useRef<HTMLButtonElement>(null);
   const haloPlay = useCompoundSuccessHalo(tx.status === "success" && tx.signature ? { phase: "success", signature: tx.signature } : null);
   return <section className={CARD} data-testid="registry-compound" aria-labelledby="registry-compound-heading">
-    <h2 id="registry-compound-heading" className="text-lg font-semibold text-cream">Compound fees</h2>
-    <p className="mt-2 text-xs leading-5 text-smoke">Claims the unclaimed swap fees and adds them back into this position at its current price range, in one transaction. No swap is needed. {feeLine(descriptor.meta.feePolicy.compound, "")}</p>
+    {/* Same look and words as the Raydium Compound fees panel (LJ 11/14); the transaction flow below is unchanged. */}
+    <h2 id="registry-compound-heading" className="flex items-center gap-2 text-lg font-semibold text-cream"><Sprout aria-hidden="true" className="h-5 w-5 text-cream/80" />Compound fees</h2>
+    <p className="mt-2 text-xs leading-5 text-smoke">Adds this position&apos;s fees back into the same range.</p>
+    <p className="mt-1 text-xs leading-5 text-smoke">{feeLine(descriptor.meta.feePolicy.compound, "")}</p>
     {fees ? <p className="mt-3 text-sm text-cream/80">Unclaimed: {formatAmount(fees.a, position.tokenA.decimals)} {symbolOf(position.tokenA)} · {formatAmount(fees.b, position.tokenB.decimals)} {symbolOf(position.tokenB)}</p> : null}
     {rangeLine ? <p data-testid="registry-compound-range" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{rangeLine}</p> : null}
     {poolFeeLine ? <p data-testid="registry-compound-pool-fee" className="mt-3 text-xs leading-5 text-smoke">{poolFeeLine}</p> : null}
     {!connected ? <NotConnected /> : <>
-      {blocked ? <p data-testid="registry-compound-blocked" className="mt-4 text-sm text-cream/80">{blocked}</p> : null}
-      <button ref={compoundButtonRef} type="button" disabled={locked || blocked !== null} onClick={submit} className={BUTTON}>
-        {tx.locked ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : null}{blocked ? "Nothing to compound" : "Compound fees"}
-      </button>
+      <div className="mt-5 flex flex-wrap items-center gap-4">
+        <button ref={compoundButtonRef} type="button" disabled={locked || blocked !== null} onClick={submit} className={COMPOUND_BUTTON}>
+          {tx.locked ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : <Sprout aria-hidden="true" className="size-4" />}One-click compound
+        </button>
+        {blocked ? <span data-testid="registry-compound-blocked" role="status" className="text-xs text-smoke">{blocked}</span> : null}
+      </div>
       <CompoundSuccessHalo play={haloPlay} originRef={compoundButtonRef} />
       <LockNote lock={op} />
       <TxStatus tx={tx} successText="Fees compounded." walletNote={rentLine} />

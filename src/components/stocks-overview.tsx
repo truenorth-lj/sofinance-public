@@ -16,6 +16,7 @@ import { changeTone, formatChangePct, formatShares, formatShortDate, formatUsd }
 import { groupByStock, portfolioTotals, type StockRow } from "@/lib/stock-portfolio";
 import { StockFootnote, StockPerformanceTiles, StockTile, StockTotalRow } from "./stock-performance-tiles";
 import { shortAddress } from "@/lib/format/address";
+import { cachedReport, readReport } from "./portfolio/report-cache";
 
 type Loaded = { report: PositionPerformanceReport | null; error: boolean };
 
@@ -28,9 +29,6 @@ export type OverviewPosition = {
   fromPanel?: Loaded | "loading";
 };
 
-const CACHE_MS = 60_000;
-/** Reports read in this tab, so leaving and reopening Performance does not re-read every position at once. */
-const reportCache = new Map<string, { at: number; report: PositionPerformanceReport | null }>();
 
 const toneClass = { up: "text-mint", down: "text-coral", flat: "text-smoke" } as const;
 
@@ -58,15 +56,15 @@ export function StocksOverview({ positions, selectedPositionKey, onSelectPositio
       for (const item of loaders.current) {
         if (!wanted.has(item.key)) continue;
         if (controller.signal.aborted) return;
-        const hit = reportCache.get(item.key);
-        if (hit && Date.now() - hit.at < CACHE_MS) {
+        // Reports are shared with the Portfolio totals (one read per position per minute; a running read is joined).
+        const hit = cachedReport(item.key);
+        if (hit) {
           setLoaded((current) => current[item.key]?.report === hit.report ? current : { ...current, [item.key]: { report: hit.report, error: false } });
           continue;
         }
         try {
-          const report = await item.load(controller.signal);
+          const report = await readReport(item);
           if (controller.signal.aborted) return;
-          reportCache.set(item.key, { at: Date.now(), report });
           setLoaded((current) => ({ ...current, [item.key]: { report, error: false } }));
         } catch {
           if (controller.signal.aborted) return;
@@ -118,7 +116,6 @@ export function StocksOverview({ positions, selectedPositionKey, onSelectPositio
       {!pending && failed > 0 && <p role="alert" className="flex flex-wrap items-center gap-3 text-[13px] text-smoke">
         {failed} {failed === 1 ? "position" : "positions"} could not be read, so totals are not shown.
         <button type="button" onClick={() => {
-          for (const item of current) if (item.state?.error) reportCache.delete(item.key);
           setLoaded((state) => Object.fromEntries(Object.entries(state).filter(([, value]) => !value.error)));
           setForced((set) => new Set([...set, ...current.filter((item) => item.state?.error).map((item) => item.key)]));
           setAttempt((value) => value + 1);

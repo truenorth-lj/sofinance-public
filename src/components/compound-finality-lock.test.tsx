@@ -3,6 +3,7 @@ import { act, createElement, type FunctionComponent } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SelectedApp } from "./selected-app";
+import { RecoveryPage } from "./portfolio/recovery-page";
 import { useCompoundController, type CompoundConfirmation } from "./use-compound-controller";
 import { compoundAttemptKey, compoundReceiptsKey, persistCompoundAttempt } from "@sofinance/engine/compound-attempt";
 import { compoundHistoryFixture } from "@/lib/test-support/compound-history-fixture";
@@ -41,6 +42,11 @@ let fetchMock: ReturnType<typeof vi.fn>;
 const advance = async (ms: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
 const addButton = () => [...container.querySelectorAll<HTMLButtonElement>("#deposit-view button")].find((b) => b.textContent === "Add liquidity")!;
 const confirmCalls = () => fetchMock.mock.calls.filter(([url]) => url === "/api/compound-confirm").length;
+// Harvest account management (receipt history, recovery) lives on /app/portfolio/recovery since LJ 11/14.
+async function renderRecovery() {
+  await act(async () => root.render(createElement(RecoveryPage, { positionKey: `raydium-clmm:${selectedMint}` })));
+  await advance(1); await advance(1);
+}
 async function render(initialView: "compound" | "deposit" = "deposit") {
   await act(async () => root.render(createElement(SelectedApp as FunctionComponent<{ initialView: "compound" | "deposit" }>, { initialView })));
   await advance(1); await advance(1);
@@ -128,8 +134,8 @@ describe("compound history warnings in the real SelectedApp", () => {
   });
   it("keeps another NFT's successful transaction and receipts in explicitly labelled collapsed history", async () => {
     reply = { status: "success", chainStatus: "success", state: null };
-    await render("compound");
-    const view = container.querySelector("#compound-view")!;
+    await renderRecovery();
+    const view = container.querySelector("[data-testid=harvest-recovery-page]")!;
     const success = [...view.querySelectorAll('[role="status"]')].find(node => node.textContent === "Compound confirmed on-chain")!;
     expect(success.closest("details")!.open).toBe(false);
     expect(success.closest("details")!.querySelector("summary")!.textContent).toContain("Previous transaction for another position");
@@ -137,11 +143,15 @@ describe("compound history warnings in the real SelectedApp", () => {
     expect(view.textContent).toContain("Other positions (1 records)");
     expect(controller.canCompound).toBe(true);
     selectedMint = fixture.attempt.positionMint;
+    // The selected position's own transaction shows open in its Compound panel on the Portfolio screen…
     await render("compound");
-    const selectedSuccess = [...view.querySelectorAll('[role="status"]')].find(node => node.textContent === "Compound confirmed on-chain")!;
+    const selectedSuccess = [...container.querySelectorAll('#compound-view [role="status"]')].find(node => node.textContent === "Compound confirmed on-chain")!;
     expect(selectedSuccess.closest("details")).toBeNull();
-    expect(view.textContent).toContain("1 records for this position");
-    expect(view.textContent).not.toContain("Other positions (1 records)");
+    // …and its records are scoped to it on the recovery page.
+    await renderRecovery();
+    const recovery = container.querySelector("[data-testid=harvest-recovery-page]")!;
+    expect(recovery.textContent).toContain("1 records for this position");
+    expect(recovery.textContent).not.toContain("Other positions (1 records)");
   });
   it.each([false, true])("scopes failed preparation and retains it when old success is requeried (same NFT: %s)", async sameNft => {
     if (sameNft) selectedMint = fixture.attempt.positionMint;
@@ -171,11 +181,11 @@ describe("compound history warnings in the real SelectedApp", () => {
       if (url === "/api/compound-recover-prepare") return Response.json({ error: "Recovery simulation failed" }, { status: 400 });
       throw new Error(`Unexpected request ${url}`);
     });
-    await render("compound");
+    await renderRecovery();
     await act(async () => controller.recover(controller.receipts[0]!));
     expect(controller.error).toBe("");
     expect(controller.recoveryError).toEqual({ sourceSignature: fixture.attempt.signature, message: "Recovery simulation failed" });
-    const alert = container.querySelector('#compound-view [role="alert"]')!;
+    const alert = container.querySelector('[data-testid=harvest-recovery-page] [role="alert"]')!;
     expect(alert.textContent).toBe("Recovery simulation failed");
     expect(alert.closest("details")!.querySelector("summary")!.textContent).toBe("Other positions (1 records)");
     expect(controller.receipts).toHaveLength(1); expect(mocks.sign).not.toHaveBeenCalled();

@@ -20,6 +20,9 @@ export function openPoolRedirect(openPool: string | null | undefined): string | 
 /** Where an old page path (plus its query string) now lives, or null. */
 export function unifiedAppRedirect(pathname: string, search = ""): string | null {
   if (pathname === "/app/rhc") return RHC_DEEP_LINK;
-  if (pathname === "/app") return openPoolRedirect(new URLSearchParams(search).get("openPool"));
+  if (pathname === "/app") {
+    const pools = openPoolRedirect(new URLSearchParams(search).get("openPool"));
+    return pools ?? `/app/portfolio${search ? `?${search.replace(/^\?/, "")}` : ""}`;
+  }
   return null;
 }

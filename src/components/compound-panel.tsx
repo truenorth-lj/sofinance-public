@@ -13,6 +13,10 @@ import { CANCEL_CHECK_PENDING_COPY, CHECKING_SOLANA_COPY } from "@/lib/tx-pipeli
 import { compoundActionLabel } from "@/lib/status-copy";
 import { shortAddress } from "@/lib/format/address";
 import { solscanTxUrl, solscanAccountUrl } from "@/lib/format/explorer";
+import Link from "next/link";
+import { APP_ROUTES } from "@/lib/public-urls";
+import { positionKey } from "@/lib/unified-positions/model";
+import { raydiumPositionSource } from "@/lib/unified-positions/sources/raydium";
 
 const short = shortAddress;
 
@@ -45,7 +49,7 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: 
     </div>
     {state && <>
       <CompoundOverview state={state} summary={preview} tokenLabel={tokenLabel} prices={prices} />
-      {c.priorReceipts.length > 0 && <p className="mt-3 text-xs leading-5 text-cream/80">Previous harvest accounts remain available below for verification and recovery.</p>}
+      {c.priorReceipts.length > 0 && <p className="mt-3 text-xs leading-5 text-cream/80">Previous harvest accounts can be checked and recovered from <Link href={recoveryHref(c.positionMint)} className="underline underline-offset-2">Recover leftover compound balances</Link>.</p>}
       {state.rewards.some((reward) => reward.estimatedAmount !== "0") && <div className="mt-4 space-y-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
         <h3 className="text-xs font-medium text-smoke">Additional rewards</h3>
         {state.rewards.map((reward) => <div key={reward.index} className="flex justify-between gap-3 text-xs text-cream/80">
@@ -64,7 +68,9 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: 
     {showCurrentAttempt && <AttemptCard c={c} tokenLabel={tokenLabel} />}
     <CompoundSubmitDialog feedback={c.feedback} slow={c.feedbackSlow} onDismiss={c.dismissFeedback} />
     {c.error && <div role="alert" className="mt-4 flex gap-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" /><span>{c.error}</span></div>}
-    <HarvestAccountManagement controller={c} tokenLabel={tokenLabel} />
+    {/* The cleanup a confirmed compound starts on its own stays visible here; the rest of harvest account management lives on
+        its own recovery page (LJ 11/14), linked from the position's details. */}
+    <CleanupProgress controller={c} />
   </section>;
 }
 
@@ -97,9 +103,28 @@ function ReceiptCard({ c, receipt, tokenLabel }: { c: CompoundController; receip
       </div>;
 }
 
+/** The recovery page for a Raydium position (its records listed first), or for the whole wallet. */
+export function recoveryHref(positionMint: string | null | undefined): string {
+  return positionMint ? `${APP_ROUTES.portfolioRecovery}?position=${encodeURIComponent(positionKey(raydiumPositionSource.id, positionMint))}` : APP_ROUTES.portfolioRecovery;
+}
+
+/** Progress of a running or finished cleanup batch (the automatic one after a compound, or "Clean up all balances"). */
+function CleanupProgress({ controller: c }: { controller: CompoundController }) {
+  return <>
+    {c.cleanup && <div role="status" className="mt-5 rounded-2xl border border-white/15 p-4 text-xs leading-6 text-cream/80">
+      {c.cleanup.compoundSignature && <p>Compound confirmed. <a className="underline" href={solscanTxUrl(c.cleanup.compoundSignature)} target="_blank" rel="noreferrer">View compound transaction</a></p>}
+      <p>{c.cleanup.message}</p><p>{c.cleanup.completed} of {c.cleanup.total} harvest account groups cleaned.</p>
+    </div>}
+    {c.cleanupBatch && <div className="mt-3 text-xs leading-6 text-smoke">
+      {c.cleanupBatch.transactions.map(tx => <p key={tx.signature}><a className="underline" href={solscanTxUrl(tx.signature)} target="_blank" rel="noreferrer">Cleanup transaction {short(tx.signature)}</a> · {tx.unsent ? "Not sent" : tx.status === "success" ? "Confirmed" : tx.status === "pending" ? "Confirming; automatically retrying verification" : tx.status}</p>)}
+      <button type="button" onClick={c.retryReconcile} disabled={c.busy} className="underline disabled:opacity-40">Requery cleanup results</button>
+    </div>}
+  </>;
+}
+
 /**
- * Leftover-fee cleanup and harvest account recovery. Part of the Compound fees panel; on /app it is also shown on its own
- * (collapsed, at the bottom) when the wallet has no Raydium position, so old harvest balances stay reachable.
+ * Leftover-fee cleanup and harvest account recovery, on its own recovery page (`/app/portfolio/recovery`, LJ 11/14).
+ * `standalone`: the page has no Compound fees panel, so this section shows the submit dialog and errors itself.
  */
 export function HarvestAccountManagement({ controller: c, tokenLabel = short, standalone = false }: { controller: CompoundController; tokenLabel?: (mint: string) => string; standalone?: boolean }) {
   const [importSignature, setImportSignature] = useState("");
@@ -110,14 +135,7 @@ export function HarvestAccountManagement({ controller: c, tokenLabel = short, st
     {/* Inside the Compound panel its own alert already shows the error; on its own this section shows it. */}
     {standalone && <CompoundSubmitDialog feedback={c.feedback} slow={c.feedbackSlow} onDismiss={c.dismissFeedback} />}
     {standalone && c.error && <div role="alert" className="mt-4 flex gap-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" /><span>{c.error}</span></div>}
-    {c.cleanup && <div role="status" className="mt-5 rounded-2xl border border-white/15 p-4 text-xs leading-6 text-cream/80">
-      {c.cleanup.compoundSignature && <p>Compound confirmed. <a className="underline" href={solscanTxUrl(c.cleanup.compoundSignature)} target="_blank" rel="noreferrer">View compound transaction</a></p>}
-      <p>{c.cleanup.message}</p><p>{c.cleanup.completed} of {c.cleanup.total} harvest account groups cleaned.</p>
-    </div>}
-    {c.cleanupBatch && <div className="mt-3 text-xs leading-6 text-smoke">
-      {c.cleanupBatch.transactions.map(tx => <p key={tx.signature}><a className="underline" href={solscanTxUrl(tx.signature)} target="_blank" rel="noreferrer">Cleanup transaction {short(tx.signature)}</a> · {tx.unsent ? "Not sent" : tx.status === "success" ? "Confirmed" : tx.status === "pending" ? "Confirming; automatically retrying verification" : tx.status}</p>)}
-      <button type="button" onClick={c.retryReconcile} disabled={c.busy} className="underline disabled:opacity-40">Requery cleanup results</button>
-    </div>}
+    {standalone && <CleanupProgress controller={c} />}
     {c.wallet && <div className="mt-5 rounded-2xl border border-white/15 p-4 text-xs leading-6 text-smoke">
       <h3 className="text-sm font-semibold text-cream">Clean up leftover fees</h3>
       <p className="mt-2">Find harvest accounts from all your past compounds, including positions you no longer hold. Merge their balances into your wallet and close the accounts to return SOL rent.</p>

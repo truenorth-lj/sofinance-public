@@ -24,7 +24,7 @@ const short = shortAddress;
 const shortEvm = shortAddress;
 
 const NAV_LINKS = [
-  { href: APP_ROUTES.home, label: "Positions" },
+  { href: APP_ROUTES.home, label: "Portfolio" },
   // Plan and Docs left the bar on 11/4 (Docs is in the page footer, InkFooter).
   { href: APP_ROUTES.rwaPairs, label: "Pools" },
   { href: APP_ROUTES.ai, label: "Use AI" },
@@ -64,7 +64,7 @@ export function InkNav({ wallet, connected, onConnect, onDisconnect }: InkNavPro
         onKeyDown={(event) => { if (event.key === "Escape") setMenuOpen(false); }}
         className={cn("order-5 w-full gap-2 sm:flex sm:flex-wrap lg:order-2 lg:w-auto lg:flex-1", menuOpen ? "grid grid-cols-2" : "hidden")}>
         {NAV_LINKS.map((link) => {
-          const isActive = pathname === link.href;
+          const isActive = pathname === link.href || Boolean(pathname?.startsWith(`${link.href}/`));
           return (
             <Link
               key={link.href}

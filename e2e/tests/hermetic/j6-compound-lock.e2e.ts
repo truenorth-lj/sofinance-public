@@ -131,11 +131,15 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     const flow = await setup(page, wallet, { status: "success", chainStatus: "success" });
     await page.route("**/api/compound-recover-prepare", route => route.fulfill({ status: 400, contentType: "application/json",
       body: JSON.stringify({ error: "Recovery simulation failed" }) }));
-    await showCompound(page);
-    await page.locator("summary").filter({ hasText: "Harvest account management" }).click();
-    await page.locator("summary").filter({ hasText: "Other positions (1 records)" }).click();
-    await page.getByRole("button", { name: "Retrieve this balance", exact: true }).click();
-    const alert = page.getByRole("region", { name: "Compound fees", exact: true }).getByRole("alert");
+    // Harvest account management is on the recovery page, linked from the Raydium position's details (LJ 11/14).
+    await expect(page.locator("summary").filter({ hasText: "Harvest account management" })).toHaveCount(0);
+    await page.getByTestId("harvest-recovery-link").click();
+    await expect(page).toHaveURL(/\/app\/portfolio\/recovery\?position=raydium-clmm/);
+    const recovery = page.getByTestId("harvest-recovery-page");
+    await recovery.locator("summary").filter({ hasText: "Harvest account management" }).click();
+    await recovery.locator("summary").filter({ hasText: "Other positions (1 records)" }).click();
+    await recovery.getByRole("button", { name: "Retrieve this balance", exact: true }).click();
+    const alert = recovery.getByRole("alert");
     await expect(alert).toBeVisible(); await expect(alert).toHaveText("Recovery simulation failed");
     expect(await alert.evaluate(node => node.closest("details")?.querySelector("summary")?.textContent)).toBe("Other positions (1 records)");
     expect(JSON.parse((await page.evaluate(key => localStorage.getItem(key), flow.receiptsKey))!)).toHaveLength(1);
@@ -151,10 +155,12 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
       body: JSON.stringify({ error: "Complete compound transaction 1268 bytes, exceeds 1,232 byte limit; no transaction was sent" }) }));
     await showCompound(page);
     const compoundPanel = page.getByRole("region", { name: "Compound fees", exact: true });
-    const management = page.locator("summary").filter({ hasText: "Harvest account management" });
-    const success = page.getByText("Compound confirmed on-chain", { exact: true });
-    await expect(management).toContainText("0 records for this position");
+    const success = compoundPanel.getByText("Compound confirmed on-chain", { exact: true });
+    // The Portfolio screen has no harvest account management (LJ 11/14); another NFT's history is on the recovery page.
+    await expect(page.locator("summary").filter({ hasText: "Harvest account management" })).toHaveCount(0);
     await expect(success).toBeHidden();
+    const first = (await page.locator('[data-testid="position-fallback-select"][aria-pressed="true"]').getAttribute("data-position-key"))!;
+    expect(first).not.toBe(`raydium-clmm:${flow.oldMint}`);
     await page.getByRole("button", { name: "One-click compound", exact: true }).click();
     await expect(compoundPanel.getByRole("alert")).toContainText("1268 bytes");
     await expect(success).toBeHidden();
@@ -162,22 +168,28 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     expect(flow.calls.some(path => /(broadcast|tx-send)$/.test(path))).toBe(false);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: test.info().outputPath(`compound-error-scoped-${viewport.width}.png`), fullPage: true });
-    await management.click();
-    await page.locator("summary").filter({ hasText: "Previous transaction for another position" }).click();
-    await expect(success).toBeVisible();
-    await page.locator("summary").filter({ hasText: "Other positions (1 records)" }).click();
-    await expect(page.getByRole("button", { name: "Retrieve this balance" })).toBeVisible();
     await selectCompoundPosition(page, `raydium-clmm:${flow.oldMint}`);
-    await expect(management).toContainText("1 records for this position");
     await expect(compoundPanel.getByRole("alert")).toBeHidden();
     await expect(success).toBeVisible();
-    await expect(page.locator("summary").filter({ hasText: "Other positions (1 records)" })).toHaveCount(0);
     await page.getByRole("button", { name: "One-click compound", exact: true }).click();
     await expect(compoundPanel.getByRole("alert")).toContainText("1268 bytes");
     await expect(success).toBeHidden();
-    await page.locator("summary").filter({ hasText: "Previous on-chain transaction" }).click();
-    await page.getByRole("button", { name: "Requery on-chain result" }).click();
-    await expect(compoundPanel.getByRole("alert")).toContainText("1268 bytes");
+    // Records stay scoped to the NFT the recovery page was opened for.
+    await page.getByTestId("harvest-recovery-link").click();
+    const recovery = page.getByTestId("harvest-recovery-page");
+    const management = recovery.locator("summary").filter({ hasText: "Harvest account management" });
+    await expect(management).toContainText("1 records for this position");
+    await management.click();
+    await expect(recovery.locator("summary").filter({ hasText: "Other positions (1 records)" })).toHaveCount(0);
+    await page.getByRole("link", { name: "← Back to Portfolio" }).click();
+    await selectCompoundPosition(page, first);
+    await page.getByTestId("harvest-recovery-link").click();
+    await expect(management).toContainText("0 records for this position");
+    await management.click();
+    await recovery.locator("summary").filter({ hasText: "Previous transaction for another position" }).click();
+    await expect(recovery.getByText("Compound confirmed on-chain", { exact: true })).toBeVisible();
+    await recovery.locator("summary").filter({ hasText: "Other positions (1 records)" }).click();
+    await expect(recovery.getByRole("button", { name: "Retrieve this balance" })).toBeVisible();
     expect(wallet.ledger).toEqual([]);
   });
   test(`finalized receipt warning permits add and final prepare at ${viewport.width}px`, async ({ page, wallet }) => {

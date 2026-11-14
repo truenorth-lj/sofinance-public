@@ -203,7 +203,7 @@ export default function SignPage() {
       setUncertain(result.uncertain ?? "");
       setSignStatus("success");
       // An uncertain send stays on this page so the explorer link and the "could not confirm" note remain visible.
-      if (!result.uncertain) setTimeout(() => { router.push("/app"); }, 5000);
+      if (!result.uncertain) setTimeout(() => { router.push("/app/portfolio"); }, 5000);
     } catch (caught) {
       mint?.dispose();
       if (payload.kind === "open-position" && !openAttempt && !(caught instanceof TxRunError && caught.kind === "rejected")) {
@@ -404,7 +404,7 @@ export default function SignPage() {
       
       <div className="mt-6 text-center">
         <button
-          onClick={() => router.push("/app")}
+          onClick={() => router.push("/app/portfolio")}
           className="text-sm text-smoke underline hover:text-cream/80"
         >
           Return to app
