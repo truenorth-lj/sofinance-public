@@ -101,7 +101,7 @@ describe("blog content", () => {
     expect(article).not.toBeNull();
     expect(article?.title).toMatch(/Zero performance fee/);
     expect(article?.datePublished).toBe("2026-11-13");
-    expect(article?.dateModified).toBe("2026-11-13");
+    expect(article?.dateModified).toBe("2026-11-14");
     expect(article?.hero.src).toBe("/blog/competitor-comparison/comparison-table.png");
     expect(article?.hero.alt).toMatch(/Comparison table/);
     expect(article?.body).toContain("10 basis points (0.10%)");
