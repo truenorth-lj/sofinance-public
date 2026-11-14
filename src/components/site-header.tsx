@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { HomepageConnectButton } from "@/components/homepage-wallet-island";
+import { SiteLogo } from "@/components/site-logo";
 import { APP_ROUTES, BLOG_ROUTES } from "@/lib/public-urls";
 
 const navPill =
@@ -15,24 +16,7 @@ export function SiteHeader({ onHomepage = false }: { onHomepage?: boolean }) {
   const section = (id: string) => (onHomepage ? `#${id}` : `/#${id}`);
   return (
     <header data-testid="site-header" className="flex flex-wrap items-center justify-between gap-2">
-      <Link
-        href="/"
-        className="flex shrink-0 items-center gap-2.5 whitespace-nowrap font-display text-[20px] font-bold leading-none text-cream outline-none focus-visible:shadow-[0_0_0_2px_var(--color-cream)]"
-      >
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-visible">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/navbar-mark-squircle-cream.svg"
-            alt=""
-            width={36}
-            height={36}
-            className="block h-9 w-9 max-w-none shrink-0 object-contain"
-            aria-hidden
-            data-testid="site-header-mark"
-          />
-        </span>
-        SoFinance
-      </Link>
+      <SiteLogo />
       {/* Below md the section links take their own full row (basis-full; flex-1 alone squeezed them beside the buttons). */}
       <nav aria-label="Sections" className="order-3 flex basis-full flex-wrap gap-2 md:order-none md:flex-1 md:basis-auto">
         <a href={section("pools")} className={`${navPill} flex-1`}>
