@@ -2,7 +2,8 @@
 import "@/lib/engine-host";
 
 import { CircleAlert, LoaderCircle, Sprout } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { CompoundSuccessHalo, useCompoundSuccessHalo } from "./compound-halo";
 import { CompoundOverview } from "./compound-overview";
 import { CompoundSubmitDialog } from "./compound-submit-dialog";
 import { useSolUsdcPrices } from "./use-sol-usdc-price";
@@ -35,6 +36,8 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: 
     c.externalBlocked ? "Another operation is in progress." : c.cancelPending ? CANCEL_CHECK_PENDING_COPY : state && !state.eligible ? state.reason :
         state && !c.hasFees ? "Currently no fees available to compound" : null;
   const showCurrentAttempt = currentAttemptShown(c);
+  const compoundButtonRef = useRef<HTMLButtonElement>(null);
+  const haloPlay = useCompoundSuccessHalo(c.feedback);
   return <section aria-labelledby="compound-heading" className="mt-6 rounded-[28px] border border-white/12 bg-char p-5 sm:p-8">
     <div className="min-w-0">
       <h2 id="compound-heading" className="flex items-center gap-2 text-lg font-semibold text-cream"><Sprout className="h-5 w-5 text-cream/80" />Compound fees</h2>
@@ -52,11 +55,12 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: 
       </div>}
     </>}
     <div className="mt-5 flex flex-wrap items-center gap-4">
-      <button type="button" onClick={() => { if (!c.wallet) { onConnect?.(); return; } c.compound(); }} disabled={Boolean(c.wallet) && !c.canCompound} className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-3.5 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:min-w-48">
+      <button ref={compoundButtonRef} type="button" onClick={() => { if (!c.wallet) { onConnect?.(); return; } c.compound(); }} disabled={Boolean(c.wallet) && !c.canCompound} className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-3.5 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:min-w-48">
         {c.busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Sprout className="h-4 w-4" />}{action}
       </button>
       <span role="status" className="text-xs text-smoke">{c.loading ? "Loading latest fees…" : blockedText}</span>
     </div>
+    <CompoundSuccessHalo play={haloPlay} originRef={compoundButtonRef} />
     {showCurrentAttempt && <AttemptCard c={c} tokenLabel={tokenLabel} />}
     <CompoundSubmitDialog feedback={c.feedback} slow={c.feedbackSlow} onDismiss={c.dismissFeedback} />
     {c.error && <div role="alert" className="mt-4 flex gap-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" /><span>{c.error}</span></div>}
