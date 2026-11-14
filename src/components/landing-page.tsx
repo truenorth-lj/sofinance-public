@@ -4,7 +4,7 @@ import { HomepageMarket, HomepageMarketView } from "@/components/homepage-market
 import { HomepageWalletIsland } from "@/components/homepage-wallet-island";
 import type { HomepagePoolsSnapshot } from "@/lib/homepage-pools";
 import type { HomepageStocks } from "@/lib/stock-market/public";
-import { APP_ROUTES, BLOG_ROUTES, DOCS_ROUTES, FAQ_ROUTE, LEGAL_ROUTES, LLMS_TXT_ROUTE } from "@/lib/public-urls";
+import { APP_ROUTES, BLOG_ROUTES, DOCS_ROUTES, FAQ_ROUTE, GUIDE_ROUTES, LEGAL_ROUTES, LLMS_TXT_ROUTE } from "@/lib/public-urls";
 import { EXTERNAL_LINK_PROPS, SOCIAL_LINKS } from "@/lib/social-links";
 import { XIcon } from "@/components/x-icon";
 import { SiteHeader } from "@/components/site-header";
@@ -48,6 +48,12 @@ export function LandingPage({ initialPools = null, initialStocks = null }: { ini
             </Link>
             <Link href={FAQ_ROUTE} className="transition-colors hover:text-cream">
               FAQ
+            </Link>
+            <Link href={GUIDE_ROUTES.learn} className="transition-colors hover:text-cream">
+              Learn
+            </Link>
+            <Link href={GUIDE_ROUTES.fees} className="transition-colors hover:text-cream">
+              Pricing
             </Link>
             <Link href={DOCS_ROUTES.risks} className="transition-colors hover:text-cream">
               Risks

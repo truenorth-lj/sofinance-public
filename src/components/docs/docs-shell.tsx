@@ -6,7 +6,8 @@ import type { ReactNode } from "react";
 import { InkShell } from "@/components/ink";
 import { SiteHeader } from "@/components/site-header";
 import { DOCS_PAGES } from "@/lib/docs-nav";
-import { DOCS_ROUTES, FAQ_ROUTE, LEGAL_ROUTES } from "@/lib/public-urls";
+import { GUIDE_PAGES } from "@/lib/guides";
+import { DOCS_ROUTES, FAQ_ROUTE, GUIDE_ROUTES, LEGAL_ROUTES } from "@/lib/public-urls";
 import { cn } from "@/lib/cn";
 
 function isActive(pathname: string, href: string) {
@@ -49,12 +50,27 @@ export function DocsShell({ children }: { children: ReactNode }) {
               );
             })}
           </ul>
+          <p className="mt-5 px-2 font-data text-[10px] uppercase tracking-[0.14em] text-smoke">Guides</p>
+          <ul className="mt-3 space-y-1">
+            {GUIDE_PAGES.map((page) => (
+              <li key={page.path}>
+                <Link
+                  href={page.path}
+                  className="block rounded-2xl px-3 py-2 text-sm text-cream/75 outline-none transition-colors hover:bg-white/[0.06] hover:text-cream focus-visible:bg-white/[0.06]"
+                >
+                  {page.label}
+                </Link>
+              </li>
+            ))}
+          </ul>
         </nav>
         <div className="min-w-0 lg:col-span-9">{children}</div>
       </div>
       <footer className="mt-6 flex flex-wrap items-center gap-5 px-2 py-4 font-data text-[11px] uppercase tracking-[0.12em] text-smoke">
         <Link href="/" className="transition-colors hover:text-cream">Home</Link>
         <Link href={FAQ_ROUTE} className="transition-colors hover:text-cream">FAQ</Link>
+        <Link href={GUIDE_ROUTES.learn} className="transition-colors hover:text-cream">Learn</Link>
+        <Link href={GUIDE_ROUTES.fees} className="transition-colors hover:text-cream">Pricing</Link>
         <Link href={LEGAL_ROUTES.terms} className="transition-colors hover:text-cream">Terms of Service</Link>
       </footer>
     </InkShell>

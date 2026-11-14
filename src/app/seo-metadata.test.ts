@@ -3,7 +3,8 @@ import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { articleCanonicalPath, listBlogArticles } from "@/lib/blog";
 import { DOCS_PAGES } from "@/lib/docs-nav";
-import { APP_ROUTES, BLOG_ROUTES, CANONICAL_SITE_URL, FAQ_ROUTE } from "@/lib/public-urls";
+import { GUIDE_PAGES } from "@/lib/guides";
+import { APP_ROUTES, BLOG_ROUTES, CANONICAL_SITE_URL, FAQ_ROUTE, GUIDE_ROUTES } from "@/lib/public-urls";
 import { config as proxyConfig } from "@/proxy";
 import robots from "./robots";
 import sitemap, { PUBLIC_COPY_UPDATED, publicSitemapPaths } from "./sitemap";
@@ -29,14 +30,25 @@ describe("SEO metadata routes", () => {
     else process.env.NEXT_PUBLIC_APP_URL = originalAppUrl;
   });
 
-  it("indexes the homepage, RWA pairs, every docs page, the FAQ, and every blog article", () => {
+  it("indexes the homepage, RWA pairs, every docs page, the FAQ, every guide page, and every blog article", () => {
     delete process.env.NEXT_PUBLIC_APP_URL;
+    const guidePaths = [GUIDE_ROUTES.learn, ...GUIDE_PAGES.map((page) => page.path)];
+    expect(guidePaths).toEqual([
+      "/learn",
+      "/fees",
+      "/learn/what-is-a-same-stock-lp-pool",
+      "/learn/how-to-open-an-lp-position",
+      "/learn/impermanent-loss-on-same-stock-pools",
+      "/use-cases/tsla-same-stock-lp",
+      "/use-cases/spcx-same-stock-lp",
+    ]);
     const blogPaths = [BLOG_ROUTES.home, ...listBlogArticles().map((article) => articleCanonicalPath(article.slug))];
     expect(publicSitemapPaths()).toEqual([
       "/",
       APP_ROUTES.rwaPairs,
       ...DOCS_PAGES.map((page) => page.href),
       FAQ_ROUTE,
+      ...guidePaths,
       ...blogPaths,
     ]);
     expect(docsHrefsFromAppDir()).toEqual([...DOCS_PAGES.map((page) => page.href)].sort());
@@ -51,6 +63,7 @@ describe("SEO metadata routes", () => {
       `${CANONICAL_SITE_URL}/app/rwa-pairs`,
       ...DOCS_PAGES.map((page) => `${CANONICAL_SITE_URL}${page.href}`),
       `${CANONICAL_SITE_URL}/faq`,
+      ...guidePaths.map((path) => `${CANONICAL_SITE_URL}${path}`),
       ...blogPaths.map((path) => `${CANONICAL_SITE_URL}${path}`),
     ]);
     expect(urls.join("\n")).not.toMatch(/\/terms|\/api\/|\/app\/sign|\/app\/plan|\/position-performance/);

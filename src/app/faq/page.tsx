@@ -3,7 +3,7 @@ import { InkHero, InkShell } from "@/components/ink";
 import { SiteHeader } from "@/components/site-header";
 import { FAQ_RISK_LINE, FAQ_SECTIONS, faqJsonLd } from "@/lib/faq";
 import { serializeJsonLd } from "@/lib/json-ld";
-import { APP_ROUTES, CANONICAL_SITE_URL, DOCS_ROUTES, FAQ_ROUTE, LEGAL_ROUTES } from "@/lib/public-urls";
+import { APP_ROUTES, CANONICAL_SITE_URL, DOCS_ROUTES, FAQ_ROUTE, GUIDE_ROUTES, LEGAL_ROUTES } from "@/lib/public-urls";
 import { pageMetadata } from "@/lib/seo";
 
 export const dynamic = "force-static";
@@ -61,6 +61,8 @@ export default function FaqPage() {
         <Link href="/" className="transition-colors hover:text-cream">Home</Link>
         <Link href={APP_ROUTES.rwaPairs} className="transition-colors hover:text-cream">Pools</Link>
         <Link href={DOCS_ROUTES.gettingStarted} className="transition-colors hover:text-cream">Docs</Link>
+        <Link href={GUIDE_ROUTES.learn} className="transition-colors hover:text-cream">Learn</Link>
+        <Link href={GUIDE_ROUTES.fees} className="transition-colors hover:text-cream">Pricing</Link>
         <Link href={LEGAL_ROUTES.terms} className="transition-colors hover:text-cream">Terms of Service</Link>
       </footer>
     </InkShell>
