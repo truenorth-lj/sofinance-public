@@ -354,24 +354,23 @@ describe("automatic cleanup after a new compound", () => {
       return handler(url, init);
     });
   }
-  it.each(["success", "failed"] as const)("plays the success halo only after a confirmed compound (confirmation: %s)", async status => {
-    const context = new Proxy({}, { get: (_target, key) => (key === "createRadialGradient" ? () => ({ addColorStop: () => {} }) : () => {}), set: () => true });
-    const getContext = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(() => context as never);
-    // happy-dom has no layout: give the panel a visible box so the overlay has a slice to cover.
+  it.each(["success", "failed"] as const)("bursts the stock coins only after a confirmed compound's dialog is closed (confirmation: %s)", async status => {
+    // happy-dom has no layout: give the panel a visible box so the overlay has an area to fly in.
     const box = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() =>
       ({ left: 0, top: 0, width: 400, height: 600, right: 400, bottom: 600, x: 0, y: 0, toJSON() {} }) as DOMRect);
+    const burst = () => container.querySelector('[data-testid="compound-token-burst"]');
     confirmationStatus = status;
     enableCompound(); await render();
-    expect(container.querySelector('[data-testid="compound-halo"]')).toBeNull();
+    expect(burst()).toBeNull();
     await act(async () => { controller.compound(); });
     await act(async () => { await vi.advanceTimersByTimeAsync(16); });
     expect(controller.attemptStatus).toBe(status);
-    // The "Compound confirmed" dialog is still open: the halo must not play yet.
-    expect(container.querySelector('[data-testid="compound-halo"]')).toBeNull();
+    // The "Compound confirmed" dialog is still open: the coins must not burst yet.
+    expect(burst()).toBeNull();
     await act(async () => { controller.dismissFeedback(); });
     await act(async () => { await vi.advanceTimersByTimeAsync(16); });
-    expect(Boolean(container.querySelector('[data-testid="compound-halo"]'))).toBe(status === "success");
-    getContext.mockRestore(); box.mockRestore();
+    expect(Boolean(burst())).toBe(status === "success");
+    box.mockRestore();
   });
   it("automatically prompts cleanup only after the initiated compound is verified successful", async () => {
     enableCompound(); await render();
