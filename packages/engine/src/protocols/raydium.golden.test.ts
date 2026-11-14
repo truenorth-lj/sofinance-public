@@ -38,6 +38,7 @@ import * as selectedState from "../selected-state";
 import * as receipt from "../swap/receipt";
 import * as walletDiscovery from "../wallet-discovery";
 import { DEFAULT_SWAP_FEE_BPS, computeSwapFee, netSwapInput, readSwapFeeConfig, swapFeeTransferInstructions } from "../swap/fee";
+import { readRaydiumPositionAccounts, readRaydiumUncollectedFees } from "./raydium/position-snapshot";
 import { raydiumClmmAdapter } from "./raydium";
 import { getProtocolAdapter, isProtocolId, parseProtocolId, protocolForProgramId } from "./registry";
 import { DEFAULT_PROTOCOL, PROTOCOL_IDS } from "./types";
@@ -89,12 +90,18 @@ describe("Raydium adapter is the existing builders, unchanged", () => {
     expect(a.buildPositionExitInstructions).toBe(lpExit.buildPositionExitInstructions);
     expect(a.discoverWallet).toBe(walletDiscovery.discoverWallet);
     expect(a.protocolInstructions).toBe(receipt.compoundProtocolInstructions);
+    expect(a.readPositionAccounts).toBe(readRaydiumPositionAccounts);
+    expect(a.readUncollectedFees).toBe(readRaydiumUncollectedFees);
   });
 
   it("the adapter layer never touches the swap fee (fee stays in the shared swap legs)", () => {
     const dir = __dirname;
-    for (const file of readdirSync(dir).filter(name => name.endsWith(".ts") && !name.endsWith(".test.ts"))) {
-      const source = readFileSync(join(dir, file), "utf8");
+    const files = [
+      ...readdirSync(dir).filter(name => name.endsWith(".ts") && !name.endsWith(".test.ts")).map(name => join(dir, name)),
+      ...readdirSync(join(dir, "raydium")).filter(name => name.endsWith(".ts") && !name.endsWith(".test.ts")).map(name => join(dir, "raydium", name)),
+    ];
+    for (const file of files) {
+      const source = readFileSync(file, "utf8");
       expect(source, file).not.toMatch(/from\s+["'][^"']*swap\/(fee|collection|jupiter|leg)["']/);
       expect(source, file).not.toMatch(/process\.env|SOFINANCE_FEE/);
     }

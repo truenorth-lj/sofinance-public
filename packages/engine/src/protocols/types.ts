@@ -1,4 +1,4 @@
-import type { PublicKey } from "@solana/web3.js";
+import type { Connection, PublicKey } from "@solana/web3.js";
 import type { buildAndSimulateCompound, compileCompoundTransaction } from "../compound-atomic";
 import type { buildPositionExitInstructions } from "../lp-exit-instructions";
 import type { buildAndSimulateOpenPosition } from "../open-atomic";
@@ -34,9 +34,39 @@ export type PoolProtocolId = (typeof POOL_PROTOCOL_IDS)[number];
  * The SoFinance swap fee is deliberately NOT part of this contract: fees are
  * collected by the shared swap legs (`swap/fee.ts`, `swap/collection.ts`), so an
  * adapter only ever contributes protocol instructions and never sees the fee
- * wallet. Signatures currently mirror the Raydium builders one-for-one; they are
- * generalized when a second protocol is added.
+ * wallet. Builder signatures currently mirror the Raydium functions one-for-one.
+ * `readPositionAccounts` and `readUncollectedFees` are the shared valuation reads;
+ * Raydium's implementation lives in `protocols/raydium/position-snapshot.ts`.
  */
+export type ClmmPositionAccounts = {
+  positionAccount: string;
+  poolId: string;
+  mintA: string;
+  mintB: string;
+  vaultA: string;
+  vaultB: string;
+  decimalsA: number;
+  decimalsB: number;
+  tickLower: number;
+  tickUpper: number;
+  tickCurrent: number;
+  tickSpacing: number;
+  liquidity: string;
+  rangeSide: "below" | "inside" | "above";
+  /** Round-down token amounts currently in the position. */
+  amountA: bigint;
+  amountB: bigint;
+  /** SHA-256 of the raw personal-position account, used as a history fingerprint. */
+  stateFingerprint: string;
+  programId: string;
+  feeGrowthGlobalA: bigint;
+  feeGrowthGlobalB: bigint;
+  feeGrowthInsideLastA: bigint;
+  feeGrowthInsideLastB: bigint;
+  tokenFeesOwedA: bigint;
+  tokenFeesOwedB: bigint;
+};
+
 export type ClmmProtocolAdapter = {
   readonly id: ProtocolId;
   readonly label: string;
@@ -57,4 +87,8 @@ export type ClmmProtocolAdapter = {
   discoverWallet: typeof discoverWallet;
   /** Protocol instructions inside a parsed transaction (receipts / recovery). */
   protocolInstructions: typeof compoundProtocolInstructions;
+  /** Position and pool accounts for holding-period valuation. Does not require the wallet to hold the NFT. */
+  readPositionAccounts: (positionMint: string, connection: Connection) => Promise<ClmmPositionAccounts>;
+  /** Uncollected swap fees for a snapshot from `readPositionAccounts`. */
+  readUncollectedFees: (connection: Connection, accounts: ClmmPositionAccounts) => Promise<{ a: bigint; b: bigint }>;
 };
