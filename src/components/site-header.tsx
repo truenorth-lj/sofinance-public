@@ -17,10 +17,20 @@ export function SiteHeader({ onHomepage = false }: { onHomepage?: boolean }) {
     <header data-testid="site-header" className="flex flex-wrap items-center justify-between gap-2">
       <Link
         href="/"
-        className="flex items-center gap-2.5 whitespace-nowrap font-display text-[20px] font-bold leading-none text-cream outline-none focus-visible:shadow-[0_0_0_2px_var(--color-cream)]"
+        className="flex shrink-0 items-center gap-2.5 whitespace-nowrap font-display text-[20px] font-bold leading-none text-cream outline-none focus-visible:shadow-[0_0_0_2px_var(--color-cream)]"
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/navbar-mark-squircle-cream.svg" alt="" width={36} height={36} className="h-9 w-9 shrink-0" aria-hidden />
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-visible">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/navbar-mark-squircle-cream.svg"
+            alt=""
+            width={36}
+            height={36}
+            className="block h-9 w-9 max-w-none shrink-0 object-contain"
+            aria-hidden
+            data-testid="site-header-mark"
+          />
+        </span>
         SoFinance
       </Link>
       {/* Below md the section links take their own full row (basis-full; flex-1 alone squeezed them beside the buttons). */}

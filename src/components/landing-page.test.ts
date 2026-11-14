@@ -127,6 +127,9 @@ describe("landing page copy and routes", () => {
     const header = readFileSync(resolve("src/components/site-header.tsx"), "utf8");
     expect(header).toContain("/navbar-mark-squircle-cream.svg");
     expect(header).toContain("h-9 w-9");
+    expect(header).toContain("max-w-none");
+    expect(header).toContain("shrink-0");
+    expect(header).toContain("object-contain");
     expect(header).toContain("gap-2.5");
     expect(header).toContain("font-display");
     expect(header).toContain("text-[20px]");
