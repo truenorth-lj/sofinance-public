@@ -1,4 +1,8 @@
+import { PublicKey } from "@solana/web3.js";
+
 export const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+/** Raydium CLMM program. Kept equal to `@raydium-io/raydium-sdk-v2`'s `CLMM_PROGRAM_ID`. */
+export const RAYDIUM_CLMM_PROGRAM_ID = new PublicKey("CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK");
 export const NATIVE_SOL_MINT = "So11111111111111111111111111111111111111112";
 // Wall-clock gate for prepared quotes/txs (client and broadcast). On-chain
 // validity is still lastValidBlockHeight (~60–90s). 75s leaves room for slow

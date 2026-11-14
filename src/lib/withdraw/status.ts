@@ -1,6 +1,6 @@
 import "@/lib/engine-host";
 import "server-only";
-import { PersonalPositionLayout } from "@raydium-io/raydium-sdk-v2";
+import { decodeRaydiumPersonalPosition } from "@sofinance/engine/protocols/raydium/position-snapshot";
 import { verifiedTokenAmount } from "@sofinance/engine/lp-exit-verification";
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
@@ -42,7 +42,7 @@ export async function withdrawStatus(input: {
         const unchanged = summary.assets.every((a, i) => {
             const info = balances[i];
             return (info ? verifiedTokenAmount(info.data.toString("base64"), new PublicKey(summary.wallet), new PublicKey(a.mint), info.owner.toBase58()) : 0n) === BigInt(a.starting);
-        }) && (summary.stage === "swap" || !!balances.at(-1) && PersonalPositionLayout.decode(balances.at(-1)!.data).liquidity.toString() === summary.startingLiquidity);
+        }) && (summary.stage === "swap" || !!balances.at(-1) && decodeRaydiumPersonalPosition(balances.at(-1)!.data).liquidity === summary.startingLiquidity);
         return { status: unchanged ? "expired" : "manual-review", signature: input.signature };
     }
     const receipt = await connection.getTransaction(input.signature, { commitment: "finalized", maxSupportedTransactionVersion: 0 });

@@ -2,7 +2,7 @@ import "@/lib/engine-host";
 import { compoundProtocolInstructions } from "@sofinance/engine/swap/receipt";
 import { createHash } from "node:crypto";
 import bs58 from "bs58";
-import { CLMM_PROGRAM_ID } from "@raydium-io/raydium-sdk-v2";
+import { RAYDIUM_CLMM_PROGRAM_ID } from "@sofinance/engine/ids";
 import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
 import type { ParsedTransactionWithMeta, PartiallyDecodedInstruction, TokenBalance } from "@solana/web3.js";
 import type { CompoundSummary } from "@sofinance/engine/compound-types";
@@ -35,7 +35,7 @@ function transferred(transaction: ParsedTransactionWithMeta, parent: number, sou
 /** Derive the ledger from this transaction, never from a newer wallet balance. */
 export function confirmedCompoundReceipt(transaction: ParsedTransactionWithMeta, wallet: string, summary: CompoundSummary) {
   const message = transaction.transaction.message;
-  if (summary.state.programId !== CLMM_PROGRAM_ID.toBase58() || !transaction.meta || transaction.meta.err || !message.accountKeys[0]?.signer ||
+  if (summary.state.programId !== RAYDIUM_CLMM_PROGRAM_ID.toBase58() || !transaction.meta || transaction.meta.err || !message.accountKeys[0]?.signer ||
     message.accountKeys[0].pubkey.toBase58() !== wallet) return null;
   const protocol = compoundProtocolInstructions(transaction);
   const harvest = protocol[0], add = protocol.at(-1);

@@ -2,7 +2,7 @@ import "@/lib/engine-host";
 import { transactionIntermediateAccounts, verifyIntermediateAccounts } from "@sofinance/engine/swap/instructions";
 import "server-only";
 
-import { PersonalPositionLayout } from "@raydium-io/raydium-sdk-v2";
+import { decodeRaydiumPersonalPosition } from "@sofinance/engine/protocols/raydium/position-snapshot";
 import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Connection, PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT } from "@sofinance/engine/ids";
@@ -58,10 +58,10 @@ export async function simulateAndVerifySelectedTransaction(input: VerifyInput) {
   const positionResult = simulated?.[0];
   const positionData = positionResult?.data[0];
   if (!positionResult || positionResult.owner !== state.programId || !positionData) throw new Error("Simulation did not read back selected position account");
-  const position = PersonalPositionLayout.decode(Buffer.from(positionData, "base64"));
-  if (position.nftMint.toBase58() !== state.positionMint || position.poolId.toBase58() !== state.poolId ||
+  const position = decodeRaydiumPersonalPosition(Buffer.from(positionData, "base64"));
+  if (position.nftMint !== state.positionMint || position.poolId !== state.poolId ||
     position.tickLower !== state.tickLower || position.tickUpper !== state.tickUpper ||
-    BigInt(position.liquidity.toString()) - BigInt(state.liquidity) !== expectedLiquidity) {
+    BigInt(position.liquidity) - BigInt(state.liquidity) !== expectedLiquidity) {
     throw new Error("Simulated selected NFT liquidity increment mismatch");
   }
   const afterInfo = new Map(keys.map((key, index) => {
