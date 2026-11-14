@@ -37,7 +37,7 @@ export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: 
         state && !c.hasFees ? "Currently no fees available to compound" : null;
   const showCurrentAttempt = currentAttemptShown(c);
   const compoundButtonRef = useRef<HTMLButtonElement>(null);
-  const haloPlay = useCompoundSuccessHalo(c.feedback);
+  const haloPlay = useCompoundSuccessHalo(c.feedback, c.feedback !== null);
   return <section aria-labelledby="compound-heading" className="mt-6 rounded-[28px] border border-white/12 bg-char p-5 sm:p-8">
     <div className="min-w-0">
       <h2 id="compound-heading" className="flex items-center gap-2 text-lg font-semibold text-cream"><Sprout className="h-5 w-5 text-cream/80" />Compound fees</h2>
