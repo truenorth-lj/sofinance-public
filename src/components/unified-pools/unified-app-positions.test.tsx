@@ -99,14 +99,16 @@ describe("/app unified All positions", () => {
 
   it("greyed tabs stay clickable and say 'Not available for this pool yet' inline; the URL tracks position and view", async () => {
     await render();
-    for (const label of ["Compound fees", "Performance", "Add to position"]) expect(tab(label).getAttribute("data-unavailable")).toBe("true");
+    // No Compound fees tab (LJ 11/14): Compound lives only on the position row.
+    expect([...container.querySelectorAll("nav[aria-label='Position operations'] button")].map((b) => b.textContent)).not.toContain("Compound fees");
+    for (const label of ["Performance", "Add to position"]) expect(tab(label).getAttribute("data-unavailable")).toBe("true");
     expect(tab("Withdraw").getAttribute("data-unavailable")).toBeNull();
-    await click(tab("Compound fees"));
-    expect(tab("Compound fees").getAttribute("aria-pressed")).toBe("true");
+    await click(tab("Add to position"));
+    expect(tab("Add to position").getAttribute("aria-pressed")).toBe("true");
     expect(container.querySelector("[data-testid=tool-unavailable]")!.textContent).toBe("Not available for this pool yet");
     expect(container.querySelector("[data-testid=rhc-withdraw]")).toBeNull();
     const url = new URL(window.location.href);
-    expect([url.searchParams.get("position"), url.searchParams.get("view")]).toEqual(["uniswap-v4-rhc:9", "compound"]);
+    expect([url.searchParams.get("position"), url.searchParams.get("view")]).toEqual(["uniswap-v4-rhc:9", "deposit"]);
   });
 
   it("per-position capabilities: a position in an unlisted pool keeps the same tabs, only Withdraw is greyed with its reason", async () => {

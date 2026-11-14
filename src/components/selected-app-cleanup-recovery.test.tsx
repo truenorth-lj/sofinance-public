@@ -103,7 +103,9 @@ describe("All positions wallet-wide leftover recovery", () => {
     // Harvest account management is off the Portfolio main screen (LJ 11/14); a Raydium position's details link to it.
     expect(harvestOnScreen()).toBe(false);
     if (hasPosition) {
-      expect(button("One-click compound").disabled).toBe(true);
+      // The row's Compound is the only Compound entry (LJ 11/14); nothing runs until it is clicked.
+      expect(container.querySelector('[data-testid="position-row-action"][data-tool="compound"]')).not.toBeNull();
+      expect(container.textContent).not.toContain("One-click compound");
       expect(container.querySelector<HTMLAnchorElement>('[data-testid="harvest-recovery-link"]')?.getAttribute("href"))
         .toBe(`/app/portfolio/recovery?position=${encodeURIComponent(`raydium-clmm:${otherMint}`)}`);
     } else expect(container.querySelector('[data-testid="harvest-recovery-link"]')).toBeNull();

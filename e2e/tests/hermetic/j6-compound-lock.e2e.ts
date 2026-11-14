@@ -77,10 +77,15 @@ async function setup(page: Page, wallet: FakeWallet, reply: Reply, otherWalletRe
     add: page.getByRole("button", { name: "Add liquidity", exact: true }), setReply: (next: Reply) => { reply = next; } };
 }
 
-async function showCompound(page: Page) {
-  const mobileView = page.getByRole("combobox", { name: "Position operations", exact: true });
-  if (await mobileView.isVisible()) await mobileView.selectOption("compound");
-  else await page.getByRole("button", { name: "Compound fees", exact: true }).click();
+/** Compound lives only on the position row (LJ 11/14): its button, and the status line under that row. No Compound fees tab. */
+function rowCompound(page: Page, key: string) {
+  const row = page.locator("li").filter({ has: page.locator(`[data-testid="position-fallback-select"][data-position-key="${key}"]`) });
+  return { button: row.locator('[data-testid="position-row-action"][data-tool="compound"]'), status: row.getByTestId("row-compound-status") };
+}
+async function noCompoundTab(page: Page) {
+  await expect(page.getByRole("button", { name: "Compound fees", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Compound fees", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "One-click compound", exact: true })).toHaveCount(0);
 }
 
 for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
@@ -111,15 +116,16 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
       await cleanup;
       await route.fulfill({ status: 400, json: { error: "Cleanup stopped for test" } });
     });
-    await showCompound(page);
-    const panel = page.getByRole("region", { name: "Compound fees", exact: true });
+    await noCompoundTab(page);
     // No "Fees to compound" card (LJ 11/14): the position's row shows its fees.
-    await expect(panel.getByRole("region", { name: "Fees to compound", exact: true })).toHaveCount(0);
-    await panel.getByRole("button", { name: "One-click compound", exact: true }).click();
-    await expect(panel.getByRole("button", { name: "Preparing cleanup…", exact: true })).toBeVisible();
-    await expect(panel.getByText("Compound confirmed on-chain", { exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Fees to compound", exact: true })).toHaveCount(0);
+    const row = rowCompound(page, `raydium-clmm:${flow.oldMint}`);
+    await row.button.click();
+    await expect(row.button).toHaveText("Preparing cleanup…");
+    await expect(row.button).toBeDisabled();
+    await expect(row.status.getByText("Compound confirmed on-chain", { exact: true })).toBeVisible();
     finishCleanup();
-    await expect(panel.getByText("Cleanup paused.", { exact: false }).first()).toBeVisible();
+    await expect(row.status.getByText("Cleanup paused.", { exact: false }).first()).toBeVisible();
     expect(wallet.signedTransactions).toHaveLength(1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });
@@ -151,26 +157,28 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     const flow = await setup(page, wallet, { status: "success", chainStatus: "success" });
     await page.route("**/api/compound-prepare", route => route.fulfill({ status: 400, contentType: "application/json",
       body: JSON.stringify({ error: "Complete compound transaction 1268 bytes, exceeds 1,232 byte limit; no transaction was sent" }) }));
-    await showCompound(page);
-    const compoundPanel = page.getByRole("region", { name: "Compound fees", exact: true });
-    const success = compoundPanel.getByText("Compound confirmed on-chain", { exact: true });
+    await noCompoundTab(page);
+    const success = page.getByTestId("row-compound-status").getByText("Compound confirmed on-chain", { exact: true });
     // The Portfolio screen has no harvest account management (LJ 11/14); another NFT's history is on the recovery page.
     await expect(page.locator("summary").filter({ hasText: "Harvest account management" })).toHaveCount(0);
     await expect(success).toBeHidden();
     const first = (await page.locator('[data-testid="position-fallback-select"][aria-pressed="true"]').getAttribute("data-position-key"))!;
     expect(first).not.toBe(`raydium-clmm:${flow.oldMint}`);
-    await page.getByRole("button", { name: "One-click compound", exact: true }).click();
-    await expect(compoundPanel.getByRole("alert")).toContainText("1268 bytes");
+    const firstRow = rowCompound(page, first);
+    await firstRow.button.click();
+    await expect(firstRow.status.getByRole("alert")).toContainText("1268 bytes");
+    await expect(firstRow.button).toBeEnabled();
     await expect(success).toBeHidden();
     expect(wallet.ledger).toEqual([]);
     expect(flow.calls.some(path => /(broadcast|tx-send)$/.test(path))).toBe(false);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: test.info().outputPath(`compound-error-scoped-${viewport.width}.png`), fullPage: true });
     await selectCompoundPosition(page, `raydium-clmm:${flow.oldMint}`);
-    await expect(compoundPanel.getByRole("alert")).toBeHidden();
-    await expect(success).toBeVisible();
-    await page.getByRole("button", { name: "One-click compound", exact: true }).click();
-    await expect(compoundPanel.getByRole("alert")).toContainText("1268 bytes");
+    await expect(firstRow.status).toHaveCount(0);
+    const oldRow = rowCompound(page, `raydium-clmm:${flow.oldMint}`);
+    await expect(oldRow.status.getByText("Compound confirmed on-chain", { exact: true })).toBeVisible();
+    await oldRow.button.click();
+    await expect(oldRow.status.getByRole("alert")).toContainText("1268 bytes");
     await expect(success).toBeHidden();
     // Records stay scoped to the NFT the recovery page was opened for.
     await page.getByTestId("harvest-recovery-link").click();

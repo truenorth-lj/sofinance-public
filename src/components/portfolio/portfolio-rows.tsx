@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { formatUsd } from "@/lib/format/usd";
 import type { PositionFigures } from "@/lib/portfolio/figures";
@@ -33,7 +34,27 @@ export type PortfolioRow = {
   /** Null while its numbers are read (or for a chain without them): dashes. */
   figures: PositionFigures | null;
   actions: RowAction[];
+  /**
+   * The row's own Compound (LJ 11/14: the only Compound entry). Renders the actions bar itself (its Compound button first,
+   * then `otherActions`) and the row's compound status under it. Without it the row's Compound only opens the details.
+   */
+  compound?: (slot: RowCompoundSlot) => ReactNode;
 };
+
+export type RowCompoundSlot = { otherActions: ReactNode; disabled: boolean };
+
+/** The row actions bar (phone: under the card, the first action filling its width). */
+export function RowActionsBar({ children }: { children: ReactNode }) {
+  return <div className="flex flex-wrap gap-2 border-t border-white/10 px-4 py-3 lg:border-0 lg:px-0 lg:py-0 lg:pr-4">{children}</div>;
+}
+
+/** The row's Compound button look (lemon, filling a phone card's width). */
+export const ROW_COMPOUND_CLASS = "inline-flex items-center justify-center gap-1.5 rounded-full bg-lemon px-3 py-1.5 text-xs font-semibold text-ink transition-colors enabled:hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:opacity-40 max-lg:flex-1 max-lg:py-2.5";
+
+/** Under a row, full width: its compound progress, disclosures and errors. */
+export function RowStatus({ children, testId }: { children: ReactNode; testId: string }) {
+  return <div data-testid={testId} className="border-t border-white/10 px-4 pb-3 text-xs leading-5 text-cream/80 lg:col-span-6 [&>*:first-child]:mt-3">{children}</div>;
+}
 
 const COLS = "lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.7fr)_minmax(0,0.8fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,1.5fr)]";
 const usd = (value: number | null | undefined) => formatUsd(value ?? null);
@@ -45,8 +66,8 @@ function Badge({ item }: { item: UnifiedPosition }) {
 
 /**
  * Portfolio "All positions": one row per position (desktop: stock, shares, value, unclaimed and cumulative fees,
- * actions; phone: a card with the compound button at the bottom). Clicking a row opens its details; an action opens the
- * details on that tool. Nothing here sends a transaction.
+ * actions; phone: a card with the compound button at the bottom). Clicking a row opens its details; Add / Withdraw open
+ * the details on that tool. Compound runs from the row itself through `row.compound` (its existing flow and wallet prompt).
  */
 export function PortfolioPositionList({ groups, rows, selectedKey, disabled, onSelect, onAction }: {
   groups: PositionGroup[];
@@ -102,10 +123,12 @@ function PositionRow({ row, selected, disabled, onSelect, onAction }: {
       <span className="hidden tabular-nums text-cream/90 lg:block" data-testid="position-row-unclaimed">{usd(figures?.unclaimedFeesUsd)}</span>
       <span className="hidden tabular-nums text-cream/90 lg:block" data-testid="position-row-cumulative">{usd(figures?.cumulativeFeesUsd)}</span>
     </button>
-    {primary && <div className="flex flex-wrap gap-2 border-t border-white/10 px-4 py-3 lg:border-0 lg:px-0 lg:py-0 lg:pr-4">
-      {/* Phone: the first action (Compound where the DEX has it) fills the bottom of the card. */}
-      {action(primary, cn(primaryClass(primary.tool), "max-lg:flex-1 max-lg:py-2.5"))}
-      {rest.map((target) => action(target, "border border-white/25 text-cream enabled:hover:border-white/50"))}
-    </div>}
+    {primary?.tool === "compound" && row.compound
+      ? row.compound({ disabled, otherActions: rest.map((target) => action(target, "border border-white/25 text-cream enabled:hover:border-white/50")) })
+      : primary && <RowActionsBar>
+        {/* Phone: the first action (Compound where the DEX has it) fills the bottom of the card. */}
+        {action(primary, cn(primaryClass(primary.tool), "max-lg:flex-1 max-lg:py-2.5"))}
+        {rest.map((target) => action(target, "border border-white/25 text-cream enabled:hover:border-white/50"))}
+      </RowActionsBar>}
   </li>;
 }

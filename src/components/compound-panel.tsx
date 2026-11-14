@@ -2,8 +2,7 @@
 import "@/lib/engine-host";
 
 import { CircleAlert, LoaderCircle, Sprout } from "lucide-react";
-import { useRef, useState } from "react";
-import { CompoundSuccessHalo, useCompoundSuccessHalo } from "./compound-halo";
+import { useState } from "react";
 import { CompoundProtocolFee } from "./compound-overview";
 import { CompoundSubmitDialog } from "./compound-submit-dialog";
 import { formatAmount } from "@sofinance/engine/amount";
@@ -12,10 +11,10 @@ import { CANCEL_CHECK_PENDING_COPY, CHECKING_SOLANA_COPY } from "@/lib/tx-pipeli
 import { compoundActionLabel } from "@/lib/status-copy";
 import { shortAddress } from "@/lib/format/address";
 import { solscanTxUrl, solscanAccountUrl } from "@/lib/format/explorer";
-import Link from "next/link";
 import { APP_ROUTES } from "@/lib/public-urls";
 import { positionKey } from "@/lib/unified-positions/model";
 import { raydiumPositionSource } from "@/lib/unified-positions/sources/raydium";
+import { ROW_COMPOUND_CLASS, RowActionsBar, RowStatus, type RowCompoundSlot } from "./portfolio/portfolio-rows";
 
 const short = shortAddress;
 
@@ -27,50 +26,60 @@ const statusText = {
   "manual-review": "Transaction result requires verification. New operations are available.",
 } as const;
 
-export function CompoundPanel({ controller: c, tokenLabel = short, onConnect }: {
-  controller: CompoundController; tokenLabel?: (mint: string) => string; onConnect?: () => void;
+/**
+ * The Raydium row's Compound (LJ 11/14: the only Compound entry; no Compound fees tab or panel). The button runs the
+ * existing flow for the row's position: simulate (prepare) → wallet signature → submit → the CompoundSubmitDialog status.
+ * A row that is not the selected one is selected first and runs once its fees are read (`SelectedApp`). Only the active
+ * row (the controller's position) shows progress, the pre-sign protocol fee, errors and the transaction record.
+ */
+export function RaydiumRowCompound({ controller: c, positionMint, pending, onCompound, slot, tokenLabel = short }: {
+  controller: CompoundController; positionMint: string; pending: boolean; onCompound: () => void; slot: RowCompoundSlot;
+  tokenLabel?: (mint: string) => string;
 }) {
-  const state = c.state;
-  const preview = c.preview;
+  const active = Boolean(c.wallet) && c.positionMint === positionMint;
+  const state = active ? c.state : null;
+  const loaded = active && !c.loading && state !== null;
+  const running = active && c.busy;
+  const waiting = pending && !running;
+  const action = running ? compoundActionLabel({ cleanupRunning: Boolean(c.cleanup?.running), stage: c.stage, checkingCopy: CHECKING_SOLANA_COPY })
+    : waiting ? "Loading latest fees…" : "Compound";
+  // Same checks as before (the controller's canCompound); a row whose fees are not read yet can still be clicked.
+  const blockedText = !active ? null : c.externalBlocked ? "Another operation is in progress." : c.cancelPending ? CANCEL_CHECK_PENDING_COPY
+    : state && !state.eligible ? state.reason : state && !c.hasFees ? "Currently no fees available to compound" : null;
+  const blocked = loaded && !c.canCompound;
+  const showAttempt = active && currentAttemptShown(c);
+  const rewards = state?.rewards.filter((reward) => reward.estimatedAmount !== "0") ?? [];
   const amount = (value: string, decimals: number) => formatAmount(value, decimals, Math.min(decimals, 9));
-  const action = compoundActionLabel({ cleanupRunning: Boolean(c.cleanup?.running), stage: c.stage, checkingCopy: CHECKING_SOLANA_COPY });
-  const blockedText = !c.wallet ? null : !c.positionMint ? "Please select existing position first" :
-    c.externalBlocked ? "Another operation is in progress." : c.cancelPending ? CANCEL_CHECK_PENDING_COPY : state && !state.eligible ? state.reason :
-        state && !c.hasFees ? "Currently no fees available to compound" : null;
-  const showCurrentAttempt = currentAttemptShown(c);
-  const compoundButtonRef = useRef<HTMLButtonElement>(null);
-  const haloPlay = useCompoundSuccessHalo(c.feedback, c.feedback !== null);
-  return <section aria-labelledby="compound-heading" className="mt-6 rounded-[28px] border border-white/12 bg-char p-5 sm:p-8">
-    <div className="min-w-0">
-      <h2 id="compound-heading" className="flex items-center gap-2 text-lg font-semibold text-cream"><Sprout className="h-5 w-5 text-cream/80" />Compound fees</h2>
-      <p className="mt-2 text-xs leading-5 text-smoke">Adds this position&apos;s fees back into the same range.</p>
-    </div>
-    {state && <>
-      {/* No "Fees to compound" card (LJ 11/14): the position's row shows its fees. The protocol fee is still stated. */}
-      <CompoundProtocolFee summary={preview} tokenLabel={tokenLabel} />
-      {c.priorReceipts.length > 0 && <p className="mt-3 text-xs leading-5 text-cream/80">Previous harvest accounts can be checked and recovered from <Link href={recoveryHref(c.positionMint)} className="underline underline-offset-2">Recover leftover compound balances</Link>.</p>}
-      {state.rewards.some((reward) => reward.estimatedAmount !== "0") && <div className="mt-4 space-y-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-        <h3 className="text-xs font-medium text-smoke">Additional rewards</h3>
-        {state.rewards.map((reward) => <div key={reward.index} className="flex justify-between gap-3 text-xs text-cream/80">
-          <span>{amount(reward.estimatedAmount, reward.decimals)} {tokenLabel(reward.mint)}</span>
-          <span className="text-smoke">{reward.estimatedAmount === "0" ? "Currently no pending rewards" : reward.compounded ? "Same pool assets, can be reinvested with harvested fees" : "Requires supported swap route, will not send if cannot complete"}</span>
-        </div>)}
-      </div>}
-    </>}
-    <div className="mt-5 flex flex-wrap items-center gap-4">
-      <button ref={compoundButtonRef} type="button" onClick={() => { if (!c.wallet) { onConnect?.(); return; } c.compound(); }} disabled={Boolean(c.wallet) && !c.canCompound} className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-lemon px-5 py-3.5 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:min-w-48">
-        {c.busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Sprout className="h-4 w-4" />}{action}
+  const status = active && (running || waiting || (blocked && blockedText) || c.preview || rewards.length > 0 || showAttempt || c.error || c.cleanup || c.cleanupBatch);
+  return <>
+    <RowActionsBar>
+      <button type="button" data-testid="position-row-action" data-tool="compound" aria-busy={running || waiting}
+        disabled={running || waiting || (slot.disabled && !running) || blocked} onClick={onCompound} className={ROW_COMPOUND_CLASS}>
+        {running || waiting ? <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin motion-reduce:animate-none" /> : <Sprout aria-hidden="true" className="size-3.5" />}{action}
       </button>
-      <span role="status" className="text-xs text-smoke">{c.loading ? "Loading latest fees…" : blockedText}</span>
-    </div>
-    <CompoundSuccessHalo play={haloPlay} originRef={compoundButtonRef} />
-    {showCurrentAttempt && <AttemptCard c={c} tokenLabel={tokenLabel} />}
-    <CompoundSubmitDialog feedback={c.feedback} slow={c.feedbackSlow} onDismiss={c.dismissFeedback} />
-    {c.error && <div role="alert" className="mt-4 flex gap-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" /><span>{c.error}</span></div>}
-    {/* The cleanup a confirmed compound starts on its own stays visible here; the rest of harvest account management lives on
-        its own recovery page (LJ 11/14), linked from the position's details. */}
-    <CleanupProgress controller={c} />
-  </section>;
+      {slot.otherActions}
+    </RowActionsBar>
+    {status ? <RowStatus testId="row-compound-status">
+      {blocked && blockedText ? <p role="status" data-testid="row-compound-blocked" className="text-smoke">{blockedText}</p> : null}
+      {/* Stated before signing: the simulation's protocol fee shows while the wallet asks for the signature. */}
+      <CompoundProtocolFee summary={c.preview} tokenLabel={tokenLabel} />
+      {rewards.length > 0 && <div className="mt-2 space-y-1">
+        <p className="font-medium text-smoke">Additional rewards</p>
+        {rewards.map((reward) => <p key={reward.index} className="flex justify-between gap-3">
+          <span>{amount(reward.estimatedAmount, reward.decimals)} {tokenLabel(reward.mint)}</span>
+          <span className="text-smoke">{reward.compounded ? "Same pool assets, can be reinvested with harvested fees" : "Requires supported swap route, will not send if cannot complete"}</span>
+        </p>)}
+      </div>}
+      {showAttempt && <AttemptCard c={c} tokenLabel={tokenLabel} />}
+      {c.error && <div role="alert" data-testid="row-compound-error" className="mt-3 flex gap-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm"><CircleAlert aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" /><span>{c.error}</span></div>}
+      <CleanupProgress controller={c} />
+    </RowStatus> : null}
+  </>;
+}
+
+/** Mounted once by the page (not by a row, so a row re-render never drops it): the post-sign status dialog of a Raydium compound. */
+export function RaydiumCompoundFeedback({ controller: c }: { controller: CompoundController }) {
+  return <CompoundSubmitDialog feedback={c.feedback} slow={c.feedbackSlow} onDismiss={c.dismissFeedback} />;
 }
 
 const currentAttemptShown = (c: CompoundController) => c.attempt?.positionMint === c.positionMint && !(c.attemptStatus === "success" && c.error);

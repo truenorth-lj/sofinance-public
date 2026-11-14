@@ -26,11 +26,12 @@ import Link from "next/link";
 import { captureGrowthEvent } from "@/lib/analytics/client";
 import { GROWTH_EVENTS } from "@/lib/analytics/events";
 import { raydiumPositionSource as positionSource } from "@/lib/unified-positions/sources/raydium";
-import { capabilitiesFor, firstSupportedTool, parsePositionKey, positionKey, positionKeysEqual, toolUnavailableReason, type SourceCapabilities, type ToolId, type UnifiedPosition } from "@/lib/unified-positions/model";
+import { capabilitiesFor, DEFAULT_DETAIL_VIEW, firstDetailTool, parsePositionKey, positionKey, positionKeysEqual, toolUnavailableReason, type SourceCapabilities, type ToolId, type UnifiedPosition } from "@/lib/unified-positions/model";
 import { CLOSED_LABEL, groupPositions, isClosed } from "@/lib/unified-positions/rows";
 import type { ExternalPositions } from "./unified-positions/external-positions";
 import { RegistryPositionDetails, RegistryPositionHeader, useRegistryPositions } from "./unified-positions/registry-positions";
-import { RegistryPositionTool, type ToolBalance } from "./unified-positions/registry-tools";
+import { RegistryPositionTool, RegistryRowCompound, type ToolBalance } from "./unified-positions/registry-tools";
+import { RaydiumCompoundFeedback, RaydiumRowCompound } from "./compound-panel";
 import { tokenSymbol } from "@/lib/position-label";
 import { type OverviewPosition } from "./stocks-overview";
 import { fetchDexPerformance } from "@/lib/dex/client";
@@ -48,7 +49,7 @@ const money = (value: string, decimals: number, digits = 6) => formatAmount(valu
 const tokenLabel = (mint: string, kind?: "native" | "token") =>
   kind === "native" ? "SOL" : mint === USDC_MINT ? "USDC" : mint === NATIVE_SOL_MINT ? "WSOL" : short(mint);
 
-export function SelectedApp({ initialView = "compound", initialMint: initialMintProp = "", initialWallet = "", previewPoolId = "", initialPositionKey: initialKeyProp = "", external, onRescan }: {
+export function SelectedApp({ initialView = DEFAULT_DETAIL_VIEW, initialMint: initialMintProp = "", initialWallet = "", previewPoolId = "", initialPositionKey: initialKeyProp = "", external, onRescan }: {
   initialView?: "compound" | "performance" | "deposit" | "withdraw";
   initialMint?: string;
   initialWallet?: string;
@@ -98,6 +99,28 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
       refreshReports(selectionAligned && selection?.positionMint ? [positionKey(positionSource.id, selection.positionMint)] : undefined);
     } });
   const busy = addBusy || compound.busy || withdrawBusy;
+  // A Raydium row's Compound clicked while another position was selected: run it once that position's fees are read.
+  // Resolved while rendering (run, or its checks say no; a failed read or any other pick drops it); one click = one run.
+  const [compoundIntent, setCompoundIntent] = useState<string | null>(null);
+  const [intentSawLoading, setIntentSawLoading] = useState(false);
+  const [compoundRun, setCompoundRun] = useState<{ id: number; mint: string } | null>(null);
+  const compoundRunDone = useRef(0);
+  if (compoundIntent) {
+    if (!wallet || (selectionAligned && selection?.positionMint !== compoundIntent)) setCompoundIntent(null);
+    else if (compound.positionMint === compoundIntent) {
+      if (compound.loading) { if (!intentSawLoading) setIntentSawLoading(true); }
+      else if (compound.state) {
+        setCompoundIntent(null);
+        if (compound.canCompound) setCompoundRun({ id: (compoundRun?.id ?? 0) + 1, mint: compoundIntent });
+      } else if (intentSawLoading) setCompoundIntent(null);
+    }
+  }
+  useEffect(() => {
+    if (!compoundRun || compoundRunDone.current === compoundRun.id) return;
+    compoundRunDone.current = compoundRun.id;
+    // Same entry and checks as a click on the selected row (the controller re-checks everything before the wallet).
+    if (compound.positionMint === compoundRun.mint && compound.canCompound) compound.compound();
+  }, [compoundRun, compound]);
   useLayoutEffect(() => {
     if (!busy && ownedPick && selection && selection.positionMint !== ownedPick.mint) choosePosition(ownedPick.mint);
   }, [busy, ownedPick, selection, choosePosition]);
@@ -117,7 +140,8 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   const walletBalances: Record<string, ToolBalance> = Object.fromEntries((discovery?.assets ?? []).map((asset) => [asset.mint, { balance: asset.balance, decimals: asset.decimals }]));
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [assetRisksOpen, setAssetRisksOpen] = useState(false);
-  const [activeView, setActiveView] = useState<ToolId>(initialView);
+  // No Compound tab (LJ 11/14): an old `view=compound` link opens the default detail tab; Compound is the row's button.
+  const [activeView, setActiveView] = useState<ToolId>(initialView === "compound" ? DEFAULT_DETAIL_VIEW : initialView);
   // The Performance panel's last read (by position key), handed to the all-stocks overview so it is not read twice.
   const [panelResult, setPanelResult] = useState<{ key: string; report: PositionPerformanceReport | null; error: boolean } | null>(null);
   // Step 1 of a 100% withdrawal closes the position, and its confirmation's balances refresh then reads no
@@ -209,7 +233,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   const [viewCheckedFor, setViewCheckedFor] = useState(selectedKey);
   if (viewCheckedFor !== selectedKey) {
     setViewCheckedFor(selectedKey);
-    const first = firstSupportedTool(capabilities);
+    const first = firstDetailTool(capabilities);
     if (unavailableReason && first) setActiveView(first);
   }
   const writeUrl = (key: string, view: ToolId) => {
@@ -222,6 +246,7 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   const pickKey = (key: string) => {
     const found = allPositions.find((item) => item.key === key || positionKeysEqual(item.key, key));
     if (!found) return;
+    setCompoundIntent(null);
     if (found.source === positionSource.id) { setOtherKey(""); pickPosition(found.nativeId); } else setOtherKey(found.key);
     writeUrl(found.key, activeView);
   };
@@ -313,6 +338,30 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
   const sourceName = (item: UnifiedPosition) => item.source === positionSource.id ? positionSource.displayName
     : registry.owns(item) ? registry.optionSource(item, metadata).displayName : external?.source.displayName ?? "";
   const pairOf = (item: UnifiedPosition) => `${tokenSymbol(item.tokenA.id, metadata, item.tokenA.symbol || poolLabel(item.tokenA.id))} / ${tokenSymbol(item.tokenB.id, metadata, item.tokenB.symbol || poolLabel(item.tokenB.id))}`;
+  // The row's Compound is the only Compound entry (LJ 11/14). Raydium: one controller for the selected position, so a row
+  // that is not selected is selected first and compounds once its fees are read (`compoundIntent`, one click = at most one
+  // run). Meteora (registry): the row runs its DEX's flow itself. Both keep their checks, wallet prompt and refetch.
+  const compoundRow = (item: UnifiedPosition) => {
+    if (anyBusy || compoundIntent) return;
+    const mint = item.nativeId;
+    if (compound.positionMint === mint && compound.state && !compound.loading) {
+      if (compound.canCompound) compound.compound();
+      return;
+    }
+    setIntentSawLoading(false);
+    setCompoundIntent(mint);
+    setOtherKey(""); pickPosition(mint); writeUrl(item.key, activeView);
+  };
+  const rowCompound = (item: UnifiedPosition): PortfolioRow["compound"] => {
+    if (isClosed(item)) return undefined;
+    if (item.source === positionSource.id) return function raydiumRowCompound(slot) { return <RaydiumRowCompound controller={compound} positionMint={item.nativeId}
+      pending={compoundIntent === item.nativeId} onCompound={() => compoundRow(item)} slot={slot} tokenLabel={poolLabel} />; };
+    const descriptor = registry.owns(item) ? registry.descriptor(item) : null;
+    if (!descriptor || !registry.capabilities(item)?.compound.supported) return undefined;
+    return function registryRowCompound(slot) { return <RegistryRowCompound position={item} descriptor={descriptor} slot={slot}
+      symbolOf={(token) => tokenSymbol(token.id, metadata, token.symbol)}
+      onConfirmed={() => { setRegistryRefresh((value) => value + 1); void refreshDiscovery(); refreshReports([item.key]); }} />; };
+  };
   const portfolioRows = new Map<string, PortfolioRow>(groups.flatMap((group) => group.positions.map((item): [string, PortfolioRow] => {
     const figures = figuresOf(item);
     // Position number tells apart two positions in the same pair (an NFT mint shortened, an EVM token id as-is).
@@ -321,11 +370,12 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
     const title = figures?.stock ?? (pair || `Position ${id}`);
     return [item.key, { item, figures, title,
       subtitle: [title !== pair ? pair : null, group.showSourceName ? sourceName(item) : null, title.endsWith(id) ? null : id].filter(Boolean).join(" · "),
-      actions: rowActions(capabilitiesOf(item), isClosed(item)) }];
+      actions: rowActions(capabilitiesOf(item), isClosed(item)), compound: rowCompound(item) }];
   })));
   const openTool = (key: string, view: ToolId) => {
     const found = allPositions.find((item) => item.key === key || positionKeysEqual(item.key, key));
     if (!found) return;
+    setCompoundIntent(null);
     setActiveView(view);
     if (found.source === positionSource.id) { setOtherKey(""); pickPosition(found.nativeId); } else setOtherKey(found.key);
     writeUrl(found.key, view);
@@ -337,8 +387,8 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
     <div className="relative mx-auto max-w-[1280px] px-3 pb-32 pt-3 max-sm:pb-[max(8rem,calc(var(--tx-notice-bottom-offset,0px)+2rem))] sm:px-5 sm:pt-5">
       <InkNav wallet={wallet} connected={connected} onConnect={connect} onDisconnect={disconnect} />
 
-      {/* The page content area below the nav: the compound success halo is clipped to it. */}
-      <div className="relative" data-halo-surface="">
+      <div className="relative">
+      <RaydiumCompoundFeedback controller={compound} />
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 px-1">
         <h1 className="text-xl font-semibold text-cream sm:text-2xl">Portfolio</h1>
         <button type="button" disabled={(!wallet && !(external && onRescan)) || anyBusy} onClick={refreshAll}
@@ -361,11 +411,10 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
         otherBinding={otherBinding}
         shownWithdraw={shownWithdraw}
         poolLabel={poolLabel}
-        onCloseWithdraw={() => setActiveView("compound")}
+        onCloseWithdraw={() => setActiveView(DEFAULT_DETAIL_VIEW)}
         onWithdrawBusy={onWithdrawBusy}
         onWithdrawConfirmed={() => { void refreshState(); void refreshDiscovery(); }}
         compound={compound}
-        onConnect={connect}
         linkedForeignPosition={Boolean(linkedForeignPosition)}
         initialMint={initialMint}
         performanceMint={performanceMint}
@@ -441,8 +490,6 @@ export function SelectedApp({ initialView = "compound", initialMint: initialMint
         </div>}
       </section>}
       </PositionToolsSection>
-      {connectionError && activeView === "compound" && !otherSelected && <div role="alert" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{connectionError}</div>}
-      {error && !quoteError && activeView === "compound" && !otherSelected && <div role="alert" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm text-cream/80">{error}</div>}
       </div>
       <InkFooter />
     </div>
