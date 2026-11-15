@@ -413,6 +413,18 @@ describe("POST /api/dex/[dex]/[op]", () => {
     }
   });
 
+  it.each(["production", "preview", "development", ""])("keeps the implemented Raydium add behind its disabled module (%s)", async env => {
+    vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", env); vi.stubEnv("VERCEL_ENV", env);
+    expect(dexDescriptors.descriptorFor("raydium-clmm")?.capabilities.deposit.supported).toBe(true);
+    fake.ids = ["raydium-clmm"];
+    fake.adapterFor.mockClear();
+    const response = await call("add", { owner: owner.toBase58(), positionKey: "raydium-clmm:P",
+      input: { token: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", amountRaw: "1000000" }, step: 1, priorSignatures: [] }, "raydium-clmm");
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "Not found" });
+    expect(fake.adapterFor).not.toHaveBeenCalled();
+  });
+
   it("serves Uniswap v4 RHC generic positions and 404s every write op without loading the adapter, in production, preview and development", async () => {
     const positionKey = "uniswap-v4-rhc:1";
     const evmOwner = "0x2222222222222222222222222222222222222222";
