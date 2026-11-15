@@ -1,14 +1,15 @@
-import { beforeEach, expect, it, vi } from "vitest";
+import { beforeEach, expect, expectTypeOf, it, vi } from "vitest";
+import type { PositionSelection } from "@sofinance/engine/selected-state";
 import { buildTransaction, testKeypair, SIGNING_SECRET } from "@/lib/test-support/send-fixtures";
 import { verifySelectedPermit } from "@/lib/selected-permit";
 import { prepareAdd } from "./prepare-add.server";
-import { APP_ADD_PREPARE, MCP_ADD_PREPARE, type BuildAdd } from "./add-prepare";
+import { APP_ADD_PREPARE, MCP_ADD_PREPARE, type AddPrepareCommand, type BuildAdd } from "./add-prepare";
 import { createDexRegistry } from "./registry";
 import { fakeSolanaModule } from "./__contract__/testing/fake-dex";
 
 vi.mock("server-only", () => ({}));
 const backend = vi.hoisted(() => ({ buildAdd: vi.fn() }));
-vi.mock("./index", () => ({ dexRegistry: { buildAdd: backend.buildAdd } }));
+vi.mock("./registry-instance", () => ({ dexRegistry: { buildAdd: backend.buildAdd } }));
 
 const transaction = buildTransaction({ payer: testKeypair(1), signWith: [] });
 const wallet = testKeypair(1).publicKey.toBase58();
@@ -18,6 +19,10 @@ const summary = { quote: { requested: "1000000", liquidity: "50", floorBps: 9900
   startingLiquidity: "10", startingBalances: { input: "1000000", a: "1", b: "2" }, expiresAt: Date.now() + 75000, lastValidBlockHeight: 200 };
 
 beforeEach(() => { backend.buildAdd.mockReset(); backend.buildAdd.mockResolvedValue({ transaction, summary }); });
+
+it("keeps the compatibility selection identical to the engine's selection contract", () => {
+  expectTypeOf<AddPrepareCommand["selection"]>().toEqualTypeOf<PositionSelection>();
+});
 
 it("retains the initiating identity and terms across the lazy build await", async () => {
   let release!: () => void;

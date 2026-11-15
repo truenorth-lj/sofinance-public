@@ -2,7 +2,7 @@ import "@/lib/engine-host";
 import "server-only";
 import { issueSelectedPermit } from "@/lib/selected-permit";
 import { txPermitsFor } from "@/lib/tx-send/permit";
-import { dexRegistry } from "./index";
+import { dexRegistry } from "./registry-instance";
 import { APP_ADD_PREPARE, type AddPrepareCommand, type AddPrepareSurface, type AddPreparation } from "./add-prepare";
 
 /** Prepare only: issuing these permits does not sign or send a wallet transaction. */
