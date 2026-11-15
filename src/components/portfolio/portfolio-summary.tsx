@@ -5,6 +5,20 @@ import { useId, useState } from "react";
 import { cn } from "@/lib/cn";
 import { formatUsd } from "@/lib/format/usd";
 import type { PortfolioTotals } from "@/lib/portfolio/figures";
+import type { PortfolioPosition } from "@/lib/portfolio/model";
+
+export function PortfolioHistoryStatus({ rows }: { rows: readonly PortfolioPosition[] }) {
+  const histories = rows.filter((row) => row.historyStatus);
+  if (!histories.length) return null;
+  const updating = histories.some((row) => row.historyStatus === "updating");
+  const stale = histories.some((row) => row.historyStatus === "stale" || row.historyStatus === "unavailable");
+  const checked = histories.flatMap((row) => row.historyUpdatedAt ? [row.historyUpdatedAt] : []).sort()[0];
+  return <p role="status" data-testid="portfolio-history-status" className="mt-2 px-1 text-xs text-smoke">
+    {updating ? "Updating fee history… Available values are shown. "
+      : stale ? "Fee history may be out of date. Refresh to retry. " : ""}
+    {checked ? <>Fee history checked <time dateTime={checked}>{new Date(checked).toLocaleTimeString()}</time>.</> : null}
+  </p>;
+}
 
 /**
  * "Compound all" (LJ 11/14): shown now, never usable yet. It is greyed out and only says "Coming soon" on hover, focus

@@ -23,9 +23,54 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); vi.stubGlobal("fetch", fetchMock); fetchMock.mockReset(); localStorage.clear();
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
 });
-afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
+afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("Portfolio client request lifecycle", () => {
+  it("shows saved figures immediately, polls with the original barrier, and clears a marker only after checked", async () => {
+    vi.useFakeTimers();
+    notifyPositionHistoryChange(mint);
+    const barrier = "2026-11-15T00:01:00Z";
+    fetchMock.mockResolvedValueOnce(Response.json({ wallet: "A", positions: [{ ...row(), historyStatus: "updating",
+      historyUpdatedAt: "2026-11-15T00:00:00Z", historyRefreshAfter: barrier, historyRefreshResolved: false }] }))
+      .mockResolvedValueOnce(Response.json({ wallet: "A", positions: [{ ...row(20), historyStatus: "fresh", historyRefreshAfter: barrier }] }));
+    await render("A");
+    expect(container.textContent).toBe("10"); expect(readPositionHistoryRefresh(mint)).not.toBeNull();
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body).fresh).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(8_000); });
+    expect(JSON.parse(fetchMock.mock.calls[1]![1].body)).toMatchObject({ fresh: false, positions: [{ key, refreshAfter: barrier }] });
+    expect(container.textContent).toBe("20"); expect(readPositionHistoryRefresh(mint)).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+  it("stops after three follow-ups and retains explicit stale data and unresolved markers", async () => {
+    vi.useFakeTimers(); notifyPositionHistoryChange(mint);
+    const pending = { ...row(), historyStatus: "updating", historyUpdatedAt: "2026-11-15T00:00:00Z", historyRefreshResolved: false };
+    fetchMock.mockImplementation(async () => Response.json({ wallet: "A", positions: [pending] }));
+    await render("A");
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(fetchMock).toHaveBeenCalledTimes(4); expect(latest[key]?.historyStatus).toBe("stale");
+    expect(container.textContent).toBe("10"); expect(readPositionHistoryRefresh(mint)).not.toBeNull();
+  });
+  it("cancels a pending poll when switching wallet or pausing", async () => {
+    vi.useFakeTimers();
+    fetchMock.mockResolvedValueOnce(Response.json({ wallet: "A", positions: [{ ...row(), historyStatus: "updating" }] }))
+      .mockResolvedValueOnce(Response.json({ wallet: "B", positions: [row(20)] }));
+    await render("A"); await render("B");
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(fetchMock).toHaveBeenCalledTimes(2); expect(container.textContent).toBe("20");
+    fetchMock.mockResolvedValueOnce(Response.json({ wallet: "B", positions: [{ ...row(30), historyStatus: "updating" }] }));
+    await render("B", 1); await render("B", 1, true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+  it("preserves available figures and stops when a follow-up fails", async () => {
+    vi.useFakeTimers();
+    fetchMock.mockResolvedValueOnce(Response.json({ wallet: "A", positions: [{ ...row(), historyStatus: "updating", historyUpdatedAt: "2026-11-15T00:00:00Z" }] }))
+      .mockResolvedValueOnce(Response.json({ error: "rate limited" }, { status: 429 }));
+    await render("A");
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(fetchMock).toHaveBeenCalledTimes(2); expect(container.textContent).toBe("10"); expect(latest[key]?.historyStatus).toBe("stale");
+  });
   it("waits for discovery, sends one request, and does not refetch on incidental renders", async () => {
     fetchMock.mockResolvedValue(Response.json({ wallet: "A", positions: [row()] }));
     await render("A", 0, true); expect(fetchMock).not.toHaveBeenCalled();

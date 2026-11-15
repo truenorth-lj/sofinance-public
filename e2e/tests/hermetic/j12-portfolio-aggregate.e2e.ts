@@ -53,3 +53,43 @@ test("aggregates two rows once, refreshes partial totals, and reads details only
   await expect.poll(() => detailRequests).toBe(1);
   expect(wallet.ledger).toEqual([]);
 });
+
+test("renders stored fees while updating, polls once, and stops when history is fresh", async ({ page, wallet }) => {
+  await page.clock.install();
+  const barrier = "2026-11-15T00:01:00Z";
+  const requests: { fresh: boolean; positions: { key: string; refreshAfter?: string }[] }[] = [];
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const json = (body: unknown) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+    if (path === "/api/wallet") return json({ wallet: wallet.address, slot: 1, fetchedAt: Date.now(), assets: [], positions: [{
+      positionMint: mints[0], positionAccount: mints[0], poolId: sample.poolId, mintA: sample.mintA, mintB: sample.mintB,
+      symbolA: "SPCXx", symbolB: "SPCX", decimalsA: 8, decimalsB: 8, feeTierBps: 1,
+      tickLower: -10, tickUpper: 10, tickCurrent: 0, rangeSide: "inside", liquidity: "1",
+    }] });
+    if (path === "/api/portfolio") {
+      const body = route.request().postDataJSON() as typeof requests[number]; requests.push(body);
+      const updating = requests.length === 1;
+      return json({ wallet: wallet.address, positions: [{ key: body.positions[0]!.key, status: "ready",
+        figures: { stock: "SPCX", shares: 1, valueUsd: 100, unclaimedFeesUsd: 1, cumulativeFeesUsd: updating ? 10 : 12 },
+        evaluatedAt: barrier, historyComplete: true, historyRefreshResolved: !updating,
+        historyUpdatedAt: updating ? "2026-11-15T00:00:00Z" : barrier,
+        historyStatus: updating ? "updating" : "fresh", historyRefreshAfter: barrier,
+      }] });
+    }
+    if (path.endsWith("/positions")) return json({ positions: [] });
+    return json({});
+  });
+  await page.goto("/app/portfolio", { waitUntil: "domcontentloaded" });
+  const modal = new ConnectModal(page, wallet); await modal.connect();
+  await expect(page.getByTestId("portfolio-total-value").locator("p").first()).toHaveText("$100.00");
+  await expect(page.getByTestId("portfolio-cumulative-fees").locator("p").first()).toHaveText("$10.00");
+  await expect(page.getByTestId("portfolio-history-status")).toContainText("Updating fee history");
+  expect(requests).toHaveLength(1);
+  await page.clock.fastForward(8_000);
+  await expect(page.getByTestId("portfolio-cumulative-fees").locator("p").first()).toHaveText("$12.00");
+  await expect(page.getByTestId("portfolio-history-status")).not.toContainText("Updating");
+  await expect(page.getByTestId("portfolio-history-status").locator("time")).toHaveAttribute("datetime", barrier);
+  expect(requests[1]).toMatchObject({ fresh: false, positions: [{ key: `raydium-clmm:${mints[0]}`, refreshAfter: barrier }] });
+  await page.clock.fastForward(60_000);
+  expect(requests).toHaveLength(2); expect(wallet.ledger).toEqual([]);
+});

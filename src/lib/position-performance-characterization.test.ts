@@ -285,6 +285,23 @@ describe("Raydium position performance characterization", () => {
     expect(compact.figures.cumulativeFeesUsd).toBeNull();
   });
 
+  it("values a supplied durable snapshot without entering the history synchronization path", async () => {
+    await run("full");
+    const options = { connection, nowSeconds: NOW, prices: quotes(mintA.toBase58(), mintB.toBase58()),
+      symbols: { symbolA: "HOODx", symbolB: "HOOD" } };
+    const expected = await getPositionFigures(nft.toBase58(), options);
+    const saved = await vi.mocked(loadPerformanceHistory).mock.results.at(-1)!.value;
+    vi.mocked(loadPerformanceHistory).mockClear().mockImplementation(async () => { throw new Error("Foreground history RPC must not run"); });
+    const actual = await getPositionFigures(nft.toBase58(), { ...options, historyResult: saved });
+    expect(actual.figures).toEqual(expected.figures);
+    expect(actual.historyComplete).toBe(true);
+    const cold = await getPositionFigures(nft.toBase58(), { ...options, historyResult: { ...saved, history: [], truncated: true } });
+    expect(cold.figures.valueUsd).toBeTypeOf("number");
+    expect(cold.figures.unclaimedFeesUsd).toBeTypeOf("number");
+    expect(cold.figures.cumulativeFeesUsd).toBeNull();
+    expect(vi.mocked(loadPerformanceHistory)).not.toHaveBeenCalled();
+  });
+
   it("records truncated history", async () => {
     expect(stable(await run("truncated"))).toMatchSnapshot();
   });

@@ -334,7 +334,9 @@ export async function syncPositionHistory(options: SyncPositionHistoryOptions): 
   } finally {
     // The lease expires even if an upstream/storage failure prevents release.
     // A release failure must not mask a successful commit or the original error.
-    await measure("releaseMs", () => options.store.request({ op: "release", lease: snapshot.lease! })).catch(() => undefined);
+    await measure("releaseMs", () => options.store.request({ op: "release", lease: snapshot.lease!,
+      ...(outcome && !outcome.truncated && outcome.metric.historyComplete === true && !options.signal?.aborted
+        ? { checked: true } : {}) })).catch(() => undefined);
     if (outcome) {
       outcome.metric.elapsedMs = Date.now() - started;
       outcome.metric.stages = { ...stages };

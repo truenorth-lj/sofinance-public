@@ -37,18 +37,23 @@ export type PositionHistorySnapshot = {
   lease: PositionHistoryLease | null; state: PositionHistoryState;
   transactions: StoredPositionTransaction[];
 };
+/** Atomic persisted ledger read; observing it never acquires the synchronization lease. */
+export type PositionHistoryReadSnapshot = PositionHistorySnapshot & {
+  lease: null; updatedAt: string; readAt: string; syncing: boolean;
+};
 const transactionSchema = z.object({ signature, slot: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   blockTime: z.number().int().nonnegative().nullable(), status: z.enum(["parsed", "pending", "failed", "ignored"]),
   receipt: z.record(z.string(), z.unknown()).nullable(), events: z.array(eventSchema).max(100),
   parserVersion: z.number().int().positive() }).refine((row) => row.status !== "ignored" || row.events.length === 0, { message: "Ignored transactions cannot contain events" });
 export const positionStoreRequestSchema = z.discriminatedUnion("op", [
+  z.object({ op: z.literal("read"), context: positionContextSchema, parserVersion: z.number().int().positive() }),
   z.object({ op: z.literal("claim"), context: positionContextSchema, parserVersion: z.number().int().positive() }),
   z.object({ op: z.literal("commit"), lease: positionLeaseSchema,
     state: z.object({ headSignature: signature.nullable(), backfillBefore: signature.nullable(),
       deltaBefore: signature.nullable().optional(), deltaHead: signature.nullable().optional(),
       complete: z.boolean(), parserVersion: z.number().int().positive() }),
     transactions: z.array(transactionSchema).max(500) }),
-  z.object({ op: z.literal("release"), lease: positionLeaseSchema }),
+  z.object({ op: z.literal("release"), lease: positionLeaseSchema, checked: z.boolean().optional() }),
 ]);
 type ParsedPositionStoreRequest = z.infer<typeof positionStoreRequestSchema>;
 export type PositionStoreOperation = ParsedPositionStoreRequest["op"];
@@ -56,6 +61,7 @@ export type PositionStoreRequest<K extends PositionStoreOperation = PositionStor
   [P in K]: Extract<ParsedPositionStoreRequest, { op: P }>;
 }[K];
 export type PositionStoreResultMap = {
+  read: PositionHistoryReadSnapshot | null;
   claim: PositionHistorySnapshot;
   commit: PositionHistorySnapshot;
   release: boolean;

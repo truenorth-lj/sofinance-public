@@ -40,7 +40,7 @@ import { RegistryPerformancePanel } from "./unified-positions/registry-performan
 import { RaydiumActivityRecords, RaydiumRowCompound } from "./compound-panel";
 import { tokenSymbol } from "@/lib/position-label";
 import { shortAddress } from "@/lib/format/address";
-import { PortfolioSummary } from "./portfolio/portfolio-summary";
+import { PortfolioSummary, PortfolioHistoryStatus } from "./portfolio/portfolio-summary";
 import { PortfolioPositionList, rowActions, type PortfolioRow, type RowTool } from "./portfolio/portfolio-rows";
 import { usePortfolioFigures } from "./portfolio/use-portfolio-figures";
 import { portfolioTotals, type FiguresState, type PositionFigures } from "@/lib/portfolio/figures";
@@ -371,6 +371,7 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
       </div>
 
       {allPositions.length > 0 && <PortfolioSummary totals={portfolio} />}
+      {allPositions.length > 0 && <PortfolioHistoryStatus rows={figureKeys.flatMap((key) => figures[key] ? [figures[key]!] : [])} />}
 
       <section aria-labelledby="all-positions-heading" className="mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-7">
         <h2 id="all-positions-heading" className="mb-5 text-base font-semibold text-cream">All positions</h2>

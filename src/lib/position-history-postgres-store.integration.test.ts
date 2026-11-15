@@ -73,6 +73,82 @@ describe.skipIf(!url)("Position PostgreSQL persistence and fencing", () => {
     await store!.request({ op: "release", lease: warm.lease! });
   });
 
+  it("reads a consistent receipt-free snapshot in one statement without acquiring or changing a busy lease", async () => {
+    const c = context("R".repeat(32));
+    expect(await store!.request({ op: "read", context: c, parserVersion: 1 })).toBeNull();
+    expect(await db!`SELECT position_mint FROM position_history_state WHERE position_mint=${c.positionMint}`).toEqual([]);
+    const first = await claim(c), transaction = opening(c, "r");
+    await store!.request({ op: "commit", lease: first.lease!, state: { ...first.state,
+      complete: true, headSignature: transaction.signature }, transactions: [transaction] });
+    const busy = await claim(c);
+    const [before] = await db!`SELECT lease_owner,lease_epoch,lease_expires_at,revision,updated_at
+      FROM position_history_state WHERE position_mint=${c.positionMint}`;
+    const queries: string[] = [], debug = db!.options.debug;
+    db!.options.debug = (_connection, query) => { queries.push(query); };
+    let read;
+    try { read = await store!.request({ op: "read", context: c, parserVersion: 2 }); }
+    finally { db!.options.debug = debug; }
+    expect(queries).toHaveLength(1);
+    expect(queries[0]).not.toMatch(/FOR UPDATE|\b(?:INSERT|UPDATE|BEGIN|COMMIT)\b/i);
+    expect(read).toMatchObject({ lease: null, syncing: true,
+      state: { complete: true, parserVersion: 1, revision: 1 },
+      transactions: [{ ...transaction, receipt: null }] });
+    expect(Number.isFinite(Date.parse(read!.updatedAt))).toBe(true);
+    const [after] = await db!`SELECT lease_owner,lease_epoch,lease_expires_at,revision,updated_at
+      FROM position_history_state WHERE position_mint=${c.positionMint}`;
+    expect(after).toEqual(before);
+    await expect(store!.request({ op: "read", context: { ...c, mintA: "S".repeat(32) }, parserVersion: 1 }))
+      .rejects.toMatchObject({ code: "CONTEXT_MISMATCH" });
+    await store!.request({ op: "release", lease: busy.lease! });
+    expect((await store!.request({ op: "read", context: c, parserVersion: 1 }))!.syncing).toBe(false);
+  });
+
+  it("updates successful-check freshness only under the current unexpired lease and revision", async () => {
+    const c = context("S".repeat(32)), first = await claim(c);
+    const oldTimestamp = "2026-01-01T00:00:00.000Z";
+    await db!`UPDATE position_history_state SET updated_at=${oldTimestamp} WHERE position_mint=${c.positionMint}`;
+    expect(await store!.request({ op: "release", lease: { ...first.lease!, revision: first.lease!.revision + 1 }, checked: true })).toBe(false);
+    expect((await store!.request({ op: "read", context: c, parserVersion: 1 }))!.updatedAt).toBe(oldTimestamp);
+    expect(await store!.request({ op: "release", lease: first.lease! })).toBe(true);
+    expect((await store!.request({ op: "read", context: c, parserVersion: 1 }))!.updatedAt).toBe(oldTimestamp);
+    const replacement = await claim(c);
+    expect(await store!.request({ op: "release", lease: first.lease!, checked: true })).toBe(false);
+    expect(await store!.request({ op: "release", lease: replacement.lease!, checked: true })).toBe(true);
+    expect(Date.parse((await store!.request({ op: "read", context: c, parserVersion: 1 }))!.updatedAt))
+      .toBeGreaterThan(Date.parse(oldTimestamp));
+
+    const expired = await claim(c);
+    await db!`UPDATE position_history_state SET updated_at=${oldTimestamp},lease_expires_at=clock_timestamp()-interval '1 second'
+      WHERE position_mint=${c.positionMint}`;
+    expect(await store!.request({ op: "release", lease: expired.lease!, checked: true })).toBe(false);
+    const afterExpiry = await store!.request({ op: "read", context: c, parserVersion: 1 });
+    expect(afterExpiry).toMatchObject({ updatedAt: oldTimestamp, syncing: false });
+    // An ordinary cleanup may still clear its own expired lease, without claiming freshness.
+    expect(await store!.request({ op: "release", lease: expired.lease! })).toBe(true);
+  });
+
+  it("records sync start rather than completion so old in-flight work cannot acknowledge a later refresh", async () => {
+    for (const [mint, finish] of [["T", "release"], ["U", "commit"]] as const) {
+      const c = context(mint.repeat(32)), first = await claim(c);
+      // Represent a worker that began a minute before the new refresh barrier,
+      // while retaining a valid lease. No wall-clock sleep is needed.
+      await db!`UPDATE position_history_state SET lease_expires_at=clock_timestamp()+interval '60 seconds'
+        WHERE position_mint=${c.positionMint}`;
+      const barrier = (await store!.request({ op: "read", context: c, parserVersion: 1 }))!.readAt;
+      if (finish === "release") {
+        expect(await store!.request({ op: "release", lease: first.lease!, checked: true })).toBe(true);
+      } else {
+        const transaction = opening(c, "t");
+        await store!.request({ op: "commit", lease: first.lease!, state: { ...first.state,
+          complete: true, headSignature: transaction.signature }, transactions: [transaction] });
+      }
+      const completed = await store!.request({ op: "read", context: c, parserVersion: 1 });
+      expect(completed!.syncing).toBe(false);
+      expect(Date.parse(completed!.updatedAt)).toBeLessThan(Date.parse(barrier));
+      expect(Date.parse(completed!.readAt)).toBeGreaterThanOrEqual(Date.parse(barrier));
+    }
+  });
+
   it("keeps an available row unchanged when a caller supplies a different position context", async () => {
     const c = context("N".repeat(32)), first = await claim(c);
     await store!.request({ op: "release", lease: first.lease! });
@@ -233,6 +309,10 @@ describe.skipIf(!url)("Position PostgreSQL persistence and fencing", () => {
     await db!`INSERT INTO position_history_transactions(position_mint,signature,slot,block_time,status,receipt,events,parser_version)
       VALUES(${c.positionMint},${giantSignature},0,1000,'parsed',
         jsonb_build_object('padding',repeat('x',${MAX_POSITION_HISTORY_RESPONSE_BYTES + 1000})),'[]'::jsonb,1)`;
+    const read = await store!.request({ op: "read", context: c, parserVersion: 2 });
+    expect(read!.transactions).toHaveLength(501);
+    expect(read!.transactions.every((transaction) => transaction.receipt === null)).toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(read))).toBeLessThan(MAX_POSITION_HISTORY_RESPONSE_BYTES);
     const upgrade = await claim(c, 2);
     expect(upgrade.transactions).toHaveLength(501);
     expect(upgrade.transactions.find((transaction) => transaction.signature === giantSignature)!.receipt).toBeNull();
@@ -262,6 +342,8 @@ describe.skipIf(!url)("Position PostgreSQL persistence and fencing", () => {
       SELECT ${c.positionMint},lpad(translate(i::text,'0123456789','ABCDEFGHJK'),64,'1'),i,1000,'parsed',
         NULL,${JSON.stringify(events)}::jsonb,1 FROM generate_series(1,140) i`;
     await expect(claim(c)).rejects.toMatchObject({ code: "POSITION_HISTORY_RESPONSE_TOO_LARGE" });
+    await expect(store!.request({ op: "read", context: c, parserVersion: 1 }))
+      .rejects.toMatchObject({ code: "POSITION_HISTORY_RESPONSE_TOO_LARGE" });
     const [unchanged] = await db!`SELECT lease_owner,lease_epoch,revision FROM position_history_state WHERE position_mint=${c.positionMint}`;
     expect(unchanged!.lease_owner).toBeNull();
     expect(Number(unchanged!.lease_epoch)).toBe(first.lease!.epoch);
@@ -286,6 +368,8 @@ describe.skipIf(!url)("Position PostgreSQL persistence and fencing", () => {
     await db!`INSERT INTO position_history_transactions(position_mint,signature,slot,block_time,status,receipt,events,parser_version)
       VALUES(${c.positionMint},${addition.signature},${addition.slot},1000,'parsed',NULL,'[]'::jsonb,1)`;
     await expect(claim(c)).rejects.toMatchObject({ code: "POSITION_HISTORY_TOO_LARGE" });
+    await expect(store!.request({ op: "read", context: c, parserVersion: 1 }))
+      .rejects.toMatchObject({ code: "POSITION_HISTORY_TOO_LARGE" });
     const [unchanged] = await db!`SELECT lease_owner,lease_epoch,revision FROM position_history_state WHERE position_mint=${c.positionMint}`;
     expect(unchanged!.lease_owner).toBeNull();
     expect(Number(unchanged!.lease_epoch)).toBe(first.lease!.epoch);
