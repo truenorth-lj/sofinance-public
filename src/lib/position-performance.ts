@@ -206,7 +206,8 @@ export async function getPositionFigures(positionMint: string, options: Position
     cumulativeFeesUsd: !historyComplete ? null : finite(data.metrics.feesEarnedUsd),
   };
   return { figures, evaluatedAt: new Date(data.identity.evaluatedAt * 1000).toISOString(),
-    historyComplete, historyRefreshResolved: data.historyFetch.refreshSignaturesResolved !== false,
+    historyComplete, historyRefreshResolved: options.historyAfterSignatures?.length
+      ? data.historyFetch.refreshSignaturesResolved === true : historyComplete,
     timings: { totalMs: Date.now() - data.started, accountsMs: data.accountsMs, historyMs: data.historyFetch.elapsedMs,
       pricingMs: data.pricingMs, metadataMs: Date.now() - data.metadataStarted }, historyFetch: data.historyFetch };
 }

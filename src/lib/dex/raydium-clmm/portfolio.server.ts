@@ -29,30 +29,34 @@ async function readSymbols(snapshots: ReadonlyMap<string, Snapshot | null>): Pro
 
 /** Stage accounts first, then share one price/metadata lookup for every distinct token. */
 async function readInputs(positions: PortfolioRequest["positions"], signal: AbortSignal) {
-  const connection = batchAccountReads(rpcConnection(undefined, { signal }));
+  const snapshotsController = new AbortController();
+  const snapshotsSignal = AbortSignal.any([signal, snapshotsController.signal, AbortSignal.timeout(PORTFOLIO_POSITION_DEADLINE_MS)]);
+  const snapshotConnection = batchAccountReads(rpcConnection(undefined, { signal: snapshotsSignal }), snapshotsSignal);
   const snapshots = new Map(await mapPortfolioPositions(positions, async (item) => {
     try {
-      signal.throwIfAborted();
-      const deadline = AbortSignal.any([signal, AbortSignal.timeout(PORTFOLIO_POSITION_DEADLINE_MS)]);
-      const snapshot = await abortable(readRaydiumPositionAccounts(item.key.split(":")[1]!, connection), deadline);
+      snapshotsSignal.throwIfAborted();
+      const snapshot = await abortable(readRaydiumPositionAccounts(item.key.split(":")[1]!, snapshotConnection), snapshotsSignal);
       return [item.key, snapshot] as const;
     } catch { return [item.key, null] as const; }
   }));
+  snapshotsController.abort();
   const mints = [...new Set([...snapshots.values()].flatMap((snapshot) => snapshot ? [snapshot.mintA, snapshot.mintB] : []))];
   const [prices, labels] = await Promise.all([
     mints.length ? abortable(fetchTokenPricesUsd(mints), signal).catch(() => new Map<string, TokenPriceQuote>()) : new Map<string, TokenPriceQuote>(),
     abortable(readSymbols(snapshots), signal).catch(() => new Map<string, Symbols>()),
   ]);
-  return { connection, snapshots, prices, labels };
+  return { snapshots, prices, labels };
 }
 
 
 export async function prepareRaydiumPortfolio(input: PortfolioRequest, signal: AbortSignal): Promise<PortfolioReader> {
   if (input.fresh || input.positions.some((item) => item.afterSignatures?.length)) resetRpcCache();
-  const { connection, snapshots, prices, labels } = await readInputs(input.positions, signal);
+  const { snapshots, prices, labels } = await readInputs(input.positions, signal);
   return async (item, readSignal) => {
     const snapshot = snapshots.get(item.key);
     if (!snapshot) throw new Error("Position accounts unavailable");
+    // A row deadline cancels its fee transport before the scheduler reuses the slot.
+    const connection = batchAccountReads(rpcConnection(undefined, { signal: readSignal }), readSignal);
     const read = await getPositionFigures(item.key.split(":")[1]!, {
       wallet: input.wallet, snapshot, prices, accountConnection: connection, signal: readSignal,
       symbols: labels.get(snapshot.poolId) ?? { symbolA: null, symbolB: null },

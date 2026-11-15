@@ -25,4 +25,23 @@ describe("request-local account batches", () => {
     const results = await Promise.allSettled([bad.getAccountInfo(key(1)), bad.getAccountInfo(key(2))]);
     expect(results.every((result) => result.status === "rejected")).toBe(true);
   });
+  it("fences queued and dependent account waves after transport cancellation", async () => {
+    const controller = new AbortController();
+    let complete!: (accounts: null[]) => void;
+    const rpc = vi.fn(() => new Promise<null[]>((resolve) => { complete = resolve; }));
+    const connection = batchAccountReads({ getMultipleAccountsInfo: rpc } as unknown as Connection, controller.signal);
+    const dependent = connection.getAccountInfo(key(1)).then(() => connection.getAccountInfo(key(2)));
+    await Promise.resolve();
+    controller.abort(new Error("deadline"));
+    complete([null]);
+    await expect(dependent).rejects.toThrow("deadline");
+    expect(rpc).toHaveBeenCalledTimes(1);
+    const cancelled = connection.getAccountInfo(key(3));
+    await expect(cancelled).rejects.toThrow("deadline"); expect(rpc).toHaveBeenCalledTimes(1);
+    const queuedController = new AbortController();
+    const queued = batchAccountReads({ getMultipleAccountsInfo: rpc } as unknown as Connection, queuedController.signal).getAccountInfo(key(4));
+    queuedController.abort(new Error("queued deadline"));
+    await expect(queued).rejects.toThrow("queued deadline"); expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
 });

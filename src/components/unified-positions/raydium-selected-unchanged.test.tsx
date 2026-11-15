@@ -106,6 +106,32 @@ describe("/app Raydium selected state (unchanged by the registry DEXes)", () => 
     expect(rows().map((row) => row.getAttribute("data-position-key")).sort()).toEqual([`raydium-clmm:${FIRST}`, `raydium-clmm:${LINKED}`].sort());
   });
 
+  it("loads healthy Raydium numbers after a hanging registry discovery reaches its deadline", async () => {
+    state.dex = "hang";
+    const original = fetch;
+    let aggregateCalls = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input) === "/api/portfolio") {
+        aggregateCalls++;
+        const body = JSON.parse(String(init?.body)) as { wallet: string; positions: { key: string }[] };
+        return Response.json({ wallet: body.wallet, positions: body.positions.map(({ key }) => ({ key, status: "ready",
+          figures: { stock: null, shares: null, valueUsd: 100, unclaimedFeesUsd: 1, cumulativeFeesUsd: 2 },
+          evaluatedAt: "2026-11-15T00:00:00Z", historyComplete: true, historyRefreshResolved: true })) });
+      }
+      return original(input, init);
+    }));
+    vi.useFakeTimers();
+    try {
+      await act(async () => root.render(createElement(SelectedApp)));
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(aggregateCalls).toBe(0);
+      await act(async () => { await vi.advanceTimersByTimeAsync(6_001); });
+      expect(aggregateCalls).toBe(1);
+      expect(container.querySelector("[data-testid=portfolio-total-value] p")?.textContent).toBe("$200.00");
+      expect(container.textContent).toContain("Position discovery timed out");
+    } finally { vi.useRealTimers(); }
+  });
+
   it("a failing (500) Meteora positions read leaves the Raydium list in place and only adds its plain error", async () => {
     state.dex = "500";
     await renderLinked();

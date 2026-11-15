@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { usePortfolioFigures } from "./use-portfolio-figures";
 import { notifyPositionHistoryChange, readPositionHistoryRefresh } from "@/lib/position-history-refresh";
+import { PublicKey } from "@solana/web3.js";
 import type { PortfolioPosition } from "@/lib/portfolio/model";
 const mint = "11111111111111111111111111111111";
 const key = `raydium-clmm:${mint}`;
@@ -12,8 +13,8 @@ const row = (valueUsd = 10): PortfolioPosition => ({ key, status: "ready", figur
 let container: HTMLDivElement, root: Root;
 let latest: ReturnType<typeof usePortfolioFigures>;
 const fetchMock = vi.fn();
-function Probe({ wallet, refresh = 0, paused = false }: { wallet: string | null; refresh?: number; paused?: boolean }) {
-  const rows = usePortfolioFigures(wallet, [key], { refresh, paused });
+function Probe({ wallet, refresh = 0, paused = false, keys = [key] }: { wallet: string | null; refresh?: number; paused?: boolean; keys?: string[] }) {
+  const rows = usePortfolioFigures(wallet, keys, { refresh, paused });
   useEffect(() => { latest = rows; }, [rows]);
   return createElement("div", null, rows[key]?.figures.valueUsd ?? "loading");
 }
@@ -56,6 +57,24 @@ describe("Portfolio client request lifecycle", () => {
     await act(async () => finish[1]!(Response.json({ wallet: "A", positions: [row()] })));
     expect(readPositionHistoryRefresh(mint)).toBeNull();
     expect(latest[key]?.status).toBe("ready");
+  });
+  it("retains signature-less markers on partial history even when a response claims refresh resolution", async () => {
+    notifyPositionHistoryChange(mint);
+    fetchMock.mockResolvedValueOnce(Response.json({ wallet: "A", positions: [{ ...row(), status: "partial", historyComplete: false, historyRefreshResolved: true }] }));
+    await render("A");
+    expect(readPositionHistoryRefresh(mint)).not.toBeNull();
+  });
+  it("pages wallets above the request bound and publishes completed pages while the next waits", async () => {
+    const keys = Array.from({ length: 51 }, (_, n) => `raydium-clmm:${new PublicKey(Buffer.alloc(32, n)).toBase58()}`);
+    let finish!: (response: Response) => void;
+    fetchMock.mockImplementationOnce(async () => Response.json({ wallet: "A", positions: keys.slice(0, 50).map((key) => ({ ...row(), key })) }))
+      .mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    await act(async () => root.render(createElement(Probe, { wallet: "A", keys })));
+    expect(fetchMock.mock.calls.map((call) => JSON.parse(call[1].body).positions.length)).toEqual([50, 1]);
+    expect(Object.keys(latest)).toHaveLength(50);
+    await act(async () => finish(Response.json({ wallet: "A", positions: [{ ...row(), key: keys[50] }] })));
+    expect(Object.keys(latest)).toHaveLength(51);
+    expect(Object.values(latest).every((value) => value.status === "ready")).toBe(true);
   });
   it("keeps failed/missing rows explicit instead of counting them as zero", async () => {
     fetchMock.mockResolvedValue(Response.json({ wallet: "A", positions: [] }));

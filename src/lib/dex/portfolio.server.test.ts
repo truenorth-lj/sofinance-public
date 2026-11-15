@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PublicKey } from "@solana/web3.js";
 vi.mock("server-only", () => ({}));
-const mocks = vi.hoisted(() => ({ snapshot: vi.fn(), figures: vi.fn(), prices: vi.fn(), metadata: vi.fn(), symbols: vi.fn(), reset: vi.fn(), adapter: vi.fn() }));
-vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: () => ({}) }));
+const mocks = vi.hoisted(() => ({ snapshot: vi.fn(), figures: vi.fn(), prices: vi.fn(), metadata: vi.fn(), symbols: vi.fn(), rpc: vi.fn(), reset: vi.fn(), adapter: vi.fn() }));
+vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: mocks.rpc }));
 vi.mock("@sofinance/engine/rpc/cache", () => ({ resetRpcCache: mocks.reset }));
 vi.mock("@sofinance/engine/protocols/raydium/position-snapshot", () => ({ readRaydiumPositionAccounts: mocks.snapshot }));
 vi.mock("@sofinance/engine/token-prices", () => ({ fetchTokenPricesUsd: mocks.prices }));
@@ -15,6 +15,7 @@ const figures = { stock: "TSLA", shares: 2, valueUsd: 100, unclaimedFeesUsd: 1, 
 const signal = () => new AbortController().signal;
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.rpc.mockReturnValue({});
   mocks.snapshot.mockImplementation(async () => ({ poolId: "pool", mintA: "A", mintB: "B" }));
   mocks.prices.mockResolvedValue(new Map([["A", { price: 50, source: "jupiter" }]]));
   mocks.metadata.mockResolvedValue({});
@@ -65,4 +66,22 @@ describe("Portfolio aggregation", () => {
     await readPortfolio({ wallet: mint(7), positions: [{ key: key(1) }] }, controller.signal);
     expect(mocks.snapshot).toHaveBeenCalledTimes(1);
   });
+  it("cancels snapshot transport at its deadline and does not dispatch more physical reads", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException("deadline", "TimeoutError")), ms);
+      return controller.signal;
+    });
+    try {
+      mocks.snapshot.mockImplementation(() => new Promise(() => {}));
+      const pending = readPortfolio({ wallet: mint(7), positions: [1, 2, 3].map((n) => ({ key: key(n) })) }, signal());
+      await vi.advanceTimersByTimeAsync(12_001);
+      const result = await pending;
+      expect(mocks.snapshot).toHaveBeenCalledTimes(2);
+      expect(mocks.rpc.mock.calls[0]![1].signal.aborted).toBe(true);
+      expect(result.positions.every((row) => row.status === "failed")).toBe(true);
+    } finally { vi.restoreAllMocks(); vi.useRealTimers(); }
+  });
+
 });

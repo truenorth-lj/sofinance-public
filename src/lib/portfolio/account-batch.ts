@@ -5,10 +5,11 @@ type Account = AccountInfo<Buffer> | null;
 type Pending = { key: PublicKey; resolve: (value: Account) => void; reject: (error: unknown) => void };
 
 /** Request-local confirmed account reads: deduplicate shared pools/ticks and coalesce each dependency wave. */
-export function batchAccountReads(connection: Connection): Connection {
+export function batchAccountReads(connection: Connection, signal?: AbortSignal): Connection {
   const cache = new Map<string, Promise<Account>>();
   const groups = new Map<string, Pending[]>();
   const read = (key: PublicKey, config?: Commitment | GetAccountInfoConfig): Promise<Account> => {
+    if (signal?.aborted) return Promise.reject(signal.reason);
     const group = JSON.stringify(config ?? null);
     const identity = `${group}:${key.toBase58()}`;
     const cached = cache.get(identity);
@@ -21,6 +22,7 @@ export function batchAccountReads(connection: Connection): Connection {
       groups.set(group, queue);
       queueMicrotask(() => {
         groups.delete(group);
+        if (signal?.aborted) { queue.forEach((entry) => entry.reject(signal.reason)); return; }
         // Solana permits at most 100 accounts in one getMultipleAccounts request.
         for (let offset = 0; offset < queue.length; offset += 100) {
           const batch = queue.slice(offset, offset + 100);
