@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { dexDescriptors, dexPositionLabel, dexPositionRangeText, fetchDexPositions, positionDescriptorsFor,
+import { dexDescriptors, dexPositionLabel, fetchDexPositions, positionDescriptorsFor,
   type DexCapabilities, type DexDescriptor, type DexSigner } from "@/lib/dex/client";
 import type { PositionLabelMetadata } from "@/lib/position-label";
 import type { PositionSourceId, UnifiedPosition } from "@/lib/unified-positions/model";
@@ -67,17 +67,3 @@ export function useRegistryPositions({ owner, signer, exclude, refresh }: {
   };
 }
 
-/**
- * Under the selected registry position's row: its range (price or ticks). The range status badge and the per-token
- * Liquidity / Unclaimed fees rows were dropped (LJ 11/14): the row above already shows its shares, value and fees.
- */
-export function RegistryPositionHeader({ position }: { position: UnifiedPosition }) {
-  return <div className="mt-3 flex flex-wrap items-center gap-2 text-xs" data-testid="registry-position-header">
-    <span className="rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-cream/80">{dexPositionRangeText(position).replace(/^range/, "Range").replace(/^ticks/, "Ticks")}</span>
-  </div>;
-}
-
-/** "Learn more details" lines for a selected registry position: the pool only (no position key or mints). */
-export function RegistryPositionDetails({ position }: { position: UnifiedPosition }) {
-  return <p>Pool: {position.poolId}</p>;
-}

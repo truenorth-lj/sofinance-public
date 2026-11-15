@@ -3,7 +3,6 @@
 /**
  * The Performance stock view: three tiles (the stock's price and 24h change, what the shares put in did since they
  * were put in, what the fees added) and the total row. Only up/down is coloured (mint / coral); labels stay on one line.
- * `StockTile`, `StockTotalRow` and `Sparkline` are shared with the all-stocks overview.
  */
 import { useId, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
@@ -64,7 +63,7 @@ export function StockTotalRow({ priceUsd, feeUsd, totalUsd }: { priceUsd: number
 export function StockPerformanceTiles({ stock, pairLabel, showHeader = true, showFootnote = true }: {
   stock: StockPerformance;
   pairLabel?: string | null;
-  /** The overview's expanded row already names the stock and its value. */
+  /** Off in the Portfolio row's detail: the row already names the stock, its shares and value. */
   showHeader?: boolean;
   showFootnote?: boolean;
 }) {

@@ -6,6 +6,7 @@ import { PublicKey, SystemProgram, TransactionMessage, VersionedTransaction } fr
 import bs58 from "bs58";
 import { useCompoundController } from "./use-compound-controller";
 import { HarvestAccountManagement } from "./compound-panel";
+import { compoundConfirmButton } from "./test-support/portfolio-popups";
 import { RowCompoundHarness } from "./test-support/row-compound";
 import { compoundAttemptKey, compoundReceiptsKey, persistCompoundAttempt, persistCompoundReceipt, type CompoundAttempt, type CompoundReceipt } from "@sofinance/engine/compound-attempt";
 import { persistCleanupBatch } from "@/lib/compound-cleanup-batch-attempt";
@@ -518,9 +519,14 @@ it("recovery wait exclusively checks its signature until selection cancellation 
   expect(mocks.sign).toHaveBeenCalledOnce(); expect(broadcastCount).toBe(1);
 });
 
-describe("the position row's Compound button (the only Compound entry, LJ 11/14)", () => {
+describe("the position row's Compound button and its popup (the only Compound entry, LJ 11/14)", () => {
   const rowButton = () => container.querySelector<HTMLButtonElement>('[data-testid="position-row-action"][data-tool="compound"]')!;
-  const rowStatus = () => container.querySelector('[data-testid="row-compound-status"]');
+  const popup = () => container.querySelector<HTMLDialogElement>('dialog[data-testid="compound-popup"]')!;
+  const confirm = () => compoundConfirmButton(container);
+  const openAndConfirm = async () => {
+    await act(async () => rowButton().click());
+    await act(async () => confirm()!.click());
+  };
   function prepareOk() {
     positionMint = fixture.state.positionMint;
     const handler = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>;
@@ -535,7 +541,7 @@ describe("the position row's Compound button (the only Compound entry, LJ 11/14)
     });
   }
   const prepareCalls = () => fetchMock.mock.calls.filter(([url]) => url === "/api/compound-prepare").length;
-  it("drives the compound: loading on the row, and the Protocol fee stated under it before the wallet signs", async () => {
+  it("opening shows static facts only; Confirm drives the compound, the row shows its stage and the popup the Protocol fee before signing", async () => {
     prepareOk(); confirmationStatus = "success";
     let approve!: (tx: VersionedTransaction) => void; let unsigned!: VersionedTransaction;
     mocks.sign.mockImplementation((tx: VersionedTransaction) => { unsigned = tx; return new Promise(done => { approve = done; }); });
@@ -544,47 +550,54 @@ describe("the position row's Compound button (the only Compound entry, LJ 11/14)
     expect(rowButton().textContent).toBe("Compound"); expect(rowButton().disabled).toBe(false);
     await act(async () => rowButton().click());
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(popup().dataset.open).toBe("true");
+    expect(prepareCalls()).toBe(0); // no new simulation for the confirm screen
+    expect(popup().querySelector('[data-testid="compound-confirm-fee"]')?.textContent).toBe("0.10%");
+    await act(async () => confirm()!.click());
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     expect(prepareCalls()).toBe(1);
-    // The wallet prompt is open and nothing is signed yet: the row is busy and the fee is on screen.
+    // The wallet prompt is open and nothing is signed yet: the row shows the stage and the fee is on screen.
     expect(mocks.sign).toHaveBeenCalledOnce(); expect(controller.stage).toBe("wallet");
-    expect(rowButton().disabled).toBe(true); expect(rowButton().textContent).toBe("Confirming in wallet…");
-    expect(rowStatus()?.querySelector('[data-testid="compound-protocol-fee"]')?.textContent).toMatch(/^Protocol fee \(0\.10%\): /);
+    expect(rowButton().textContent).toBe("Confirming in wallet…");
+    expect(rowButton().disabled).toBe(false); // reopens its own popup
+    expect(popup().querySelector('[data-testid="compound-progress"] [data-testid="compound-protocol-fee"]')?.textContent).toMatch(/^Protocol fee \(0\.10%\): /);
     await act(async () => { unsigned.sign([testKeypair(1)]); approve(unsigned); });
     await act(async () => { await vi.advanceTimersByTimeAsync(16); });
     expect(controller.attemptStatus).toBe("success");
   });
-  it("a wallet rejection says cancelled on the row, in plain words, and frees the button", async () => {
+  it("a wallet rejection says cancelled in the popup, in plain words, and Confirm can be pressed again", async () => {
     prepareOk();
     mocks.sign.mockRejectedValue(new Error("User rejected the request. (code 4001)"));
     await render();
-    await act(async () => rowButton().click());
+    await openAndConfirm();
     await act(async () => { await vi.advanceTimersByTimeAsync(16); });
-    const error = container.querySelector('[data-testid="row-compound-status"] [data-testid="row-compound-error"]');
-    expect(error?.textContent).toBe("You cancelled in your wallet. Nothing was sent.");
-    expect(rowButton().disabled).toBe(false);
+    expect(popup().querySelector('[data-testid="compound-confirm-error"]')?.textContent).toBe("You cancelled in your wallet. Nothing was sent.");
+    expect(confirm()?.disabled).toBe(false);
+    expect(rowButton().textContent).toBe("Compound");
   });
-  it("a failed preparation shows a plain error on the row (no codes, not 'cancelled') and nothing is signed", async () => {
+  it("a failed preparation shows a plain error in the popup (no codes, not 'cancelled') and nothing is signed", async () => {
     positionMint = fixture.state.positionMint;
     const handler = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>;
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) => url === "/api/compound-prepare"
       ? Response.json({ error: "The network is busy. Try again in a moment.", code: "rpc_unavailable" }, { status: 503 }) : handler(url, init));
     await render();
-    await act(async () => rowButton().click());
+    await openAndConfirm();
     await act(async () => { await vi.advanceTimersByTimeAsync(16); });
-    const error = container.querySelector('[data-testid="row-compound-status"] [data-testid="row-compound-error"]');
-    expect(error?.textContent).toBe("The network is busy. Try again in a moment.");
+    expect(popup().querySelector('[data-testid="compound-confirm-error"]')?.textContent).toBe("The network is busy. Try again in a moment.");
     expect(mocks.sign).not.toHaveBeenCalled();
-    expect(rowButton().disabled).toBe(false);
+    expect(confirm()?.disabled).toBe(false);
   });
-  it("is disabled on the row with the plain reason when there are no fees, and nothing is prepared", async () => {
+  it("states the plain reason in the popup when there are no fees; Confirm is disabled and nothing is prepared", async () => {
     positionMint = fixture.state.positionMint;
     const handler = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>;
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) => url === "/api/compound-state"
       ? Response.json({ ...fixture.state, fees: { a: "0", b: "0" } }) : handler(url, init));
     await render();
-    expect(rowButton().disabled).toBe(true);
-    expect(container.querySelector('[data-testid="row-compound-blocked"]')?.textContent).toBe("Currently no fees available to compound");
     await act(async () => rowButton().click());
+    expect(popup().querySelector('[data-testid="compound-confirm-blocked"]')?.textContent).toBe("Currently no fees available to compound");
+    expect(confirm()?.disabled).toBe(true);
+    await act(async () => confirm()!.click());
     expect(prepareCalls()).toBe(0);
   });
 });
+

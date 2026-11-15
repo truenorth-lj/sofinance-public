@@ -1,10 +1,11 @@
 "use client";
 import "@/lib/engine-host";
 
-import { CircleAlert } from "lucide-react";
-import { useState } from "react";
+import { CircleAlert, LoaderCircle } from "lucide-react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 import { CompoundProtocolFee } from "./compound-overview";
-import { CompoundSubmitDialog } from "./compound-submit-dialog";
+import { CompoundSubmitDialog, CompoundSubmitStatus, compoundSubmitActive } from "./compound-submit-dialog";
 import { formatAmount } from "@sofinance/engine/amount";
 import type { CompoundController } from "./use-compound-controller";
 import { CANCEL_CHECK_PENDING_COPY, CHECKING_SOLANA_COPY } from "@/lib/tx-pipeline";
@@ -14,7 +15,11 @@ import { solscanTxUrl, solscanAccountUrl } from "@/lib/format/explorer";
 import { APP_ROUTES } from "@/lib/public-urls";
 import { positionKey } from "@/lib/unified-positions/model";
 import { raydiumPositionSource } from "@/lib/unified-positions/sources/raydium";
-import { ROW_COMPOUND_CLASS, RowActionsBar, RowCompoundLabel, RowStatus, type RowCompoundSlot } from "./portfolio/portfolio-rows";
+import { dexDescriptors } from "@/lib/dex/client";
+import { recordActivity } from "@/lib/portfolio/session-activity";
+import { ROW_COMPOUND_CLASS, RowActionsBar, RowCompoundLabel, type RowCompoundSlot } from "./portfolio/portfolio-rows";
+import { ActionDialog } from "./portfolio/action-dialog";
+import { CompoundConfirm } from "./portfolio/compound-confirm";
 
 const short = shortAddress;
 
@@ -27,59 +32,86 @@ const statusText = {
 } as const;
 
 /**
- * The Raydium row's Compound (LJ 11/14: the only Compound entry; no Compound fees tab or panel). The button runs the
- * existing flow for the row's position: simulate (prepare) → wallet signature → submit → the CompoundSubmitDialog status.
- * A row that is not the selected one is selected first and runs once its fees are read (`SelectedApp`). Only the active
- * row (the controller's position) shows progress, the pre-sign protocol fee, errors and the transaction record.
+ * The Raydium row's Compound (LJ 11/14: the only Compound entry). The button opens the row's Compound popup and selects the
+ * row's position so its fees are read. The popup: static facts first (the row's unclaimed fees and the descriptor's fee
+ * rate, no new simulation), then Confirm runs the existing flow (`compound()`: prepare and simulate → wallet signature →
+ * submit, unchanged), its progress (with the wallet-stage protocol fee note) and its result in the same popup. Done closes
+ * it and re-reads the position. Only the active row (the controller's position) shows the controller's state.
  */
-export function RaydiumRowCompound({ controller: c, positionMint, pending, onCompound, slot, tokenLabel = short }: {
-  controller: CompoundController; positionMint: string; pending: boolean; onCompound: () => void; slot: RowCompoundSlot;
+export function RaydiumRowCompound({ controller: c, positionMint, positionKey, slot, tokenLabel = short }: {
+  controller: CompoundController; positionMint: string; positionKey: string; slot: RowCompoundSlot;
   tokenLabel?: (mint: string) => string;
 }) {
   const active = Boolean(c.wallet) && c.positionMint === positionMint;
   const state = active ? c.state : null;
   const loaded = active && !c.loading && state !== null;
-  const running = active && c.busy;
-  const waiting = pending && !running;
-  const action = running ? compoundActionLabel({ cleanupRunning: Boolean(c.cleanup?.running), stage: c.stage, checkingCopy: CHECKING_SOLANA_COPY })
-    : waiting ? "Loading latest fees…" : "Compound";
-  // Same checks as before (the controller's canCompound); a row whose fees are not read yet can still be clicked.
-  const blockedText = !active ? null : c.externalBlocked ? "Another operation is in progress." : c.cancelPending ? CANCEL_CHECK_PENDING_COPY
+  const feedback = active ? c.feedback : null;
+  const settling = compoundSubmitActive(feedback);
+  const running = active && (c.busy || settling);
+  const action = running ? compoundActionLabel({ cleanupRunning: Boolean(c.cleanup?.running), stage: c.stage, checkingCopy: CHECKING_SOLANA_COPY }) : "Compound";
+  const blockedText = !loaded ? null : c.externalBlocked ? "Another operation is in progress." : c.cancelPending ? CANCEL_CHECK_PENDING_COPY
     : state && !state.eligible ? state.reason : state && !c.hasFees ? "Currently no fees available to compound" : null;
-  const blocked = loaded && !c.canCompound;
-  const showAttempt = active && currentAttemptShown(c);
   const rewards = state?.rewards.filter((reward) => reward.estimatedAmount !== "0") ?? [];
   const amount = (value: string, decimals: number) => formatAmount(value, decimals, Math.min(decimals, 9));
-  const status = active && (running || waiting || (blocked && blockedText) || c.preview || rewards.length > 0 || showAttempt || c.error || c.cleanup || c.cleanupBatch);
+  // This session's Activity: the signed compound, from submit to its result.
+  useEffect(() => {
+    if (!feedback) return;
+    recordActivity({ id: `compound:${feedback.signature}`, positionKey, signature: feedback.signature,
+      status: feedback.phase === "success" ? "success" : feedback.phase === "failed" ? "failed" : "pending",
+      title: feedback.phase === "success" ? "Compound confirmed" : feedback.phase === "failed" ? "Compound failed" : "Compound confirming",
+      detail: feedback.phase === "failed" ? feedback.message || "The transaction did not complete." : undefined });
+  }, [feedback, positionKey]);
+  // Done (or closing once it settled) clears the result; on success that re-reads the position (`dismissFeedback`).
+  const close = () => { if (feedback && !settling) c.dismissFeedback(); slot.onClose(); };
   return <>
     <RowActionsBar>
-      <button type="button" data-testid="position-row-action" data-tool="compound" aria-busy={running || waiting}
-        disabled={running || waiting || (slot.disabled && !running) || blocked} onClick={onCompound} title={action} className={ROW_COMPOUND_CLASS}>
-        <RowCompoundLabel busy={running || waiting} label={action} />
+      <button type="button" data-testid="position-row-action" data-tool="compound" aria-haspopup="dialog" aria-busy={running}
+        disabled={slot.disabled && !running} onClick={slot.onOpen} title={action} className={ROW_COMPOUND_CLASS}>
+        <RowCompoundLabel busy={running} label={action} />
       </button>
       {slot.otherActions}
     </RowActionsBar>
-    {status ? <RowStatus testId="row-compound-status">
-      {blocked && blockedText ? <p role="status" data-testid="row-compound-blocked" className="text-smoke">{blockedText}</p> : null}
-      {/* Stated before signing: the simulation's protocol fee shows while the wallet asks for the signature. */}
-      <CompoundProtocolFee summary={c.preview} tokenLabel={tokenLabel} />
-      {rewards.length > 0 && <div className="mt-2 space-y-1">
-        <p className="font-medium text-smoke">Additional rewards</p>
-        {rewards.map((reward) => <p key={reward.index} className="flex justify-between gap-3">
-          <span>{amount(reward.estimatedAmount, reward.decimals)} {tokenLabel(reward.mint)}</span>
-          <span className="text-smoke">{reward.compounded ? "Same pool assets, can be reinvested with harvested fees" : "Requires supported swap route, will not send if cannot complete"}</span>
-        </p>)}
-      </div>}
-      {showAttempt && <AttemptCard c={c} tokenLabel={tokenLabel} />}
-      {c.error && <div role="alert" data-testid="row-compound-error" className="mt-3 flex gap-2 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-sm"><CircleAlert aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" /><span>{c.error}</span></div>}
-      <CleanupProgress controller={c} />
-    </RowStatus> : null}
+    <ActionDialog open={slot.open} onClose={close} title="Compound fees" testId="compound-popup" size="sm" dismissible={!settling || c.feedbackSlow}>
+      {/* The automatic cleanup that follows a confirmed compound shows under its result, in the same popup. */}
+      {feedback ? <><CompoundSubmitStatus feedback={feedback} slow={c.feedbackSlow} onDone={close} /><CleanupProgress controller={c} /></>
+        : running ? <div data-testid="compound-progress">
+          <p role="status" className="mt-4 flex items-center gap-2 text-sm text-cream/80"><LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />{action}</p>
+          {/* Stated before signing: the simulation's protocol fee shows while the wallet asks for the signature. */}
+          <CompoundProtocolFee summary={c.preview} tokenLabel={tokenLabel} />
+          <CleanupProgress controller={c} />
+        </div>
+        : <>
+          <CompoundConfirm unclaimedUsd={slot.unclaimedUsd} feeRule={dexDescriptors.descriptorFor(raydiumPositionSource.id)?.meta.feePolicy.compound ?? null} blocked={blockedText}
+            error={active ? c.error : null} loading={!loaded} disabled={!loaded || !c.canCompound} onConfirm={() => c.compound()} />
+          {active && c.historyWarning && <p role="status" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80">{c.historyWarning}</p>}
+          {rewards.length > 0 && <div className="mt-4 space-y-1 text-xs leading-5 text-cream/80">
+            <p className="font-medium text-smoke">Additional rewards</p>
+            {rewards.map((reward) => <p key={reward.index} className="flex justify-between gap-3">
+              <span>{amount(reward.estimatedAmount, reward.decimals)} {tokenLabel(reward.mint)}</span>
+              <span className="text-smoke">{reward.compounded ? "Same pool assets, can be reinvested with harvested fees" : "Requires supported swap route, will not send if cannot complete"}</span>
+            </p>)}
+          </div>}
+        </>}
+    </ActionDialog>
   </>;
 }
 
-/** Mounted once by the page (not by a row, so a row re-render never drops it): the post-sign status dialog of a Raydium compound. */
-export function RaydiumCompoundFeedback({ controller: c }: { controller: CompoundController }) {
-  return <CompoundSubmitDialog feedback={c.feedback} slow={c.feedbackSlow} onDismiss={c.dismissFeedback} />;
+/**
+ * The Raydium part of a position's Activity popup: the controller's saved records (the last compound transaction, kept in
+ * localStorage as before), a running or finished cleanup, a history warning, and the link to the recovery page.
+ */
+export function RaydiumActivityRecords({ controller: c, positionMint, tokenLabel = short }: {
+  controller: CompoundController; positionMint: string; tokenLabel?: (mint: string) => string;
+}) {
+  const active = Boolean(c.wallet) && c.positionMint === positionMint;
+  return <>
+    {active && currentAttemptShown(c) && <AttemptCard c={c} tokenLabel={tokenLabel} />}
+    {active && <CleanupProgress controller={c} hiddenSignatures={currentAttemptShown(c) && c.attempt ? [c.attempt.signature] : []} />}
+    {active && c.historyWarning && <p role="status" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80">{c.historyWarning}</p>}
+    {/* Harvest account recovery has its own page (LJ 11/14), linked from a Raydium position's Activity. */}
+    <Link href={recoveryHref(positionMint)} data-testid="harvest-recovery-link"
+      className="mt-5 inline-block text-xs font-semibold text-cream/80 underline underline-offset-2 hover:opacity-70">Recover leftover compound balances</Link>
+  </>;
 }
 
 const currentAttemptShown = (c: CompoundController) => c.attempt?.positionMint === c.positionMint && !(c.attemptStatus === "success" && c.error);
@@ -117,14 +149,14 @@ export function recoveryHref(positionMint: string | null | undefined): string {
 }
 
 /** Progress of a running or finished cleanup batch (the automatic one after a compound, or "Clean up all balances"). */
-function CleanupProgress({ controller: c }: { controller: CompoundController }) {
+function CleanupProgress({ controller: c, hiddenSignatures = [] }: { controller: CompoundController; hiddenSignatures?: readonly string[] }) {
   return <>
     {c.cleanup && <div role="status" className="mt-5 rounded-2xl border border-white/15 p-4 text-xs leading-6 text-cream/80">
-      {c.cleanup.compoundSignature && <p>Compound confirmed. <a className="underline" href={solscanTxUrl(c.cleanup.compoundSignature)} target="_blank" rel="noreferrer">View compound transaction</a></p>}
+      {c.cleanup.compoundSignature && !hiddenSignatures.includes(c.cleanup.compoundSignature) && <p>Compound confirmed. <a className="underline" href={solscanTxUrl(c.cleanup.compoundSignature)} target="_blank" rel="noreferrer">View compound transaction</a></p>}
       <p>{c.cleanup.message}</p><p>{c.cleanup.completed} of {c.cleanup.total} harvest account groups cleaned.</p>
     </div>}
     {c.cleanupBatch && <div className="mt-3 text-xs leading-6 text-smoke">
-      {c.cleanupBatch.transactions.map(tx => <p key={tx.signature}><a className="underline" href={solscanTxUrl(tx.signature)} target="_blank" rel="noreferrer">Cleanup transaction {short(tx.signature)}</a> · {tx.unsent ? "Not sent" : tx.status === "success" ? "Confirmed" : tx.status === "pending" ? "Confirming; automatically retrying verification" : tx.status}</p>)}
+      {c.cleanupBatch.transactions.filter(tx => !hiddenSignatures.includes(tx.signature)).map(tx => <p key={tx.signature}><a className="underline" href={solscanTxUrl(tx.signature)} target="_blank" rel="noreferrer">Cleanup transaction {short(tx.signature)}</a> · {tx.unsent ? "Not sent" : tx.status === "success" ? "Confirmed" : tx.status === "pending" ? "Confirming; automatically retrying verification" : tx.status}</p>)}
       <button type="button" onClick={c.retryReconcile} disabled={c.busy} className="underline disabled:opacity-40">Requery cleanup results</button>
     </div>}
   </>;

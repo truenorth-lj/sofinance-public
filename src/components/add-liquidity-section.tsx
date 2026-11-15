@@ -5,6 +5,8 @@ import { ArrowDown, CircleAlert, LoaderCircle } from "lucide-react";
 import { formatAmount } from "@sofinance/engine/amount";
 import { shortAddress } from "@/lib/format/address";
 import { solscanTxUrl } from "@/lib/format/explorer";
+import { formatUsd } from "@/lib/format/usd";
+import { addWalletPreviewSplit } from "@/lib/add-wallet-preview";
 import { TokenPicker } from "./token-picker";
 
 const short = shortAddress;
@@ -29,7 +31,7 @@ function Row({ title, value, emphasize = false }: { title: string; value: string
 }
 
 type PositionState = {
-  pricing?: { priceUsdInput?: number | null };
+  pricing?: { priceUsdInput?: number | null; priceUsdA?: number | null; priceUsdB?: number | null };
   inputBalance: string;
   inputDecimals: number;
   mintA: string;
@@ -49,6 +51,8 @@ type Quote = {
   minOutB: string;
   decimalsB: number;
   liquidity?: string | null;
+  /** The deposit (`required`) and the price-tolerance reserve left in the wallet (`dust`), per pool token. */
+  requiredA?: string; requiredB?: string; dustA?: string; dustB?: string;
   expiresAt: number;
 } | null;
 
@@ -186,7 +190,17 @@ export function AddLiquiditySection({
             </div>
           </details>
           <p className="mt-5 text-xs leading-5 text-smoke">Preview updates after entering an amount. Add liquidity runs the final checks before wallet confirmation.</p>
-          <div className="mt-6 hidden sm:block">
+          {(() => {
+            // Before signing: the wallet's own preview lists only what comes back (the reserve), not the deposit.
+            if (!quote || !fresh || calculating || quote.requiredA === undefined || quote.requiredB === undefined
+              || quote.dustA === undefined || quote.dustB === undefined) return null;
+            const split = addWalletPreviewSplit({ requiredA: quote.requiredA, requiredB: quote.requiredB, dustA: quote.dustA, dustB: quote.dustB,
+              decimalsA: quote.decimalsA, decimalsB: quote.decimalsB }, state?.pricing);
+            return split ? <p data-testid="add-wallet-preview-note" className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-xs leading-5 text-cream/80">
+              Your wallet preview will show only about {formatUsd(split.backUsd)} of tokens coming back. The other ~{formatUsd(split.depositUsd)} goes into this position.
+            </p> : null;
+          })()}
+          <div className="mt-6">
             <button className={buttonClass} disabled={actionDisabled} aria-busy={actionLoading} onClick={onPrimaryAction}>{addButton}</button>
           </div>
           {connected && <div role="status" className="mt-3 min-h-5 text-xs text-smoke">{addStatus}</div>}

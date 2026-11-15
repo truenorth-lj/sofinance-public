@@ -44,10 +44,11 @@ test.describe("J4 performance deep link", () => {
 
   test("connected wallet that holds no positions: same after connecting", async ({ page, wallet }) => {
     const exitRequests = await mockPerformanceApis(page);
-    await page.goto(`/app?view=performance&mint=${MINT}`, { waitUntil: "domcontentloaded" });
+    await page.goto("/app/portfolio", { waitUntil: "domcontentloaded" });
     const modal = new ConnectModal(page, wallet);
     await modal.connect();
     await expect(modal.navAddress).toBeVisible();
+    await page.goto(`/app?view=performance&mint=${MINT}`, { waitUntil: "domcontentloaded" });
     await expect(page.locator("#performance-view")).toBeVisible();
     await expect(page.getByRole("region", { name: "Exit estimates" })).toHaveCount(0);
     await expect(page.getByText("Waiting for position accounts…")).toHaveCount(0);
