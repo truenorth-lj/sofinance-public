@@ -5,6 +5,8 @@ import {
   DEXSCREENER_SOLANA_TOKENS_URL,
   fetchJupiterPricesUsd,
   fetchTokenPricesUsd,
+  JUPITER_PRICE_ATTEMPTS,
+  JUPITER_PRICE_KEYED_SPACING_MS,
   pickDexScreenerUsdPrice,
   resetTokenPriceRuntime,
 } from "./token-prices";
@@ -119,7 +121,7 @@ describe("fetchJupiterPricesUsd", () => {
     expect(String(fetcher.mock.calls[0]?.[0])).toContain(TSLAX);
   });
 
-  it("falls back to DexScreener when Jupiter returns 429", async () => {
+  it("falls back to DexScreener only after one paced Jupiter retry also returns 429", async () => {
     const fetcher = mockFetch((url) => {
       if (url.includes("/price/v3")) return json(429, { error: "rate limited" });
       if (url.startsWith(DEXSCREENER_SOLANA_TOKENS_URL)) return json(200, [pair({ priceUsd: "377.36", liquidityUsd: 2_255_035 })]);
@@ -127,10 +129,52 @@ describe("fetchJupiterPricesUsd", () => {
     });
     const quotes = await fetchTokenPricesUsd([TSLAX], fetcher);
     expect(quotes.get(TSLAX)).toEqual({ price: 377.36, source: "dexscreener" });
+    expect(JUPITER_PRICE_ATTEMPTS).toBe(2);
     expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
+      expect.stringContaining("/price/v3"),
       expect.stringContaining("/price/v3"),
       `${DEXSCREENER_SOLANA_TOKENS_URL}/${TSLAX}`,
     ]);
+  });
+
+  it("uses the Jupiter price when the one retry succeeds after a 429", async () => {
+    let jupiterCalls = 0;
+    const fetcher = mockFetch((url) => {
+      if (url.includes("/price/v3")) {
+        jupiterCalls += 1;
+        return jupiterCalls === 1 ? json(429, { error: "rate limited" }) : json(200, { [TSLAX]: { usdPrice: 376.8 } });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const quotes = await fetchTokenPricesUsd([TSLAX], fetcher);
+    expect(quotes.get(TSLAX)).toEqual({ price: 376.8, source: "jupiter" });
+    expect(jupiterCalls).toBe(2);
+  });
+
+  it("waits the keyed 1 rps spacing before the retry", async () => {
+    resetTokenPriceRuntime({ dexScreenerSpacingMs: 0 });
+    const jupiterAt: number[] = [];
+    const fetcher = mockFetch((url) => {
+      if (url.includes("/price/v3")) {
+        jupiterAt.push(Date.now());
+        return json(503, { error: "unavailable" });
+      }
+      if (url.startsWith(DEXSCREENER_SOLANA_TOKENS_URL)) return json(200, []);
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    await fetchTokenPricesUsd([TSLAX], fetcher, "unit-test-jupiter-key");
+    expect(jupiterAt).toHaveLength(2);
+    // Timer jitter: allow a few ms under the nominal spacing.
+    expect(jupiterAt[1]! - jupiterAt[0]!).toBeGreaterThanOrEqual(JUPITER_PRICE_KEYED_SPACING_MS - 20);
+  });
+
+  it("does not retry a successful Jupiter response that omits a mint", async () => {
+    const fetcher = mockFetch((url) => {
+      if (url.includes("/price/v3")) return json(200, {});
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    await expect(fetchTokenPricesUsd([UNKNOWN], fetcher)).resolves.toEqual(new Map());
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
   it("leaves a mint missing when Jupiter succeeds but omits it (no DexScreener fill)", async () => {
@@ -210,6 +254,6 @@ describe("fetchJupiterPricesUsd", () => {
     });
     await fetchJupiterPricesUsd([TSLAX], fetcher);
     await fetchJupiterPricesUsd([TSLAX], fetcher);
-    expect(jupiterCalls).toBe(2);
+    expect(jupiterCalls).toBe(2 * JUPITER_PRICE_ATTEMPTS);
   });
 });
