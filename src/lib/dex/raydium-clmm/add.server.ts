@@ -3,6 +3,7 @@ import "server-only";
 
 import { PublicKey } from "@solana/web3.js";
 import { formatAmount } from "@sofinance/engine/amount";
+import { knownTokenSymbol, NOT_ENOUGH_SOL_FOR_FEES_MESSAGE, notEnoughBalanceMessage } from "@sofinance/engine/balance-message";
 import { DEFAULT_ADD_TOLERANCE_BPS, DEFAULT_RESALE_FLOOR_BPS, NATIVE_SOL_MINT } from "@sofinance/engine/ids";
 import { isJupiterUpstreamError, asJupiterUserError } from "@sofinance/engine/jupiter";
 import { readSelectedPositionState, type PositionSelection } from "@sofinance/engine/selected-state";
@@ -29,6 +30,8 @@ function addError(error: unknown): unknown {
   // The generic route catches this control-flow exception to request browser-relayed Jupiter responses.
   if (error instanceof Error && error.name === "JupiterRelayMissingError") return error;
   if (error instanceof Error && error.message === NOT_OWNER) return new DexError("POSITION_NOT_FOUND", "That Raydium position is not held by this wallet.");
+  if (error instanceof Error && error.message === "Input asset ATA is frozen") return new DexError("TOKEN_RESTRICTED", error.message);
+  if (error instanceof Error && error.message === NOT_ENOUGH_SOL_FOR_FEES_MESSAGE) return new DexError("INSUFFICIENT_FUNDS", error.message);
   if (error instanceof Error && error.name === "SwapFeeAccountMissingError") return new DexError("INPUT_TOKEN_UNSUPPORTED", error.message);
   if (isJupiterUpstreamError(error)) return new DexError("UPSTREAM", asJupiterUserError(error).message);
   const message = error instanceof Error ? error.message : "Please try again later.";
@@ -62,6 +65,16 @@ export async function prepareRaydiumAdd(key: PositionKey, owner: string, input: 
     }
     if (!Number.isInteger(state.inputDecimals) || state.inputDecimals < 0 || state.inputDecimals > 18) {
       throw new DexError("INPUT_TOKEN_UNSUPPORTED", "This token's precision is not supported for deposits.");
+    }
+    // Classify known user-actionable failures from the validated snapshot before construction.
+    // The full builder still repeats its authoritative safety checks against fresh chain state.
+    if (state.paused || state.frozen || state.transferFee || state.unsupportedExtensions.length) {
+      throw new DexError("TOKEN_RESTRICTED", "A pool token is paused, frozen, charges transfer fees or has unsupported extensions.");
+    }
+    if (!state.sufficientSol) throw new DexError("INSUFFICIENT_FUNDS", NOT_ENOUGH_SOL_FOR_FEES_MESSAGE);
+    if (BigInt(state.inputBalance) < BigInt(input.amountRaw)) {
+      throw new DexError("INSUFFICIENT_FUNDS", notEnoughBalanceMessage({ symbol: knownTokenSymbol(inputMint, selection.inputKind),
+        decimals: state.inputDecimals, balance: state.inputBalance, requested: input.amountRaw, native: selection.inputKind === "native" }));
     }
     const amount = formatAmount(input.amountRaw, state.inputDecimals, state.inputDecimals);
     // Same terms as the dedicated app prepare: fixed swap slippage and add tolerance; no resale probe.

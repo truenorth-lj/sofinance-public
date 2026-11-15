@@ -48,6 +48,28 @@ describe("Raydium add admission", () => {
     await expect(prepare()).rejects.toMatchObject({ code: "POSITION_NOT_FOUND" });
     expect(current.chain.simulations).toHaveLength(0);
   });
+  it.each(["empty", "insufficient", "missing ATA", "SOL reserve"])("classifies %s as insufficient funds before simulation", async mode => {
+    if (mode === "missing ATA") current.chain.accounts.delete(ata(USDC_MINT));
+    else if (mode === "SOL reserve") current.chain.accounts.get(OWNER)!.lamports = 1;
+    else current.chain.accounts.set(ata(USDC_MINT), tokenAccount(USDC_MINT, OWNER, mode === "empty" ? 0n : 999_999n));
+    await expect(prepare()).rejects.toMatchObject({ code: "INSUFFICIENT_FUNDS" });
+    expect(current.chain.simulations).toHaveLength(0);
+  });
+  it("classifies a frozen pool/input token as token restricted before simulation", async () => {
+    current.chain.accounts.get(ata(USDC_MINT))!.data[108] = 2;
+    await expect(prepare()).rejects.toMatchObject({ code: "TOKEN_RESTRICTED" });
+    expect(current.chain.simulations).toHaveLength(0);
+  });
+  it("classifies an input frozen between the two state reads as token restricted", async () => {
+    const read = current.chain.connection.getMultipleAccountsInfoAndContext.bind(current.chain.connection);
+    let reads = 0;
+    vi.spyOn(current.chain.connection, "getMultipleAccountsInfoAndContext").mockImplementation((...args) => {
+      if (++reads === 5) current.chain.accounts.get(ata(USDC_MINT))!.data[108] = 2;
+      return read(...args);
+    });
+    await expect(prepare()).rejects.toMatchObject({ code: "TOKEN_RESTRICTED" });
+    expect(current.chain.simulations).toHaveLength(0);
+  });
   it.each([undefined, "0", "11", "invalid"])("fails closed when fee config disagrees with the descriptor (%s)", async bps => {
     if (bps === undefined) vi.stubEnv("SOFINANCE_FEE_WALLET", undefined);
     else vi.stubEnv("SOFINANCE_FEE_BPS", bps);
