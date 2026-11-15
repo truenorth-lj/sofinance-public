@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type Ref } from "react";
 import { ArrowUpRight, CheckCircle2, CircleAlert, LoaderCircle } from "lucide-react";
 import type { CompoundSubmitFeedback } from "./use-compound-controller";
 import { solscanTxUrl } from "@/lib/format/explorer";
@@ -22,8 +22,10 @@ export const compoundSubmitActive = (feedback: CompoundSubmitFeedback | null) =>
  * The status of a signed compound: submitting → confirming → success / failed. Shown inside the row's Compound popup
  * (`CompoundSubmitDialog` wraps the same content for the recovery page). Done / Close shows once it can be left.
  */
-export function CompoundSubmitStatus({ feedback, slow = false, onDone, titleId = "compound-submit-title" }: {
+export function CompoundSubmitStatus({ feedback, slow = false, onDone, titleId = "compound-submit-title", doneRef }: {
   feedback: CompoundSubmitFeedback; slow?: boolean; onDone: () => void; titleId?: string;
+  /** The Done button: where the success coins leave from while the popup is open. */
+  doneRef?: Ref<HTMLButtonElement>;
 }) {
   const copy = compoundSubmitCopy(feedback, slow);
   const active = compoundSubmitActive(feedback);
@@ -39,7 +41,7 @@ export function CompoundSubmitStatus({ feedback, slow = false, onDone, titleId =
     <a href={solscanTxUrl(feedback.signature)} target="_blank" rel="noreferrer"
       className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-lilac underline underline-offset-4">View on Solscan <ArrowUpRight className="h-4 w-4" /></a>
     <div className="mt-6 flex gap-3">
-      {(!active || slow) && <button type="button" onClick={onDone} autoFocus data-testid="compound-submit-done"
+      {(!active || slow) && <button ref={doneRef} type="button" onClick={onDone} autoFocus data-testid="compound-submit-done"
         className={successful ? "inline-flex w-full items-center justify-center rounded-full bg-lemon px-5 py-3.5 text-sm font-semibold text-ink hover:bg-[#fff27f]"
           : "inline-flex w-full items-center justify-center rounded-full border border-white/20 px-5 py-3.5 text-sm font-semibold text-cream/90 hover:bg-white/[0.06]"}>
         {successful ? "Done" : "Close"}

@@ -3,6 +3,8 @@ import type { BrowserContext, ConsoleMessage, Page } from "@playwright/test";
 /** Third-party hosts the app talks to from the browser; the hermetic lane aborts them (no network dependency, no 403 noise). */
 export const BLOCKED_THIRD_PARTY = [
   /(^|\.)web3modal\.org$/, /(^|\.)walletconnect\.(org|com)$/, /(^|\.)reown\.com$/,
+  // xStock logos (issuer CDN), loaded for the compound success coins.
+  /^xstocks-metadata\.backed\.fi$/,
   /(^|\.)googleapis\.com$/, /(^|\.)gstatic\.com$/,
 ];
 

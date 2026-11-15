@@ -9,6 +9,8 @@
  * success / failure with a Solscan link, balances refresh; the pipeline's success notice stays until dismissed.
  */
 import { CircleAlert, LoaderCircle } from "lucide-react";
+import { CompoundTokenBurst, useCompoundCelebration } from "../compound-celebration";
+import { coinSymbol } from "@/lib/compound-celebration/coins";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatAmount, parseTokenAmount } from "@sofinance/engine/amount";
 import { DEPOSIT_MINIMUM_UNAVAILABLE, depositTooSmallMessage, dexTxAdapter, fetchAddQuote, type AddQuote, type DexCapabilities, type DexPreparedStep, type DexDescriptor, type DexStepInput, type DexStepOp, type FeeRule, type RentQuote } from "@/lib/dex/client";
@@ -441,9 +443,14 @@ export function RegistryRowCompound({ position, descriptor, symbolOf, onConfirme
   const [seenResult, setSeenResult] = useState<string | null>(null);
   const settled = resultKey !== null && resultKey !== seenResult;
   const close = () => { if (resultKey) setSeenResult(resultKey); slot.onClose(); };
+  // Coins for the confirmed landing (never the click), once per signature: from Done while the popup is open, else the row.
+  const celebration = useCompoundCelebration(tx.status === "success" && tx.signature ? { phase: "success", signature: tx.signature } : null,
+    [position.tokenA, position.tokenB].map((token) => coinSymbol(token.id, symbolOf(token))));
+  const rowButton = useRef<HTMLButtonElement>(null);
+  const doneButton = useRef<HTMLButtonElement>(null);
   return <>
     <RowActionsBar>
-      <button type="button" data-testid="position-row-action" data-tool="compound" aria-haspopup="dialog" aria-busy={tx.locked}
+      <button ref={rowButton} type="button" data-testid="position-row-action" data-tool="compound" aria-haspopup="dialog" aria-busy={tx.locked}
         disabled={slot.disabled && !tx.locked} onClick={slot.onOpen} title={tx.locked ? "Compounding…" : "Compound"} className={ROW_COMPOUND_CLASS}>
         <RowCompoundLabel busy={tx.locked} label={tx.locked ? "Compounding…" : "Compound"} />
       </button>
@@ -458,7 +465,7 @@ export function RegistryRowCompound({ position, descriptor, symbolOf, onConfirme
           {poolFeeLine ? <p data-testid="registry-compound-pool-fee" className="text-smoke">{poolFeeLine}</p> : null}
         </div> : null}
         <TxStatus tx={{ ...tx, interrupted: undefined }} successText="Fees compounded." walletNote={rentLine} />
-        {settled ? <button type="button" data-testid="compound-submit-done" onClick={close}
+        {settled ? <button ref={doneButton} type="button" data-testid="compound-submit-done" onClick={close}
           className="mt-5 inline-flex w-full items-center justify-center rounded-full bg-lemon px-5 py-3.5 text-sm font-semibold text-ink hover:bg-[#fff27f]">Done</button> : null}
       </div> : <>
         <CompoundConfirm unclaimedUsd={slot.unclaimedUsd} feeRule={descriptor.meta.feePolicy.compound} blocked={blocked}
@@ -466,6 +473,7 @@ export function RegistryRowCompound({ position, descriptor, symbolOf, onConfirme
         <LockNote lock={op} />
       </>}
     </ActionDialog>
+    <CompoundTokenBurst play={celebration.play} originRef={slot.open ? doneButton : rowButton} />
   </>;
 }
 

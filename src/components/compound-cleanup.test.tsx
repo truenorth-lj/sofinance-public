@@ -357,6 +357,49 @@ describe("automatic cleanup after a new compound", () => {
       return handler(url, init);
     });
   }
+  it.each(["success", "failed"] as const)("with the popup closed, the coins and the little character play from the row's Compound button on a confirmed landing only (confirmation: %s)", async status => {
+    // happy-dom has no layout: a visible box for the buttons.
+    const box = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() =>
+      ({ left: 0, top: 0, width: 400, height: 600, right: 400, bottom: 600, x: 0, y: 0, toJSON() {} }) as DOMRect);
+    // A full-screen layer on the body (drawn above any open popup).
+    const burst = () => document.querySelector('[data-testid="compound-token-burst"]');
+    confirmationStatus = status;
+    enableCompound(); await render();
+    expect(burst()).toBeNull();
+    await act(async () => { controller.compound(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(16); });
+    expect(controller.attemptStatus).toBe(status);
+    expect(Boolean(burst())).toBe(status === "success");
+    expect(Boolean(document.querySelector("[data-catcher]"))).toBe(status === "success");
+    box.mockRestore();
+  });
+  it("with the popup open, the coins pop out of its Done button as the compound confirms, and Done closes at once without replaying them", async () => {
+    const doneBox = { left: 600, top: 500, width: 120, height: 40 };
+    const box = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const r = this.dataset.testid === "compound-submit-done" ? doneBox : { left: 0, top: 0, width: 400, height: 600 };
+      return { ...r, right: r.left + r.width, bottom: r.top + r.height, x: r.left, y: r.top, toJSON() {} } as DOMRect;
+    });
+    const burst = () => document.querySelector<HTMLElement>('[data-testid="compound-token-burst"]');
+    const popup = () => container.querySelector<HTMLDialogElement>('dialog[data-testid="compound-popup"]')!;
+    const done = () => popup().querySelector<HTMLButtonElement>('[data-testid="compound-submit-done"]');
+    confirmationStatus = "success";
+    enableCompound(); await render();
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="position-row-action"][data-tool="compound"]')!.click());
+    await act(async () => { controller.compound(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(16); });
+    expect(popup().dataset.open).toBe("true");
+    expect(done()?.textContent).toBe("Done");
+    expect(burst()).not.toBeNull();
+    // Coins start at the Done button's centre (660, 520).
+    const coin = burst()!.querySelector<HTMLElement>("[data-coin]:not([data-coin-knock])")!;
+    const left = parseFloat(coin.style.left) + parseFloat(coin.style.width) / 2, top = parseFloat(coin.style.top) + parseFloat(coin.style.height) / 2;
+    expect([Math.round(left), Math.round(top)]).toEqual([660, 520]);
+    const played = burst();
+    await act(async () => done()!.click());
+    expect(popup().dataset.open).not.toBe("true"); // no release delay
+    expect(burst()).toBe(played); // the same play runs on; nothing new starts
+    box.mockRestore();
+  });
   it("automatically prompts cleanup only after the initiated compound is verified successful", async () => {
     enableCompound(); await render();
     await act(async () => { controller.compound(); });
