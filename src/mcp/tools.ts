@@ -7,3 +7,4 @@ export { quoteCompound, prepareCompoundTransaction, submitCompoundTransaction } 
 export { quoteOpenPosition, previewOnlyMintAddress, prepareOpenPosition, submitOpenPosition } from "./tools/open";
 export { prepareWithdraw, submitWithdrawTransaction } from "./tools/withdraw";
 export { listRwaPairs } from "./tools/rwa";
+export { getPoolRangeApr } from "./tools/pool-apr";

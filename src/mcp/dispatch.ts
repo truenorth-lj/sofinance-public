@@ -9,6 +9,7 @@ import {
   submitSignedTransaction,
   submitCompoundTransaction,
   listRwaPairs,
+  getPoolRangeApr,
   getPositionPerformance,
   getPositionRangeStatus,
   quoteOpenPosition,
@@ -25,6 +26,7 @@ import {
   submitSignedTransactionSchema,
   submitCompoundTransactionSchema,
   listRwaPairsSchema,
+  getPoolRangeAprSchema,
   getPositionPerformanceSchema,
   getPositionRangeStatusSchema,
   quoteOpenPositionSchema,
@@ -36,7 +38,17 @@ import {
 
 export type McpDispatchContext =
   | { surface: "mcp-http"; tokenWallet: string }
+  /** Remote call with no (valid) bearer token: only `access: "public"` tools run. */
+  | { surface: "mcp-http-public" }
   | { surface: "mcp-stdio" };
+
+/**
+ * `public`: read-only tools over saved snapshots that need no wallet and no token on the remote server.
+ * `token` (default): everything else keeps the wallet-bound bearer token.
+ */
+export type ToolAccess = "public" | "token";
+
+export const TOKEN_REQUIRED_MESSAGE = "Unauthorized: this tool needs a wallet-bound MCP token";
 
 type WalletBinding<Input> =
   | { mode: "none" }
@@ -44,6 +56,7 @@ type WalletBinding<Input> =
   | { mode: "optional-match"; wallet: (input: Input) => string | undefined };
 
 type ToolDefinition<Input, Output> = {
+  access?: ToolAccess;
   parser: { parse(args: unknown): Input };
   missingArgs: "raw" | "empty-object";
   binding: WalletBinding<NoInfer<Input>>;
@@ -52,7 +65,10 @@ type ToolDefinition<Input, Output> = {
 
 /** Keep the parser's concrete output inside the closure, including transforms/defaults. */
 export function defineTool<Input, Output>(definition: ToolDefinition<Input, Output>) {
-  return async (args: unknown, context: McpDispatchContext): Promise<Awaited<Output>> => {
+  const access: ToolAccess = definition.access ?? "token";
+  const run = async (args: unknown, context: McpDispatchContext): Promise<Awaited<Output>> => {
+    // Defence in depth: the route already answers 401 before reaching here for token tools.
+    if (context.surface === "mcp-http-public" && access !== "public") throw new Error(TOKEN_REQUIRED_MESSAGE);
     const input = definition.parser.parse(definition.missingArgs === "empty-object" ? args ?? {} : args);
     const binding = definition.binding;
     if (context.surface === "mcp-http" && binding.mode !== "none") {
@@ -63,12 +79,13 @@ export function defineTool<Input, Output>(definition: ToolDefinition<Input, Outp
     }
     return await definition.handler(input);
   };
+  return Object.assign(run, { access });
 }
 
 const requiredWallet = { mode: "required-match", wallet: (input: { wallet: string }) => input.wallet } as const;
 const optionalWallet = { mode: "optional-match", wallet: (input: { wallet?: string }) => input.wallet } as const;
 const noWallet = { mode: "none" } as const;
-type ToolDispatch = (args: unknown, context: McpDispatchContext) => Promise<unknown>;
+type ToolDispatch = ((args: unknown, context: McpDispatchContext) => Promise<unknown>) & { access: ToolAccess };
 
 // Each concrete schema/handler pair is checked before the closures share an execution signature.
 export const TOOL_DISPATCH = {
@@ -112,7 +129,10 @@ export const TOOL_DISPATCH = {
     parser: getPositionRangeStatusSchema, missingArgs: "empty-object", binding: optionalWallet, handler: getPositionRangeStatus,
   }),
   list_rwa_pairs: defineTool({
-    parser: listRwaPairsSchema, missingArgs: "empty-object", binding: noWallet, handler: listRwaPairs,
+    access: "public", parser: listRwaPairsSchema, missingArgs: "empty-object", binding: noWallet, handler: listRwaPairs,
+  }),
+  get_pool_range_apr: defineTool({
+    access: "public", parser: getPoolRangeAprSchema, missingArgs: "raw", binding: noWallet, handler: getPoolRangeApr,
   }),
   submit_withdraw: defineTool({
     parser: submitWithdrawSchema, missingArgs: "raw", binding: requiredWallet,
@@ -128,6 +148,11 @@ export const TOOL_DISPATCH = {
 
 function isToolName(name: string): name is ToolName {
   return Object.hasOwn(TOOL_DISPATCH, name);
+}
+
+/** True only for a known tool whose dispatch entry is `access: "public"`. */
+export function isPublicTool(name: string): boolean {
+  return isToolName(name) && TOOL_DISPATCH[name].access === "public";
 }
 
 export async function dispatchTool(name: string, args: unknown, context: McpDispatchContext): Promise<unknown> {

@@ -36,6 +36,11 @@ function snapshot(label: string) {
   views.push({ label, text: container.textContent, buttons: [...container.querySelectorAll<HTMLButtonElement>("button")].map(b => ({ text: b.textContent, disabled: b.disabled })),
     amount: container.querySelector<HTMLInputElement>("#amount")?.value });
 }
+// The position row's Compound button is the only Compound entry (LJ 11/14).
+function rowCompound() {
+  const b = container.querySelector<HTMLButtonElement>('[data-testid="position-row-action"][data-tool="compound"]');
+  expect(b, "row Compound").not.toBeNull(); return b!;
+}
 async function click(label: string, scope?: string) { const b = button(label, scope); expect(b.disabled).toBe(false); await act(async () => b.click()); snapshot(label); }
 async function advance(ms: number) { await act(async () => vi.advanceTimersByTimeAsync(ms)); }
 async function ready() { await click("MAX"); await advance(450); expect(button("Add liquidity").disabled).toBe(false); snapshot("preview ready"); }
@@ -104,14 +109,15 @@ afterEach(async context => {
 });
 it("real Add busy blocks compound, then healthy preview resumes after HTTP failure", async () => {
   await ready(); await click("Add liquidity"); expect(count("/api/selected-prepare")).toBe(1);
-  expect(button("One-click compound").disabled).toBe(true); await act(async () => button("One-click compound").click());
+  expect(rowCompound().disabled).toBe(true); await act(async () => rowCompound().click());
   expect(count("/api/compound-prepare")).toBe(0); await advance(1000); expect(count("/api/selected-quote")).toBe(1);
   await act(async () => release(Response.json({ error: "Prepare rejected" }, { status: 400 })));
-  await advance(450); expect(button("Add liquidity").disabled).toBe(false); expect(button("One-click compound").disabled).toBe(false);
+  await advance(450); expect(button("Add liquidity").disabled).toBe(false); expect(rowCompound().disabled).toBe(false);
   snapshot("released");
 });
 it("real compound busy blocks Add caller while preview remains readable, then releases", async () => {
-  await ready(); await click("One-click compound"); expect(count("/api/compound-prepare")).toBe(1);
+  await ready(); expect(rowCompound().disabled).toBe(false); await act(async () => rowCompound().click()); snapshot("row Compound");
+  expect(count("/api/compound-prepare")).toBe(1); expect(rowCompound().disabled).toBe(true);
   expect(button("Another operation in progress…").disabled).toBe(true);
   await act(async () => button("Another operation in progress…").click()); expect(count("/api/selected-prepare")).toBe(0);
   expect(container.textContent).toContain("A compound or recovery operation is in progress.");
@@ -151,11 +157,11 @@ it("submission caller: wallet and send stages lock compound; a refused send free
   await act(async () => release(Response.json({quote:{...state,...quoteBody,spendA:"0",spendB:"0",roundtripCostInput:null,requested:"1000000",liquidity:"100",expiresAt:Date.now()+75000},
     simulated:true, permit:"synthetic-permit",startingLiquidity:state.liquidity,startingBalances:{input:"1000000",a:"1000000",b:"1000000000"},
     expiresAt:Date.now()+75000,blockhash:wallet,lastValidBlockHeight:100,unsignedTransaction:btoa(String.fromCharCode(...tx.serialize()))})));
-  expect(button("Confirm in your wallet…").disabled).toBe(true); expect(button("One-click compound").disabled).toBe(true); snapshot("wallet waiting");
+  expect(button("Confirm in your wallet…").disabled).toBe(true); expect(rowCompound().disabled).toBe(true); snapshot("wallet waiting");
   await act(async () => { unsigned.signatures[0]=new Uint8Array(64).fill(1); finishSign(unsigned); });
-  expect(button("One-click compound").disabled).toBe(true); expect(count("/api/tx-send")).toBe(1); snapshot("send waiting");
+  expect(rowCompound().disabled).toBe(true); expect(count("/api/tx-send")).toBe(1); snapshot("send waiting");
   await act(async () => finishSend(Response.json({error:"Simulation failed",sent:false},{status:503})));
-  await advance(450); expect(button("Add liquidity").disabled).toBe(false); expect(button("One-click compound").disabled).toBe(false);
+  await advance(450); expect(button("Add liquidity").disabled).toBe(false); expect(rowCompound().disabled).toBe(false);
   expect(container.textContent).toContain("Nothing was sent");
   expect(connection.signTransaction).toHaveBeenCalledOnce(); expect(count("/api/tx-send")).toBe(1);
 });

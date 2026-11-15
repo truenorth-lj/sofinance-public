@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PublicKey, SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { useCompoundController } from "./use-compound-controller";
-import { CompoundPanel, HarvestAccountManagement } from "./compound-panel";
+import { HarvestAccountManagement } from "./compound-panel";
+import { RowCompoundHarness } from "./test-support/row-compound";
 import { compoundAttemptKey, compoundReceiptsKey, persistCompoundAttempt, persistCompoundReceipt, type CompoundAttempt, type CompoundReceipt } from "@sofinance/engine/compound-attempt";
 import { persistCleanupBatch } from "@/lib/compound-cleanup-batch-attempt";
 import { compoundHistoryFixture } from "@/lib/test-support/compound-history-fixture";
@@ -27,7 +28,8 @@ function Harness() {
   const value = useCompoundController({ wallet, positionMint, externalBlocked: false, onConfirmed: mocks.confirmed });
   useLayoutEffect(() => { controller = value; });
   // Harvest account management moved to its own recovery page (LJ 11/14): same controller, rendered beside the panel here.
-  return createElement(Fragment, null, createElement(CompoundPanel, { controller: value }), createElement(HarvestAccountManagement, { controller: value }));
+  // The Compound fees panel is gone (LJ 11/14): the Raydium row's Compound (button + status) and the page-level dialog.
+  return createElement(Fragment, null, createElement(RowCompoundHarness, { controller: value }), createElement(HarvestAccountManagement, { controller: value }));
 }
 const render = async () => { await act(async () => root.render(createElement(Harness))); await act(async () => { await vi.advanceTimersByTimeAsync(1); }); };
 const receipt = (index = 0): CompoundReceipt => ({ wallet: fixture.wallet, positionMint: fixture.state.positionMint,
@@ -354,25 +356,6 @@ describe("automatic cleanup after a new compound", () => {
       return handler(url, init);
     });
   }
-  it.each(["success", "failed"] as const)("plays the success halo only after a confirmed compound (confirmation: %s)", async status => {
-    const context = new Proxy({}, { get: (_target, key) => (key === "createRadialGradient" ? () => ({ addColorStop: () => {} }) : () => {}), set: () => true });
-    const getContext = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(() => context as never);
-    // happy-dom has no layout: give the panel a visible box so the overlay has a slice to cover.
-    const box = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() =>
-      ({ left: 0, top: 0, width: 400, height: 600, right: 400, bottom: 600, x: 0, y: 0, toJSON() {} }) as DOMRect);
-    confirmationStatus = status;
-    enableCompound(); await render();
-    expect(container.querySelector('[data-testid="compound-halo"]')).toBeNull();
-    await act(async () => { controller.compound(); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(16); });
-    expect(controller.attemptStatus).toBe(status);
-    // The "Compound confirmed" dialog is still open: the halo must not play yet.
-    expect(container.querySelector('[data-testid="compound-halo"]')).toBeNull();
-    await act(async () => { controller.dismissFeedback(); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(16); });
-    expect(Boolean(container.querySelector('[data-testid="compound-halo"]'))).toBe(status === "success");
-    getContext.mockRestore(); box.mockRestore();
-  });
   it("automatically prompts cleanup only after the initiated compound is verified successful", async () => {
     enableCompound(); await render();
     await act(async () => { controller.compound(); });
@@ -533,4 +516,75 @@ it("recovery wait exclusively checks its signature until selection cancellation 
   expect(checks().every(([, init]) => JSON.parse(String(init?.body)).attempt.signature === signature)).toBe(true);
   expect(JSON.parse(window.localStorage.getItem(compoundAttemptKey(fixture.wallet))!).signature).toBe(signature);
   expect(mocks.sign).toHaveBeenCalledOnce(); expect(broadcastCount).toBe(1);
+});
+
+describe("the position row's Compound button (the only Compound entry, LJ 11/14)", () => {
+  const rowButton = () => container.querySelector<HTMLButtonElement>('[data-testid="position-row-action"][data-tool="compound"]')!;
+  const rowStatus = () => container.querySelector('[data-testid="row-compound-status"]');
+  function prepareOk() {
+    positionMint = fixture.state.positionMint;
+    const handler = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === "/api/compound-prepare") {
+        const summary = { ...fixture.attempt.summary, simulatedAt: Date.now(), expiresAt: Date.now() + 60_000 };
+        const tx = new VersionedTransaction(new TransactionMessage({ payerKey: testKeypair(1).publicKey,
+          recentBlockhash: summary.blockhash, instructions: [] }).compileToV0Message());
+        return Response.json({ summary, permit: "synthetic", unsignedTransaction: Buffer.from(tx.serialize()).toString("base64") });
+      }
+      return handler(url, init);
+    });
+  }
+  const prepareCalls = () => fetchMock.mock.calls.filter(([url]) => url === "/api/compound-prepare").length;
+  it("drives the compound: loading on the row, and the Protocol fee stated under it before the wallet signs", async () => {
+    prepareOk(); confirmationStatus = "success";
+    let approve!: (tx: VersionedTransaction) => void; let unsigned!: VersionedTransaction;
+    mocks.sign.mockImplementation((tx: VersionedTransaction) => { unsigned = tx; return new Promise(done => { approve = done; }); });
+    await render();
+    expect(container.textContent).not.toContain("One-click compound");
+    expect(rowButton().textContent).toBe("Compound"); expect(rowButton().disabled).toBe(false);
+    await act(async () => rowButton().click());
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(prepareCalls()).toBe(1);
+    // The wallet prompt is open and nothing is signed yet: the row is busy and the fee is on screen.
+    expect(mocks.sign).toHaveBeenCalledOnce(); expect(controller.stage).toBe("wallet");
+    expect(rowButton().disabled).toBe(true); expect(rowButton().textContent).toBe("Confirming in wallet…");
+    expect(rowStatus()?.querySelector('[data-testid="compound-protocol-fee"]')?.textContent).toMatch(/^Protocol fee \(0\.10%\): /);
+    await act(async () => { unsigned.sign([testKeypair(1)]); approve(unsigned); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(16); });
+    expect(controller.attemptStatus).toBe("success");
+  });
+  it("a wallet rejection says cancelled on the row, in plain words, and frees the button", async () => {
+    prepareOk();
+    mocks.sign.mockRejectedValue(new Error("User rejected the request. (code 4001)"));
+    await render();
+    await act(async () => rowButton().click());
+    await act(async () => { await vi.advanceTimersByTimeAsync(16); });
+    const error = container.querySelector('[data-testid="row-compound-status"] [data-testid="row-compound-error"]');
+    expect(error?.textContent).toBe("You cancelled in your wallet. Nothing was sent.");
+    expect(rowButton().disabled).toBe(false);
+  });
+  it("a failed preparation shows a plain error on the row (no codes, not 'cancelled') and nothing is signed", async () => {
+    positionMint = fixture.state.positionMint;
+    const handler = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => url === "/api/compound-prepare"
+      ? Response.json({ error: "The network is busy. Try again in a moment.", code: "rpc_unavailable" }, { status: 503 }) : handler(url, init));
+    await render();
+    await act(async () => rowButton().click());
+    await act(async () => { await vi.advanceTimersByTimeAsync(16); });
+    const error = container.querySelector('[data-testid="row-compound-status"] [data-testid="row-compound-error"]');
+    expect(error?.textContent).toBe("The network is busy. Try again in a moment.");
+    expect(mocks.sign).not.toHaveBeenCalled();
+    expect(rowButton().disabled).toBe(false);
+  });
+  it("is disabled on the row with the plain reason when there are no fees, and nothing is prepared", async () => {
+    positionMint = fixture.state.positionMint;
+    const handler = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => url === "/api/compound-state"
+      ? Response.json({ ...fixture.state, fees: { a: "0", b: "0" } }) : handler(url, init));
+    await render();
+    expect(rowButton().disabled).toBe(true);
+    expect(container.querySelector('[data-testid="row-compound-blocked"]')?.textContent).toBe("Currently no fees available to compound");
+    await act(async () => rowButton().click());
+    expect(prepareCalls()).toBe(0);
+  });
 });

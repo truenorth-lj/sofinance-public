@@ -18,7 +18,11 @@ vi.mock("./use-sol-usdc-price", () => ({ useSolUsdcPrices: () => ({ rate: null, 
 vi.mock("./use-token-metadata", () => ({ useTokenMetadata: () => ({}) }));
 vi.mock("./wallet-connection", () => ({ useWalletConnection: () => ({ address: activeWallet, connected: !!activeWallet, signTransaction: mocks.sign }) }));
 vi.mock("./use-selected-controller", () => ({ useSelectedController: () => ({
-  wallet: activeWallet, connected: !!activeWallet, connect: vi.fn(), disconnect: vi.fn(), discovery: null, state: null,
+  wallet: activeWallet, connected: !!activeWallet, connect: vi.fn(), disconnect: vi.fn(), state: null,
+  // With `withRow`, the wallet scan lists the selected position, so it has its row (and the row's compound status).
+  discovery: withRow ? { wallet: activeWallet, slot: 1, fetchedAt: 1, assets: [], positions: [{ positionMint: selectedMint, positionAccount: "p",
+    poolId: "pool", mintA: fixture.state.mintA, mintB: fixture.state.mintB, symbolA: "A", symbolB: "B", decimalsA: 6, decimalsB: 6, feeTierBps: 1,
+    tickLower: -10, tickUpper: 10, tickCurrent: 0, rangeSide: "inside", liquidity: "1" }] } : null,
   selection: { positionMint: selectedMint, inputMint: USDC_MINT, inputKind: "token" }, amount: "200", tolerancePercent: "2.0",
   result: { simulated: true }, calculating: false, quote: null, status: "Estimation complete, ready to send to wallet for signing",
   actionLabel: "Add liquidity", actionDisabled: false, primaryAction: mocks.add, walletBlocked: false, busy: false,
@@ -33,6 +37,7 @@ vi.mock("./use-compound-controller", async (importOriginal) => {
 });
 
 let activeWallet: string | undefined;
+let withRow = false;
 let selectedMint: string;
 let controller: ReturnType<typeof useCompoundController>;
 let container: HTMLDivElement, root: Root;
@@ -52,7 +57,7 @@ async function render(initialView: "compound" | "deposit" = "deposit") {
   await advance(1); await advance(1);
 }
 beforeEach(() => {
-  vi.useFakeTimers(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); window.localStorage.clear();
+  vi.useFakeTimers(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); window.localStorage.clear(); withRow = false;
   fixture = compoundHistoryFixture(); activeWallet = fixture.wallet;
   selectedMint = testKeypair(80).publicKey.toBase58(); // The old compound belongs to another NFT.
   mocks.add.mockReset(); mocks.sign.mockReset(); mocks.refresh.mockReset();
@@ -142,10 +147,10 @@ describe("compound history warnings in the real SelectedApp", () => {
     expect(view.textContent).toContain("0 records for this position");
     expect(view.textContent).toContain("Other positions (1 records)");
     expect(controller.canCompound).toBe(true);
-    selectedMint = fixture.attempt.positionMint;
-    // The selected position's own transaction shows open in its Compound panel on the Portfolio screen…
+    selectedMint = fixture.attempt.positionMint; withRow = true;
+    // The selected position's own transaction shows open under its row on the Portfolio screen (no Compound panel)…
     await render("compound");
-    const selectedSuccess = [...container.querySelectorAll('#compound-view [role="status"]')].find(node => node.textContent === "Compound confirmed on-chain")!;
+    const selectedSuccess = [...container.querySelectorAll('[data-testid="row-compound-status"] [role="status"]')].find(node => node.textContent === "Compound confirmed on-chain")!;
     expect(selectedSuccess.closest("details")).toBeNull();
     // …and its records are scoped to it on the recovery page.
     await renderRecovery();
