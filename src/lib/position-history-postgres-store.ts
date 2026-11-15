@@ -6,8 +6,8 @@ import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import * as schema from "../db/schema";
 import {
-  MAX_POSITION_HISTORY_TRANSACTIONS, POSITION_HISTORY_LEASE_MS, PositionHistoryStoreError, positionStoreRequestSchema,
-  type PositionContext, type PositionHistoryLease, type PositionHistorySnapshot, type PositionHistoryReadSnapshot,
+  MAX_POSITION_HISTORY_TRANSACTIONS, POSITION_HISTORY_LEASE_MS, UNVERIFIED_POSITION_HISTORY_UPDATED_AT, PositionHistoryStoreError, positionStoreRequestSchema,
+  type PositionContext, type PositionHistoryLease, type PositionHistorySnapshot, type PositionHistoryReadSnapshot, type PositionHistoryReadResult,
   type PositionHistoryStore, type PositionStoreRequest, type PositionStoreOperation, type PositionStoreResultMap, type PositionStoreHandlers, type StoredPositionTransaction,
 } from "./position-history-store-types";
 
@@ -51,12 +51,12 @@ export class PostgresPositionHistoryStore implements PositionHistoryStore {
     commit: input => this.commit(input),
   };
 
-  private async read(context: PositionContext): Promise<PositionHistoryReadSnapshot | null> {
+  private async read(context: PositionContext): Promise<PositionHistoryReadResult> {
     // One statement supplies a consistent MVCC view of state and transactions.
     // Count/byte guards run before the scalar aggregate is evaluated, so an
     // oversized event ledger never crosses the database transport. Receipts are
     // excluded even when a newer parser would need them for background replay.
-    const [row] = await this.orm.execute<{ context: PositionContext; count: number;
+    const [row] = await this.orm.execute<{ context: PositionContext | null; count: number; readAt: string;
       snapshot: PositionHistoryReadSnapshot | null }>(sql`
       WITH bounded AS MATERIALIZED (
         SELECT slot,signature,jsonb_build_object('signature',signature,'slot',slot,
@@ -72,26 +72,32 @@ export class PostgresPositionHistoryStore implements PositionHistoryStore {
           'headSignature',head_signature,'backfillBefore',backfill_before,
           'deltaBefore',delta_before,'deltaHead',delta_head,'complete',complete,
           'revision',revision,'parserVersion',parser_version),
-          'updatedAt',updated_at,'readAt',statement_timestamp(),
+          'updatedAt',updated_at,
           'syncing',COALESCE(lease_owner IS NOT NULL AND lease_expires_at>${now},false),
           'transactions','[]'::jsonb) AS metadata
         FROM ${state} WHERE position_mint=${context.positionMint}
       )
-      SELECT target.context,size.count,CASE WHEN size.count<=${MAX_POSITION_HISTORY_TRANSACTIONS}
-        AND size.bytes+octet_length(target.metadata::text)+GREATEST(size.count-1,0)<=${MAX_POSITION_HISTORY_RESPONSE_BYTES}
+      SELECT target.context,size.count,statement_timestamp()::text AS "readAt",
+        CASE WHEN target.context IS NOT NULL AND size.count<=${MAX_POSITION_HISTORY_TRANSACTIONS}
+        AND size.bytes+octet_length(target.metadata::text)+GREATEST(size.count-1,0)+128<=${MAX_POSITION_HISTORY_RESPONSE_BYTES}
         THEN target.metadata||jsonb_build_object('transactions',COALESCE(
           (SELECT jsonb_agg(payload ORDER BY slot,signature) FROM bounded),'[]'::jsonb))
         ELSE NULL END AS snapshot
-      FROM target CROSS JOIN size`);
-    if (!row) return null;
-    if (Object.entries(context).some(([key, value]) => row.context[key as keyof PositionContext] !== value))
+      FROM size LEFT JOIN target ON true`);
+    if (!row) throw new PositionHistoryStoreError("POSITION_STORE_UNAVAILABLE");
+    const readAt = new Date(row.readAt).toISOString();
+    const storedContext = row.context;
+    if (!storedContext) return { readAt, snapshot: null };
+    if (Object.entries(context).some(([key, value]) => storedContext[key as keyof PositionContext] !== value))
       throw new PositionHistoryStoreError("CONTEXT_MISMATCH");
     if (row.count > MAX_POSITION_HISTORY_TRANSACTIONS)
       throw new PositionHistoryStoreError("POSITION_HISTORY_TOO_LARGE");
     if (!row.snapshot || Buffer.byteLength(JSON.stringify(row.snapshot)) > MAX_POSITION_HISTORY_RESPONSE_BYTES)
       throw new PositionHistoryStoreError("POSITION_HISTORY_RESPONSE_TOO_LARGE");
-    return { ...row.snapshot, updatedAt: new Date(row.snapshot.updatedAt).toISOString(),
-      readAt: new Date(row.snapshot.readAt).toISOString() };
+    const result = { readAt, snapshot: { ...row.snapshot, updatedAt: new Date(row.snapshot.updatedAt).toISOString() } };
+    if (Buffer.byteLength(JSON.stringify(result)) > MAX_POSITION_HISTORY_RESPONSE_BYTES)
+      throw new PositionHistoryStoreError("POSITION_HISTORY_RESPONSE_TOO_LARGE");
+    return result;
   }
 
   private async snapshot(tx: Transaction, row: typeof state.$inferSelect, parserVersion: number,
@@ -162,7 +168,7 @@ export class PostgresPositionHistoryStore implements PositionHistoryStore {
       // The upsert locks an existing row before testing its lease. Concurrent
       // first readers therefore follow the same acquisition path as warm ones.
       const [claimed] = await tx.insert(state).values({ positionMint: context.positionMint, context, parserVersion,
-        leaseOwner: owner, leaseEpoch: 1, leaseExpiresAt: expiresAt }).onConflictDoUpdate({
+        leaseOwner: owner, leaseEpoch: 1, leaseExpiresAt: expiresAt, updatedAt: UNVERIFIED_POSITION_HISTORY_UPDATED_AT }).onConflictDoUpdate({
         target: state.positionMint,
         set: { leaseOwner: owner, leaseEpoch: sql`${state.leaseEpoch}+1`, leaseExpiresAt: expiresAt },
         setWhere: and(sql`${state.context} @> ${JSON.stringify(context)}::jsonb`,
@@ -236,7 +242,8 @@ export class PostgresPositionHistoryStore implements PositionHistoryStore {
       // Fence after every transaction write; failures roll all of them back.
       // Freshness describes when this worker started checking the chain. Its
       // later completion must not acknowledge a refresh requested in between.
-      const [updated] = await tx.update(state).set({ ...input.state, revision: sql`${state.revision}+1`, updatedAt: leaseStartedAt })
+      const [updated] = await tx.update(state).set({ ...input.state, revision: sql`${state.revision}+1`,
+        updatedAt: input.checked ? leaseStartedAt : UNVERIFIED_POSITION_HISTORY_UPDATED_AT })
         .where(leaseWhere(input.lease)).returning();
       if (!updated) throw new PositionHistoryStoreError("LEASE_LOST");
       const result = await this.snapshot(tx, updated, input.state.parserVersion, null);

@@ -62,6 +62,10 @@ export function usePortfolioFigures(wallet: string | null, keys: readonly string
             for (const key of batch) {
               const checked = portfolioPositionSchema.safeParse(body.positions.find((item) => item.key === key));
               if (!checked.success) throw new Error("Invalid Portfolio row");
+              if (round && checked.data.status === "failed" && rows[key]) {
+                rows[key] = stopped(rows[key]!);
+                continue;
+              }
               rows[key] = checked.data;
               const marker = markers.get(key);
               const acknowledged = rows[key]!.historyComplete && rows[key]!.historyRefreshResolved;

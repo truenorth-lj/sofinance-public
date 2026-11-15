@@ -13,15 +13,17 @@ const opening = (): StoredPositionTransaction => ({ signature: signature("a"), s
   status: "parsed", receipt: null, parserVersion: POSITION_HISTORY_PARSER_VERSION,
   events: [{ kind: "open", poolState: context.poolId, nftOwner: "8".repeat(32), tickLower: 0, tickUpper: 1,
     liquidity: "100", amountA: "20", amountB: "30" }] });
-function snapshot(): PositionHistoryReadSnapshot {
+function snapshot(): PositionHistoryReadSnapshot & { readAt: string } {
   return { lease: null, state: { headSignature: signature("a"), backfillBefore: signature("a"),
     complete: true, revision: 1, parserVersion: POSITION_HISTORY_PARSER_VERSION },
   transactions: [opening()], updatedAt: iso(-1000), readAt: iso(), syncing: false };
 }
-function reader(value: PositionHistoryReadSnapshot | null) {
+function reader(value: (PositionHistoryReadSnapshot & { readAt: string }) | null) {
   const request = vi.fn(async (input: { op: string }) => {
     if (input.op !== "read") throw new Error("Foreground snapshot must not acquire or mutate a lease");
-    return value;
+    if (!value) return { readAt: iso(), snapshot: null };
+    const { readAt, ...snapshot } = value;
+    return { readAt, snapshot };
   });
   return { request, store: { request: request as PositionHistoryStore["request"] } };
 }
@@ -87,6 +89,15 @@ describe("Portfolio persisted history read", () => {
     expect(result.historyRefreshAfter).toBe(iso());
     expect(result.historyRefreshResolved).toBe(false);
     expect(result.needsSync).toBe(true);
+  });
+
+  it("retains the DB clock barrier when the first forced read has no stored row", async () => {
+    vi.setSystemTime(now + 120_000);
+    const cold = await readPortfolioHistory({ store: reader(null).store, context, fresh: true });
+    expect(cold.historyRefreshAfter).toBe(iso());
+    const checked = snapshot(); checked.updatedAt = iso(1000); checked.readAt = iso(2000);
+    const poll = await readPortfolioHistory({ store: reader(checked).store, context, refreshAfter: cold.historyRefreshAfter });
+    expect(poll.historyStatus).toBe("fresh"); expect(poll.historyRefreshResolved).toBe(true);
   });
 
   it("does not acknowledge old in-flight work merely because it finishes after a new refresh", async () => {

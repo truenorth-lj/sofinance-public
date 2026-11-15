@@ -50,13 +50,14 @@ class MemoryStore implements PositionHistoryStore {
   claims = 0;
   locked = false;
   commitSizes: number[] = [];
+  commitChecks: boolean[] = [];
   async request<K extends PositionStoreOperation>(input: PositionStoreRequest<K>): Promise<PositionStoreResultMap[K]> {
     positionStoreRequestSchema.parse(input);
     return this.handlers[input.op](input);
   }
   private readonly handlers: PositionStoreHandlers = {
-    read: async () => ({ ...structuredClone(this.snapshot), lease: null,
-      updatedAt: "2026-11-15T00:00:00.000Z", readAt: "2026-11-15T00:00:00.000Z", syncing: this.locked }),
+    read: async () => ({ readAt: "2026-11-15T00:00:00.000Z", snapshot: { ...structuredClone(this.snapshot), lease: null,
+      updatedAt: "2026-11-15T00:00:00.000Z", syncing: this.locked } }),
     claim: async () => {
       this.claims++;
       return { ...structuredClone(this.snapshot), lease: this.locked ? null : { positionMint: context.positionMint,
@@ -65,6 +66,7 @@ class MemoryStore implements PositionHistoryStore {
     release: async input => { this.released++; this.releaseChecks.push(input.checked === true); return true; },
     commit: async input => {
       this.commitSizes.push(input.transactions.length);
+      this.commitChecks.push(input.checked === true);
       const rows = new Map(this.snapshot.transactions.map(row => [row.signature, row]));
       for (const row of input.transactions) rows.set(row.signature, structuredClone(row));
       this.snapshot = { lease: null, state: { ...input.state, revision: this.snapshot.state.revision + 1 },
@@ -632,13 +634,16 @@ describe("incremental position history", () => {
     upstream.ids.unshift(3, 2);
     upstream.txs.set(2, receipt(2)); upstream.txs.set(3, receipt(3));
     expect((await run()).truncated).toBe(true);
+    expect(store.commitChecks.at(-1)).toBe(false);
     upstream.ids.unshift(4); upstream.txs.set(4, receipt(4));
     const previousWindow = await run();
     expect(previousWindow.truncated).toBe(true);
     expect(previousWindow.metric.canContinue).toBe(true);
+    expect(store.commitChecks.at(-1)).toBe(false);
     expect(store.snapshot.state.headSignature).toBe(signature(3));
     expect((await run()).truncated).toBe(false);
     expect(store.snapshot.state.headSignature).toBe(signature(4));
+    expect(store.commitChecks.at(-1)).toBe(true);
   });
 
   it("marks already-retained pre-creation pending rows irrelevant after recovering the opening", async () => {

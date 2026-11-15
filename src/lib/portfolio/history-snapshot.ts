@@ -15,7 +15,7 @@ export async function readPortfolioHistory(options: {
   refreshAfter?: string; afterSignatures?: string[];
 }): Promise<SnapshotResult> {
   const started = Date.now();
-  const snapshot = await options.store.request({ op: "read", context: options.context, parserVersion: POSITION_HISTORY_PARSER_VERSION });
+  const { snapshot, readAt: observedAt } = await options.store.request({ op: "read", context: options.context, parserVersion: POSITION_HISTORY_PARSER_VERSION });
   const rows = snapshot?.transactions ?? [];
   const current = rows.filter((row) => row.status === "parsed" && row.parserVersion === POSITION_HISTORY_PARSER_VERSION);
   const history = current.filter((row) => row.events.length).map(({ signature, slot, blockTime, events }) => ({ signature, slot, blockTime, events }))
@@ -27,9 +27,9 @@ export async function readPortfolioHistory(options: {
   // Only finalized failed signatures or included cashflow events acknowledge a transaction.
   const observed = new Set([...history.map((row) => row.signature), ...rows.filter((row) => row.status === "failed").map((row) => row.signature)]);
   const signaturesResolved = (options.afterSignatures ?? []).every((signature) => observed.has(signature));
-  const refreshAfter = options.refreshAfter ?? (options.fresh ? snapshot?.readAt ?? new Date(started).toISOString() : undefined);
+  const refreshAfter = options.refreshAfter ?? (options.fresh ? observedAt : undefined);
   const checked = snapshot ? Date.parse(snapshot.updatedAt) : NaN;
-  const readAt = snapshot ? Date.parse(snapshot.readAt) : started;
+  const readAt = Date.parse(observedAt);
   const age = readAt - checked;
   const fresh = complete && signaturesResolved && Number.isFinite(age) && age >= 0 && age < PORTFOLIO_HISTORY_TTL_MS
     && (!refreshAfter || checked >= Date.parse(refreshAfter));
@@ -38,9 +38,11 @@ export async function readPortfolioHistory(options: {
       txCount: current.length, elapsedMs: Date.now() - started, provider: "default", source: "databaseSnapshot",
       defaultTxCount: 0, fallbackReasons: [], cachedTxCount: rows.length, fetchedTxCount: 0, listingCount: 0,
       historyComplete: complete, historySyncedAt: snapshot?.updatedAt,
-      refreshSignaturesResolved: signaturesResolved && fresh,
+      // Valuation uses this metric to withhold fees for missing transactions.
+      // Age/Refresh barriers belong to DTO freshness, not ledger completeness.
+      ...(options.afterSignatures?.length ? { refreshSignaturesResolved: signaturesResolved } : {}),
     } },
-    historyUpdatedAt: complete && Number.isFinite(checked) ? new Date(checked).toISOString() : null,
+    historyUpdatedAt: complete && Number.isFinite(checked) && checked > 0 ? new Date(checked).toISOString() : null,
     historyStatus: fresh && !snapshot?.syncing ? "fresh" : "updating",
     historyRefreshAfter: refreshAfter,
     historyRefreshResolved: fresh && signaturesResolved,

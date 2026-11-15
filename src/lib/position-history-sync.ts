@@ -329,7 +329,10 @@ export async function syncPositionHistory(options: SyncPositionHistoryOptions): 
     // A no-change lookup needs only release; avoid republishing the identical full ledger.
     if (!updates.size && unchangedState) return result(oldState, snapshot.transactions);
     const committed = await measure("commitMs", () => options.store.request({ op: "commit", lease: snapshot.lease!,
-      state, transactions: [...updates.values()] }));
+      // `safe` includes contiguous checkpoints, current parsing and no newer
+      // head observed while resuming a delta. Persisting progress alone is not
+      // proof that this request has caught up with the latest chain state.
+      state, transactions: [...updates.values()], checked: safe && state.complete && !options.signal?.aborted }));
     return result(committed.state, committed.transactions);
   } finally {
     // The lease expires even if an upstream/storage failure prevents release.

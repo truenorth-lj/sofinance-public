@@ -71,6 +71,16 @@ describe("Portfolio client request lifecycle", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
     expect(fetchMock).toHaveBeenCalledTimes(2); expect(container.textContent).toBe("10"); expect(latest[key]?.historyStatus).toBe("stale");
   });
+  it("keeps available figures when an HTTP-successful poll contains a failed position", async () => {
+    vi.useFakeTimers();
+    fetchMock.mockResolvedValueOnce(Response.json({ wallet: "A", positions: [{ ...row(), historyStatus: "updating", historyUpdatedAt: "2026-11-15T00:00:00Z" }] }))
+      .mockResolvedValueOnce(Response.json({ wallet: "A", positions: [{ ...row(), status: "failed",
+        figures: { stock: null, shares: null, valueUsd: null, unclaimedFeesUsd: null, cumulativeFeesUsd: null },
+        historyComplete: false, historyRefreshResolved: false }] }));
+    await render("A"); await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(fetchMock).toHaveBeenCalledTimes(2); expect(container.textContent).toBe("10");
+    expect(latest[key]?.historyStatus).toBe("stale"); expect(latest[key]?.status).toBe("ready");
+  });
   it("waits for discovery, sends one request, and does not refetch on incidental renders", async () => {
     fetchMock.mockResolvedValue(Response.json({ wallet: "A", positions: [row()] }));
     await render("A", 0, true); expect(fetchMock).not.toHaveBeenCalled();

@@ -22,6 +22,8 @@ describe("position history schema and transport validation", () => {
     expect(positionStoreRequestSchema.parse({ op: "release", lease, checked: true }))
       .toEqual({ op: "release", lease, checked: true });
     expect(positionStoreRequestSchema.safeParse({ op: "release", lease, checked: "true" }).success).toBe(false);
+    expect(positionStoreRequestSchema.parse({ ...commit, checked: true })).toEqual({ ...commit, checked: true });
+    expect(positionStoreRequestSchema.safeParse({ ...commit, checked: "true" }).success).toBe(false);
   });
 
   it("adds exactly the two approved tables, keeps replay events and enforces fixed network identity", () => {
