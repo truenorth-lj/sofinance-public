@@ -11,7 +11,7 @@ async function fillReadyInput(page: Page) {
   await expect(input).toHaveValue("1");
 }
 
-async function setup(page: Page, wallet: FakeWallet, options: { selectedStateGate?: () => Promise<void>; connectOnly?: boolean; prepareFails?: boolean; uncertainSend?: boolean; previewGate?: Promise<void>; previewFails?: boolean; skipPreviewWait?: boolean; historyStatus?: "pending" | "manual-review" | "invalid" | "legacy"; nativeSol?: boolean; finality?: () => string } = {}) {
+async function setup(page: Page, wallet: FakeWallet, options: { selectedStateGate?: () => Promise<void>; connectOnly?: boolean; prepareFails?: boolean; uncertainSend?: boolean; previewGate?: Promise<void>; previewFails?: boolean; previewRefusal?: { error: string; code: string }; skipPreviewWait?: boolean; historyStatus?: "pending" | "manual-review" | "invalid" | "legacy"; nativeSol?: boolean; finality?: () => string } = {}) {
   const positionMint = randomAddress(), mintA = randomAddress(), mintB = randomAddress();
   const inputMint = options.nativeSol ? "So11111111111111111111111111111111111111112" : "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
   const poolId = randomAddress(), positionAccount = randomAddress();
@@ -47,6 +47,7 @@ async function setup(page: Page, wallet: FakeWallet, options: { selectedStateGat
       quoteRequests.push(body);
       await options.previewGate;
       if (options.previewFails) return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Quote unavailable" }) });
+      if (options.previewRefusal) return route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify(options.previewRefusal) });
       value = preview;
     }
     if (pathname === "/api/selected-preflight") throw new Error("Automatic full preflight must not run");
@@ -333,3 +334,23 @@ test("failed preview stops the spinner and offers explicit recalculation", async
   await expect(page.getByRole("button", { name: "Recalculate" })).toBeVisible();
   expect(wallet.ledger).toEqual([]);
 });
+
+// /api/selected-quote's market-value floor (add-value-guard): the plain reason is shown before anything is prepared or signed.
+const VALUE_FLOOR_REFUSAL = {
+  error: "Only about $6.40 of your $400 would go into this position (plus about $0.40 left in your wallet), because the swap price for this amount is too far from the market price. Nothing was sent. Try a smaller amount.",
+  code: "add_value_too_low",
+};
+for (const width of [1280, 375]) {
+  test(`market-value floor refusal shows the plain reason and never prepares or signs at ${width}px`, async ({ page, wallet, guards }) => {
+    guards.allowConsole(/^Failed to load resource: the server responded with a status of 400/);
+    await page.setViewportSize({ width, height: width === 375 ? 812 : 900 });
+    const { add, calls } = await setup(page, wallet, { previewRefusal: VALUE_FLOOR_REFUSAL, skipPreviewWait: true });
+    const alert = page.getByRole("alert").filter({ hasText: "Only about $6.40 of your $400 would go into this position" });
+    await expect(alert).toBeVisible();
+    await expect(alert).not.toContainText(/cancel|add_value_too_low/i);
+    await expect(add).toBeDisabled();
+    expect(calls).not.toContain("/api/selected-prepare");
+    expect(calls).not.toContain("/api/tx-send");
+    expect(wallet.ledger).toEqual([]);
+  });
+}

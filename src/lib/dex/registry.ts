@@ -94,6 +94,8 @@ export function dexDescriptorProblems(descriptors: readonly DexDescriptor[]): st
     for (const problem of feePolicyProblems(descriptor.meta.feePolicy)) problems.push(`${descriptor.id}: ${problem}`);
     const { min, max } = descriptor.meta.openSteps;
     if (!(Number.isInteger(min) && Number.isInteger(max) && min >= 1 && max >= min)) problems.push(`${descriptor.id}: openSteps must be 1 <= min <= max`);
+    const floor = descriptor.meta.addValueFloorBps;
+    if (floor !== undefined && !(Number.isInteger(floor) && floor > 0 && floor <= 10_000)) problems.push(`${descriptor.id}: addValueFloorBps must be an integer 1-10000`);
   }
   return problems;
 }
