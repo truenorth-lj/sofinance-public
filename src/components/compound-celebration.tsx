@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import {
-  CATCHER_SPRITES, CELEBRATION_MS, COIN_COUNT, FALL_MS, REDUCED_MS, beadFlights, beadKeyframes, catcherKeyframes, celebrationToPlay,
+  CATCHER, CATCHER_SPRITES, COIN_COLORS, coinFace, coinGrid, coinSprite, scenePixel, CELEBRATION_MS, COIN_COUNT, FALL_MS, REDUCED_MS, beadFlights, beadKeyframes, catcherKeyframes, celebrationToPlay,
   pickCoinLogos, planCatcher, reducedSpots, seedFrom, seededRandom, spriteRuns,
   type CatcherPlan, type CatcherPose, type Point,
 } from "@/lib/compound-celebration/coins";
@@ -26,7 +26,7 @@ type Feedback = { phase: string; signature: string } | null;
  * One play: `id` changes on every play (a new play while one runs restarts it); `logos` are already preloaded.
  * The coins pop out of the burst's `originRef` (the popup's Done, or the row's Compound button).
  */
-export type CelebrationPlay = { id: number; seed: number; logos: string[] } | null;
+export type CelebrationPlay = { id: number; seed: number; logos: string[]; origin?: Point | null } | null;
 
 const coinCount = () => (typeof window !== "undefined" && window.innerWidth < 640 ? COIN_COUNT.narrow : COIN_COUNT.wide);
 const centre = (rect: { left: number; top: number; width: number; height: number }): Point =>
@@ -38,24 +38,35 @@ function preload(urls: readonly string[]) {
 }
 
 /**
- * Coins for a CONFIRMED compound, played on the confirmed landing, once per signature. Clicking Compound never plays
- * them. The position's `symbols` choose the logos (preloaded with the play).
+ * Coins for a CONFIRMED compound, played only from the result's Done: a confirmed success is armed (its coins chosen
+ * from the position's `symbols` and preloaded), and `celebrateFrom(done)` plays it from that button's box when Done is
+ * clicked. Closing the popup any other way, or a send that is not a confirmed success, plays nothing. Once per signature.
  */
-export function useCompoundCelebration(feedback: Feedback, symbols: readonly (string | null | undefined)[] = []): { play: CelebrationPlay } {
+export function useCompoundCelebration(feedback: Feedback, symbols: readonly (string | null | undefined)[] = []): {
+  play: CelebrationPlay; celebrateFrom: (done: DOMRect | null | undefined) => void;
+} {
   const lastPlayed = useRef<string | null>(null);
+  const armed = useRef<{ signature: string; seed: number; logos: string[] } | null>(null);
   const [play, setPlay] = useState<CelebrationPlay>(null);
   const phase = feedback?.phase ?? null;
   const signature = feedback?.signature ?? null;
   const symbolKey = symbols.join("|");
   useEffect(() => {
     const next = celebrationToPlay(phase && signature ? { phase, signature } : null, lastPlayed.current);
-    if (!next) return;
-    lastPlayed.current = next;
+    if (!next) { armed.current = null; return; }
+    if (armed.current?.signature === next) return;
     const seed = seedFrom(next);
-    const logos = pickCoinLogos(symbolKey.split("|"), coinCount(), seededRandom(seed));
-    preload(logos);
-    setPlay((previous) => ({ id: (previous?.id ?? 0) + 1, seed, logos }));
+    armed.current = { signature: next, seed, logos: pickCoinLogos(symbolKey.split("|"), coinCount(), seededRandom(seed)) };
+    preload(armed.current.logos);
   }, [phase, signature, symbolKey]);
+  const celebrateFrom = useCallback((done: DOMRect | null | undefined) => {
+    const ready = armed.current;
+    if (!ready || ready.signature === lastPlayed.current) return;
+    lastPlayed.current = ready.signature;
+    armed.current = null;
+    const origin = done && done.width && done.height ? centre(done) : null;
+    setPlay((previous) => ({ id: (previous?.id ?? 0) + 1, seed: ready.seed, logos: ready.logos, origin }));
+  }, []);
   useEffect(() => {
     if (!celebrationPreviewEnabled()) return;
     const preview = () => {
@@ -65,10 +76,10 @@ export function useCompoundCelebration(feedback: Feedback, symbols: readonly (st
     window.addEventListener(CELEBRATION_PREVIEW_EVENT, preview);
     return () => window.removeEventListener(CELEBRATION_PREVIEW_EVENT, preview);
   }, [symbolKey]);
-  return { play };
+  return { play, celebrateFrom };
 }
 
-type Coin = { size: number; blur: number; depth: number; delay: number; logo: string;
+type Coin = { grid: number; size: number; blur: number; depth: number; delay: number; logo: string;
   move: Keyframe[] | null; turn: Keyframe[] | null; at: Point; duration: number; knock?: boolean };
 type Run = { id: number; reduced: boolean; origin: Point; coins: Coin[]; catcher: CatcherPlan | null };
 
@@ -86,7 +97,7 @@ function CatcherView({ plan }: { plan: CatcherPlan }) {
   return <div data-catcher="" style={{ position: "absolute", left: plan.startX - plan.width / 2, top: plan.feetY - plan.height,
     width: plan.width, height: plan.height, opacity: 0, zIndex: 6, willChange: "transform, opacity" }}>
     <div data-catcher-tilt="" style={{ position: "absolute", inset: 0, transformOrigin: "50% 100%", willChange: "transform" }}>
-      {POSES.map((pose) => <svg key={pose} data-catcher-pose={pose} viewBox="0 0 12 14" width={plan.width} height={plan.height} shapeRendering="crispEdges"
+      {POSES.map((pose) => <svg key={pose} data-catcher-pose={pose} viewBox={`0 0 ${CATCHER.grid.width} ${CATCHER.grid.height}`} width={plan.width} height={plan.height} shapeRendering="crispEdges"
         style={{ position: "absolute", inset: 0, opacity: pose === "stand" ? 1 : 0 }}>
         {spriteRuns(CATCHER_SPRITES[pose]).map((run) => <rect key={`${run.x}-${run.y}`} x={run.x} y={run.y} width={run.width} height={1} fill={run.color} />)}
       </svg>)}
@@ -94,25 +105,54 @@ function CatcherView({ plan }: { plan: CatcherPlan }) {
   </div>;
 }
 
-/** One coin: an outer layer that travels and fades, an inner 3D layer that wobbles and rolls (rim, edge, face, shine). */
+/**
+ * Draws a pixel-art coin into a `grid` × `grid` canvas: the rim from its sprite, then the stock logo shrunk into the
+ * face pixels (its outer tenth trimmed, where xStock tiles carry their pattern). Shown scaled up with crisp pixels.
+ */
+function drawCoin(canvas: HTMLCanvasElement, grid: number, logo: HTMLImageElement | null) {
+  const context = canvas.getContext("2d");
+  if (!context) return;
+  const sprite = coinSprite(grid), face = coinFace(grid);
+  context.clearRect(0, 0, grid, grid);
+  sprite.forEach((row, y) => [...row].forEach((key, x) => {
+    const color = COIN_COLORS[key];
+    if (color) { context.fillStyle = color; context.fillRect(x, y, 1, 1); }
+  }));
+  context.save();
+  context.beginPath();
+  sprite.forEach((row, y) => [...row].forEach((key, x) => { if (key === "F") context.rect(x, y, 1, 1); }));
+  context.clip();
+  context.fillStyle = "#1b1a17";
+  context.fillRect(face.x, face.y, face.size, face.size);
+  if (logo && logo.naturalWidth) {
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    const trim = logo.naturalWidth * 0.1;
+    context.drawImage(logo, trim, trim, logo.naturalWidth - trim * 2, logo.naturalHeight - trim * 2, face.x, face.y, face.size, face.size);
+  }
+  context.restore();
+}
+
+/** One pixel coin: an outer layer that travels and fades, an inner layer that spins (narrows and widens). */
 function CoinView({ coin }: { coin: Coin }) {
   const { size } = coin;
-  const face = Math.round(size * 0.1);
-  const disc = { position: "absolute", inset: 0, borderRadius: "50%" } as const;
-  return <div data-coin="" data-coin-knock={coin.knock ? "" : undefined} style={{ position: "absolute", left: coin.at.x - size / 2, top: coin.at.y - size / 2, width: size, height: size,
-    opacity: 0, zIndex: Math.round(coin.depth * 10), perspective: 420, filter: coin.blur ? `blur(${coin.blur}px)` : undefined, willChange: "transform, opacity" }}>
-    <div data-coin-turn="" style={{ ...disc, transformStyle: "preserve-3d", willChange: "transform" }}>
-      {/* The coin's edge: two darker discs a little behind the face, seen when it tilts. */}
-      <span style={{ ...disc, transform: "translateZ(-4px)", background: "linear-gradient(140deg, #7d838c, #2f3238)" }} />
-      <span style={{ ...disc, transform: "translateZ(-2px)", background: "linear-gradient(140deg, #aab1ba, #474b52)" }} />
-      {/* Brushed-metal rim. */}
-      <span style={{ ...disc, background: "conic-gradient(from 210deg, #f5f7f9, #9aa1ab 25%, #eef1f4 50%, #8b929c 75%, #f5f7f9)",
-        boxShadow: "0 8px 18px rgba(0, 0, 0, 0.45)" }} />
-      {/* eslint-disable-next-line @next/next/no-img-element -- a preloaded remote logo inside a decorative, aria-hidden coin */}
-      <img src={coin.logo} alt="" draggable={false} style={{ ...disc, inset: face, width: size - face * 2, height: size - face * 2, objectFit: "cover" }} />
-      <span style={{ ...disc, inset: face,
-        background: "radial-gradient(circle at 30% 24%, rgba(255,255,255,0.55), rgba(255,255,255,0) 46%), radial-gradient(circle at 72% 82%, rgba(0,0,0,0.28), rgba(0,0,0,0) 58%)",
-        boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.28), inset 0 -3px 6px rgba(0,0,0,0.35)" }} />
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    drawCoin(canvas, coin.grid, null);
+    if (typeof Image === "undefined") return;
+    let live = true;
+    const logo = new Image();
+    logo.decoding = "async";
+    logo.src = coin.logo;
+    logo.decode?.().then(() => { if (live) drawCoin(canvas, coin.grid, logo); }, () => { /* the gold coin stays, without a logo */ });
+    return () => { live = false; };
+  }, [coin.logo, coin.grid]);
+  return <div data-coin="" data-coin-knock={coin.knock ? "" : undefined} data-logo={coin.logo} style={{ position: "absolute", left: coin.at.x - size / 2, top: coin.at.y - size / 2,
+    width: size, height: size, opacity: 0, zIndex: Math.round(coin.depth * 10), willChange: "transform, opacity" }}>
+    <div data-coin-turn="" style={{ position: "absolute", inset: 0, willChange: "transform" }}>
+      <canvas ref={canvasRef} width={coin.grid} height={coin.grid} style={{ display: "block", width: size, height: size, imageRendering: "pixelated" }} />
     </div>
   </div>;
 }
@@ -130,12 +170,14 @@ export function CompoundTokenBurst({ play, originRef }: { play: CelebrationPlay;
   useLayoutEffect(() => {
     if (!play) return;
     const viewport = { width: window.innerWidth, height: window.innerHeight };
-    const button = originRef.current?.getBoundingClientRect() ?? null;
+    const button = play.origin ? null : originRef.current?.getBoundingClientRect() ?? null;
     const buttonOnScreen = button && button.width && button.height && button.bottom > 0 && button.top < viewport.height;
-    const origin = buttonOnScreen ? centre(button) : { x: viewport.width / 2, y: viewport.height * 0.6 };
+    const origin = play.origin ?? (buttonOnScreen ? centre(button) : { x: viewport.width / 2, y: viewport.height * 0.6 });
     const reduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduced) {
-      setRun({ id: play.id, reduced, origin, catcher: null, coins: reducedSpots(origin).map((spot, index) => ({ size: spot.size, blur: 0, depth: 0.5,
+      // Mid-depth coins at the scene's pixel size.
+      const grid = coinGrid(0.5), size = grid * scenePixel(viewport.width < 640);
+      setRun({ id: play.id, reduced, origin, catcher: null, coins: reducedSpots(origin).map((spot, index) => ({ grid, size, blur: 0, depth: 0.5,
         delay: 0, logo: play.logos[index % play.logos.length]!, move: null, turn: null, at: { x: spot.x, y: spot.y }, duration: REDUCED_MS })) });
       return;
     }
@@ -145,11 +187,11 @@ export function CompoundTokenBurst({ play, originRef }: { play: CelebrationPlay;
     const catcher = planCatcher(flights, origin, viewport, rand);
     const coins: Coin[] = flights.map((flight, index) => {
       const { move, turn } = beadKeyframes(flight, origin);
-      return { size: flight.size, blur: flight.blur, depth: flight.depth, delay: flight.delay, logo: play.logos[index]!, move, turn, at: origin, duration: FALL_MS };
+      return { grid: flight.grid, size: flight.size, blur: flight.blur, depth: flight.depth, delay: flight.delay, logo: play.logos[index]!, move, turn, at: origin, duration: FALL_MS };
     });
     const knockStart = { x: catcher.knock.frames[0]!.x, y: catcher.knock.frames[0]!.y };
     const knock = beadKeyframes({ frames: catcher.knock.frames }, knockStart, CELEBRATION_MS / 1000);
-    coins.push({ size: catcher.knock.size, blur: 0, depth: 1, delay: 0, logo: mostCommon(play.logos), move: knock.move, turn: knock.turn,
+    coins.push({ grid: catcher.knock.grid, size: catcher.knock.size, blur: 0, depth: 1, delay: 0, logo: mostCommon(play.logos), move: knock.move, turn: knock.turn,
       at: knockStart, duration: CELEBRATION_MS, knock: true });
     setRun({ id: play.id, reduced, origin, coins, catcher });
   }, [play, originRef]);

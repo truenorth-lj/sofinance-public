@@ -443,7 +443,8 @@ export function RegistryRowCompound({ position, descriptor, symbolOf, onConfirme
   const [seenResult, setSeenResult] = useState<string | null>(null);
   const settled = resultKey !== null && resultKey !== seenResult;
   const close = () => { if (resultKey) setSeenResult(resultKey); slot.onClose(); };
-  // Coins for the confirmed landing (never the click), once per signature: from Done while the popup is open, else the row.
+  // Coins for the confirmed landing, once per signature, only when its Done is clicked (from that button); closing the popup
+  // another way plays nothing.
   const celebration = useCompoundCelebration(tx.status === "success" && tx.signature ? { phase: "success", signature: tx.signature } : null,
     [position.tokenA, position.tokenB].map((token) => coinSymbol(token.id, symbolOf(token))));
   const rowButton = useRef<HTMLButtonElement>(null);
@@ -465,15 +466,16 @@ export function RegistryRowCompound({ position, descriptor, symbolOf, onConfirme
           {poolFeeLine ? <p data-testid="registry-compound-pool-fee" className="text-smoke">{poolFeeLine}</p> : null}
         </div> : null}
         <TxStatus tx={{ ...tx, interrupted: undefined }} successText="Fees compounded." walletNote={rentLine} />
-        {settled ? <button ref={doneButton} type="button" data-testid="compound-submit-done" onClick={close}
-          className="mt-5 inline-flex w-full items-center justify-center rounded-full bg-lemon px-5 py-3.5 text-sm font-semibold text-ink hover:bg-[#fff27f]">Done</button> : null}
+        {settled ? <button ref={doneButton} type="button" data-testid="compound-submit-done"
+          onClick={() => { celebration.celebrateFrom(doneButton.current?.getBoundingClientRect()); close(); }}
+          className="mt-5 inline-flex w-full items-center justify-center rounded-full bg-lemon px-5 py-3.5 text-sm font-semibold text-ink transition-transform duration-75 hover:bg-[#fff27f] motion-safe:active:scale-[0.94]">Done</button> : null}
       </div> : <>
         <CompoundConfirm unclaimedUsd={slot.unclaimedUsd} feeRule={descriptor.meta.feePolicy.compound} blocked={blocked}
           loading={false} disabled={locked || blocked !== null} onConfirm={submit} />
         <LockNote lock={op} />
       </>}
     </ActionDialog>
-    <CompoundTokenBurst play={celebration.play} originRef={slot.open ? doneButton : rowButton} />
+    <CompoundTokenBurst play={celebration.play} originRef={rowButton} />
   </>;
 }
 

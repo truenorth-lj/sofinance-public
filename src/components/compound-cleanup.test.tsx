@@ -357,7 +357,7 @@ describe("automatic cleanup after a new compound", () => {
       return handler(url, init);
     });
   }
-  it.each(["success", "failed"] as const)("with the popup closed, the coins and the little character play from the row's Compound button on a confirmed landing only (confirmation: %s)", async status => {
+  it.each(["success", "failed"] as const)("with the popup closed there is no Done, so a landing plays nothing (confirmation: %s)", async status => {
     // happy-dom has no layout: a visible box for the buttons.
     const box = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() =>
       ({ left: 0, top: 0, width: 400, height: 600, right: 400, bottom: 600, x: 0, y: 0, toJSON() {} }) as DOMRect);
@@ -365,15 +365,14 @@ describe("automatic cleanup after a new compound", () => {
     const burst = () => document.querySelector('[data-testid="compound-token-burst"]');
     confirmationStatus = status;
     enableCompound(); await render();
-    expect(burst()).toBeNull();
     await act(async () => { controller.compound(); });
     await act(async () => { await vi.advanceTimersByTimeAsync(16); });
     expect(controller.attemptStatus).toBe(status);
-    expect(Boolean(burst())).toBe(status === "success");
-    expect(Boolean(document.querySelector("[data-catcher]"))).toBe(status === "success");
+    expect(burst()).toBeNull();
+    expect(document.querySelector("[data-catcher]")).toBeNull();
     box.mockRestore();
   });
-  it("with the popup open, the coins pop out of its Done button as the compound confirms, and Done closes at once without replaying them", async () => {
+  it("with the popup open, nothing plays as the compound confirms; Done pops the coins and the character out of itself and closes at once", async () => {
     const doneBox = { left: 600, top: 500, width: 120, height: 40 };
     const box = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
       const r = this.dataset.testid === "compound-submit-done" ? doneBox : { left: 0, top: 0, width: 400, height: 600 };
@@ -389,15 +388,17 @@ describe("automatic cleanup after a new compound", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(16); });
     expect(popup().dataset.open).toBe("true");
     expect(done()?.textContent).toBe("Done");
+    expect(done()!.className).toContain("motion-safe:active:scale-[0.94]");
+    // Confirmed, but nothing plays until Done.
+    expect(burst()).toBeNull();
+    await act(async () => done()!.click());
+    expect(popup().dataset.open).not.toBe("true"); // closes at once
     expect(burst()).not.toBeNull();
+    expect(document.querySelector("[data-catcher]")).not.toBeNull();
     // Coins start at the Done button's centre (660, 520).
     const coin = burst()!.querySelector<HTMLElement>("[data-coin]:not([data-coin-knock])")!;
     const left = parseFloat(coin.style.left) + parseFloat(coin.style.width) / 2, top = parseFloat(coin.style.top) + parseFloat(coin.style.height) / 2;
     expect([Math.round(left), Math.round(top)]).toEqual([660, 520]);
-    const played = burst();
-    await act(async () => done()!.click());
-    expect(popup().dataset.open).not.toBe("true"); // no release delay
-    expect(burst()).toBe(played); // the same play runs on; nothing new starts
     box.mockRestore();
   });
   it("automatically prompts cleanup only after the initiated compound is verified successful", async () => {

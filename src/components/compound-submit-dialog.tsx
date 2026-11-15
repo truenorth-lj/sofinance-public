@@ -42,7 +42,7 @@ export function CompoundSubmitStatus({ feedback, slow = false, onDone, titleId =
       className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-lilac underline underline-offset-4">View on Solscan <ArrowUpRight className="h-4 w-4" /></a>
     <div className="mt-6 flex gap-3">
       {(!active || slow) && <button ref={doneRef} type="button" onClick={onDone} autoFocus data-testid="compound-submit-done"
-        className={successful ? "inline-flex w-full items-center justify-center rounded-full bg-lemon px-5 py-3.5 text-sm font-semibold text-ink hover:bg-[#fff27f]"
+        className={successful ? "inline-flex w-full items-center justify-center rounded-full bg-lemon px-5 py-3.5 text-sm font-semibold text-ink transition-transform duration-75 hover:bg-[#fff27f] motion-safe:active:scale-[0.94]"
           : "inline-flex w-full items-center justify-center rounded-full border border-white/20 px-5 py-3.5 text-sm font-semibold text-cream/90 hover:bg-white/[0.06]"}>
         {successful ? "Done" : "Close"}
       </button>}
