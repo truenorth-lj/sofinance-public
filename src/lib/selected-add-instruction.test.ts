@@ -5,11 +5,18 @@ import { Keypair, PublicKey } from "@solana/web3.js";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
+import { buildRaydiumIncreaseLiquidityInstruction } from "@sofinance/engine/protocols/raydium/add-liquidity";
 import { buildSelectedAddInstruction } from "./selected-add-instruction";
 
 const key = (seed: number) => Keypair.fromSeed(new Uint8Array(32).fill(seed)).publicKey;
 const wallet = key(1), pool = key(2), nft = key(3), mintA = key(4), mintB = key(5);
 const quote = { liquidity: "123456789012345678901234", amountMaxA: "123456789012345", amountMaxB: "234567890123456" };
+
+describe("selected add instruction", () => {
+  it("is the Raydium protocol builder, not a second implementation", () => {
+    expect(buildSelectedAddInstruction).toBe(buildRaydiumIncreaseLiquidityInstruction);
+  });
+});
 
 describe.each([TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID])("selected add NFT program %s", (nftProgram) => {
   it.each([

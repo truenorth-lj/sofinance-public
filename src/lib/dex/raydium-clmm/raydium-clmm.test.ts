@@ -4,6 +4,7 @@ import { buildAndSimulateOpenPosition } from "@sofinance/engine/open-atomic";
 import { getProtocolAdapter } from "@sofinance/engine/protocols/registry";
 import { uiFor } from "../ui";
 import { raydiumClmmDescriptor } from "./descriptor";
+import { raydiumClmmModule } from "./module";
 
 describe("Raydium CLMM registry UI (E3)", () => {
   it("keeps native-modal, plan fallback, external URL, and legacy plan terms", () => {
@@ -30,6 +31,14 @@ describe("Raydium CLMM registry UI (E3)", () => {
     expect(policy.withdrawUsdc).toEqual({ kind: "swap-input-bps", bps: 10 });
     expect(policy.withdrawPoolTokens).toEqual({ kind: "none" });
     expect(policy.claim).toEqual({ kind: "none" });
+  });
+});
+
+describe("Raydium generic route stays closed (E3)", () => {
+  it("does not serve /api/dex/raydium-clmm/*", () => {
+    expect(raydiumClmmModule.enabled?.("add")).toBe(false);
+    expect(raydiumClmmModule.enabled?.("open")).toBe(false);
+    expect(raydiumClmmDescriptor.capabilities.deposit.supported).toBe(false);
   });
 });
 

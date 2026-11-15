@@ -8,7 +8,9 @@ import { raydiumClmmDescriptor } from "./descriptor";
 
 /**
  * App-registry adapter for Raydium CLMM (E3). Every generic-route money / plan / performance
- * method is unsupported: builders stay in `@sofinance/engine` and the dedicated prepare routes.
+ * method is unsupported. The live add instruction is `buildRaydiumIncreaseLiquidityInstruction`
+ * (re-exported as `buildSelectedAddInstruction`); `prepareAdd` cannot call it while `deposit`
+ * is unsupported, because the shared contract requires `DexUnsupportedError`.
  * `listPositions` returns an empty list; the module is not served (`enabled` is always false).
  *
  * Do not route amounts through `fees.strategy`. Collection stays in `packages/engine/src/swap/fee.ts`.
