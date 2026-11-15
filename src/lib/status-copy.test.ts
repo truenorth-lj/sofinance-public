@@ -56,10 +56,12 @@ describe("compoundActionLabel", () => {
       .toBe("Verifying cleanup…");
   });
 
-  it("uses the compound table otherwise", () => {
+  it("uses the compound table otherwise, and 'Compounding…' while running between stages (never the old panel's button text)", () => {
     expect(compoundActionLabel({ cleanupRunning: false, stage: "wallet", checkingCopy: checking }))
       .toBe("Confirming in wallet…");
     expect(compoundActionLabel({ cleanupRunning: false, stage: undefined, checkingCopy: checking }))
-      .toBe("One-click compound");
+      .toBe("Compounding…");
+    expect(compoundActionLabel({ cleanupRunning: false, stage: "idle", checkingCopy: checking }))
+      .toBe("Compounding…");
   });
 });
