@@ -1,7 +1,8 @@
 /**
  * Compound success celebration: when the "Compound confirmed" OK is released, tokenized-stock coins pop out of it and
- * fall like beads to the bottom of the screen, bounce, settle and fade. Pure functions (coin choice, physics, timing,
- * trigger) so the animation can be tested without a browser.
+ * fall like beads to the bottom of the screen, bounce, settle and fade. A little pixel character runs along the bottom
+ * collecting a few of them, then a big coin of the position's own stock drops on its head and it falls over.
+ * Pure functions (coin choice, physics, the character's plan, timing, trigger) so it can be tested without a browser.
  */
 import { MANUAL_TOKEN_ICONS } from "@/lib/token-icons/map";
 
@@ -15,12 +16,12 @@ export const OK_RELEASE_KEYFRAMES: readonly { offset: number; transform: string 
   { offset: 1, transform: "scale(1)" },
 ]);
 
-/** One coin: pop out, fall, bounce, settle and fade. */
-export const FALL_MS = 2100;
+/** One coin: pop out, fall, bounce, settle and fade (long enough for the character to be knocked over first). */
+export const FALL_MS = 2800;
 /** Fading starts at this fraction of a coin's play. */
-export const FADE_FROM = 0.78;
-/** Last coin leaves this long after the first. */
-export const STAGGER_MS = 80;
+export const FADE_FROM = 0.8;
+/** Last coin leaves this long after the first. With FALL_MS, a whole number of SAMPLE_MS (so the last sample is the end). */
+export const STAGGER_MS = 75;
 /** Whole play: the overlay is removed after this. */
 export const CELEBRATION_MS = STAGGER_MS + FALL_MS;
 /** Keyframe spacing along a simulated path. */
@@ -110,6 +111,8 @@ export type BeadFlight = {
   floorY: number;
   bounces: number;
   frames: BeadFrame[];
+  /** Set when the character collects this coin: coin-local seconds; it vanishes from then on. */
+  catchAt?: number | null;
 };
 
 const easeOutCubic = (t: number) => 1 - (1 - clamp(t, 0, 1)) ** 3;
@@ -127,7 +130,7 @@ export function beadFlights(count: number, origin: Point, viewport: Viewport, ra
   const total = FALL_MS / 1000;
   const power = clamp(viewport.height / 900, 0.7, 1.1);
   const spread = clamp(viewport.width / 1280, 0.45, 1.1);
-  return Array.from({ length: count }, (_, index) => {
+  return Array.from({ length: count }, (_, index): BeadFlight => {
     // Spread the launch angles evenly over the fan, then jitter, so no side is empty.
     const slot = (index + 0.15 + rand() * 0.7) / count;
     const angle = (-158 + slot * 136) * (Math.PI / 180);
@@ -179,15 +182,21 @@ export function beadFlights(count: number, origin: Point, viewport: Viewport, ra
  * `move` (outer layer): position, pop-in scale and opacity. `turn` (inner 3D layer): wobble and roll. Kept apart
  * because opacity below 1 flattens 3D on the element it is set on.
  */
-export function beadKeyframes(flight: BeadFlight, origin: Point): {
+export function beadKeyframes(flight: Pick<BeadFlight, "frames" | "catchAt">, origin: Point, total = FALL_MS / 1000): {
   move: { offset: number; opacity: number; transform: string }[];
   turn: { offset: number; transform: string }[];
 } {
-  const total = FALL_MS / 1000;
   const offset = (t: number) => Math.min(1, Math.round((t / total) * 10000) / 10000);
+  // A collected coin stays where it was caught and is gone from the next frame on.
+  const caught = flight.catchAt ?? null;
+  const at = caught === null ? null : flight.frames.find((frame) => frame.t >= caught - 1e-9) ?? null;
   return {
-    move: flight.frames.map((frame) => ({ offset: offset(frame.t), opacity: frame.opacity,
-      transform: `translate3d(${(frame.x - origin.x).toFixed(1)}px, ${(frame.y - origin.y).toFixed(1)}px, 0) scale(${frame.scale.toFixed(3)})` })),
+    move: flight.frames.map((frame) => {
+      const gone = at !== null && frame.t > at.t + 1e-9;
+      const where = gone ? at : frame;
+      return { offset: offset(frame.t), opacity: gone ? 0 : frame.opacity,
+        transform: `translate3d(${(where.x - origin.x).toFixed(1)}px, ${(where.y - origin.y).toFixed(1)}px, 0) scale(${(gone ? 0.4 : frame.scale).toFixed(3)})` };
+    }),
     turn: flight.frames.map((frame) => ({ offset: offset(frame.t),
       transform: `rotateY(${frame.tiltY.toFixed(1)}deg) rotateZ(${frame.roll.toFixed(1)}deg)` })),
   };
@@ -230,4 +239,169 @@ export function nextCelebrationTrigger(
 export function releaseCelebration(state: CelebrationTriggerState): { play: string | null; state: CelebrationTriggerState } {
   if (!state.queued || state.queued === state.lastPlayed) return { play: null, state };
   return { play: state.queued, state: { lastPlayed: state.queued, queued: null } };
+}
+
+/** The little pixel character: 12 × 14 sprite pixels, drawn at 4 px a pixel (3 on phones). */
+export const CATCHER = Object.freeze({
+  grid: { width: 12, height: 14 }, pixel: { wide: 4, narrow: 3 },
+  /** Sprite pixels per second, scaled with the screen width like the coins' spread. */
+  runSpeed: 540, appearMs: 150, maxCatches: 3, stepMs: 100,
+  /** It is hit no earlier than this, and at least `afterCatchMs` after its last catch. */
+  hitAtMs: 1700, afterCatchMs: 250, tipMs: 180,
+  /** Gap between its feet and the bottom of the screen. */
+  feetMargin: 6,
+});
+/** The big coin that knocks it over: the position's own stock, about 1.5× a near coin. */
+export const KNOCK_COIN_SIZE = { wide: 96, narrow: 72 } as const;
+
+export type CatcherPose = "stand" | "runA" | "runB";
+export type CatcherFrame = { t: number; x: number; pose: CatcherPose; facing: 1 | -1; tilt: number; scale: number; opacity: number };
+export type CatcherPlan = {
+  pixel: number; width: number; height: number;
+  /** Where its feet stand (viewport px), and where it first appears. */
+  feetY: number; startX: number;
+  /** Which coins it collects (index into the flights) and when (seconds after the release). */
+  catches: { coin: number; t: number; x: number }[];
+  hitT: number;
+  frames: CatcherFrame[];
+  /** The coin that hits it: drops from above the screen onto its head, bounces off, lands, fades. */
+  knock: { size: number; frames: BeadFrame[] };
+};
+
+/**
+ * Plans the character against the coins' simulated paths (which it updates with `catchAt` for the coins it collects).
+ * It appears under `origin`, runs (at most `runSpeed`) to where a coin first touches the floor and collects it as it
+ * lands, up to `maxCatches`, then stands still; a big coin dropped from above hits its head at `hitT` and it tips over
+ * backwards (−90° over `tipMs`) and lies there until everything fades.
+ */
+export function planCatcher(flights: BeadFlight[], origin: Point, viewport: Viewport, rand: Rand): CatcherPlan {
+  const pixel = viewport.width < 640 ? CATCHER.pixel.narrow : CATCHER.pixel.wide;
+  const width = CATCHER.grid.width * pixel, height = CATCHER.grid.height * pixel;
+  const feetY = viewport.height - CATCHER.feetMargin;
+  const speed = CATCHER.runSpeed * clamp(viewport.width / 1280, 0.55, 1.1);
+  const total = (STAGGER_MS + FALL_MS) / 1000;
+  const appear = CATCHER.appearMs / 1000;
+  const size = viewport.width < 640 ? KNOCK_COIN_SIZE.narrow : KNOCK_COIN_SIZE.wide;
+  // Never closer to a side than the knock coin's half width, so that coin can always land centred on its head.
+  const edge = Math.max(width, size) / 2;
+  const startX = clamp(origin.x, edge, viewport.width - edge);
+  type Move = { t0: number; t1: number; x0: number; x1: number };
+  const moves: Move[] = [];
+  const catches: CatcherPlan["catches"] = [];
+  let x = startX, free = appear;
+  const landings = flights.map((flight, coin) => {
+    const first = flight.frames.find((frame) => frame.y >= flight.floorY - 0.01);
+    return first ? { coin, t: first.t + flight.delay / 1000, x: first.x } : null;
+  }).filter((landing): landing is { coin: number; t: number; x: number } => landing !== null).sort((a, b) => a.t - b.t);
+  const latestCatch = CATCHER.hitAtMs / 1000 - CATCHER.afterCatchMs / 1000;
+  for (const landing of landings) {
+    if (catches.length >= CATCHER.maxCatches || landing.t > latestCatch) break;
+    const target = clamp(landing.x, edge, viewport.width - edge);
+    const need = Math.abs(target - x) / speed;
+    if (landing.t < free || need > landing.t - free) continue;
+    if (need > 0) moves.push({ t0: free, t1: free + need, x0: x, x1: target });
+    catches.push({ coin: landing.coin, t: landing.t, x: target });
+    flights[landing.coin]!.catchAt = landing.t - flights[landing.coin]!.delay / 1000;
+    x = target;
+    free = landing.t;
+  }
+  const hitT = Math.max(CATCHER.hitAtMs / 1000, free + CATCHER.afterCatchMs / 1000);
+  // The knock coin: falls from above the screen to its head, bounces off away from the nearer wall, lands, fades.
+  const headY = feetY - height - size / 2 + pixel;
+  const drop = headY + size;
+  const fall = Math.sqrt((2 * drop) / PHYSICS.gravity);
+  const spawn = hitT - fall;
+  const knockFloor = viewport.height - PHYSICS.floorMargin - size / 2;
+  const away = x < viewport.width / 2 ? 1 : -1;
+  const dt = 1 / 240, sampleEvery = Math.round(SAMPLE_MS / 1000 / dt), steps = Math.round(total / dt);
+  const knockFrames: BeadFrame[] = [];
+  let kx = x, ky = -size, kvx = 0, kvy = 0, kroll = 0, hit = false, resting = false;
+  const fadeFrom = FADE_FROM * total;
+  const fadeOut = (t: number) => (t > fadeFrom ? Math.max(0, 1 - (t - fadeFrom) / (total - fadeFrom)) : 1);
+  for (let step = 0; step <= steps; step++) {
+    const t = step * dt;
+    if (step % sampleEvery === 0) {
+      knockFrames.push({ t, x: kx, y: ky, tiltY: hit ? 0 : 18 * Math.sin(9 * t), roll: kroll, scale: 1,
+        opacity: t < spawn ? 0 : step === steps ? 0 : Math.round(fadeOut(t) * 1000) / 1000 });
+    }
+    if (t < spawn) continue;
+    if (!resting) kvy += PHYSICS.gravity * dt;
+    kx += kvx * dt; ky += kvy * dt;
+    if (!hit && ky >= headY) { ky = headY; kvy = -kvy * 0.42; kvx = away * (160 + 80 * rand()); hit = true; }
+    if (hit && ky >= knockFloor && kvy > 0) {
+      ky = knockFloor;
+      if (kvy * 0.45 < PHYSICS.restSpeed) { kvy = 0; resting = true; } else kvy = -kvy * 0.45;
+      kvx *= PHYSICS.floorFriction;
+    }
+    if (resting) { kvx *= 1 - 3 * dt; kroll += ((kvx * dt) / (size / 2)) * (180 / Math.PI); }
+    if (kx < size / 2) { kx = size / 2; kvx = Math.abs(kvx) * PHYSICS.wallBounce; }
+    if (kx > viewport.width - size / 2) { kx = viewport.width - size / 2; kvx = -Math.abs(kvx) * PHYSICS.wallBounce; }
+  }
+  // The character's own frames, every SAMPLE_MS.
+  const frames: CatcherFrame[] = [];
+  let facing: 1 | -1 = 1;
+  const sampleCount = Math.round(total / (SAMPLE_MS / 1000));
+  for (let i = 0; i <= sampleCount; i++) {
+    const t = (i * SAMPLE_MS) / 1000;
+    const move = moves.find((m) => t >= m.t0 && t < m.t1) ?? null;
+    let at = startX;
+    for (const m of moves) at = t >= m.t1 ? m.x1 : t > m.t0 ? m.x0 + (m.x1 - m.x0) * ((t - m.t0) / (m.t1 - m.t0)) : at;
+    if (move) facing = move.x1 >= move.x0 ? 1 : -1;
+    const pose: CatcherPose = move && t < hitT ? (Math.floor(((t - move.t0) * 1000) / CATCHER.stepMs) % 2 === 0 ? "runA" : "runB") : "stand";
+    const tip = t <= hitT ? 0 : Math.min(1, (t - hitT) / (CATCHER.tipMs / 1000));
+    frames.push({ t, x: at, pose, facing, tilt: Math.round(-90 * easeOutCubic(tip) * 10) / 10,
+      scale: Math.round(easeOutCubic(t / appear) * 1000) / 1000,
+      opacity: i === sampleCount ? 0 : Math.round(Math.min(1, t / (appear / 2)) * fadeOut(t) * 1000) / 1000 });
+  }
+  return { pixel, width, height, feetY, startX, catches, hitT, frames, knock: { size, frames: knockFrames } };
+}
+
+/** Web Animations keyframes for the character (relative to where it first appears). */
+export function catcherKeyframes(plan: CatcherPlan): {
+  move: { offset: number; opacity: number; transform: string }[];
+  tilt: { offset: number; transform: string }[];
+  poses: Record<CatcherPose, { offset: number; opacity: number; easing: string }[]>;
+} {
+  const total = plan.frames.at(-1)!.t;
+  const offset = (t: number) => Math.min(1, Math.round((t / total) * 10000) / 10000);
+  const pose = (name: CatcherPose) => plan.frames.map((frame) => ({ offset: offset(frame.t), opacity: frame.pose === name ? 1 : 0, easing: "step-end" }));
+  return {
+    move: plan.frames.map((frame) => ({ offset: offset(frame.t), opacity: frame.opacity,
+      transform: `translate3d(${(frame.x - plan.startX).toFixed(1)}px, 0, 0) scale(${frame.facing * frame.scale}, ${frame.scale})` })),
+    // It tips over around its feet, rising by half its width as it goes so it ends up lying on the floor, not through it.
+    tilt: plan.frames.map((frame) => ({ offset: offset(frame.t),
+      transform: `translateY(${((frame.tilt / 90) * (plan.width / 2)).toFixed(1)}px) rotate(${frame.tilt}deg)` })),
+    poses: { stand: pose("stand"), runA: pose("runA"), runB: pose("runB") },
+  };
+}
+
+/**
+ * The character's sprites, one row per string, 12 × 14. Y lemon hoodie, y its shade, K face in shadow, W eyes,
+ * C hands, N trousers, B shoes, "." empty. Original pixel art in the app's colours.
+ */
+export const CATCHER_COLORS: Readonly<Record<string, string>> = Object.freeze({
+  Y: "#f3e76b", y: "#c9bd45", K: "#0d0d0c", W: "#f4f0e6", C: "#f4f0e6", N: "#3a4a8c", B: "#98948b",
+});
+const head = ["....YYYY....", "...YYYYYY...", "..YYKKKKYY..", "..YKWKKWKY..", "..YKKKKKKY..", "..yYKKKKYy..", "...yYYYYy..."];
+export const CATCHER_SPRITES: Readonly<Record<CatcherPose, readonly string[]>> = Object.freeze({
+  stand: [...head, "..YYYYYYYY..", ".CyYYYYYYyC.", ".C.YYYYYY.C.", "...yyyyyy...", "...NN..NN...", "...NN..NN...", "..BBB..BBB.."],
+  runA: [...head, "..YYYYYYYY..", "..CYYYYYYy..", "...YYYYYYC..", "...yyyyyy...", "..NN....NN..", ".NN......NN.", ".BB......BB."],
+  runB: [...head, "..YYYYYYYY..", "..yYYYYYYC..", "..CYYYYYY...", "...yyyyyy...", "....NNNN....", "....NN.N....", "...BBB.BB..."],
+});
+
+/** Sprite rows as runs of same-coloured pixels (fewer SVG rects than one per pixel). */
+export function spriteRuns(rows: readonly string[]): { x: number; y: number; width: number; color: string }[] {
+  const runs: { x: number; y: number; width: number; color: string }[] = [];
+  rows.forEach((row, y) => {
+    let x = 0;
+    while (x < row.length) {
+      const key = row[x]!;
+      let end = x + 1;
+      while (end < row.length && row[end] === key) end++;
+      const color = CATCHER_COLORS[key];
+      if (color) runs.push({ x, y, width: end - x, color });
+      x = end;
+    }
+  });
+  return runs;
 }

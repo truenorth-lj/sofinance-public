@@ -28,7 +28,9 @@ function Harness({ holdUntilDismissed = false, symbols = ["NVDAx", "USDC"] }: { 
   </section>;
 }
 const burst = () => document.querySelector<HTMLElement>('[data-testid="compound-token-burst"]');
-const coins = () => [...document.querySelectorAll<HTMLElement>("[data-coin]")];
+/** The coins that pop out of the origin (not the big knock coin, which drops from above the screen). */
+const coins = () => [...document.querySelectorAll<HTMLElement>("[data-coin]:not([data-coin-knock])")];
+const allCoinImages = () => [...document.querySelectorAll<HTMLElement>("[data-coin]")].map((coin) => coin.querySelector("img")!.getAttribute("src"));
 const coinImages = () => coins().map((coin) => coin.querySelector("img")!.getAttribute("src"));
 /** Where a coin starts (its centre), in viewport px. */
 const start = (coin: HTMLElement) => ({ x: parseFloat(coin.style.left) + parseFloat(coin.style.width) / 2, y: parseFloat(coin.style.top) + parseFloat(coin.style.height) / 2 });
@@ -127,22 +129,44 @@ describe("compound success coins", () => {
     expect(burst()).not.toBeNull();
   });
 
-  it("drops 14 coins, half of them the position's own stock, each with a fall and a wobble animation", async () => {
+  it("drops 14 coins plus the big knock coin of the position's own stock, each with a fall and a wobble animation", async () => {
     await act(async () => root.render(createElement(Harness)));
     await act(async () => setFeedback({ phase: "success", signature: "sig1" }));
     expect(coinImages()).toHaveLength(14);
     expect(coinImages().filter((src) => src === STOCK_COIN_LOGOS.NVDA)).toHaveLength(7);
+    // The knock coin is the position's own stock.
+    expect(allCoinImages()).toHaveLength(15);
+    expect(document.querySelector("[data-coin-knock] img")!.getAttribute("src")).toBe(STOCK_COIN_LOGOS.NVDA);
+    const knock = document.querySelector("[data-coin-knock]");
     const falls = animations.filter((animation) => (animation.target as HTMLElement).hasAttribute?.("data-coin"));
     const turns = animations.filter((animation) => (animation.target as HTMLElement).hasAttribute?.("data-coin-turn"));
-    expect(falls).toHaveLength(14);
-    expect(turns).toHaveLength(14);
-    for (const animation of [...falls, ...turns]) {
+    expect(falls).toHaveLength(15);
+    expect(turns).toHaveLength(15);
+    for (const animation of falls.filter((a) => a.target !== knock)) {
       expect(animation.options.duration).toBe(FALL_MS);
       expect(Number(animation.options.delay)).toBeLessThanOrEqual(STAGGER_MS);
       expect(animation.keyframes[0]!.offset).toBe(0);
       expect(animation.keyframes.at(-1)!.offset).toBe(1);
     }
+    expect(falls.find((a) => a.target === knock)!.options.duration).toBe(CELEBRATION_MS);
     expect(falls.every((animation) => animation.keyframes.at(-1)!.opacity === 0)).toBe(true);
+  });
+
+  it("adds the little pixel character: it runs, tips over and switches poses with the play", async () => {
+    await act(async () => root.render(createElement(Harness)));
+    await act(async () => setFeedback({ phase: "success", signature: "sig1" }));
+    const catcher = document.querySelector<HTMLElement>("[data-catcher]")!;
+    expect(catcher).not.toBeNull();
+    expect(catcher.querySelectorAll("[data-catcher-pose]")).toHaveLength(3);
+    expect(catcher.querySelectorAll("rect").length).toBeGreaterThan(20);
+    const on = (target: Element | null) => animations.filter((animation) => animation.target === target);
+    expect(on(catcher)).toHaveLength(1);
+    expect(on(catcher.querySelector("[data-catcher-tilt]"))).toHaveLength(1);
+    for (const pose of ["stand", "runA", "runB"]) expect(on(catcher.querySelector(`[data-catcher-pose="${pose}"]`))).toHaveLength(1);
+    expect(on(catcher)[0]!.options.duration).toBe(CELEBRATION_MS);
+    expect(String(on(catcher.querySelector("[data-catcher-tilt]"))[0]!.keyframes.at(-1)!.transform)).toContain("rotate(-90deg)");
+    await advance(CELEBRATION_MS + 10);
+    expect(document.querySelector("[data-catcher]")).toBeNull();
   });
 
   it("cancels its animations when it ends early on a resize", async () => {
@@ -160,6 +184,7 @@ describe("compound success coins", () => {
     await act(async () => setFeedback({ phase: "success", signature: "sig1" }));
     expect(burst()?.getAttribute("data-celebration-reduced")).toBe("true");
     expect(coinImages()).toHaveLength(REDUCED_COINS);
+    expect(document.querySelector("[data-catcher]")).toBeNull();
     expect(animations.every((animation) => animation.keyframes.every((frame) => !("transform" in frame)))).toBe(true);
     await advance(REDUCED_MS + 10);
     expect(burst()).toBeNull();
