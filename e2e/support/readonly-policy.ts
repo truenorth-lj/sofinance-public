@@ -5,10 +5,13 @@ import { readonlyTransportFor } from "./readonly-transport";
 const PUBLIC_PAGES = new Set([
   "/", "/app", "/app/portfolio", "/app/portfolio/recovery", "/app/plan", "/app/rwa-pairs", "/app/position-performance",
   "/app/ai", "/docs", "/docs/fee-apr", "/blog",
+  "/faq", "/learn", "/fees", "/docs/risks", "/terms",
   "/app/sign/AAAA.BBBB", "/app/sign/justonepart",
 ]);
 const PUBLIC_READS = new Set([
-  "/api/rwa-pairs", "/api/sol-usdc-price", "/api/pool-range-apr", "/api/pool-daily-apr", "/api/stock-market",
+  // Current SiteLogo; exact same-origin GET only.
+  "/navbar-mark-squircle-cream.svg",
+  "/api/protocol-pools", "/api/rwa-pairs", "/api/sol-usdc-price", "/api/pool-range-apr", "/api/pool-daily-apr", "/api/stock-market",
 ]);
 type Scope = "external" | "telemetry" | "wallet-stub" | "public-read" | "forbidden";
 type Event = { action: "blocked" | "forwarded" | "stubbed" | "response" | "cancelled"; scope: Scope | "websocket" | "redirect"; host: string; method: string; resource: string };
@@ -20,7 +23,7 @@ function scopeOf(request: Request, origin: string): Scope {
   if (url.pathname === "/lumen" || url.pathname.startsWith("/lumen/")) return "telemetry";
   const method = request.method();
   if ((method === "GET" && url.pathname === "/api/wallet" && url.searchParams.has("wallet")) ||
-      (method === "POST" && url.pathname === "/api/token-metadata" && !url.search)) return "wallet-stub";
+      (method === "POST" && ["/api/token-metadata", "/api/dex/meteora-dlmm/positions"].includes(url.pathname) && !url.search)) return "wallet-stub";
   if (method === "GET" && (PUBLIC_PAGES.has(url.pathname) || PUBLIC_READS.has(url.pathname) ||
       url.pathname.startsWith("/_next/static/") || url.pathname === "/favicon.ico")) return "public-read";
   if (method === "POST" && url.pathname === "/api/verify-sign-token") {
@@ -101,7 +104,7 @@ export async function installReadonlyPolicy(context: BrowserContext, baseURL: st
   });
   context.on("serviceworker", () => violations.push("Service worker created: serviceWorkers:block is required"));
 
-  // Own both readonly stub fulfill callbacks, rather than losing downstream
+  // Own readonly stub fulfill callbacks, rather than losing downstream
   // completion tracking through fallback. Ordinary hermetic stubs are unchanged.
   await context.route(/^https?:\/\//, route => track((async () => {
     const request = route.request();
@@ -117,7 +120,8 @@ export async function installReadonlyPolicy(context: BrowserContext, baseURL: st
       await route.fulfill({ status: 200, contentType: "application/json",
         headers: { "content-security-policy": "worker-src 'none'" },
         body: request.method() === "GET"
-          ? JSON.stringify({ wallet, slot: 1, fetchedAt: Date.now(), positions: [], assets: [] }) : "{}",
+          ? JSON.stringify({ wallet, slot: 1, fetchedAt: Date.now(), positions: [], assets: [] })
+          : new URL(request.url()).pathname === "/api/dex/meteora-dlmm/positions" ? '{"positions":[]}' : "{}",
       });
     } else if (cancelling) {
       await route.abort("blockedbyclient");
