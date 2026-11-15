@@ -26,6 +26,7 @@ import { fetchTokenPricesUsd } from "@sofinance/engine/token-prices";
 import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
 import { DEX_DESCRIPTORS } from "@/lib/dex/descriptors";
 import { createDexDescriptorRegistry } from "@/lib/dex/registry";
+import { raydiumClmmDescriptor } from "@/lib/dex/raydium-clmm/descriptor";
 import { AddValueBlockedError, assessAddValue } from "@/lib/dex/add-value-guard";
 
 const MIN_JUPITER_SWAP = minJupiterSwapAmount(SLIPPAGE_BPS);
@@ -118,7 +119,8 @@ export function isNarrowRange(state: Pick<SelectedPositionState, "tickLower" | "
 /** Runs even when the swap routes skip this pool. Never uses the target pool's price or the displayed pool fallback. */
 async function assertAddValue(state: SelectedPositionState, input: bigint,
   amounts: { requiredA: bigint; requiredB: bigint; outA: bigint; outB: bigint }, options: SelectedQuoteOptions) {
-  const floorBps = dexDescriptors.descriptorFor("raydium-clmm")?.meta.addValueFloorBps;
+  // Selected-position Add is the Raydium CLMM flow; the id comes from its descriptor, the floor from the registry.
+  const floorBps = dexDescriptors.descriptorFor(raydiumClmmDescriptor.id)?.meta.addValueFloorBps;
   if (floorBps === undefined) return;
   const prices = await (options.prices ?? marketUsdPrices)([state.inputMint, state.mintA, state.mintB]);
   options.signal?.throwIfAborted();
