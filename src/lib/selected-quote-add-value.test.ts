@@ -61,6 +61,7 @@ const add = (snapshot: SelectedPositionState, prices: UsdPriceReader, amount = "
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("SOFINANCE_FEE_WALLET", Keypair.generate().publicKey.toBase58());
+  vi.stubEnv("SOFINANCE_FEE_BPS", "10");
 });
 afterEach(() => vi.unstubAllEnvs());
 
