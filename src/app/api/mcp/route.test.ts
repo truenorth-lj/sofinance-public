@@ -10,7 +10,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/mcp/tools", () => Object.fromEntries([
   "listPositions", "quoteAddLiquidity", "prepareTransaction", "quoteCompound", "prepareCompoundTransaction",
   "submitSignedTransaction", "submitCompoundTransaction", "listRwaPairs", "getPositionPerformance",
-  "getPositionRangeStatus", "quoteOpenPosition", "prepareOpenPosition", "submitOpenPosition", "prepareWithdraw", "submitWithdrawTransaction",
+  "getPositionRangeStatus", "quoteOpenPosition", "prepareOpenPosition", "submitOpenPosition", "prepareWithdraw", "submitWithdrawTransaction", "getPoolRangeApr",
 ].map((name) => [name, vi.fn()])));
 
 import { NextRequest } from "next/server";
@@ -18,7 +18,7 @@ import { generateMcpToken } from "@/lib/mcp-auth";
 import * as schemas from "@/mcp/schemas";
 import * as tools from "@/mcp/tools";
 import { SIGNING_SECRET, testKeypair } from "@/lib/test-support/send-fixtures";
-import { OPTIONS, POST } from "./route";
+import { GET, OPTIONS, POST } from "./route";
 
 const wallet = testKeypair(1).publicKey.toBase58();
 const otherWallet = testKeypair(2).publicKey.toBase58();
@@ -57,17 +57,18 @@ afterEach(() => {
 // -------------------------------------------------------------------- tools/list contract
 const EXPECTED_TOOL_NAMES = [
   "prepare_withdraw", "submit_withdraw",
-  "get_position_performance", "get_position_range_status", "list_rwa_pairs", "list_positions",
+  "get_position_performance", "get_position_range_status", "list_rwa_pairs", "get_pool_range_apr", "list_positions",
   "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction",
   "submit_signed_transaction", "submit_compound_transaction", "quote_open_position", "prepare_open_position", "submit_open_position",
 ];
+const PUBLIC_TOOLS = ["list_rwa_pairs", "get_pool_range_apr"];
 
 describe("removed tools", () => {
   it("get_pool_activity is gone from tools/list and a direct call is an unknown tool", async () => {
     const { json } = await send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
     const names = json.result.tools.map((tool: { name: string }) => tool.name);
     expect(names).not.toContain("get_pool_activity");
-    expect(names).toHaveLength(15);
+    expect(names).toHaveLength(16);
     const call = await callTool("get_pool_activity", { poolId: pool });
     expect(call.json.result.isError).toBe(true);
     expect(call.json.result.content[0].text).toContain("Unknown tool: get_pool_activity");
@@ -75,7 +76,7 @@ describe("removed tools", () => {
 });
 
 describe("tools/list wire contract", () => {
-  it("lists exactly the 15 tools in the current order, without authentication", async () => {
+  it("lists exactly the 16 tools in the current order, without authentication", async () => {
     const { response, json } = await send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
     expect(response.status).toBe(200);
     expect(json).toMatchObject({ jsonrpc: "2.0", id: 1 });
@@ -99,6 +100,7 @@ describe("tools/list wire contract", () => {
     prepare_withdraw:"prepareWithdrawSchema",submit_withdraw:"submitWithdrawSchema",
     get_position_performance: "getPositionPerformanceSchema",
     get_position_range_status: "getPositionRangeStatusSchema", list_rwa_pairs: "listRwaPairsSchema",
+    get_pool_range_apr: "getPoolRangeAprSchema",
     list_positions: "listPositionsSchema", quote_add_liquidity: "quoteAddLiquiditySchema",
     prepare_transaction: "prepareTransactionSchema", quote_compound: "quoteCompoundSchema",
     prepare_compound_transaction: "quoteCompoundSchema", submit_signed_transaction: "submitSignedTransactionSchema",
@@ -141,8 +143,34 @@ describe("JSON-RPC envelope", () => {
 
   it("initialize and ping are public", async () => {
     const init = await send({ jsonrpc: "2.0", id: 1, method: "initialize" });
-    expect(init.json.result).toMatchObject({ protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "sofinance-mcp-server", version: "0.1.0" } });
+    expect(init.json.result).toMatchObject({ protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "sofinance-mcp-server", version: "0.2.0" } });
+    expect(init.json.result.instructions).toContain("list_rwa_pairs and get_pool_range_apr");
     expect((await send({ jsonrpc: "2.0", id: 2, method: "ping" })).json).toEqual({ jsonrpc: "2.0", id: 2, result: {} });
+  });
+
+  it.each([
+    ["2025-06-18", "2025-06-18"], ["2025-03-26", "2025-03-26"], ["2024-11-05", "2024-11-05"],
+    // Not implemented here: answer with the server's latest, never echo the client's.
+    ["2025-11-25", "2025-06-18"], ["2099-01-01", "2025-06-18"], [42, "2025-06-18"], [undefined, "2025-06-18"],
+  ])("initialize negotiates the protocol version: client %j => %s", async (requested, expected) => {
+    const params = { protocolVersion: requested, capabilities: {}, clientInfo: { name: "t", version: "1" } };
+    const { json } = await send({ jsonrpc: "2.0", id: 1, method: "initialize", params });
+    expect(json.result.protocolVersion).toBe(expected);
+  });
+
+  it("rejects an unsupported MCP-Protocol-Version header after initialize with 400; accepts supported or absent", async () => {
+    const list = { jsonrpc: "2.0", id: 1, method: "tools/list" };
+    const bad = await send(list, { "MCP-Protocol-Version": "1999-01-01" });
+    expect(bad.response.status).toBe(400);
+    expect(bad.json.error.data.supported).toEqual(["2025-06-18", "2025-03-26", "2024-11-05"]);
+    expect((await send(list, { "MCP-Protocol-Version": "2025-06-18" })).response.status).toBe(200);
+    expect((await send(list)).response.status).toBe(200);
+  });
+
+  it("GET is 405 (no SSE stream) with Allow: POST, OPTIONS", async () => {
+    const response = GET();
+    expect(response.status).toBe(405);
+    expect(response.headers.get("allow")).toBe("POST, OPTIONS");
   });
 
   it("a missing id is echoed as null", async () => {
@@ -174,7 +202,7 @@ describe("JSON-RPC envelope", () => {
     expect(options.status).toBe(204);
     expect(options.headers.get("Access-Control-Allow-Origin")).toBe("*");
     expect(options.headers.get("Access-Control-Allow-Methods")).toBe("POST, OPTIONS");
-    expect(options.headers.get("Access-Control-Allow-Headers")).toBe("Content-Type, Authorization");
+    expect(options.headers.get("Access-Control-Allow-Headers")).toBe("Content-Type, Authorization, MCP-Protocol-Version");
     const { response } = await send({ jsonrpc: "2.0", id: 1, method: "ping" });
     expect(response.headers.get("Access-Control-Allow-Origin")).toBeNull();
   });
@@ -183,10 +211,32 @@ describe("JSON-RPC envelope", () => {
 describe("authentication", () => {
   const call = { jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "list_positions", arguments: { wallet } } };
 
-  it("tools/call without a bearer header => 401 / -32001", async () => {
+  it("tools/call without a bearer header => 401 / -32001 with plain next steps and a WWW-Authenticate challenge", async () => {
     const { response, json } = await send(call);
     expect(response.status).toBe(401);
-    expect(json.error).toMatchObject({ code: -32001, message: "Unauthorized: Bearer token required" });
+    expect(response.headers.get("www-authenticate")).toBe('Bearer realm="sofinance-mcp"');
+    expect(json.error.code).toBe(-32001);
+    expect(json.error.message).toMatch(/^Unauthorized: Bearer token required\. /);
+    expect(json.error.message).toContain("/app/ai");
+    expect(json.error.message).toContain("Sign to get MCP config");
+    expect(json.error.data).toMatchObject({ publicTools: PUBLIC_TOOLS });
+    expect(json.error.data.setupUrl).toMatch(/\/app\/ai$/);
+    expect(json.error.data.steps.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it.each(EXPECTED_TOOL_NAMES.filter((name) => !PUBLIC_TOOLS.includes(name)))("protected tool %s still answers 401 without a token", async (name) => {
+    const { response } = await send({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: VALID_ARGS[name] } });
+    expect(response.status).toBe(401);
+    for (const fn of Object.values(toolFns)) expect(fn).not.toHaveBeenCalled();
+  });
+
+  it.each(PUBLIC_TOOLS)("public tool %s runs without a token, and ignores a bad one", async (name) => {
+    for (const headers of [{}, bearer("garbage")]) {
+      const { response, json } = await send({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: VALID_ARGS[name] } }, headers);
+      expect(response.status).toBe(200);
+      expect(json.result.isError).toBeUndefined();
+    }
+    expect(toolFns[IMPLEMENTATION[name]!]).toHaveBeenCalledTimes(2);
   });
 
   it("a non-Bearer scheme or lower-case 'bearer' is rejected (case-sensitive)", async () => {
@@ -198,7 +248,8 @@ describe("authentication", () => {
     for (const token of ["garbage", generateMcpToken(wallet, "another-secret"), generateMcpToken(wallet, SIGNING_SECRET, -1)]) {
       const { response, json } = await send(call, bearer(token));
       expect(response.status).toBe(401);
-      expect(json.error.message).toBe("Unauthorized: Invalid or expired token");
+      expect(json.error.message).toMatch(/^Unauthorized: Invalid or expired token\. /);
+      expect(response.headers.get("www-authenticate")).toContain('error="invalid_token"');
     }
     expect(toolFns.listPositions).not.toHaveBeenCalled();
   });
@@ -254,6 +305,7 @@ const VALID_ARGS: Record<string, unknown> = {
   get_position_performance: { positionMint: mint, wallet },
   get_position_range_status: { positionMint: mint, wallet },
   list_rwa_pairs: {},
+  get_pool_range_apr: { poolId: pool },
 };
 const IMPLEMENTATION: Record<string, string> = {
   prepare_withdraw:"prepareWithdraw",submit_withdraw:"submitWithdrawTransaction",
@@ -262,12 +314,12 @@ const IMPLEMENTATION: Record<string, string> = {
   submit_signed_transaction: "submitSignedTransaction", submit_compound_transaction: "submitCompoundTransaction",
   quote_open_position: "quoteOpenPosition", prepare_open_position: "prepareOpenPosition", submit_open_position: "submitOpenPosition",
   get_position_performance: "getPositionPerformance", get_position_range_status: "getPositionRangeStatus",
-  list_rwa_pairs: "listRwaPairs",
+  list_rwa_pairs: "listRwaPairs", get_pool_range_apr: "getPoolRangeApr",
 };
-const WALLET_REQUIRED = EXPECTED_TOOL_NAMES.filter((name) => !["get_position_performance", "get_position_range_status", "list_rwa_pairs"].includes(name));
+const WALLET_REQUIRED = EXPECTED_TOOL_NAMES.filter((name) => !["get_position_performance", "get_position_range_status", ...PUBLIC_TOOLS].includes(name));
 
 describe("tools/call dispatch and wallet binding", () => {
-  it("covers all 15 tools", () => {
+  it("covers all 16 tools", () => {
     expect(Object.keys(VALID_ARGS).sort()).toEqual([...EXPECTED_TOOL_NAMES].sort());
     expect(Object.keys(IMPLEMENTATION).sort()).toEqual([...EXPECTED_TOOL_NAMES].sort());
   });
@@ -326,7 +378,7 @@ describe("tools/call dispatch and wallet binding", () => {
   it("QUIRK: list_positions with no arguments object fails zod (args are not defaulted) while the optional tools default to {}", async () => {
     expect((await callTool("list_positions", undefined)).json.result.isError).toBe(true);
     expect((await callTool("list_rwa_pairs", undefined)).json.result.isError).toBeUndefined();
-    expect(toolFns.listRwaPairs).toHaveBeenCalledWith({ minTvl: 0, maxPages: 3, sortBy: "estimatedFeeApr" });
+    expect(toolFns.listRwaPairs).toHaveBeenCalledWith({ minTvl: 0, maxPages: 3, sortBy: "apr7d" });
   });
 
   it("an unknown tool name is an isError result (HTTP 200), not a JSON-RPC error", async () => {

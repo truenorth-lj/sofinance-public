@@ -287,7 +287,7 @@ describe("listRwaPairsSchema", () => {
     if (result.success) {
       expect(result.data.minTvl).toBe(0);
       expect(result.data.maxPages).toBe(3);
-      expect(result.data.sortBy).toBe("estimatedFeeApr");
+      expect(result.data.sortBy).toBe("apr7d");
     }
   });
 

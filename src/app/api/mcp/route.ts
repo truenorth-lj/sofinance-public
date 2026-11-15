@@ -5,16 +5,22 @@ import { verifyMcpToken } from "@/lib/mcp-auth";
 import { publicToolError } from "@/mcp/public-tool-error";
 import { sanitizePublicError } from "@/lib/public-error";
 import { captureApiRouteError } from "@/lib/sentry/capture";
-import { dispatchTool } from "@/mcp/dispatch";
+import { dispatchTool, isPublicTool, type McpDispatchContext } from "@/mcp/dispatch";
 import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
+import { PUBLIC_TOOL_NAMES } from "@/mcp/tool-definitions";
+import {
+  SERVER_INFO, authSteps, isSupportedProtocolVersion, mcpSetupUrl, negotiateProtocolVersion, serverInstructions,
+  SUPPORTED_PROTOCOL_VERSIONS,
+} from "@/mcp/protocol";
 
 /**
  * POST /api/mcp
  * 
  * Remote MCP-over-HTTP endpoint for AI agents (Cursor, Claude Desktop).
  * 
- * Protocol: JSON-RPC 2.0 over HTTP
- * Authentication: Bearer token in Authorization header
+ * Protocol: JSON-RPC 2.0 over HTTP (Streamable HTTP, JSON responses only; versions in SUPPORTED_PROTOCOL_VERSIONS)
+ * Authentication: none for the public read-only snapshot tools (PUBLIC_TOOL_NAMES); every other tools/call needs the
+ * wallet-bound Bearer token from /app/ai.
  * 
  * Supported methods:
  * - tools/list - List available tools
@@ -66,6 +72,30 @@ function createJsonRpcError(
   };
 }
 
+const WWW_AUTHENTICATE_REALM = 'Bearer realm="sofinance-mcp"';
+
+/**
+ * 401 for a token tool: RFC 6750 `WWW-Authenticate` (with `error="invalid_token"` only when a token was sent), and
+ * plain next steps in the message and `data` so an agent can tell its user exactly how to get a token.
+ */
+function unauthorized(id: string | number | null, reason: "missing" | "invalid") {
+  const message = reason === "missing"
+    ? "Unauthorized: Bearer token required"
+    : "Unauthorized: Invalid or expired token";
+  const guidance = `This tool is bound to one wallet. To get a token, open ${mcpSetupUrl()}, connect the wallet, click "Sign to get MCP config" and add the Authorization header it shows (valid 24h). ${PUBLIC_TOOL_NAMES.join(" and ")} work without a token.`;
+  const challenge = reason === "invalid"
+    ? `${WWW_AUTHENTICATE_REALM}, error="invalid_token", error_description="The token is invalid or expired"`
+    : WWW_AUTHENTICATE_REALM;
+  return NextResponse.json(
+    createJsonRpcError(id, -32001, `${message}. ${guidance}`, {
+      setupUrl: mcpSetupUrl(),
+      steps: authSteps(),
+      publicTools: [...PUBLIC_TOOL_NAMES],
+    }),
+    { status: 401, headers: { "WWW-Authenticate": challenge } },
+  );
+}
+
 function createJsonRpcSuccess(
   id: string | number | null,
   result: unknown
@@ -99,6 +129,17 @@ export async function POST(request: NextRequest) {
 
     const { id, method, params } = rpcRequest;
 
+    // Streamable HTTP: after initialize the client sends the negotiated version; reject one this server does not speak.
+    const headerVersion = request.headers.get("mcp-protocol-version");
+    if (method !== "initialize" && headerVersion !== null && !isSupportedProtocolVersion(headerVersion)) {
+      return NextResponse.json(
+        createJsonRpcError(id ?? null, -32600, `Unsupported MCP-Protocol-Version: ${headerVersion.slice(0, 32)}`, {
+          supported: [...SUPPORTED_PROTOCOL_VERSIONS],
+        }),
+        { status: 400 },
+      );
+    }
+
     // The stateless server has no session to update. Accept the lifecycle
     // notification without a JSON-RPC response, as Streamable HTTP requires.
     if (method === "notifications/initialized" && id === undefined) {
@@ -109,15 +150,14 @@ export async function POST(request: NextRequest) {
     if (method === "initialize") {
       return NextResponse.json(
         createJsonRpcSuccess(id ?? null, {
-          protocolVersion: "2024-11-05",
+          protocolVersion: negotiateProtocolVersion(
+            params && typeof params === "object" ? (params as { protocolVersion?: unknown }).protocolVersion : undefined,
+          ),
           capabilities: {
             tools: {},
           },
-          serverInfo: {
-            name: "sofinance-mcp-server",
-            version: "0.1.0",
-          },
-          instructions: "Remote MCP server for SoFinance. Authenticate with Bearer token from /api/mcp-token.",
+          serverInfo: { ...SERVER_INFO },
+          instructions: serverInstructions(),
         })
       );
     }
@@ -134,30 +174,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Authenticate for protected methods
-    const authHeader = request.headers.get("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return NextResponse.json(
-        createJsonRpcError(id ?? null, -32001, "Unauthorized: Bearer token required"),
-        { status: 401 }
-      );
-    }
+    // Public read-only snapshot tools run without a token (any Authorization header is ignored for them).
+    const toolName = method === "tools/call" && params && typeof params === "object" && "name" in params
+      ? (params as { name: unknown }).name : undefined;
+    const publicCall = typeof toolName === "string" && isPublicTool(toolName);
 
-    const token = authHeader.slice(7);
-    const secret = getJupiterApiKey();
-    if (!secret) {
-      return NextResponse.json(
-        createJsonRpcError(id ?? null, -32002, "Server configuration error"),
-        { status: 500 }
-      );
-    }
+    let context: McpDispatchContext = { surface: "mcp-http-public" };
+    if (!publicCall) {
+      // Authenticate for protected methods
+      const authHeader = request.headers.get("Authorization");
+      if (!authHeader || !authHeader.startsWith("Bearer ")) return unauthorized(id ?? null, "missing");
 
-    const wallet = verifyMcpToken(token, secret)?.wallet;
-    if (!wallet) {
-      return NextResponse.json(
-        createJsonRpcError(id ?? null, -32001, "Unauthorized: Invalid or expired token"),
-        { status: 401 }
-      );
+      const token = authHeader.slice(7);
+      const secret = getJupiterApiKey();
+      if (!secret) {
+        return NextResponse.json(
+          createJsonRpcError(id ?? null, -32002, "Server configuration error"),
+          { status: 500 }
+        );
+      }
+
+      const wallet = verifyMcpToken(token, secret)?.wallet;
+      if (!wallet) return unauthorized(id ?? null, "invalid");
+      context = { surface: "mcp-http", tokenWallet: wallet };
     }
 
     // Handle tool calls
@@ -178,7 +217,7 @@ export async function POST(request: NextRequest) {
       }
 
       try {
-        const result = await dispatchTool(toolParams.name, toolParams.arguments, { surface: "mcp-http", tokenWallet: wallet });
+        const result = await dispatchTool(toolParams.name, toolParams.arguments, context);
         return NextResponse.json(
           createJsonRpcSuccess(id ?? null, {
             content: [
@@ -220,6 +259,14 @@ export async function POST(request: NextRequest) {
   }
 }
 
+/** Streamable HTTP: this server opens no SSE stream, so GET is 405 (the spec's answer), not a page or 403. */
+export function GET() {
+  return NextResponse.json(
+    createJsonRpcError(null, -32000, "Method not allowed: send JSON-RPC requests with POST"),
+    { status: 405, headers: { Allow: "POST, OPTIONS" } },
+  );
+}
+
 // Handle OPTIONS for CORS preflight
 export async function OPTIONS() {
   return new NextResponse(null, {
@@ -227,7 +274,7 @@ export async function OPTIONS() {
     headers: {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, MCP-Protocol-Version",
     },
   });
 }

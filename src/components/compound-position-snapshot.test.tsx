@@ -7,7 +7,7 @@ import { compoundHistoryFixture } from "@/lib/test-support/compound-history-fixt
 import { testKeypair } from "@/lib/test-support/send-fixtures";
 import { compoundAttemptKey } from "@sofinance/engine/compound-attempt";
 import { POSITION_HISTORY_REFRESH_EVENT } from "@/lib/position-history-refresh";
-import { CompoundPanel } from "./compound-panel";
+import { RowCompoundHarness } from "./test-support/row-compound";
 import { useCompoundController, type CompoundConfirmation } from "./use-compound-controller";
 
 const mocks = vi.hoisted(() => ({ sign: vi.fn() }));
@@ -46,7 +46,7 @@ function Probe() {
     views.push({ at: Date.now(), wallet: value.wallet, mint: value.positionMint, state: value.state,
       loading: value.loading, error: value.error, preview: value.preview, canCompound: value.canCompound });
   });
-  return createElement(CompoundPanel, { controller: value });
+  return createElement(RowCompoundHarness, { controller: value });
 }
 async function render(strict = false) {
   await act(async () => root.render(strict ? createElement(StrictMode, null, createElement(Probe)) : createElement(Probe)));

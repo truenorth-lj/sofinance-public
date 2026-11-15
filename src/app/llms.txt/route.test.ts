@@ -17,6 +17,26 @@ describe("/llms.txt", () => {
     expect(text).toContain("NVDA / NVDAx");
   });
 
+  it("lists the Meteora DLMM pools and the Solana pools added since the last review (SPY, TTWO)", async () => {
+    const text = await GET().text();
+    expect(text).toContain("Solana (Meteora DLMM, 2 pools)");
+    expect(text).toContain("- TSLA / TSLAx (Tesla)\n");
+    expect(text).toContain("- SPY / SPYx (S&P 500 ETF)");
+    expect(text).toContain("- TTWO / TTWOx (Take-Two Interactive)");
+    expect(text).toContain("INTC / INTCx (Intel), two fee tiers");
+    expect(text).toContain("https://sofinancelab.xyz/api/mcp");
+  });
+
+  it("lists the guide pages (pricing, learn, use cases) in a Guides section before Docs", async () => {
+    const text = await GET().text();
+    const guides = text.slice(text.indexOf("## Guides\n"), text.indexOf("## Docs\n"));
+    expect(text.indexOf("## Guides\n")).toBeGreaterThan(0);
+    expect(guides).toContain("- [Pricing](https://sofinancelab.xyz/fees): zero performance fee; 0.10% only when we swap for you; withdrawing as the two pool tokens costs 0\n");
+    for (const path of ["/learn/what-is-a-same-stock-lp-pool", "/learn/how-to-open-an-lp-position", "/learn/impermanent-loss-on-same-stock-pools",
+      "/use-cases/tsla-same-stock-lp", "/use-cases/spcx-same-stock-lp"]) expect(guides).toContain(`(https://sofinancelab.xyz${path})`);
+    expect(guides.match(/^- \[/gm)).toHaveLength(6);
+  });
+
   it("keeps the public-copy rules", async () => {
     const text = await GET().text();
     expect(text).not.toContain("yield-and-apr");
