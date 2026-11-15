@@ -6,8 +6,13 @@ import { readRaydiumPositionAccounts } from "@sofinance/engine/protocols/raydium
 import { fetchTokenPricesUsd, type TokenPriceQuote } from "@sofinance/engine/token-prices";
 import { getTokenMetadata } from "@sofinance/engine/token-metadata";
 import { getPositionFigures, fetchRaydiumPoolSymbolsBatch } from "@/lib/position-performance";
+import { getRwaConfig } from "@/lib/config/rwa-env";
+import { getPositionHistoryStore } from "@/lib/position-history-store";
+import { readPortfolioHistory } from "@/lib/portfolio/history-snapshot";
+import { syncPositionHistory } from "@/lib/position-history-sync";
+import { createHistoryRpcConnections } from "@/lib/position-history-rpc";
 import { batchAccountReads } from "@/lib/portfolio/account-batch";
-import type { PortfolioRequest, PortfolioReader } from "@/lib/portfolio/model";
+import type { PortfolioInput, PortfolioRequest, PortfolioReader } from "@/lib/portfolio/model";
 import { mapPortfolioPositions, portfolioAbortable as abortable, PORTFOLIO_POSITION_DEADLINE_MS } from "../portfolio-workers";
 
 type Snapshot = Awaited<ReturnType<typeof readRaydiumPositionAccounts>>;
@@ -49,20 +54,38 @@ async function readInputs(positions: PortfolioRequest["positions"], signal: Abor
 }
 
 
-export async function prepareRaydiumPortfolio(input: PortfolioRequest, signal: AbortSignal): Promise<PortfolioReader> {
+export async function prepareRaydiumPortfolio(input: PortfolioInput, signal: AbortSignal): Promise<PortfolioReader> {
   if (input.fresh || input.positions.some((item) => item.afterSignatures?.length)) resetRpcCache();
   const { snapshots, prices, labels } = await readInputs(input.positions, signal);
   return async (item, readSignal) => {
     const snapshot = snapshots.get(item.key);
     if (!snapshot) throw new Error("Position accounts unavailable");
+    const context = { positionMint: item.key.split(":")[1]!, positionAccount: snapshot.positionAccount,
+      poolId: snapshot.poolId, mintA: snapshot.mintA, mintB: snapshot.mintB, vaultA: snapshot.vaultA, vaultB: snapshot.vaultB };
+    const store = input.scheduleHistoryRefresh && getRwaConfig().positionHistoryEnabled ? getPositionHistoryStore() : null;
+    const history = store ? await readPortfolioHistory({ store, context, fresh: input.fresh,
+      refreshAfter: item.refreshAfter, afterSignatures: item.afterSignatures }) : null;
+    readSignal.throwIfAborted();
+    if (history?.needsSync) input.scheduleHistoryRefresh!(JSON.stringify(context), async (signal) => {
+      const connections = createHistoryRpcConnections(signal);
+      await syncPositionHistory({ context, store: store!,
+        connection: connections.connection, fallbackConnection: connections.fallbackConnection,
+        maxSignatures: 100, maxDetailRequests: 8, signal,
+        rpcMetrics: () => connections.observer.snapshot(), receiptProvider: (signature) => connections.observer.receiptProvider(signature),
+      });
+    });
     // A row deadline cancels its fee transport before the scheduler reuses the slot.
     const connection = batchAccountReads(rpcConnection(undefined, { signal: readSignal }), readSignal);
     const read = await getPositionFigures(item.key.split(":")[1]!, {
       wallet: input.wallet, snapshot, prices, accountConnection: connection, signal: readSignal,
       symbols: labels.get(snapshot.poolId) ?? { symbolA: null, symbolB: null },
       refreshHistory: input.fresh, historyAfterSignatures: item.afterSignatures,
+      historyResult: history?.history,
     });
     return { figures: read.figures, evaluatedAt: read.evaluatedAt, historyComplete: read.historyComplete,
-      historyRefreshResolved: read.historyRefreshResolved, timings: { ...read.timings, history: read.historyFetch } };
+      historyRefreshResolved: history?.historyRefreshResolved ?? read.historyRefreshResolved,
+      historyUpdatedAt: history?.historyUpdatedAt, historyStatus: history?.historyStatus,
+      historyRefreshAfter: history?.historyRefreshAfter,
+      timings: { ...read.timings, history: read.historyFetch } };
   };
 }

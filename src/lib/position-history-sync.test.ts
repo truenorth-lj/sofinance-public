@@ -46,22 +46,27 @@ class MemoryStore implements PositionHistoryStore {
   snapshot: PositionHistorySnapshot = { lease: null, state: { headSignature: null, backfillBefore: null,
     complete: false, revision: 0, parserVersion: POSITION_HISTORY_PARSER_VERSION }, transactions: [] };
   released = 0;
+  releaseChecks: boolean[] = [];
   claims = 0;
   locked = false;
   commitSizes: number[] = [];
+  commitChecks: boolean[] = [];
   async request<K extends PositionStoreOperation>(input: PositionStoreRequest<K>): Promise<PositionStoreResultMap[K]> {
     positionStoreRequestSchema.parse(input);
     return this.handlers[input.op](input);
   }
   private readonly handlers: PositionStoreHandlers = {
+    read: async () => ({ readAt: "2026-11-15T00:00:00.000Z", snapshot: { ...structuredClone(this.snapshot), lease: null,
+      updatedAt: "2026-11-15T00:00:00.000Z", syncing: this.locked } }),
     claim: async () => {
       this.claims++;
       return { ...structuredClone(this.snapshot), lease: this.locked ? null : { positionMint: context.positionMint,
         owner: "2de80986-8a40-4a34-9d4e-c5f8b30a676e", epoch: this.claims, revision: this.snapshot.state.revision } };
     },
-    release: async () => { this.released++; return true; },
+    release: async input => { this.released++; this.releaseChecks.push(input.checked === true); return true; },
     commit: async input => {
       this.commitSizes.push(input.transactions.length);
+      this.commitChecks.push(input.checked === true);
       const rows = new Map(this.snapshot.transactions.map(row => [row.signature, row]));
       for (const row of input.transactions) rows.set(row.signature, structuredClone(row));
       this.snapshot = { lease: null, state: { ...input.state, revision: this.snapshot.state.revision + 1 },
@@ -88,6 +93,33 @@ function rpc(ids: number[], txs = new Map(ids.map(id => [id, receipt(id, id === 
 }
 
 describe("incremental position history", () => {
+  it("marks successful no-change checks fresh without marking partial, failed or aborted checks", async () => {
+    const store = new MemoryStore(), upstream = rpc([1]);
+    const run = (signal?: AbortSignal) => syncPositionHistory({ context, store, connection: upstream.connection,
+      maxSignatures: 100, signal });
+    await run();
+    const unchanged = await run();
+    expect(unchanged.metric.fetchedTxCount).toBe(0);
+    expect(store.commitSizes).toEqual([1]);
+    expect(store.releaseChecks).toEqual([true, true]);
+
+    upstream.signatures.mockRejectedValueOnce(new Error("listing offline"));
+    await expect(run()).rejects.toThrow("listing offline");
+    expect(store.releaseChecks.at(-1)).toBe(false);
+
+    const controller = new AbortController(), list = upstream.signatures.getMockImplementation()!;
+    upstream.signatures.mockImplementationOnce(async (...args) => {
+      const result = await list(...args); controller.abort(); return result;
+    });
+    await expect(run(controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+    expect(store.releaseChecks.at(-1)).toBe(false);
+
+    const partial = new MemoryStore(), missingOpening = rpc([1], new Map());
+    expect((await syncPositionHistory({ context, store: partial, connection: missingOpening.connection,
+      maxSignatures: 100 })).truncated).toBe(true);
+    expect(partial.releaseChecks).toEqual([false]);
+  });
+
   it("checkpoints a cold Portfolio ledger in eight-detail reads until history is complete", async () => {
     const store = new MemoryStore();
     const upstream = rpc(Array.from({ length: 40 }, (_, index) => 40 - index));
@@ -602,13 +634,16 @@ describe("incremental position history", () => {
     upstream.ids.unshift(3, 2);
     upstream.txs.set(2, receipt(2)); upstream.txs.set(3, receipt(3));
     expect((await run()).truncated).toBe(true);
+    expect(store.commitChecks.at(-1)).toBe(false);
     upstream.ids.unshift(4); upstream.txs.set(4, receipt(4));
     const previousWindow = await run();
     expect(previousWindow.truncated).toBe(true);
     expect(previousWindow.metric.canContinue).toBe(true);
+    expect(store.commitChecks.at(-1)).toBe(false);
     expect(store.snapshot.state.headSignature).toBe(signature(3));
     expect((await run()).truncated).toBe(false);
     expect(store.snapshot.state.headSignature).toBe(signature(4));
+    expect(store.commitChecks.at(-1)).toBe(true);
   });
 
   it("marks already-retained pre-creation pending rows irrelevant after recovering the opening", async () => {

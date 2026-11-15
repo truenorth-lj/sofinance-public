@@ -12,6 +12,20 @@ const transaction = { signature: "a".repeat(64), slot: 1, blockTime: 10, status:
 const commit = { op: "commit", lease, state: { headSignature: transaction.signature,
   backfillBefore: null, complete: false, parserVersion: 1 }, transactions: [transaction] };
 describe("position history schema and transport validation", () => {
+  it("validates read-only snapshot requests and explicit completed-check release flags", () => {
+    const context = Object.fromEntries(["positionMint", "positionAccount", "poolId", "mintA", "mintB", "vaultA", "vaultB"]
+      .map((key) => [key, "1".repeat(32)]));
+    expect(positionStoreRequestSchema.parse({ op: "read", context, parserVersion: 1 }))
+      .toEqual({ op: "read", context, parserVersion: 1 });
+    expect(positionStoreRequestSchema.safeParse({ op: "read", context, parserVersion: 0 }).success).toBe(false);
+    expect(positionStoreRequestSchema.safeParse({ op: "read", context: { ...context, poolId: "invalid" }, parserVersion: 1 }).success).toBe(false);
+    expect(positionStoreRequestSchema.parse({ op: "release", lease, checked: true }))
+      .toEqual({ op: "release", lease, checked: true });
+    expect(positionStoreRequestSchema.safeParse({ op: "release", lease, checked: "true" }).success).toBe(false);
+    expect(positionStoreRequestSchema.parse({ ...commit, checked: true })).toEqual({ ...commit, checked: true });
+    expect(positionStoreRequestSchema.safeParse({ ...commit, checked: "true" }).success).toBe(false);
+  });
+
   it("adds exactly the two approved tables, keeps replay events and enforces fixed network identity", () => {
     const tables = [positionHistoryState, positionHistoryTransactions].map(getTableConfig);
     expect(tables.map((table) => table.name)).toEqual(["position_history_state", "position_history_transactions"]);

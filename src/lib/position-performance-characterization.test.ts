@@ -34,6 +34,7 @@ const { getOrcaPositionPerformance } = await import("./orca-positions");
 const { getMeteoraPositionPerformance } = await import("./meteora-positions");
 const { getPositionPerformance, getPositionFigures } = await import("./position-performance");
 const { positionFigures } = await import("./portfolio/figures");
+const { readPortfolioHistory } = await import("./portfolio/history-snapshot");
 
 const NOW = 1_800_000_000;
 const PRICE = 100_000;
@@ -283,6 +284,38 @@ describe("Raydium position performance characterization", () => {
     expect(compact.historyComplete).toBe(false);
     expect(compact.figures.valueUsd).toBeTypeOf("number"); expect(compact.figures.shares).toBeTypeOf("number");
     expect(compact.figures.cumulativeFeesUsd).toBeNull();
+  });
+
+  it("values a supplied durable snapshot without entering the history synchronization path", async () => {
+    await run("full");
+    const options = { connection, nowSeconds: NOW, prices: quotes(mintA.toBase58(), mintB.toBase58()),
+      symbols: { symbolA: "HOODx", symbolB: "HOOD" } };
+    const expected = await getPositionFigures(nft.toBase58(), options);
+    const saved: Awaited<ReturnType<typeof loadPerformanceHistory>> = await vi.mocked(loadPerformanceHistory).mock.results.at(-1)!.value;
+    vi.mocked(loadPerformanceHistory).mockClear().mockImplementation(async () => { throw new Error("Foreground history RPC must not run"); });
+    const actual = await getPositionFigures(nft.toBase58(), { ...options, historyResult: saved });
+    expect(actual.figures).toEqual(expected.figures);
+    expect(actual.historyComplete).toBe(true);
+    const snapshot = { lease: null, state: { headSignature: saved.history.at(-1)?.signature ?? null,
+      backfillBefore: null, complete: true, revision: 1, parserVersion: 1 }, syncing: false,
+      readAt: "2026-11-15T00:02:00Z", updatedAt: "2026-11-15T00:00:00Z",
+      transactions: saved.history.map((item) => ({ ...item, status: "parsed", receipt: null, parserVersion: 1 })) };
+    // Use the production snapshot adapter: stale/forced does not mean an
+    // incomplete ledger, and must keep the stored cumulative fees visible.
+    for (const fresh of [false, true]) {
+      const stale = await readPortfolioHistory({ context: { positionMint: nft.toBase58(), positionAccount: nft.toBase58(),
+        poolId: nft.toBase58(), mintA: mintA.toBase58(), mintB: mintB.toBase58(), vaultA: nft.toBase58(), vaultB: nft.toBase58() },
+        store: { request: vi.fn().mockResolvedValue({ readAt: snapshot.readAt, snapshot }) }, fresh });
+      expect(stale.historyStatus).toBe("updating"); expect(stale.historyRefreshResolved).toBe(false);
+      const stored = await getPositionFigures(nft.toBase58(), { ...options, historyResult: stale.history });
+      expect(stored.figures).toEqual(expected.figures);
+      expect(stored.historyComplete).toBe(true);
+    }
+    const cold = await getPositionFigures(nft.toBase58(), { ...options, historyResult: { ...saved, history: [], truncated: true } });
+    expect(cold.figures.valueUsd).toBeTypeOf("number");
+    expect(cold.figures.unclaimedFeesUsd).toBeTypeOf("number");
+    expect(cold.figures.cumulativeFeesUsd).toBeNull();
+    expect(vi.mocked(loadPerformanceHistory)).not.toHaveBeenCalled();
   });
 
   it("records truncated history", async () => {
