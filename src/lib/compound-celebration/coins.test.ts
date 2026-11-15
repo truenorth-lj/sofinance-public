@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   CATCHER, CATCHER_SPRITES, coinSymbol, CELEBRATION_MS, COIN_COUNT, COIN_SIZE, FALL_MS, KNOCK_COIN_SIZE,
-  PHYSICS, REDUCED_COINS, SAMPLE_MS, STAGGER_MS, STOCK_COIN_LOGOS, beadFlights, beadKeyframes, catcherKeyframes, nextCelebrationTrigger,
-  pickCoinLogos, planCatcher, reducedSpots, releaseCelebration, seedFrom, seededRandom, spriteRuns, stockTicker, type BeadFlight,
+  PHYSICS, REDUCED_COINS, SAMPLE_MS, STAGGER_MS, STOCK_COIN_LOGOS, beadFlights, beadKeyframes, catcherKeyframes, celebrationToPlay,
+  pickCoinLogos, planCatcher, reducedSpots, seedFrom, seededRandom, spriteRuns, stockTicker, type BeadFlight,
 } from "./coins";
 
 const logo = (ticker: string) => `https://xstocks-metadata.backed.fi/logos/tokens/${ticker}x.png`;
@@ -75,7 +75,7 @@ describe("beads falling to the floor", () => {
   const viewport = { width: 1280, height: 900 };
   const origin = { x: 640, y: 560 };
   const flights = beadFlights(14, origin, viewport, seededRandom(11));
-  it("pops out of the OK button: starts there, small and invisible, and first goes up", () => {
+  it("pops out of the origin button: starts there, small and invisible, and first goes up", () => {
     expect(flights).toHaveLength(14);
     for (const flight of flights) {
       expect(flight.frames[0]).toMatchObject({ t: 0, x: origin.x, y: origin.y, opacity: 0, scale: 0.3 });
@@ -168,7 +168,7 @@ describe("the little character", () => {
     expect(runs.every((run) => /^#[0-9a-f]{6}$/.test(run.color) && run.width >= 1)).toBe(true);
     expect(runs.some((run) => run.color === "#f3e76b")).toBe(true);
   });
-  it("appears under the OK on the floor and collects up to three coins as they land, never faster than it can run", () => {
+  it("appears under the origin on the floor and collects up to three coins as they land, never faster than it can run", () => {
     for (const seed of [1, 2, 3, 11, 42]) {
       const { flights, plan } = setup(seed);
       expect(plan.startX).toBe(origin.x);
@@ -259,35 +259,16 @@ describe("the little character", () => {
 });
 
 describe("celebration trigger", () => {
-  const empty = { lastPlayed: null, queued: null };
   it("plays once per confirmed signature, never while submitting or confirming", () => {
-    expect(nextCelebrationTrigger(null, false, empty).play).toBeNull();
-    expect(nextCelebrationTrigger({ phase: "submitting", signature: "" }, false, empty).play).toBeNull();
-    expect(nextCelebrationTrigger({ phase: "confirming", signature: "s1" }, false, empty).play).toBeNull();
-    const first = nextCelebrationTrigger({ phase: "success", signature: "s1" }, false, empty);
-    expect(first.play).toBe("s1");
-    expect(nextCelebrationTrigger({ phase: "success", signature: "s1" }, false, first.state).play).toBeNull();
-    expect(nextCelebrationTrigger({ phase: "success", signature: "s2" }, false, first.state).play).toBe("s2");
+    expect(celebrationToPlay(null, null)).toBeNull();
+    expect(celebrationToPlay({ phase: "submitting", signature: "" }, null)).toBeNull();
+    expect(celebrationToPlay({ phase: "confirming", signature: "s1" }, null)).toBeNull();
+    expect(celebrationToPlay({ phase: "success", signature: "" }, null)).toBeNull();
+    expect(celebrationToPlay({ phase: "success", signature: "s1" }, null)).toBe("s1");
+    expect(celebrationToPlay({ phase: "success", signature: "s1" }, "s1")).toBeNull();
+    expect(celebrationToPlay({ phase: "success", signature: "s2" }, "s1")).toBe("s2");
   });
-  it("holds a confirmed success while the result dialog is open and plays when it closes", () => {
-    const held = nextCelebrationTrigger({ phase: "success", signature: "s1" }, true, empty);
-    expect(held.play).toBeNull();
-    expect(held.state.queued).toBe("s1");
-    expect(nextCelebrationTrigger(null, false, held.state).play).toBe("s1");
-  });
-  it("the OK release plays the held success at once, and closing the dialog afterwards does not repeat it", () => {
-    const held = nextCelebrationTrigger({ phase: "success", signature: "s1" }, true, empty);
-    const released = releaseCelebration(held.state);
-    expect(released.play).toBe("s1");
-    expect(nextCelebrationTrigger(null, false, released.state).play).toBeNull();
-    expect(releaseCelebration(released.state).play).toBeNull();
-    expect(releaseCelebration(empty).play).toBeNull();
-  });
-  it("never plays after a failed or unconfirmed send", () => {
-    const failed = nextCelebrationTrigger({ phase: "failed", signature: "s1" }, true, empty);
-    expect(nextCelebrationTrigger(null, false, failed.state).play).toBeNull();
-    expect(releaseCelebration(failed.state).play).toBeNull();
-    const confirming = nextCelebrationTrigger({ phase: "confirming", signature: "s2" }, true, empty);
-    expect(nextCelebrationTrigger(null, false, confirming.state).play).toBeNull();
+  it("never plays after a failed send", () => {
+    expect(celebrationToPlay({ phase: "failed", signature: "s1" }, null)).toBeNull();
   });
 });

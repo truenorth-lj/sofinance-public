@@ -66,7 +66,7 @@ export function RaydiumRowCompound({ controller: c, positionMint, positionKey, s
   // Coins for a confirmed compound, once per signature: from the popup's Done while it is open, else from the row button.
   // Each pool token's coin is its xStock ticker by mint (a shortened mint never matches one), else its display symbol.
   const coinMints = state ? [state.mintA, state.mintB] : [];
-  const celebration = useCompoundCelebration(feedback, false, coinMints.map((mint) => coinSymbol(mint, tokenLabel(mint))));
+  const celebration = useCompoundCelebration(feedback, coinMints.map((mint) => coinSymbol(mint, tokenLabel(mint))));
   const rowButton = useRef<HTMLButtonElement>(null);
   const doneButton = useRef<HTMLButtonElement>(null);
   // Done (or closing once it settled) clears the result; on success that re-reads the position (`dismissFeedback`).

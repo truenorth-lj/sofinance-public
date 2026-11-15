@@ -207,35 +207,13 @@ export function reducedSpots(origin: Point, count = REDUCED_COINS): { size: numb
   });
 }
 
-export type CelebrationTriggerState = { lastPlayed: string | null; queued: string | null };
-
 /**
- * Advances the trigger state. A confirmed success is queued once per signature. It plays at once when nothing holds the
- * result (no app dialog open), or after that hold is released. Closing a dialog that is not a confirmed success never
- * plays. `held` is true while the app's result dialog is still open.
+ * The signature to celebrate now: a confirmed success not played yet (once per signature). Submitting, confirming,
+ * failed and nothing never play.
  */
-export function nextCelebrationTrigger(
-  feedback: { phase: string; signature: string } | null,
-  held: boolean,
-  state: CelebrationTriggerState,
-): { play: string | null; state: CelebrationTriggerState } {
-  let { lastPlayed, queued } = state;
-  const phase = feedback?.phase ?? null;
+export function celebrationToPlay(feedback: { phase: string; signature: string } | null, lastPlayed: string | null): string | null {
   const signature = feedback?.signature || null;
-  if (phase === "success" && signature && signature !== lastPlayed) queued = signature;
-  else if (phase && phase !== "success" && signature && signature === queued) queued = null;
-  const play = queued && queued !== lastPlayed && !held ? queued : null;
-  if (play) {
-    lastPlayed = play;
-    queued = null;
-  }
-  return { play, state: { lastPlayed, queued } };
-}
-
-/** The OK release plays the queued success right away (and marks it played, so closing the dialog does not repeat it). */
-export function releaseCelebration(state: CelebrationTriggerState): { play: string | null; state: CelebrationTriggerState } {
-  if (!state.queued || state.queued === state.lastPlayed) return { play: null, state };
-  return { play: state.queued, state: { lastPlayed: state.queued, queued: null } };
+  return feedback?.phase === "success" && signature && signature !== lastPlayed ? signature : null;
 }
 
 /** The little pixel character: 12 × 14 sprite pixels, drawn at 4 px a pixel (3 on phones). */
@@ -257,7 +235,7 @@ export type CatcherPlan = {
   pixel: number; width: number; height: number;
   /** Where its feet stand (viewport px), and where it first appears. */
   feetY: number; startX: number;
-  /** Which coins it collects (index into the flights) and when (seconds after the release). */
+  /** Which coins it collects (index into the flights) and when (seconds after the play starts). */
   catches: { coin: number; t: number; x: number }[];
   hitT: number;
   frames: CatcherFrame[];

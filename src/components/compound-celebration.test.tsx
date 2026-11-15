@@ -7,7 +7,6 @@ import { CELEBRATION_PREVIEW_EVENT, CompoundTokenBurst, celebrationPreviewEnable
 
 type Feedback = { phase: "submitting" | "confirming" | "success" | "failed"; signature: string } | null;
 let setFeedback: (next: Feedback) => void;
-let celebrateFrom: (origin: DOMRect) => void;
 let container: HTMLDivElement, root: Root;
 let animations: { target: Element; keyframes: Keyframe[]; options: KeyframeAnimationOptions; cancel: ReturnType<typeof vi.fn> }[];
 let preloaded: string[];
@@ -15,13 +14,12 @@ let popovers: number;
 const rect = (left: number, top: number, width: number, height: number) =>
   ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON() {} }) as DOMRect;
 
-/** The Compound panel's wiring in miniature: the click only starts the send; confirmation sets "success".
- *  `holdUntilDismissed` stands in for the app result dialog still being open. */
-function Harness({ holdUntilDismissed = false, symbols = ["NVDAx", "USDC"] }: { holdUntilDismissed?: boolean; symbols?: string[] }) {
+/** The Compound row's wiring in miniature: the click only starts the send; confirmation sets "success". */
+function Harness({ symbols = ["NVDAx", "USDC"] }: { symbols?: string[] }) {
   const [feedback, set] = useState<Feedback>(null);
   const button = useRef<HTMLButtonElement>(null);
-  const celebration = useCompoundCelebration(feedback, holdUntilDismissed && feedback !== null, symbols);
-  useLayoutEffect(() => { setFeedback = set; celebrateFrom = celebration.celebrateFrom; }, [celebration.celebrateFrom]);
+  const celebration = useCompoundCelebration(feedback, symbols);
+  useLayoutEffect(() => { setFeedback = set; }, []);
   return <section>
     <button ref={button} type="button" onClick={() => set({ phase: "submitting", signature: "" })}>One-click compound</button>
     <CompoundTokenBurst play={celebration.play} originRef={button} />
@@ -79,39 +77,18 @@ describe("compound success coins", () => {
     expect(burst()).toBeNull();
   });
 
-  it("holds the success while the dialog is open, then the OK release pops the coins out of the OK button, once", async () => {
-    await act(async () => root.render(createElement(Harness, { holdUntilDismissed: true })));
+  it("pops the coins out of the origin button with the logos it preloaded", async () => {
+    await act(async () => root.render(createElement(Harness)));
     await act(async () => setFeedback({ phase: "success", signature: "sig1" }));
-    expect(burst()).toBeNull();
-    // Chosen and preloaded while the dialog is open.
-    expect(preloaded.length).toBeGreaterThan(0);
-    await act(async () => celebrateFrom(rect(560, 600, 160, 48)));
-    expect(burst()).not.toBeNull();
-    for (const coin of coins()) { expect(start(coin).x).toBeCloseTo(640, 3); expect(start(coin).y).toBeCloseTo(624, 3); }
-    expect(new Set(coinImages())).toEqual(new Set(preloaded));
-    // The dialog closes a moment later: that must not start a second play.
-    const before = animations.length;
-    await act(async () => setFeedback(null));
-    expect(animations.length).toBe(before);
-    await advance(CELEBRATION_MS + 10);
-    expect(burst()).toBeNull();
-    await act(async () => celebrateFrom(rect(560, 600, 160, 48)));
-    expect(burst()).toBeNull();
-  });
-
-  it("closing the dialog another way (Escape) still plays it, from the Compound button", async () => {
-    await act(async () => root.render(createElement(Harness, { holdUntilDismissed: true })));
-    await act(async () => setFeedback({ phase: "success", signature: "sig1" }));
-    await act(async () => setFeedback(null));
-    expect(burst()).not.toBeNull();
     expect(coins().length).toBeGreaterThan(0);
     for (const coin of coins()) { expect(start(coin).x).toBeCloseTo(200, 3); expect(start(coin).y).toBeCloseTo(320, 3); }
+    expect(preloaded.length).toBeGreaterThan(0);
+    expect(new Set(coinImages())).toEqual(new Set(preloaded));
   });
 
-  it("closing a failed or unconfirmed dialog never plays, and OK has nothing to release then", async () => {
-    await act(async () => root.render(createElement(Harness, { holdUntilDismissed: true })));
+  it("a failed or unconfirmed compound never plays", async () => {
+    await act(async () => root.render(createElement(Harness)));
     await act(async () => setFeedback({ phase: "failed", signature: "sig2" }));
-    await act(async () => celebrateFrom(rect(560, 600, 160, 48)));
     await act(async () => setFeedback(null));
     await act(async () => setFeedback({ phase: "confirming", signature: "sig3" }));
     await act(async () => setFeedback(null));

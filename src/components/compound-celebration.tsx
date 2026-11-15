@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import {
-  CATCHER_SPRITES, CELEBRATION_MS, COIN_COUNT, FALL_MS, REDUCED_MS, beadFlights, beadKeyframes, catcherKeyframes, nextCelebrationTrigger,
-  pickCoinLogos, planCatcher, reducedSpots, releaseCelebration, seedFrom, seededRandom, spriteRuns,
-  type CatcherPlan, type CatcherPose, type CelebrationTriggerState, type Point,
+  CATCHER_SPRITES, CELEBRATION_MS, COIN_COUNT, FALL_MS, REDUCED_MS, beadFlights, beadKeyframes, catcherKeyframes, celebrationToPlay,
+  pickCoinLogos, planCatcher, reducedSpots, seedFrom, seededRandom, spriteRuns,
+  type CatcherPlan, type CatcherPose, type Point,
 } from "@/lib/compound-celebration/coins";
 
 /** Visual-only preview hook for screenshots and tests: `window.dispatchEvent(new Event(CELEBRATION_PREVIEW_EVENT))`. */
@@ -23,10 +23,10 @@ export function celebrationPreviewEnabled(env: { NODE_ENV?: string; NEXT_PUBLIC_
 
 type Feedback = { phase: string; signature: string } | null;
 /**
- * One play: `id` changes on every play (a new play while one runs restarts it); `logos` are already preloaded;
- * `origin` is where the coins pop out (viewport px), or null to use the panel's Compound button.
+ * One play: `id` changes on every play (a new play while one runs restarts it); `logos` are already preloaded.
+ * The coins pop out of the burst's `originRef` (the popup's Done, or the row's Compound button).
  */
-export type CelebrationPlay = { id: number; seed: number; logos: string[]; origin: Point | null } | null;
+export type CelebrationPlay = { id: number; seed: number; logos: string[] } | null;
 
 const coinCount = () => (typeof window !== "undefined" && window.innerWidth < 640 ? COIN_COUNT.narrow : COIN_COUNT.wide);
 const centre = (rect: { left: number; top: number; width: number; height: number }): Point =>
@@ -38,51 +38,34 @@ function preload(urls: readonly string[]) {
 }
 
 /**
- * Coins for a CONFIRMED compound. Clicking Compound never plays them. The position's `symbols` choose the logos.
- * The row popups play on the confirmed landing (`held=false`), from Done while open or from the Compound row button.
- * Optional callers can hold a success and release it from an explicit origin with `celebrateFrom`. Once per signature.
+ * Coins for a CONFIRMED compound, played on the confirmed landing, once per signature. Clicking Compound never plays
+ * them. The position's `symbols` choose the logos (preloaded with the play).
  */
-export function useCompoundCelebration(feedback: Feedback, held = false, symbols: readonly (string | null | undefined)[] = []): {
-  play: CelebrationPlay; celebrateFrom: (origin: DOMRect) => void;
-} {
-  const trigger = useRef<CelebrationTriggerState>({ lastPlayed: null, queued: null });
-  const chosen = useRef<{ signature: string; seed: number; logos: string[] } | null>(null);
+export function useCompoundCelebration(feedback: Feedback, symbols: readonly (string | null | undefined)[] = []): { play: CelebrationPlay } {
+  const lastPlayed = useRef<string | null>(null);
   const [play, setPlay] = useState<CelebrationPlay>(null);
   const phase = feedback?.phase ?? null;
   const signature = feedback?.signature ?? null;
   const symbolKey = symbols.join("|");
-  const start = useCallback((origin: Point | null) => {
-    if (!chosen.current) return;
-    const { seed, logos } = chosen.current;
-    setPlay((previous) => ({ id: (previous?.id ?? 0) + 1, seed, logos, origin }));
-  }, []);
   useEffect(() => {
-    const current = phase && signature ? { phase, signature } : null;
-    const next = nextCelebrationTrigger(current, held, trigger.current);
-    trigger.current = next.state;
-    const queued = next.play ?? next.state.queued;
-    if (queued && chosen.current?.signature !== queued) {
-      const seed = seedFrom(queued);
-      chosen.current = { signature: queued, seed, logos: pickCoinLogos(symbolKey.split("|"), coinCount(), seededRandom(seed)) };
-      preload(chosen.current.logos);
-    }
-    if (next.play) start(null);
-  }, [phase, signature, held, symbolKey, start]);
-  const celebrateFrom = useCallback((origin: DOMRect) => {
-    const next = releaseCelebration(trigger.current);
-    trigger.current = next.state;
-    if (next.play) start(centre(origin));
-  }, [start]);
+    const next = celebrationToPlay(phase && signature ? { phase, signature } : null, lastPlayed.current);
+    if (!next) return;
+    lastPlayed.current = next;
+    const seed = seedFrom(next);
+    const logos = pickCoinLogos(symbolKey.split("|"), coinCount(), seededRandom(seed));
+    preload(logos);
+    setPlay((previous) => ({ id: (previous?.id ?? 0) + 1, seed, logos }));
+  }, [phase, signature, symbolKey]);
   useEffect(() => {
     if (!celebrationPreviewEnabled()) return;
     const preview = () => {
       const seed = Math.floor(Math.random() * 2 ** 31);
-      setPlay((previous) => ({ id: (previous?.id ?? 0) + 1, seed, logos: pickCoinLogos(symbolKey.split("|"), coinCount(), seededRandom(seed)), origin: null }));
+      setPlay((previous) => ({ id: (previous?.id ?? 0) + 1, seed, logos: pickCoinLogos(symbolKey.split("|"), coinCount(), seededRandom(seed)) }));
     };
     window.addEventListener(CELEBRATION_PREVIEW_EVENT, preview);
     return () => window.removeEventListener(CELEBRATION_PREVIEW_EVENT, preview);
   }, [symbolKey]);
-  return { play, celebrateFrom };
+  return { play };
 }
 
 type Coin = { size: number; blur: number; depth: number; delay: number; logo: string;
@@ -135,7 +118,7 @@ function CoinView({ coin }: { coin: Coin }) {
 }
 
 /**
- * Tokenized-stock coins popping out of `play.origin`, or `originRef` (the popup's Done or row's Compound button), and falling like beads to the bottom of the screen: they bounce lower each time, roll to a stop and fade.
+ * Tokenized-stock coins popping out of `originRef` (the popup's Done or the row's Compound button; low in the middle of the screen when it is off screen), and falling like beads to the bottom of the screen: they bounce lower each time, roll to a stop and fade.
  * A little pixel character runs along the bottom collecting a few of them, then a big coin of the position's own stock
  * drops on its head and it falls over (≈ 2.9 s in all). A full-screen layer that ignores the pointer; it is shown as a manual popover so it draws above the open
  * result dialog (top layer), and is a plain fixed layer where popovers are not supported. Ends on a window resize and
@@ -149,7 +132,7 @@ export function CompoundTokenBurst({ play, originRef }: { play: CelebrationPlay;
     const viewport = { width: window.innerWidth, height: window.innerHeight };
     const button = originRef.current?.getBoundingClientRect() ?? null;
     const buttonOnScreen = button && button.width && button.height && button.bottom > 0 && button.top < viewport.height;
-    const origin = play.origin ?? (buttonOnScreen ? centre(button) : { x: viewport.width / 2, y: viewport.height * 0.6 });
+    const origin = buttonOnScreen ? centre(button) : { x: viewport.width / 2, y: viewport.height * 0.6 };
     const reduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduced) {
       setRun({ id: play.id, reduced, origin, catcher: null, coins: reducedSpots(origin).map((spot, index) => ({ size: spot.size, blur: 0, depth: 0.5,

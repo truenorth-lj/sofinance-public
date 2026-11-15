@@ -184,3 +184,23 @@ for (const width of [375, 1280]) {
     await context.close();
   });
 }
+
+// The layout mocks pin finality to pending, even when compound-confirm says success. In production the independent
+// notice watcher sees the real chain status: verify it replaces the loading toast once finality reports confirmed.
+test("the compound notice flips to confirmed when the finality endpoint confirms the signature", async ({ browser, baseURL }) => {
+  test.setTimeout(90_000);
+  const { context, page } = await setup(browser, baseURL, 1280, "normal");
+  let confirmed = false;
+  await context.route("**/api/transaction-finality", (route) => route.fulfill({ json: { status: confirmed ? "confirmed" : "pending" } }));
+  await raydiumRow(page).locator('[data-tool="compound"]').click();
+  const popup = page.locator('dialog[data-testid="compound-popup"][data-open="true"]');
+  await expect(popup.getByTestId("compound-confirm-button")).toBeEnabled({ timeout: 15_000 });
+  await popup.getByTestId("compound-confirm-button").click();
+  await expect(popup.getByRole("heading", { name: "Compound confirmed" })).toBeVisible({ timeout: 20_000 });
+  // Reproduces the shots while the deliberately contradictory mocks say success here, pending to the notice watcher.
+  await expect(page.locator('[data-tx-notice="loading"]')).toContainText("Confirming on Solana…");
+  confirmed = true;
+  await expect(page.locator('[data-tx-notice="success"]')).toContainText("Compound confirmed", { timeout: 10_000 });
+  await expect(page.locator('[data-tx-notice="loading"]')).toHaveCount(0);
+  await context.close();
+});

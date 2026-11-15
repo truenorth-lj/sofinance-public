@@ -445,7 +445,7 @@ export function RegistryRowCompound({ position, descriptor, symbolOf, onConfirme
   const close = () => { if (resultKey) setSeenResult(resultKey); slot.onClose(); };
   // Coins for the confirmed landing (never the click), once per signature: from Done while the popup is open, else the row.
   const celebration = useCompoundCelebration(tx.status === "success" && tx.signature ? { phase: "success", signature: tx.signature } : null,
-    false, [position.tokenA, position.tokenB].map((token) => coinSymbol(token.id, symbolOf(token))));
+    [position.tokenA, position.tokenB].map((token) => coinSymbol(token.id, symbolOf(token))));
   const rowButton = useRef<HTMLButtonElement>(null);
   const doneButton = useRef<HTMLButtonElement>(null);
   return <>
