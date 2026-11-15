@@ -12,4 +12,8 @@ describe("addWalletPreviewSplit", () => {
     expect(addWalletPreviewSplit(quote, { priceUsdA: 40, priceUsdB: null })).toBeNull();
     expect(addWalletPreviewSplit(quote, undefined)).toBeNull();
   });
+  it("is left out when a token's USD price is 0, the same as missing", () => {
+    expect(addWalletPreviewSplit(quote, { priceUsdA: 0, priceUsdB: 1 })).toBeNull();
+    expect(addWalletPreviewSplit(quote, { priceUsdA: 40, priceUsdB: 0 })).toBeNull();
+  });
 });

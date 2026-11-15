@@ -400,7 +400,9 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
       <p className="mt-1 text-xs text-smoke" data-testid="popup-target" data-selected-key={selectedKey}>
         {selectedItem ? `${pairOf(selectedItem)} · #${short(selectedItem.nativeId)}` : null}</p>
       {!popupAligned ? <p role="status" className="mt-4 text-sm text-smoke">Loading position…</p>
-        : popup.view === "activity" ? <ActivityList positionKey={popup.key} records={popupTarget?.source === positionSource.id
+        : popup.view === "activity" ? <ActivityList positionKey={popup.key} savedSignatures={popupTarget?.source === positionSource.id && compound.positionMint === popupTarget.nativeId
+          ? [...(compound.attempt ? [compound.attempt.signature] : []), ...(compound.cleanup?.compoundSignature ? [compound.cleanup.compoundSignature] : []),
+            ...(compound.cleanupBatch?.transactions.filter((tx) => !tx.unsent && tx.signature).map((tx) => tx.signature) ?? [])] : []} records={popupTarget?.source === positionSource.id
           ? <RaydiumActivityRecords controller={compound} positionMint={popupTarget.nativeId} tokenLabel={poolLabel} /> : undefined} />
         : unavailableReason ? <UnavailableTool id={`${activeView}-view`} reason={unavailableReason} />
         : otherSelected && otherBinding ? <div id={`${activeView}-view`}>{otherBinding.tool(otherSelected, activeView)}</div>

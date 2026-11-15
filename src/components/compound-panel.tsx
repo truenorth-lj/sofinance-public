@@ -106,7 +106,7 @@ export function RaydiumActivityRecords({ controller: c, positionMint, tokenLabel
   const active = Boolean(c.wallet) && c.positionMint === positionMint;
   return <>
     {active && currentAttemptShown(c) && <AttemptCard c={c} tokenLabel={tokenLabel} />}
-    {active && <CleanupProgress controller={c} />}
+    {active && <CleanupProgress controller={c} hiddenSignatures={currentAttemptShown(c) && c.attempt ? [c.attempt.signature] : []} />}
     {active && c.historyWarning && <p role="status" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80">{c.historyWarning}</p>}
     {/* Harvest account recovery has its own page (LJ 11/14), linked from a Raydium position's Activity. */}
     <Link href={recoveryHref(positionMint)} data-testid="harvest-recovery-link"
@@ -149,14 +149,14 @@ export function recoveryHref(positionMint: string | null | undefined): string {
 }
 
 /** Progress of a running or finished cleanup batch (the automatic one after a compound, or "Clean up all balances"). */
-function CleanupProgress({ controller: c }: { controller: CompoundController }) {
+function CleanupProgress({ controller: c, hiddenSignatures = [] }: { controller: CompoundController; hiddenSignatures?: readonly string[] }) {
   return <>
     {c.cleanup && <div role="status" className="mt-5 rounded-2xl border border-white/15 p-4 text-xs leading-6 text-cream/80">
-      {c.cleanup.compoundSignature && <p>Compound confirmed. <a className="underline" href={solscanTxUrl(c.cleanup.compoundSignature)} target="_blank" rel="noreferrer">View compound transaction</a></p>}
+      {c.cleanup.compoundSignature && !hiddenSignatures.includes(c.cleanup.compoundSignature) && <p>Compound confirmed. <a className="underline" href={solscanTxUrl(c.cleanup.compoundSignature)} target="_blank" rel="noreferrer">View compound transaction</a></p>}
       <p>{c.cleanup.message}</p><p>{c.cleanup.completed} of {c.cleanup.total} harvest account groups cleaned.</p>
     </div>}
     {c.cleanupBatch && <div className="mt-3 text-xs leading-6 text-smoke">
-      {c.cleanupBatch.transactions.map(tx => <p key={tx.signature}><a className="underline" href={solscanTxUrl(tx.signature)} target="_blank" rel="noreferrer">Cleanup transaction {short(tx.signature)}</a> · {tx.unsent ? "Not sent" : tx.status === "success" ? "Confirmed" : tx.status === "pending" ? "Confirming; automatically retrying verification" : tx.status}</p>)}
+      {c.cleanupBatch.transactions.filter(tx => !hiddenSignatures.includes(tx.signature)).map(tx => <p key={tx.signature}><a className="underline" href={solscanTxUrl(tx.signature)} target="_blank" rel="noreferrer">Cleanup transaction {short(tx.signature)}</a> · {tx.unsent ? "Not sent" : tx.status === "success" ? "Confirmed" : tx.status === "pending" ? "Confirming; automatically retrying verification" : tx.status}</p>)}
       <button type="button" onClick={c.retryReconcile} disabled={c.busy} className="underline disabled:opacity-40">Requery cleanup results</button>
     </div>}
   </>;

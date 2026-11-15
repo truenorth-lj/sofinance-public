@@ -322,6 +322,11 @@ describe("/app My positions with registry DEXes", () => {
     expect(compoundPopup().querySelector("[data-testid=registry-compound-fee]")?.textContent).toBe("No platform fee.");
     expect(compoundPopup().querySelector("[data-testid=registry-compound-range]")).toBeNull(); // in range
     expect(compoundPopup().querySelector("[data-testid=registry-compound-pool-fee]")?.textContent).toContain("composition fee");
+    // While preparing / signing / sending, the popup cannot be closed (same as Raydium's in-flight state).
+    expect(compoundPopup().querySelector('button[aria-label="Close"]')).toBeNull();
+    await act(async () => compoundPopup().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    await act(async () => container.querySelector<HTMLElement>('[data-testid="compound-popup-backdrop"]')!.click());
+    expect(compoundPopup().dataset.open).toBe("true");
     await act(async () => finish());
     await settle();
     const alert = compoundPopup().querySelector("[role=alert]")!;

@@ -3,19 +3,22 @@
 // opens a popup: a centered modal on desktop, a bottom sheet on a phone (LJ 11/14).
 // Hermetic: API answers come from e2e/support/layout-mocks.ts (plus a synthetic compound prepare); every other host is
 // blocked. The wallet prompt is held open and the context closes before anything could be signed; nothing is sent.
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
+import { VersionedTransaction } from "@solana/web3.js";
+import bs58 from "bs58";
 import { installFakeWallet } from "../../fake-wallet/install";
 import { FakeWallet } from "../../fake-wallet/node-signer";
 import { ConnectModal } from "../../pages/connect-modal";
 import { installLayoutMocks } from "../../support/layout-mocks";
 import { buildSingleSignerTx, randomAddress } from "../../support/tx";
 
-async function setup(browser: Browser, baseURL: string | undefined, width: number) {
+async function setup(browser: Browser, baseURL: string | undefined, width: number, signing: "held" | "normal" = "held") {
   const phone = width < 640;
   const context = await browser.newContext({ baseURL, viewport: { width, height: 800 }, isMobile: phone, hasTouch: phone, reducedMotion: "reduce" });
   const origin = new URL(baseURL ?? "http://localhost").origin;
   await context.route((url) => url.origin !== origin, (route) => route.abort());
-  const wallet = new FakeWallet({ mode: "slow", slowMs: 600_000 }); // the prompt stays open for the whole test
+  // Held: the prompt stays open for the whole test. Normal: the fake wallet signs; tx-send is answered below, never broadcast.
+  const wallet = new FakeWallet(signing === "held" ? { mode: "slow", slowMs: 600_000 } : { mode: "normal" });
   await installFakeWallet(context, wallet);
   await installLayoutMocks(context, wallet.address);
   let position: Record<string, unknown> | null = null;
@@ -34,7 +37,16 @@ async function setup(browser: Browser, baseURL: string | undefined, width: numbe
       swaps: [{ inputMint: s.mintB, outputMint: s.mintA, inputAmount: "45000", minOutputAmount: "440", quotedOutputAmount: "449", inputDecimals: 8, outputDecimals: 6,
         poolId: s.poolId, sqrtPriceAfterX64: "1", feeAmount: "45", feeBps: 10 }], feeAmount: "45", feeBps: 10, feeWallet: randomAddress(), sizeBytes: 1000 } } });
   });
-  await context.route("**/api/tx-send", (route) => route.abort());
+  if (signing === "held") await context.route("**/api/tx-send", (route) => route.abort());
+  else {
+    await context.route("**/api/tx-send", (route) => {
+      const tx = VersionedTransaction.deserialize(Buffer.from(route.request().postDataJSON().signedTransaction, "base64"));
+      return route.fulfill({ json: { signature: bs58.encode(tx.signatures[0]!) } });
+    });
+    await context.route("**/api/compound-confirm", (route) => route.fulfill({ json: {
+      signature: route.request().postDataJSON().attempt.signature, status: "success", chainStatus: "success", state: null } }));
+    await context.route("**/api/compound-recover-prepare", (route) => route.fulfill({ status: 400, json: { error: "Nothing to clean up in this test" } }));
+  }
   const page = await context.newPage();
   await page.goto("/app/portfolio", { waitUntil: "domcontentloaded" });
   await new ConnectModal(page, wallet).connect();
@@ -126,6 +138,46 @@ for (const width of [375, 1280]) {
     await row.getByTestId("position-fallback-select").focus();
     await page.keyboard.press("Enter");
     await expect(page.locator('dialog[data-testid="performance-popup"][data-open="true"]')).toBeVisible();
+    await context.close();
+  });
+}
+
+/** No visible transaction notice overlaps any of `targets` (each must be on screen and fully clear of every notice). */
+async function expectClearOfNotices(page: Page, targets: Locator[], label: string) {
+  const notices = await page.locator("[data-tx-notice]").evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().toJSON() as DOMRect));
+  expect(notices.length, `${label}: a notice is showing`).toBeGreaterThan(0);
+  const viewport = page.viewportSize()!;
+  for (const target of targets) {
+    await target.scrollIntoViewIfNeeded();
+    const box = (await target.boundingBox())!;
+    expect(box.y, `${label}: on screen`).toBeGreaterThanOrEqual(0);
+    expect(box.y + box.height, `${label}: on screen`).toBeLessThanOrEqual(viewport.height + 1);
+    for (const n of notices) {
+      const overlaps = box.x < n.right && box.x + box.width > n.left && box.y < n.bottom && box.y + box.height > n.top;
+      expect(overlaps, `${label}: ${JSON.stringify({ box, notice: n })}`).toBe(false);
+    }
+  }
+}
+
+for (const width of [375, 1280]) {
+  test(`transaction notices never cover a popup's actions at ${width}px`, async ({ browser, baseURL }) => {
+    test.setTimeout(120_000);
+    const { context, page } = await setup(browser, baseURL, width, "normal");
+    const row = raydiumRow(page);
+    await row.locator('[data-tool="compound"]').click();
+    const popup = page.locator('dialog[data-testid="compound-popup"][data-open="true"]');
+    await expect(popup.getByTestId("compound-confirm-button")).toBeEnabled({ timeout: 15_000 });
+    await popup.getByTestId("compound-confirm-button").click();
+    // A notice appears for the send and stays after success; the result's Done stays clear of it.
+    await expect(popup.getByRole("heading", { name: "Compound confirmed" })).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator("[data-tx-notice]").first()).toBeVisible();
+    await expectClearOfNotices(page, [popup.getByTestId("compound-submit-done")], `${width} done`);
+    await popup.getByTestId("compound-submit-done").click();
+    // Another sheet opened while the notice shows: its fee line and Confirm stay clear.
+    const meteora = page.getByTestId("position-row").filter({ has: page.locator('[data-position-key^="meteora-dlmm:"]') });
+    await meteora.locator('[data-tool="compound"]').click();
+    await expect(popup.getByTestId("compound-confirm-button")).toBeVisible();
+    await expectClearOfNotices(page, [popup.getByTestId("compound-confirm-fee"), popup.getByTestId("compound-confirm-button")], `${width} confirm`);
     await context.close();
   });
 }

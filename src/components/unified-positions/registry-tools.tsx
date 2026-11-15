@@ -449,7 +449,7 @@ export function RegistryRowCompound({ position, descriptor, symbolOf, onConfirme
       </button>
       {slot.otherActions}
     </RowActionsBar>
-    <ActionDialog open={slot.open} onClose={close} title="Compound fees" testId="compound-popup" size="sm">
+    <ActionDialog open={slot.open} onClose={close} title="Compound fees" testId="compound-popup" size="sm" dismissible={!tx.locked}>
       {tx.locked || settled ? <div data-testid="compound-progress">
         {/* Stated before signing (shown from Confirm until the wallet answers): fee rule, range and pool fee notes. */}
         {signing ? <div data-testid="registry-compound-disclosure" className="mt-4 space-y-1 text-xs leading-5 text-cream/80">

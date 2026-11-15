@@ -9,9 +9,10 @@ export type AddWalletPreviewQuote = {
 export type AddWalletPreviewPrices = { priceUsdA?: number | null; priceUsdB?: number | null };
 
 const usdOf = (raw: string, decimals: number, priceUsd: number) => Number(BigInt(raw)) / 10 ** decimals * priceUsd;
-const usable = (price: number | null | undefined): price is number => typeof price === "number" && Number.isFinite(price) && price >= 0;
+// A zero price is as unknown as a missing one (an unpriced token would read as "$0.00 coming back").
+const usable = (price: number | null | undefined): price is number => typeof price === "number" && Number.isFinite(price) && price > 0;
 
-/** `null` when either token has no USD price: the line is left out rather than guessed. */
+/** `null` when either token has no (or a zero) USD price: the line is left out rather than guessed. */
 export function addWalletPreviewSplit(quote: AddWalletPreviewQuote, prices: AddWalletPreviewPrices | null | undefined): { backUsd: number; depositUsd: number } | null {
   const priceA = prices?.priceUsdA; const priceB = prices?.priceUsdB;
   if (!usable(priceA) || !usable(priceB)) return null;

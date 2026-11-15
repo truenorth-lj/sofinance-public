@@ -29,11 +29,11 @@ const listeners = new Set<() => void>();
 const emit = () => { for (const listener of listeners) listener(); };
 
 export function recordActivity(input: ActivityInput, now = Date.now()) {
-  const existing = entries.find((entry) => entry.id === input.id);
+  const existing = entries.find((entry) => entry.id === input.id || (input.signature && entry.signature === input.signature && entry.positionKey === input.positionKey));
   if (existing && existing.positionKey === input.positionKey && existing.title === input.title && existing.status === input.status
     && existing.detail === input.detail && existing.signature === input.signature) return;
   const entry: ActivityEntry = { ...input, at: existing?.at ?? now, seq: existing?.seq ?? nextSeq++ };
-  entries = existing ? entries.map((item) => item.id === input.id ? entry : item) : [...entries, entry];
+  entries = existing ? entries.map((item) => item === existing ? entry : item) : [...entries, entry];
   emit();
 }
 

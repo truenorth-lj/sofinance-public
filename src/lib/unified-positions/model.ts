@@ -150,8 +150,3 @@ export function capabilitiesFor<N>(source: Pick<PositionSource<N>, "capabilities
   return Object.keys(override).length ? { ...source.capabilities, ...override } : source.capabilities;
 }
 
-/** First supported tool, in tab order (where a selection lands when its current tool is unavailable). */
-export function firstSupportedTool(capabilities: SourceCapabilities): ToolId | null {
-  return TOOL_IDS.find((tool) => capabilities[tool].supported) ?? null;
-}
-
