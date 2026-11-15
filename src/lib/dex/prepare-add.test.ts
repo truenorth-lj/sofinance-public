@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { buildTransaction, testKeypair, SIGNING_SECRET } from "@/lib/test-support/send-fixtures";
 import { verifySelectedPermit } from "@/lib/selected-permit";
 import { prepareAdd } from "./prepare-add.server";
-import { APP_ADD_PREPARE, MCP_ADD_PREPARE } from "./add-prepare";
+import { APP_ADD_PREPARE, MCP_ADD_PREPARE, type BuildAdd } from "./add-prepare";
 import { createDexRegistry } from "./registry";
 import { fakeSolanaModule } from "./__contract__/testing/fake-dex";
 
@@ -54,4 +54,19 @@ it("dispatches only a registered, deposit-capable binding, independently of gene
     capabilities: { ...fakeSolanaModule.descriptor.capabilities, deposit: { supported: false, reason: "Not supported" } } }, buildAdd }]);
   await expect(unsupported.buildAdd(fakeSolanaModule.descriptor.id, original())).rejects.toMatchObject({ code: "UNSUPPORTED" });
   expect(buildAdd).toHaveBeenCalledTimes(1);
+});
+
+it("binds simulation input and policy before a module's lazy load", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let received: unknown;
+  const registry = createDexRegistry([{ ...fakeSolanaModule, buildAdd: async (command, options) => {
+    await gate; received = { command, options }; return { transaction, summary } as Awaited<ReturnType<BuildAdd>>;
+  } }]);
+  const command = original(); const options = { enforceResaleFloor: false };
+  const pending = registry.buildAdd(fakeSolanaModule.descriptor.id, command, options);
+  command.selection.positionMint = testKeypair(11).publicKey.toBase58(); command.amount = "2";
+  options.enforceResaleFloor = true;
+  release(); await pending;
+  expect(received).toEqual({ command: original(), options: { enforceResaleFloor: false } });
 });

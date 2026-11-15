@@ -153,7 +153,9 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
       const canonical = normalizeDexId(id);
       const entry = canonical ? byId.get(canonical) : undefined;
       if (!entry?.descriptor.capabilities.deposit.supported || !entry.buildAdd) throw new DexUnsupportedError();
-      return entry.buildAdd(...args);
+      const [command, options] = args;
+      // A module may lazy-load before reading these values; retain the initiating preview/build terms.
+      return entry.buildAdd({ ...command, selection: { ...command.selection } }, options ? { ...options } : undefined);
     },
     async preparePortfolio(id: string, input: PortfolioRequest, signal: AbortSignal): Promise<PortfolioReader | null> {
       const canonical = normalizeDexId(id);
