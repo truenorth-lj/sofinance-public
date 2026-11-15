@@ -84,7 +84,14 @@ test("RPC acceptance remains pending; reload resumes the same signature by polli
   const signature = flow.signature();
   await page.reload();
   await expect(page.getByRole("dialog", { name: "Create position" })).toBeVisible();
-  await connectInModal(page, wallet);
+  if (process.env.E2E_PROVIDER === "adapter") {
+    await connectInModal(page, wallet);
+  } else {
+    // AppKit restores this wallet itself (J1). The disconnected button can appear briefly
+    // before restoration, then become the disabled submit button for the pending open.
+    // Wait for the restored identity instead of racing it with a second connect click.
+    await expect(new ConnectModal(page, wallet).navAddress).toBeVisible();
+  }
   // The shared notice host resumes the saved signature (signature polling only, never a resend).
   await expect(page.getByText("Checking a previous transaction…", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: `View ${short(signature)} on Solscan` })).toHaveAttribute("href", `https://solscan.io/tx/${signature}`);

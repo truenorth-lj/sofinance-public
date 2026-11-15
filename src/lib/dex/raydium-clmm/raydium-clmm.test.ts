@@ -38,7 +38,7 @@ describe("Raydium generic route stays closed (E3)", () => {
   it("does not serve /api/dex/raydium-clmm/*", () => {
     expect(raydiumClmmModule.enabled?.("add")).toBe(false);
     expect(raydiumClmmModule.enabled?.("open")).toBe(false);
-    expect(raydiumClmmDescriptor.capabilities.deposit.supported).toBe(false);
+    expect(raydiumClmmDescriptor.capabilities.deposit.supported).toBe(true);
   });
 });
 

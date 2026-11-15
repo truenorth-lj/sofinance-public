@@ -50,9 +50,9 @@ export const raydiumClmmDescriptor: DexDescriptor = Object.freeze({
     }),
   }),
   capabilities: Object.freeze({
-    /** Generic-route caps stay unsupported; the native modal and dedicated prepare routes are the write path. */
+    /** Add is implemented and contract-tested; module.enabled still keeps every generic route closed. */
     open: unsupported(NOT_YET),
-    deposit: unsupported(NOT_YET),
+    deposit: SUPPORTED,
     withdraw: Object.freeze({ supported: false, reason: NOT_YET }),
     withdrawOutputs: Object.freeze([] as const),
     claim: unsupported(NOT_YET),
