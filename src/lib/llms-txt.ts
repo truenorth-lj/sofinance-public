@@ -1,7 +1,7 @@
 import { articleCanonicalPath, listBlogArticles } from "@/lib/blog";
 import { DOCS_PAGES } from "@/lib/docs-nav";
 import { FAQ_RISK_LINE } from "@/lib/faq";
-import { APP_ROUTES, CANONICAL_SITE_URL, FAQ_ROUTE } from "@/lib/public-urls";
+import { APP_ROUTES, CANONICAL_SITE_URL, FAQ_ROUTE, GUIDE_ROUTES } from "@/lib/public-urls";
 import { SOCIAL_LINKS } from "@/lib/social-links";
 
 const url = (path: string) => (path === "/" ? CANONICAL_SITE_URL : `${CANONICAL_SITE_URL}${path}`);
@@ -109,6 +109,15 @@ ${SOLANA_METEORA_POOLS.map((pool) => `- ${pool}`).join("\n")}
 
 Robinhood Chain (Uniswap v4, StablePairHook, 11 pools):
 ${ROBINHOOD_CHAIN_POOLS.map((pool) => `- ${pool}`).join("\n")}
+
+## Guides
+
+- [Pricing](${url(GUIDE_ROUTES.fees)}): zero performance fee; 0.10% only when we swap for you; withdrawing as the two pool tokens costs 0
+- [What is a same-stock LP pool?](${url(GUIDE_ROUTES.whatIsSameStock)})
+- [How to open an LP position (Raydium, Meteora, Robinhood Chain)](${url(GUIDE_ROUTES.howToOpen)})
+- [Impermanent loss on same-stock pools](${url(GUIDE_ROUTES.impermanentLoss)})
+- [TSLA same-stock LP (TSLA/TSLAx)](${url(GUIDE_ROUTES.tslaUseCase)})
+- [SPCX same-stock LP (SPCX/SPCXx)](${url(GUIDE_ROUTES.spcxUseCase)})
 
 ## Docs
 
