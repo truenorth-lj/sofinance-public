@@ -101,6 +101,17 @@ export function blogArticlePath(slug: string): string {
   return `${BLOG_PATH}/${slug}`;
 }
 
+/** Guide pages answering common questions directly (public site, English): pricing, beginner guides, use cases. */
+export const GUIDE_ROUTES = {
+  fees: "/fees",
+  learn: "/learn",
+  whatIsSameStock: "/learn/what-is-a-same-stock-lp-pool",
+  howToOpen: "/learn/how-to-open-an-lp-position",
+  impermanentLoss: "/learn/impermanent-loss-on-same-stock-pools",
+  tslaUseCase: "/use-cases/tsla-same-stock-lp",
+  spcxUseCase: "/use-cases/spcx-same-stock-lp",
+} as const;
+
 /** Plain-language Q&A page (public site, English). */
 export const FAQ_ROUTE = "/faq";
 
