@@ -2,13 +2,13 @@ import "@/lib/engine-host";
 import { withSelectedDeadline } from "@/lib/selected-deadline";
 import { parseSelectedQuoteRequest } from "@sofinance/engine/api-input";
 import { selectedApiError } from "@/lib/api-response";
-import { buildAndSimulateSelectedZap } from "@/lib/selected-atomic";
+import { simulateAdd } from "@/lib/dex";
 
 export async function POST(request: Request) {
   return withSelectedDeadline(request, async (signal, budget) => {
   try {
     const { wallet, selection, amount, floorBps, toleranceBps } = await parseSelectedQuoteRequest(request);
-    const { summary } = await buildAndSimulateSelectedZap(wallet, selection, amount, floorBps, toleranceBps,
+    const { summary } = await simulateAdd("raydium-clmm", { wallet, selection, amount, floorBps, toleranceBps },
       { enforceResaleFloor: false, signal, budget });
     signal.throwIfAborted();
     return Response.json(summary, {

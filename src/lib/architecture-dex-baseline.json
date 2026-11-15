@@ -41,7 +41,6 @@
     "src/mcp/tools/quotes.ts": 1,
     "src/server/transactions/compound-prepare.ts": 1,
     "src/server/transactions/open-prepare.ts": 3,
-    "src/server/transactions/selected-prepare.ts": 1,
     "src/server/transactions/selected-submit.ts": 2,
     "src/server/transactions/withdraw-prepare.ts": 1
   },

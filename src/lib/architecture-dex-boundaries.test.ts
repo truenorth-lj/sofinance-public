@@ -11,6 +11,9 @@
  * `protocols/<dex>/` import, and checks the layering inside `src/lib/dex` (including what client.ts can reach).
  *
  * Known blind spots (reviewers still check these by hand):
+ * - fixed DEX ids passed as arguments are not detected. The dedicated selected-prepare / selected-preflight HTTP
+ *   handlers and MCP quotes.prepareTransaction intentionally select Raydium for wire compatibility; they must not
+ *   take that id from request input or become templates for generic routes with protocol-specific business logic;
  * - a branch that compares through a constant, `.includes`, a lookup map or `startsWith`;
  * - a DEX call wrapped in a function (or object) that a non-DEX module exports, e.g. `export const run = () => dexCall()`;
  *   only `export … from`, `export { imported }` and `export default imported` re-exports are followed;
@@ -32,7 +35,7 @@ const config = ts.readConfigFile(path.join(root, "tsconfig.json"), ts.sys.readFi
 const options = ts.parseJsonConfigFileContent(config.config, ts.sys, root).options;
 
 /** Ceiling on the baseline totals; lower these together with the JSON whenever a PR removes violations. */
-const BASELINE_CEILING = { imports: 77, branches: 28 } as const;
+const BASELINE_CEILING = { imports: 76, branches: 28 } as const;
 
 /** Every DEX id spelling (canonical + legacy) and chain string that must not drive a branch outside src/lib/dex. */
 const DEX_BRANCH_LITERALS: ReadonlySet<string> = new Set([

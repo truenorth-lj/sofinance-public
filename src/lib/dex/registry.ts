@@ -5,6 +5,8 @@ import type { PortfolioInput, PortfolioReader } from "@/lib/portfolio/model";
 import { positionFigures } from "@/lib/portfolio/figures";
 import type { PositionKey, UnifiedPosition } from "@/lib/unified-positions/model";
 import type { DexAdapter } from "./adapter";
+import type { BuildAdd } from "./add-prepare";
+import { DexUnsupportedError } from "./errors";
 import { feePolicyProblems } from "./fees";
 import { normalizeDexId, type DexCapabilities, type DexDescriptor, type DexId } from "./types";
 
@@ -12,6 +14,8 @@ import { normalizeDexId, type DexCapabilities, type DexDescriptor, type DexId } 
 export type DexModule = {
   descriptor: DexDescriptor;
   adapter?: () => Promise<DexAdapter>;
+  /** Full add simulation for existing transports; independent of generic HTTP rollout. */
+  buildAdd?: BuildAdd;
   /** Compact Portfolio reader; a dedicated binding does not enable generic trading routes. */
   preparePortfolio?: (input: PortfolioInput, signal: AbortSignal) => Promise<PortfolioReader>;
   poolSource?: PoolSource;
@@ -61,6 +65,7 @@ export type DexDescriptorRegistry = {
 
 export type DexRegistry = DexDescriptorRegistry & {
   adapterFor(id: string): Promise<DexAdapter | null>;
+  buildAdd(id: string, ...args: Parameters<BuildAdd>): ReturnType<BuildAdd>;
   preparePortfolio(id: string, input: PortfolioInput, signal: AbortSignal): Promise<PortfolioReader | null>;
   /**
    * True only when this id is a registered module whose `enabled(op)` hook returned false.
@@ -143,6 +148,14 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
       const canonical = normalizeDexId(id);
       const entry = canonical ? byId.get(canonical) : undefined;
       return entry?.adapter ? entry.adapter() : null;
+    },
+    async buildAdd(id: string, ...args: Parameters<BuildAdd>) {
+      const canonical = normalizeDexId(id);
+      const entry = canonical ? byId.get(canonical) : undefined;
+      if (!entry?.descriptor.capabilities.deposit.supported || !entry.buildAdd) throw new DexUnsupportedError();
+      const [command, options] = args;
+      // A module may lazy-load before reading these values; retain the initiating preview/build terms.
+      return entry.buildAdd({ ...command, selection: { ...command.selection } }, options ? { ...options } : undefined);
     },
     async preparePortfolio(id: string, input: PortfolioInput, signal: AbortSignal): Promise<PortfolioReader | null> {
       const canonical = normalizeDexId(id);

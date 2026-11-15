@@ -3,10 +3,13 @@
  * here, never from `src/lib/dex/<id>/**`, `@sofinance/engine/protocols/**` or a DEX SDK.
  */
 import "server-only";
-import { DEX_MODULES } from "./modules";
-import { createDexRegistry } from "./registry";
+import { dexRegistry } from "./registry-instance";
 
-export const dexRegistry = createDexRegistry(DEX_MODULES);
+export { dexRegistry };
+export { prepareAdd } from "./prepare-add.server";
+export const simulateAdd: typeof dexRegistry.buildAdd = (id, ...args) => dexRegistry.buildAdd(id, ...args);
+export { APP_ADD_PREPARE, MCP_ADD_PREPARE } from "./add-prepare";
+export type { AddPrepareCommand, AddPreparation, AddSubmitArgs } from "./add-prepare";
 
 export type * from "./types";
 export type * from "./adapter";

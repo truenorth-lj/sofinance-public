@@ -2,8 +2,8 @@ import "@/lib/engine-host";
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { searchSelectedQuoteBundle } from "../../lib/selected-quote";
 import { submitSelected } from "@/server/transactions/selected-submit";
-import { prepareSelected } from "@/server/transactions/selected-prepare";
-import { MCP_SELECTED_PREPARE, MCP_SELECTED_SUBMIT } from "@/server/transactions/surface-policy";
+import { prepareAdd, MCP_ADD_PREPARE } from "@/lib/dex";
+import { MCP_SELECTED_SUBMIT } from "@/server/transactions/surface-policy";
 import { verifySelectedPermit } from "../../lib/selected-permit";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { createSignToken } from "../../lib/pending-sign-token";
@@ -101,28 +101,12 @@ export async function prepareTransaction(input: PrepareTransactionInput) {
     inputKind: input.inputKind,
   };
   
-  const { summary, permit, unsignedTransaction: unsignedTransactionBase64 } = await prepareSelected({
+  const { summary, permit, submitArgs, unsignedTransaction: unsignedTransactionBase64 } = await prepareAdd("raydium-clmm", {
     wallet: input.wallet, selection, amount: input.amount,
     floorBps: input.resaleFloorBps, toleranceBps: input.slippageToleranceBps,
-  }, signingSecret, MCP_SELECTED_PREPARE);
+  }, signingSecret, MCP_ADD_PREPARE);
   const jupiterApiKey = signingSecret();
 
-  // Every field submit_signed_transaction needs besides the signed transaction.
-  // These values are bound by the permit, so they must be passed back unchanged.
-  const submitArgs = {
-    permit,
-    wallet: input.wallet,
-    selection,
-    requested: summary.quote.requested,
-    expectedLiquidity: summary.quote.liquidity,
-    startingLiquidity: summary.startingLiquidity,
-    floorBps: summary.quote.floorBps,
-    expiresAt: summary.expiresAt,
-    lastValidBlockHeight: summary.lastValidBlockHeight,
-    rangeSide: summary.quote.rangeSide,
-    startingBalances: summary.startingBalances,
-  };
-  
   // Create self-contained signed token (no shared storage required)
   const signToken = await createSignToken(
     {
