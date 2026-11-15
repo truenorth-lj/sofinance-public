@@ -21,7 +21,10 @@ import { useTxWallet } from "../use-tx-wallet";
 import { RegistryPerformancePanel } from "./registry-performance";
 import type { PositionPerformanceReport } from "@/lib/position-performance-report";
 import { beginPositionOp, trackPositionSignature, usePositionOpLock } from "./position-op-lock";
-import { ROW_COMPOUND_CLASS, RowActionsBar, RowCompoundLabel, RowStatus, type RowCompoundSlot } from "../portfolio/portfolio-rows";
+import { ROW_COMPOUND_CLASS, RowActionsBar, RowCompoundLabel, type RowCompoundSlot } from "../portfolio/portfolio-rows";
+import { ActionDialog } from "../portfolio/action-dialog";
+import { CompoundConfirm } from "../portfolio/compound-confirm";
+import { recordActivity } from "@/lib/portfolio/session-activity";
 
 /** A wallet balance the Add panel can check against (raw atomic string). */
 export type ToolBalance = { balance: string; decimals: number };
@@ -258,6 +261,7 @@ function RegistryAddPanel({ position, descriptor, balances, symbolOf, onConfirme
   const { address: owner } = useWalletConnection();
   const op = usePositionTx("add", position, onConfirmed);
   const { tx, send, connected, locked } = op;
+  useTxActivity(position.key, "add", tx);
   const tokens = useMemo(() => {
     const list: TokenRef[] = [];
     const { poolTokens, extra } = descriptor.meta.depositInputs;
@@ -324,6 +328,7 @@ const OUTPUT_LABEL: Record<WithdrawOutput, (pair: string) => string> = {
 function RegistryWithdrawPanel({ position, descriptor, capabilities, symbolOf, onConfirmed }: RegistryToolProps) {
   const op = usePositionTx("withdraw", position, onConfirmed);
   const { tx, send, connected, locked } = op;
+  useTxActivity(position.key, "withdraw", tx);
   const partial = capabilities.withdraw.supported && capabilities.withdraw.partial;
   const outputs = capabilities.withdrawOutputs;
   const [percent, setPercent] = useState(100);
@@ -363,6 +368,7 @@ function RegistryWithdrawPanel({ position, descriptor, capabilities, symbolOf, o
 function RegistryClaimPanel({ position, descriptor, symbolOf, onConfirmed }: RegistryToolProps) {
   const op = usePositionTx("claim", position, onConfirmed);
   const { tx, send, connected, locked } = op;
+  useTxActivity(position.key, "claim", tx);
   const fees = position.holdings?.unclaimedFeesRaw ?? null;
   const nothing = fees !== null && BigInt(fees.a) === 0n && BigInt(fees.b) === 0n;
   const submit = () => void send({ descriptor, positionKey: position.key });
@@ -412,15 +418,17 @@ export function compoundBlockedReason(position: UnifiedPosition, symbolOf: (toke
 }
 
 /**
- * A Meteora (registry DEX) row's Compound (LJ 11/14: the only Compound entry; no Compound fees tab or panel). The button
- * sends straight through this DEX's existing compound flow (prepare + simulate → wallet → confirm), same lock as every other
- * op on the position. Under the row: the pre-sign disclosures (fee rule, range and pool fee notes, rent), progress, errors.
+ * A Meteora (registry DEX) row's Compound (LJ 11/14: the only Compound entry). The button opens the row's Compound popup:
+ * static facts first (the row's unclaimed fees and the descriptor's fee rate), then Confirm sends through this DEX's
+ * existing compound flow (prepare + simulate → wallet → confirm, unchanged; same lock as every other op on the position).
+ * Progress (with the pre-sign fee rule, range and pool fee notes and the rent line) and the result show in the same popup.
  */
 export function RegistryRowCompound({ position, descriptor, symbolOf, onConfirmed, slot }: {
   position: UnifiedPosition; descriptor: DexDescriptor; symbolOf: (token: TokenRef) => string; onConfirmed: () => void; slot: RowCompoundSlot;
 }) {
   const op = usePositionTx("compound", position, onConfirmed);
   const { tx, send, locked } = op;
+  useTxActivity(position.key, "compound", tx);
   const blocked = compoundBlockedReason(position, symbolOf);
   const rangeLine = compoundRangeLine(position, symbolOf);
   const poolFeeLine = position.rangeStatus === "in" ? descriptor.meta.inRangeDepositPoolFee ?? null : null;
@@ -428,25 +436,56 @@ export function RegistryRowCompound({ position, descriptor, symbolOf, onConfirme
   const rentLine = tokenAccountRentLine(op.prepared?.createsTokenAccounts, (mint) => { const token = tokenFor(mint); return token ? symbolOf(token) : "pool token"; });
   const submit = () => void send({ descriptor, positionKey: position.key });
   const signing = tx.status === "preparing" || tx.status === "wallet";
-  const outcome = tx.status === "success" || tx.status === "failed" || tx.locked;
+  // A finished send shows its result until Done (or closing the popup); the next open starts at the confirm screen.
+  const resultKey = tx.status === "success" || tx.status === "failed" ? `${tx.status}:${tx.signature ?? ""}:${tx.error ?? ""}` : null;
+  const [seenResult, setSeenResult] = useState<string | null>(null);
+  const settled = resultKey !== null && resultKey !== seenResult;
+  const close = () => { if (resultKey) setSeenResult(resultKey); slot.onClose(); };
   return <>
     <RowActionsBar>
-      <button type="button" data-testid="position-row-action" data-tool="compound" aria-busy={tx.locked}
-        disabled={locked || blocked !== null || (slot.disabled && !tx.locked)} onClick={submit} title={tx.locked ? "Compounding…" : "Compound"} className={ROW_COMPOUND_CLASS}>
+      <button type="button" data-testid="position-row-action" data-tool="compound" aria-haspopup="dialog" aria-busy={tx.locked}
+        disabled={slot.disabled && !tx.locked} onClick={slot.onOpen} title={tx.locked ? "Compounding…" : "Compound"} className={ROW_COMPOUND_CLASS}>
         <RowCompoundLabel busy={tx.locked} label={tx.locked ? "Compounding…" : "Compound"} />
       </button>
       {slot.otherActions}
     </RowActionsBar>
-    {blocked || op.lockedByOther || outcome ? <RowStatus testId="row-compound-status">
-      {blocked ? <p role="status" data-testid="registry-compound-blocked" className="text-smoke">{blocked}</p> : null}
-      {/* Stated before signing (shown from the click until the wallet answers): fee rule, range and pool fee notes. */}
-      {signing ? <div data-testid="registry-compound-disclosure" className="space-y-1">
-        <p data-testid="registry-compound-fee">{feeLine(descriptor.meta.feePolicy.compound, "")}</p>
-        {rangeLine ? <p data-testid="registry-compound-range">{rangeLine}</p> : null}
-        {poolFeeLine ? <p data-testid="registry-compound-pool-fee" className="text-smoke">{poolFeeLine}</p> : null}
-      </div> : null}
-      <LockNote lock={op} />
-      <TxStatus tx={{ ...tx, interrupted: undefined }} successText="Fees compounded." walletNote={rentLine} />
-    </RowStatus> : null}
+    <ActionDialog open={slot.open} onClose={close} title="Compound fees" testId="compound-popup" size="sm">
+      {tx.locked || settled ? <div data-testid="compound-progress">
+        {/* Stated before signing (shown from Confirm until the wallet answers): fee rule, range and pool fee notes. */}
+        {signing ? <div data-testid="registry-compound-disclosure" className="mt-4 space-y-1 text-xs leading-5 text-cream/80">
+          <p data-testid="registry-compound-fee">{feeLine(descriptor.meta.feePolicy.compound, "")}</p>
+          {rangeLine ? <p data-testid="registry-compound-range">{rangeLine}</p> : null}
+          {poolFeeLine ? <p data-testid="registry-compound-pool-fee" className="text-smoke">{poolFeeLine}</p> : null}
+        </div> : null}
+        <TxStatus tx={{ ...tx, interrupted: undefined }} successText="Fees compounded." walletNote={rentLine} />
+        {settled ? <button type="button" data-testid="compound-submit-done" onClick={close}
+          className="mt-5 inline-flex w-full items-center justify-center rounded-full bg-lemon px-5 py-3.5 text-sm font-semibold text-ink hover:bg-[#fff27f]">Done</button> : null}
+      </div> : <>
+        <CompoundConfirm unclaimedUsd={slot.unclaimedUsd} feeRule={descriptor.meta.feePolicy.compound} blocked={blocked}
+          loading={false} disabled={locked || blocked !== null} onConfirm={submit} />
+        <LockNote lock={op} />
+      </>}
+    </ActionDialog>
   </>;
+}
+
+const TX_ACTIVITY: Readonly<Record<DexStepOp, { success: string; failed: string; pending: string }>> = Object.freeze({
+  compound: { success: "Fees compounded", failed: "Compound failed", pending: "Compound confirming" },
+  add: { success: "Liquidity added", failed: "Add failed", pending: "Add confirming" },
+  withdraw: { success: "Withdrawal confirmed", failed: "Withdrawal failed", pending: "Withdrawal confirming" },
+  claim: { success: "Fees claimed", failed: "Claim failed", pending: "Claim confirming" },
+  open: { success: "Position opened", failed: "Open failed", pending: "Open confirming" },
+  recovery: { success: "Balance recovered", failed: "Recovery failed", pending: "Recovery confirming" },
+});
+
+/** This session's Activity for a panel's sends: each sent transaction, from confirming to its result. */
+function useTxActivity(positionKey: string, op: DexStepOp, tx: PositionTx) {
+  const { status, signature, error } = tx;
+  useEffect(() => {
+    if (!signature) return;
+    const labels = TX_ACTIVITY[op];
+    const state = status === "success" ? "success" : status === "failed" ? "failed" : status === "confirming" || status === "checking" ? "pending" : null;
+    if (!state) return;
+    recordActivity({ id: `${op}:${signature}`, positionKey, signature, status: state, title: labels[state], detail: state === "failed" ? error ?? undefined : undefined });
+  }, [positionKey, op, status, signature, error]);
 }

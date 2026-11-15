@@ -7,6 +7,7 @@ import { WalletConnectionContext, type WalletConnection } from "./wallet-connect
 import { testKeypair } from "@/lib/test-support/send-fixtures";
 import { PublicKey, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import { USDC_MINT } from "@sofinance/engine/ids";
+import { compoundConfirmButton, openRowTool, rowAction } from "./test-support/portfolio-popups";
 
 // Framework routing boundary only. SelectedApp and both controllers are real.
 vi.mock("next/navigation", () => ({ usePathname: () => "/app" }));
@@ -72,8 +73,10 @@ beforeEach(async () => {
     throw new Error(`Unexpected HTTP boundary ${path}`);
   }));
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
-  await act(async () => root.render(<WalletConnectionContext.Provider value={connection}><SelectedApp initialView="deposit" /></WalletConnectionContext.Provider>));
+  await act(async () => root.render(<WalletConnectionContext.Provider value={connection}><SelectedApp /></WalletConnectionContext.Provider>));
   await advance(30); await advance(30); await advance(30);
+  // Add to existing position lives in the row's Add popup (LJ 11/14).
+  await openRowTool(container, "deposit"); await advance(30);
 });
 it.each(["success", "reject"])("C1: repeated MAX replaces a pending quote despite stale %s", async outcome => {
   let resolve!: (response: Response) => void;
@@ -116,12 +119,18 @@ it("real Add busy blocks compound, then healthy preview resumes after HTTP failu
   snapshot("released");
 });
 it("real compound busy blocks Add caller while preview remains readable, then releases", async () => {
-  await ready(); expect(rowCompound().disabled).toBe(false); await act(async () => rowCompound().click()); snapshot("row Compound");
-  expect(count("/api/compound-prepare")).toBe(1); expect(rowCompound().disabled).toBe(true);
-  expect(button("Another operation in progress…").disabled).toBe(true);
-  await act(async () => button("Another operation in progress…").click()); expect(count("/api/selected-prepare")).toBe(0);
-  expect(container.textContent).toContain("A compound or recovery operation is in progress.");
+  await ready(); expect(rowCompound().disabled).toBe(false);
+  // The row's Compound opens its popup; Confirm runs the existing flow (prepare, then the wallet).
+  await act(async () => rowCompound().click()); await advance(30);
+  const confirm = compoundConfirmButton(container)!; expect(confirm.disabled).toBe(false);
+  await act(async () => confirm.click()); snapshot("row Compound");
+  expect(count("/api/compound-prepare")).toBe(1); expect(rowCompound().disabled).toBe(false); // reopens its own popup
+  // While it runs, Add stays closed (a different popup), and its Add button is greyed.
+  expect(rowAction(container, "deposit")!.disabled).toBe(true);
+  await act(async () => rowAction(container, "deposit")!.click()); expect(count("/api/selected-prepare")).toBe(0);
   await act(async () => release(Response.json({ error: "Compound prepare rejected" }, { status: 400 })));
+  expect(container.textContent).toContain("Compound prepare rejected");
+  await openRowTool(container, "deposit"); await advance(450);
   expect(button("Add liquidity").disabled).toBe(false); snapshot("released");
 });
 it.each(["jupiter_no_route", "upstream"])("real caller preserves %s presentation and recovery", async code => {

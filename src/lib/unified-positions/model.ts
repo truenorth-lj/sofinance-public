@@ -155,13 +155,3 @@ export function firstSupportedTool(capabilities: SourceCapabilities): ToolId | n
   return TOOL_IDS.find((tool) => capabilities[tool].supported) ?? null;
 }
 
-/**
- * The details tabs open on Add to position (LJ 11/14: no Compound tab; Compound is the row's button). Not Performance:
- * on Performance the stock positions move into the stocks overview, whose entries have no row Compound button.
- */
-export const DEFAULT_DETAIL_VIEW: ToolId = "deposit";
-
-/** The first details tab a position supports (never `compound`, which has no tab). */
-export function firstDetailTool(capabilities: SourceCapabilities): ToolId | null {
-  return TOOL_IDS.find((tool) => tool !== "compound" && capabilities[tool].supported) ?? null;
-}

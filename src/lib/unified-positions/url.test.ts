@@ -4,12 +4,12 @@ import { initialSelectionFromQuery } from "./url";
 describe("initialSelectionFromQuery (/app URL state)", () => {
   it("?position= passes any valid key through unchanged (no source is special-cased here)", () => {
     expect(initialSelectionFromQuery({ position: "raydium-clmm:Mint111", view: "withdraw" }))
-      .toEqual({ initialView: "withdraw", initialMint: "", initialPositionKey: "raydium-clmm:Mint111" });
+      .toEqual({ initialView: "portfolio", initialMint: "", initialPositionKey: "raydium-clmm:Mint111" });
   });
   it("?position= picks a Robinhood Chain or Meteora position by key", () => {
     expect(initialSelectionFromQuery({ position: "meteora-dlmm:Pos111" }).initialPositionKey).toBe("meteora-dlmm:Pos111");
     expect(initialSelectionFromQuery({ position: "uniswap-v4-rhc:4077059", view: "withdraw" }))
-      .toEqual({ initialView: "withdraw", initialMint: "", initialPositionKey: "uniswap-v4-rhc:4077059" });
+      .toEqual({ initialView: "portfolio", initialMint: "", initialPositionKey: "uniswap-v4-rhc:4077059" });
   });
   it("old ?mint= and ?positionMint= links still work (back-compat)", () => {
     expect(initialSelectionFromQuery({ mint: "OldMint", view: "performance" })).toEqual({ initialView: "performance", initialMint: "OldMint", initialPositionKey: "" });
@@ -18,12 +18,12 @@ describe("initialSelectionFromQuery (/app URL state)", () => {
   });
   it("a valid ?position= wins over ?mint=; an invalid one falls back to it", () => {
     expect(initialSelectionFromQuery({ position: "uniswap-v4-rhc:1", mint: "M" }).initialMint).toBe("");
-    expect(initialSelectionFromQuery({ position: "rhc-uniswap-v4:1", mint: "M" })).toEqual({ initialView: "deposit", initialMint: "M", initialPositionKey: "" });
-    expect(initialSelectionFromQuery({ position: "nope:1", mint: "M" })).toEqual({ initialView: "deposit", initialMint: "M", initialPositionKey: "" });
+    expect(initialSelectionFromQuery({ position: "rhc-uniswap-v4:1", mint: "M" })).toEqual({ initialView: "portfolio", initialMint: "M", initialPositionKey: "" });
+    expect(initialSelectionFromQuery({ position: "nope:1", mint: "M" })).toEqual({ initialView: "portfolio", initialMint: "M", initialPositionKey: "" });
   });
-  it("unknown views, and the old view=compound (no Compound tab, LJ 11/14), open Add to position", () => {
-    expect(initialSelectionFromQuery({ view: "rhc" }).initialView).toBe("deposit");
-    expect(initialSelectionFromQuery({ view: "compound" }).initialView).toBe("deposit");
-    expect(initialSelectionFromQuery({}).initialView).toBe("deposit");
+  it("old operation views (compound, deposit, add, withdraw) and unknown ones land on Portfolio; performance stays", () => {
+    for (const view of ["rhc", "compound", "deposit", "add", "withdraw"]) expect(initialSelectionFromQuery({ view }).initialView).toBe("portfolio");
+    expect(initialSelectionFromQuery({}).initialView).toBe("portfolio");
+    expect(initialSelectionFromQuery({ view: "performance" }).initialView).toBe("performance");
   });
 });

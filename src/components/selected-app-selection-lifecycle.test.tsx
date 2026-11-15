@@ -4,6 +4,7 @@ import { act, createElement, useLayoutEffect, type FunctionComponent } from "rea
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SelectedApp } from "./selected-app";
+import { openRowDetail, openRowTool } from "./test-support/portfolio-popups";
 import { WalletConnectionContext, type WalletConnection } from "./wallet-connection";
 import fixture from "./__fixtures__/position-performance-sample.json";
 import { USDC_MINT } from "@sofinance/engine/ids";
@@ -16,7 +17,7 @@ const compoundMock = vi.hoisted(() => ({ state: null as unknown, busy: false }))
 vi.mock("./use-compound-controller", () => ({ useCompoundController: (args: { positionMint?: string; externalBlocked: boolean }) => { safety.compoundTarget = args.positionMint ?? ""; safety.blocked = args.externalBlocked; return ({
   wallet: undefined, state: compoundMock.state, preview: null, attempt: null, stage: "idle", busy: compoundMock.busy, canCompound: false,
   compound: vi.fn(), receipts: [], priorReceipts: [], error: "" }); } }));
-const safety = vi.hoisted(() => ({ performanceMint: "", staleSnapshot: false, enabled: false, selection: "", compoundTarget: "", blocked: false,
+const safety = vi.hoisted(() => ({ performanceMint: "", staleSnapshot: false, addRequired: true, enabled: false, selection: "", compoundTarget: "", blocked: false,
   commits: [] as { selected: string; target: string; compound: string; blocked: boolean; addDisabled: boolean; retry: boolean; withdraw: string }[],
   add: vi.fn(), retry: vi.fn() }));
 vi.mock("./use-selected-controller", async (importOriginal) => {
@@ -33,10 +34,10 @@ vi.mock("./use-selected-controller", async (importOriginal) => {
 vi.mock("./transaction-status-dialog", () => ({ TransactionStatusDialog: (props: { onRetry?: () => void }) => {
   useLayoutEffect(() => {
     if (!safety.enabled) return;
-    const selected = document.querySelector('[data-testid="selected-position-detail"]')?.getAttribute('data-selected-key') ?? "";
+    const selected = document.querySelector('[data-testid="popup-target"]')?.getAttribute('data-selected-key') ?? "";
     const buttons = [...document.querySelectorAll<HTMLButtonElement>('button')].filter(b => b.textContent === 'Add liquidity');
     safety.commits.push({ selected, target: safety.selection, compound: safety.compoundTarget,
-      blocked: safety.blocked, addDisabled: buttons.length > 0 && buttons.every(b => b.disabled), retry: !!props.onRetry,
+      blocked: safety.blocked, addDisabled: (safety.addRequired ? buttons.length > 0 : true) && buttons.every(b => b.disabled), retry: !!props.onRetry,
       withdraw: document.querySelector('[data-testid="withdraw-target"]')?.textContent ?? "" });
     if (selected.includes('AnotherPos') && safety.selection && !selected.includes(safety.selection)) buttons.forEach(b => b.click());
   });
@@ -116,17 +117,27 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 describe("All positions selection lifecycle", () => {
- const chosen = () => container.querySelector('[data-testid="selected-position-detail"]')?.getAttribute('data-selected-key');
+ // The selected position is the one whose popup was opened last (LJ 11/14: operations are row popups).
+ const chosen = () => container.querySelector('[data-testid="popup-target"]')?.getAttribute('data-selected-key');
  const lastState = () => calls.filter(u => u.startsWith('/api/selected-state?')).at(-1);
- const pickB = async () => { await act(async () => container.querySelector<HTMLButtonElement>(`[data-testid="position-fallback-select"][data-position-key="raydium-clmm:${OTHER_OWNED_MINT}"]`)!.click()); await settle(); };
- const tab = async (label: string) => { await act(async () => [...container.querySelectorAll<HTMLButtonElement>('nav[aria-label="Position operations"] button')].find(b => b.textContent === label)!.click()); await settle(); };
+ const keyOf = (mint: string) => `raydium-clmm:${mint}`;
+ const closeOpen = async () => {
+  const close = container.querySelector<HTMLButtonElement>('dialog[data-open="true"] button[aria-label="Close"]');
+  if (close) await act(async () => close.click());
+ };
+ const open = async (view: 'deposit' | 'withdraw' | 'performance', mint: string) => {
+  await closeOpen();
+  if (view === 'performance') await openRowDetail(container, keyOf(mint)); else await openRowTool(container, view, keyOf(mint));
+  await settle();
+ };
+ const pickB = () => open('deposit', OTHER_OWNED_MINT);
  const assertTargets = async (mint: string) => {
-  expect(container.querySelector(`[data-position-key="raydium-clmm:${mint}"]`)?.getAttribute('aria-pressed')).toBe('true');
+  expect(new URL(window.location.href).searchParams.get('position')).toBe(keyOf(mint));
   expect(chosen()).toContain(mint);
   expect(param(lastState()!, 'positionMint')).toBe(mint);
-  await tab('Withdraw');
+  await open('withdraw', mint);
   expect(container.querySelector('[data-testid="withdraw-target"]')?.textContent).toBe(mint);
-  await tab('Performance');
+  await open('performance', mint);
   expect(safety.performanceMint).toBe(mint);
   expect(calls.some(url => url.startsWith('/api/position-performance?') && param(url, 'positionMint') === mint)).toBe(true);
  };
@@ -136,36 +147,42 @@ describe("All positions selection lifecycle", () => {
   await mount(mode); await settle(); await pickB();
   expect(chosen()).toContain(OTHER_OWNED_MINT);
   expect(lastState()).toBeUndefined();
-  await tab('Performance');
+  await open('performance', OTHER_OWNED_MINT);
   expect(safety.performanceMint).toBe(OTHER_OWNED_MINT);
-  await tab('Add to position');
+  await open('deposit', OTHER_OWNED_MINT);
   mode.eligible = true; await rescan();
   expect(calls.filter(url => url.startsWith('/api/selected-state?')).every(url => param(url, 'positionMint') === OTHER_OWNED_MINT)).toBe(true);
   expect(chosen()).toContain(OTHER_OWNED_MINT);
   await assertTargets(OTHER_OWNED_MINT);
-  await act(async () => [...container.querySelectorAll<HTMLButtonElement>('nav[aria-label="Position operations"] button')].find(b => b.textContent === 'Withdraw')!.click()); await settle();
+  await open('withdraw', OTHER_OWNED_MINT);
   expect(container.querySelector('[data-testid="withdraw-target"]')?.textContent).toBe(OTHER_OWNED_MINT);
  });
  it('rescan removes picked position', async () => {
   const mode: Mode = { wallet: OWN_WALLET, positions: [OWNED_MINT, OTHER_OWNED_MINT], stateOk: true, initialMint: '', initialView: 'deposit' };
   await mount(mode); await settle(); await pickB();
   mode.positions = [OWNED_MINT]; await rescan();
+  // B's popup has nothing left to show; the remaining position becomes the selection once opened.
+  expect(container.querySelector(`[data-position-key="${keyOf(OTHER_OWNED_MINT)}"]`)).toBeNull();
+  await open('deposit', OWNED_MINT);
   await assertTargets(OWNED_MINT);
-  expect([...container.querySelectorAll('[data-testid="position-fallback-select"]')].some(b => b.getAttribute('aria-pressed') === 'true')).toBe(true);
  });
  it('wallet A B A', async () => {
   const mode: Mode = { wallet: OWN_WALLET, positions: [OWNED_MINT, OTHER_OWNED_MINT], stateOk: true, initialMint: '', initialView: 'deposit' };
   await mount(mode); await settle(); await pickB();
   mode.wallet = 'OtherWallet111111111111111111111111111'; await mount(mode); await settle();
   mode.wallet = OWN_WALLET; await mount(mode); await settle();
+  await open('deposit', OWNED_MINT);
   expect(chosen()).toContain(OWNED_MINT);
   await assertTargets(OWNED_MINT);
  });
  it.each(['deposit', 'withdraw'] as const)('blocks all operation targets before reconciliation in %s', async (initialView) => {
   safety.enabled = true;
   safety.staleSnapshot = initialView === 'withdraw';
+  // The Add popup must show its Add button disabled; the Withdraw popup has no Add button at all.
+  safety.addRequired = initialView === 'deposit';
   const mode: Mode = { wallet: OWN_WALLET, positions: [OWNED_MINT, OTHER_OWNED_MINT], stateOk: true, initialMint: '', initialView, eligible: false };
   await mount(mode); await settle(); await pickB();
+  if (initialView === 'withdraw') await open('withdraw', OTHER_OWNED_MINT);
   mode.eligible = true; await rescan();
   const mismatches = safety.commits.filter(c => c.selected.includes(OTHER_OWNED_MINT) && c.target === OWNED_MINT);
   expect(mismatches.length).toBeGreaterThan(0);

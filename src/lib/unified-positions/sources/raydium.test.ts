@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
 import type { WalletPosition } from "@sofinance/engine/wallet-discovery";
-import { ArrowDown } from "lucide-react";
-import { toolOptions, type ToolMeta } from "../capabilities";
-import { NOT_AVAILABLE_MESSAGE, unsupported, type ToolId } from "../model";
 import { raydiumPositionSource, raydiumUnifiedPosition } from "./raydium";
 
 const wp = (positionMint: string, rangeSide: WalletPosition["rangeSide"] = "inside"): WalletPosition => ({
@@ -31,26 +28,3 @@ describe("raydium position source", () => {
   });
 });
 
-const meta = Object.fromEntries((["compound", "performance", "deposit", "withdraw"] as ToolId[])
-  .map((t) => [t, { label: t, icon: ArrowDown, controls: `${t}-view` }])) as unknown as Record<ToolId, ToolMeta>;
-
-describe("toolOptions", () => {
-  it("is identical to the old hard-coded /app tabs for Raydium", () => {
-    for (const withdrawDisabled of [true, false]) {
-      expect(toolOptions(raydiumPositionSource.capabilities, meta, { withdraw: withdrawDisabled })).toStrictEqual([
-        { value: "compound", label: "compound", icon: ArrowDown, controls: "compound-view" },
-        { value: "performance", label: "performance", icon: ArrowDown, controls: "performance-view" },
-        { value: "deposit", label: "deposit", icon: ArrowDown, controls: "deposit-view" },
-        { value: "withdraw", label: "withdraw", icon: ArrowDown, controls: "withdraw-view", disabled: withdrawDisabled },
-      ]);
-    }
-  });
-  it("greys unsupported tools (still clickable, so the reason can show inline) regardless of UI guards", () => {
-    const caps = { ...raydiumPositionSource.capabilities, compound: unsupported(NOT_AVAILABLE_MESSAGE), withdraw: { supported: false as const, reason: "x" } };
-    const opts = toolOptions(caps, meta, { withdraw: false });
-    expect(opts.find((o) => o.value === "compound")).toMatchObject({ unavailable: true });
-    expect(opts.find((o) => o.value === "compound")!.disabled).toBeUndefined();
-    expect(opts.find((o) => o.value === "withdraw")).toMatchObject({ unavailable: true });
-    expect(opts.find((o) => o.value === "performance")!.unavailable).toBeUndefined();
-  });
-});

@@ -4,6 +4,7 @@ import { act, createElement, type FunctionComponent } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SelectedApp } from "./selected-app";
+import { openPopup, openRowDetail, openRowTool, rowAction } from "./test-support/portfolio-popups";
 import { WalletConnectionContext, type WalletConnection } from "./wallet-connection";
 import fixture from "./__fixtures__/position-performance-sample.json";
 import { USDC_MINT } from "@sofinance/engine/ids";
@@ -72,6 +73,11 @@ function mount(mode: Mode) {
   return act(async () => root.render(createElement(WalletConnectionContext.Provider, { value: connection },
     createElement(SelectedApp as unknown as FunctionComponent<{ initialView: string; initialMint: string }>, { initialView: mode.initialView ?? "performance", initialMint: mode.initialMint }))));
 }
+const own = `raydium-clmm:${OWNED_MINT}`; const other = `raydium-clmm:${OTHER_OWNED_MINT}`;
+const closeOpenPopup = async () => {
+  const close = container.querySelector<HTMLButtonElement>('dialog[data-open="true"] button[aria-label="Close"]');
+  if (close) await act(async () => close.click());
+};
 const exitSection = () => container.querySelector('[aria-label="Exit estimates"]');
 const exitUrls = () => calls.filter((u) => u.startsWith("/api/lp-decision/exit-preview?"));
 const perfMints = () => calls.filter((u) => u.startsWith("/api/position-performance?")).map((u) => param(u, "positionMint"));
@@ -118,26 +124,29 @@ describe("the exit estimate lives in the Withdraw tool, not in Performance", () 
   it("Withdraw on a held position with ready state runs exactly one exit estimate using the wallet's NFT account", async () => {
     await mount({ wallet: OWN_WALLET, positions: [OWNED_MINT], stateOk: true, initialMint: OWNED_MINT, initialView: "withdraw" });
     await settle();
+    expect(exitUrls()).toEqual([]); // an old view=withdraw link opens nothing
+    await openRowTool(container, "withdraw", own); await settle();
     expect(exitUrls().map((u) => [param(u, "positionId"), param(u, "nftAccount")])).toEqual([[OWNED_MINT, NFT_ATA]]);
     expect(container.querySelector("#withdraw-view")?.contains(exitSection())).toBe(true);
     expect(exitSection()?.textContent).toContain("1.000000 USDC + 0.008580200 SOL");
     expect(manualPreview()).toBeUndefined();
-    expect(perfMints()).toEqual([]);
+    expect(perfMints().every((mint) => mint === OWNED_MINT)).toBe(true); // only the row's own value read
   });
 
   it("Withdraw: choosing another position moves the exit estimate to it", async () => {
     await mount({ wallet: OWN_WALLET, positions: [OTHER_OWNED_MINT, OWNED_MINT], stateOk: true, initialMint: OWNED_MINT, initialView: "withdraw" });
     await settle();
+    await openRowTool(container, "withdraw", own); await settle();
     expect(exitUrls().map((u) => param(u, "positionId"))).toEqual([OWNED_MINT]);
-    const pick = container.querySelector<HTMLButtonElement>(`[data-testid="position-fallback-select"][data-position-key="raydium-clmm:${OTHER_OWNED_MINT}"]`)!;
-    await act(async () => pick.click());
-    await settle();
+    await closeOpenPopup();
+    await openRowTool(container, "withdraw", other); await settle();
     expect(exitUrls().map((u) => param(u, "positionId")).at(-1)).toBe(OTHER_OWNED_MINT);
   });
 
   it("Withdraw while the position state cannot be read: no estimate and no exit-preview read (never spins)", async () => {
     await mount({ wallet: OWN_WALLET, positions: [OWNED_MINT], stateOk: false, initialMint: OWNED_MINT, initialView: "withdraw" });
     await settle();
+    await openRowTool(container, "withdraw", own); await settle();
     expect(container.textContent).not.toContain("Waiting for position accounts…");
     expect(exitSection()).toBeNull();
     expect(count("/api/lp-decision/exit-preview")).toBe(0);
@@ -167,111 +176,88 @@ describe("stock summary and position detail hierarchy", () => {
     await settle();
     expect(perfMints().at(-1)).toBe(OTHER_OWNED_MINT);
   });
-  it("an old view=compound link opens Add to position (no Compound tab); rows and their Compound buttons lock during a compound", async () => {
+  it("an old view=compound link lands on Portfolio with nothing open; other rows' operations lock during a compound", async () => {
     compoundMock.busy = true;
     await mount({ wallet: OWN_WALLET, positions: [OWNED_MINT, OTHER_OWNED_MINT], stateOk: true, initialMint: OWNED_MINT, initialView: "compound" });
     await settle();
     const entry = container.querySelector('[aria-labelledby="all-positions-heading"]')!;
     const rows = [...entry.querySelectorAll<HTMLButtonElement>('[data-testid="position-fallback-select"]')];
-    expect(rows.map((row) => row.getAttribute("data-position-key")).sort()).toEqual([`raydium-clmm:${OWNED_MINT}`, `raydium-clmm:${OTHER_OWNED_MINT}`].sort());
-    expect(rows.find((row) => row.getAttribute("aria-pressed") === "true")?.getAttribute("data-position-key")).toBe(`raydium-clmm:${OWNED_MINT}`);
-    expect(rows.every((row) => row.disabled)).toBe(true);
-    expect(container.querySelector("#compound-position")).toBeNull();
-    // The tabs sit inside the selected position's detail, the tool below the list.
-    expect(entry.querySelector('[data-testid="selected-position-detail"] nav[aria-label="Position operations"]')).not.toBeNull();
-    expect(container.querySelector('#compound-view')).toBeNull();
-    expect(container.querySelector<HTMLElement>('#deposit-view')?.hidden).toBe(false);
-    const compounds = [...container.querySelectorAll<HTMLButtonElement>('[data-testid="position-row-action"][data-tool="compound"]')];
-    expect(compounds).toHaveLength(2);
-    expect(compounds.every((button) => button.disabled)).toBe(true);
+    expect(rows.map((row) => row.getAttribute("data-position-key")).sort()).toEqual([own, other].sort());
+    expect(rows.some((row) => row.hasAttribute("aria-pressed"))).toBe(false);
+    expect(container.querySelector('dialog[data-open="true"]')).toBeNull();
+    expect(container.querySelector("#compound-view")).toBeNull();
+    expect(container.querySelector("#deposit-view")).toBeNull();
+    expect(entry.querySelector('nav[aria-label="Position operations"]')).toBeNull();
+    expect(container.querySelectorAll('[data-testid="position-row-action"][data-tool="compound"]')).toHaveLength(2);
+    for (const key of [own, other]) for (const tool of ["deposit", "withdraw"] as const) expect(rowAction(container, tool, key)?.disabled).toBe(true);
+    expect(calls.filter((u) => u.includes("-prepare"))).toEqual([]);
   });
-  it("uses lightweight rows outside Performance without reading any history", async () => {
+  it("lists every position with no tool open; clicking a row opens its Performance detail", async () => {
     await mount({ wallet: OWN_WALLET, positions: [OWNED_MINT, OTHER_OWNED_MINT], stateOk: true, initialMint: OWNED_MINT, initialView: "deposit" });
     await settle();
-    expect(perfMints()).toEqual([]);
     expect(container.querySelectorAll('[data-testid="position-fallback-select"]')).toHaveLength(2);
-    expect(container.querySelector('[data-testid="stocks-overview"]')).toBeNull();
-    const pick = container.querySelector<HTMLButtonElement>(`[data-position-key="raydium-clmm:${OTHER_OWNED_MINT}"]`)!;
-    await act(async () => pick.click()); await settle();
-    expect(perfMints()).toEqual([]);
+    expect(container.querySelector('dialog[data-open="true"]')).toBeNull();
+    await openRowDetail(container, other); await settle();
+    const popup = openPopup(container, "performance-popup")!;
+    expect(popup.querySelector("#performance-view")).not.toBeNull();
+    expect(perfMints().at(-1)).toBe(OTHER_OWNED_MINT);
     expect(container.querySelector('[data-testid="position-assets-collapse"]')).toBeNull();
-    expect(new URL(window.location.href).searchParams.get("position")).toBe(`raydium-clmm:${OTHER_OWNED_MINT}`);
+    const url = new URL(window.location.href).searchParams;
+    expect([url.get("position"), url.get("view")]).toEqual([other, "performance"]);
   });
-  it("shows stock cards only in the overview, retaining details for the selected position", async () => {
+  it("has no stock overview on Portfolio; the detail shows the price change vs fee income split without repeating the row", async () => {
     await mount({ wallet: OWN_WALLET, positions: [OTHER_OWNED_MINT, OWNED_MINT], stateOk: true, initialMint: OWNED_MINT, stock: true });
     await settle();
-    expect(container.querySelector('[data-testid="stocks-overview"]')).not.toBeNull();
-    expect(container.querySelector('#performance-view [data-testid="stock-performance"]')).toBeNull();
-    expect(container.querySelector('#performance-view')?.textContent).toContain("Position details");
-    // No range badge or per-token rows in the details (the position's row shows them), nor in Performance.
+    const entry = container.querySelector('section[aria-labelledby="all-positions-heading"]')!;
+    // LJ 11/15: nothing above or below the rows; the stock, shares, value and fees are the rows' own columns.
+    expect(container.querySelector('[data-testid="stocks-overview"]')).toBeNull();
+    expect([...container.querySelectorAll('[data-testid="stock-performance"]')].filter((el) => !el.closest("dialog"))).toEqual([]);
+    expect(entry.querySelectorAll('[data-testid="position-fallback-select"]')).toHaveLength(2);
+    expect(container.textContent).not.toContain("My positions");
+    expect(container.querySelector('select#position')).toBeNull();
+    const stock = openPopup(container, "performance-popup")!.querySelector('#performance-view [data-testid="stock-performance"]')!;
+    expect(stock).not.toBeNull();
+    for (const tile of ["stock-tile-price", "stock-tile-shares", "stock-tile-fees"]) expect(stock.querySelector(`[data-testid="${tile}"]`)).not.toBeNull();
+    expect(stock.textContent).not.toContain("Position value");
+    // No range badge or per-token rows in the details (the position's row shows them).
     expect(container.querySelector('#performance-view')?.textContent).not.toContain("In range");
     expect(container.querySelector('[data-testid="position-assets-collapse"]')).toBeNull();
   });
-  it("selects a position from the stock drilldown and updates the existing position details", async () => {
-    // Expire overview fixtures cached by earlier cases that had no stock report.
-    await flush(60_001);
-    await mount({ wallet: OWN_WALLET, positions: [OTHER_OWNED_MINT, OWNED_MINT], stateOk: true, initialMint: OWNED_MINT, stock: true });
-    await settle();
-    const rowToggle = container.querySelector('[data-testid="stock-row"] button') as HTMLButtonElement;
-    await act(async () => rowToggle.click());
-    const pick = container.querySelector(`[data-testid="stock-position-select"][data-position-key="raydium-clmm:${OTHER_OWNED_MINT}"]`) as HTMLButtonElement;
-    expect(pick).not.toBeNull();
-    await act(async () => pick.click());
-    await settle();
-    expect(perfMints().at(-1)).toBe(OTHER_OWNED_MINT);
-    expect(container.querySelector('#performance-view [data-testid="position-detail-identity"]')?.textContent).toContain(OTHER_OWNED_MINT);
-    expect(container.querySelector('#performance-view [data-testid="stock-performance"]')).toBeNull();
-  });
-  it("uses All positions as the only entry, including a single stock drilldown", async () => {
-    await mount({ wallet: OWN_WALLET, positions: [OWNED_MINT], stateOk: true, initialMint: OWNED_MINT, stock: true });
-    await settle();
-    const entry = container.querySelector('section[aria-labelledby="all-positions-heading"]')!;
-    expect(entry).not.toBeNull();
-    expect(container.textContent).not.toContain("My positions");
-    expect(container.querySelector('select#position')).toBeNull();
-    expect(entry.querySelector('[data-testid="stocks-overview"]')).not.toBeNull();
-    expect(entry.querySelectorAll('[data-testid="position-fallback-select"]')).toHaveLength(0);
-    expect(entry.querySelectorAll('[data-testid="stock-position-select"]')).toHaveLength(1);
-    expect(container.querySelector('#performance-view [data-testid="stock-performance"]')).toBeNull();
-  });
-  it("keeps a foreign linked position's cards when that position is not represented in the overview", async () => {
+  it("keeps a foreign linked position's price change vs fee income split", async () => {
     await mount({ wallet: OWN_WALLET, positions: [OWNED_MINT, OTHER_OWNED_MINT], stateOk: true, initialMint: DEEP_LINK_MINT, stock: true });
     await settle();
     expect(container.querySelector('#performance-view [data-testid="stock-performance"]')).not.toBeNull();
   });
 });
 
-describe("selected Raydium position details: no duplicate top block (LJ 11/14)", () => {
-  it("shows no range badge and no per-token Liquidity / Unclaimed fees rows above the tabs; Learn more details and the tabs stay", async () => {
+describe("the Performance detail popup (LJ 11/14)", () => {
+  it("has no tabs, Learn more details or duplicate range and fee rows; the row's detail holds the performance panel", async () => {
     compoundMock.state = { ...selectedState(OWNED_MINT), eligible: true, reason: null, status: 0, vaultA: "v", vaultB: "w", tickSpacing: 1,
       fees: { a: "25000000", b: "10000000" }, rewards: [] };
     await mount({ wallet: OWN_WALLET, positions: [OWNED_MINT], stateOk: true, initialMint: OWNED_MINT });
     await settle();
-    const detail = container.querySelector('[data-testid="selected-position-detail"]')!;
+    expect(container.querySelector('[data-testid="selected-position-detail"]')).toBeNull();
+    expect(container.querySelector('nav[aria-label="Position operations"]')).toBeNull();
+    expect(container.textContent).not.toContain("Learn more details");
+    // view=performance (the default here) opened this position's detail.
+    const detail = openPopup(container, "performance-popup")!;
     expect(detail).not.toBeNull();
     expect(container.querySelector('[aria-label="Position assets"]')).toBeNull();
-    expect(container.querySelector('[data-testid="position-assets-collapse"]')).toBeNull();
     expect(detail.querySelector('[data-testid="range-badge"]')).toBeNull();
     expect(detail.textContent).not.toMatch(/Unclaimed fees/);
-    expect(detail.querySelector('nav[aria-label="Position operations"]')).not.toBeNull();
-    expect(container.textContent).toContain("Learn more details");
   });
-});
-
-describe("leaving and re-entering the Performance tab", () => {
-  const tab = (label: string) => [...container.querySelectorAll('nav[aria-label="Position operations"] button')].find((b) => b.textContent?.trim() === label) as HTMLButtonElement;
-  it("currently re-requests performance data on every visit (no reuse) and never reads the exit estimate there", async () => {
+  it("re-reads performance on every open and never reads the exit estimate there", async () => {
     await mount({ wallet: OWN_WALLET, positions: [OWNED_MINT], stateOk: true, initialMint: OWNED_MINT });
     await settle();
     const exitAfterVisit = [count("/api/lp-decision/exit-preview")];
     const perfAfterVisit = [count("/api/position-performance")];
     for (let i = 0; i < 3; i++) {
-      await act(async () => tab("Add to position").click()); await flush(100);
-      await act(async () => tab("Performance").click()); await settle();
+      await closeOpenPopup(); await flush(100);
+      await openRowDetail(container, own); await settle();
       exitAfterVisit.push(count("/api/lp-decision/exit-preview"));
       perfAfterVisit.push(count("/api/position-performance"));
     }
     expect(exitAfterVisit).toEqual([0, 0, 0, 0]);
-    expect(perfAfterVisit).toEqual([1, 2, 3, 4]);
+    expect(perfAfterVisit.slice(1).map((n, i) => n - perfAfterVisit[i]!)).toEqual([1, 1, 1]);
   });
 });
