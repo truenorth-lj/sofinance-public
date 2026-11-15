@@ -172,7 +172,10 @@ for (const width of [375, 1280]) {
     await expect(popup.getByRole("heading", { name: "Compound confirmed" })).toBeVisible({ timeout: 20_000 });
     await expect(page.locator("[data-tx-notice]").first()).toBeVisible();
     await expectClearOfNotices(page, [popup.getByTestId("compound-submit-done")], `${width} done`);
+    // The success coins play over the open popup (the layer ignores the pointer, so Done still takes the click).
+    await expect(page.getByTestId("compound-token-burst")).toBeAttached();
     await popup.getByTestId("compound-submit-done").click();
+    await expect(popup).toHaveCount(0); // closes at once (no release delay)
     // Another sheet opened while the notice shows: its fee line and Confirm stay clear.
     const meteora = page.getByTestId("position-row").filter({ has: page.locator('[data-position-key^="meteora-dlmm:"]') });
     await meteora.locator('[data-tool="compound"]').click();

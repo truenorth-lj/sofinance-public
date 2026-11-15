@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  CATCHER, CATCHER_SPRITES, CELEBRATION_MS, COIN_COUNT, COIN_SIZE, FALL_MS, KNOCK_COIN_SIZE, OK_PRESS_SCALE, OK_RELEASE_KEYFRAMES, OK_RELEASE_MS,
+  CATCHER, CATCHER_SPRITES, coinSymbol, CELEBRATION_MS, COIN_COUNT, COIN_SIZE, FALL_MS, KNOCK_COIN_SIZE,
   PHYSICS, REDUCED_COINS, SAMPLE_MS, STAGGER_MS, STOCK_COIN_LOGOS, beadFlights, beadKeyframes, catcherKeyframes, nextCelebrationTrigger,
   pickCoinLogos, planCatcher, reducedSpots, releaseCelebration, seedFrom, seededRandom, spriteRuns, stockTicker, type BeadFlight,
 } from "./coins";
@@ -47,12 +47,16 @@ describe("stock coins", () => {
   });
 });
 
-describe("OK button press", () => {
-  it("shrinks to 0.94 while pressed and pops back past its size on release, in 180 ms", () => {
-    expect(OK_PRESS_SCALE).toBe(0.94);
-    expect(OK_RELEASE_MS).toBe(180);
-    expect(OK_RELEASE_KEYFRAMES.map((frame) => frame.transform)).toEqual(["scale(0.94)", "scale(1.06)", "scale(1)"]);
-    expect(OK_RELEASE_KEYFRAMES.map((frame) => frame.offset)).toEqual([0, 0.5, 1]);
+describe("coinSymbol", () => {
+  it("names an xStock mint by its ticker even when the label is a shortened mint, so its coins are the position's own stock", () => {
+    const tsla = "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB";
+    expect(coinSymbol(tsla, "XsDo…JHzoB")).toBe("TSLA");
+    expect(stockTicker(coinSymbol(tsla, null))).toBe("TSLA");
+    expect(pickCoinLogos([coinSymbol(tsla, "XsDo…JHzoB"), coinSymbol("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "USDC")], 8, seededRandom(1))
+      .filter((logo) => logo === STOCK_COIN_LOGOS.TSLA).length).toBeGreaterThanOrEqual(4);
+  });
+  it("keeps the display symbol for a token that is not a listed xStock", () => {
+    expect(coinSymbol("So11111111111111111111111111111111111111112", "SOL")).toBe("SOL");
   });
 });
 

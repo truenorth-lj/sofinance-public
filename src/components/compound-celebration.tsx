@@ -38,10 +38,9 @@ function preload(urls: readonly string[]) {
 }
 
 /**
- * Coins for a CONFIRMED compound. Clicking Compound never plays them. The success is queued (coins chosen from the
- * position's `symbols` and preloaded) while the app's result dialog is open (`held`); `celebrateFrom(okButton)` plays
- * it from the dialog's OK at release. If the dialog is closed another way, it plays when it closes, from the Compound
- * button. With no dialog (Meteora), it plays on the confirmed landing. Once per signature.
+ * Coins for a CONFIRMED compound. Clicking Compound never plays them. The position's `symbols` choose the logos.
+ * The row popups play on the confirmed landing (`held=false`), from Done while open or from the Compound row button.
+ * Optional callers can hold a success and release it from an explicit origin with `celebrateFrom`. Once per signature.
  */
 export function useCompoundCelebration(feedback: Feedback, held = false, symbols: readonly (string | null | undefined)[] = []): {
   play: CelebrationPlay; celebrateFrom: (origin: DOMRect) => void;
@@ -136,8 +135,7 @@ function CoinView({ coin }: { coin: Coin }) {
 }
 
 /**
- * Tokenized-stock coins popping out of `play.origin` (the dialog's OK) — or out of the Compound button when there is no
- * origin — and falling like beads to the bottom of the screen: they bounce lower each time, roll to a stop and fade.
+ * Tokenized-stock coins popping out of `play.origin`, or `originRef` (the popup's Done or row's Compound button), and falling like beads to the bottom of the screen: they bounce lower each time, roll to a stop and fade.
  * A little pixel character runs along the bottom collecting a few of them, then a big coin of the position's own stock
  * drops on its head and it falls over (≈ 2.9 s in all). A full-screen layer that ignores the pointer; it is shown as a manual popover so it draws above the open
  * result dialog (top layer), and is a plain fixed layer where popovers are not supported. Ends on a window resize and

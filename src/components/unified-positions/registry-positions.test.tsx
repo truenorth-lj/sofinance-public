@@ -333,6 +333,7 @@ describe("/app My positions with registry DEXes", () => {
     expect(alert.textContent).toContain("This position has no unclaimed fees yet, so there is nothing to compound.");
     expect(alert.textContent).not.toContain("INVALID_REQUEST");
     expect(rowCompound().textContent).toBe("Compound");
+    expect(document.querySelector('[data-testid="compound-token-burst"]')).toBeNull(); // no coins for a refusal
     // Done closes; the next open starts again at the confirm screen.
     await act(async () => compoundPopup().querySelector<HTMLButtonElement>("[data-testid=compound-submit-done]")!.click());
     expect(compoundPopup().dataset.open).toBe("false");

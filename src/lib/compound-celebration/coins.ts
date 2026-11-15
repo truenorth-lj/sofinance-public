@@ -1,20 +1,11 @@
 /**
- * Compound success celebration: when the "Compound confirmed" OK is released, tokenized-stock coins pop out of it and
+ * Compound success celebration: when a compound is confirmed, tokenized-stock coins pop out of the Compound popup's Done
+ * button (or the row's Compound button when the popup is closed) and
  * fall like beads to the bottom of the screen, bounce, settle and fade. A little pixel character runs along the bottom
  * collecting a few of them, then a big coin of the position's own stock drops on its head and it falls over.
  * Pure functions (coin choice, physics, the character's plan, timing, trigger) so it can be tested without a browser.
  */
 import { MANUAL_TOKEN_ICONS } from "@/lib/token-icons/map";
-
-/** The OK button shrinks to this while pressed (CSS :active). */
-export const OK_PRESS_SCALE = 0.94;
-/** On release it pops back a little past its size, then the dialog closes. Coins leave at the release. */
-export const OK_RELEASE_MS = 180;
-export const OK_RELEASE_KEYFRAMES: readonly { offset: number; transform: string }[] = Object.freeze([
-  { offset: 0, transform: `scale(${OK_PRESS_SCALE})` },
-  { offset: 0.5, transform: "scale(1.06)" },
-  { offset: 1, transform: "scale(1)" },
-]);
 
 /** One coin: pop out, fall, bounce, settle and fade (long enough for the character to be knocked over first). */
 export const FALL_MS = 2800;
@@ -76,6 +67,12 @@ export function stockTicker(symbol: string | null | undefined): string | null {
   const match = /^([A-Za-z]{1,6}?)(x|on)?$/.exec((symbol ?? "").trim());
   const ticker = match?.[1]?.toUpperCase() ?? "";
   return ticker && STOCK_COIN_LOGOS[ticker] ? ticker : null;
+}
+
+/** The coin symbol for a pool token: its xStock ticker when the mint is a listed xStock, else its display symbol. */
+export function coinSymbol(mint: string, symbol: string | null | undefined): string | null | undefined {
+  const row = MANUAL_TOKEN_ICONS.find((item) => item.address === mint);
+  return /\/logos\/tokens\/([A-Z]+)x\.png$/.exec(row?.image ?? "")?.[1] ?? symbol;
 }
 
 /**
