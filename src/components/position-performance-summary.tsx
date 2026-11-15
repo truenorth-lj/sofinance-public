@@ -59,7 +59,10 @@ export function PerformanceSummary({ data, embedded, metadata, showStockPerforma
             <div className="min-w-0"><dt className="text-smoke">Position</dt><dd className="mt-1 break-all text-cream">{data.positionMint}</dd></div>
             <div className="min-w-0"><dt className="text-smoke">Pool</dt><dd className="mt-1 break-all text-cream">{data.poolId}</dd></div>
           </dl>}
-          {stock && showStockPerformance && <StockPerformanceTiles stock={stock} pairLabel={tn?.symbolA && tn?.symbolB ? `${tn.symbolA} / ${tn.symbolB}` : null} />}
+          {/* Embedded (the Portfolio row's Performance detail): the row already shows the stock, shares and value, so only the
+              price change vs fee income split is shown. */}
+          {stock && showStockPerformance && <StockPerformanceTiles stock={stock} showHeader={!embedded}
+            pairLabel={tn?.symbolA && tn?.symbolB ? `${tn.symbolA} / ${tn.symbolB}` : null} />}
           {!hasRecordedDeposits && <p role="status" className="rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs leading-5 text-cream/80">No deposit history was found. Current inventory is available, but trading-fee APR needs opening or deposit records.</p>}
           <div className="grid gap-3 sm:grid-cols-2">
             <Stat label={holdingTime.label} value={holdingTime.value} description="Time since the earliest recorded position event." />

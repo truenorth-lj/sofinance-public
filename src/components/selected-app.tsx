@@ -3,8 +3,7 @@ import "@/lib/engine-host";
 import { notEnoughBalanceMessage } from "@sofinance/engine/balance-message";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useFormAtViewportBottom } from "./use-form-at-viewport-bottom";
-import { ArrowDown, ArrowUpRight, LoaderCircle, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { assetMetadata, assetSymbol } from "./token-picker";
 import { formatAmount } from "@sofinance/engine/amount";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
@@ -14,35 +13,39 @@ import { useSelectedController } from "./use-selected-controller";
 import { TransactionStatusDialog } from "./transaction-status-dialog";
 import { useCompoundController } from "./use-compound-controller";
 import { InkFooter, InkNav } from "./ink";
-import { useNoticeBottomOffset } from "./transactions/notice-offset";
 import { AddLiquiditySection } from "./add-liquidity-section";
-import { PositionToolsSection } from "./position-tools-section";
-import { StocksSection } from "./stocks-section";
+import { PositionPerformancePanel } from "./position-performance-panel";
+import { PositionExitEstimate } from "./position-exit-estimate";
+import { WithdrawPanel } from "./withdraw-panel";
+import { UnavailableTool } from "./unified-positions/unavailable-tool";
+import { ActionDialog } from "./portfolio/action-dialog";
+import { ActivityList } from "./portfolio/activity-list";
+import { recordActivity } from "@/lib/portfolio/session-activity";
+import { usePositionOpLock } from "./unified-positions/position-op-lock";
 import { useInlinePositionSelection } from "./use-inline-position-selection";
-import { AssetRisksDialog } from "./asset-risks-dialog";
 import { APP_ROUTES, DOCS_ROUTES } from "@/lib/public-urls";
+import Link from "next/link";
 import { formatSelectedNoRouteMessage, JUPITER_NO_ROUTE_CODE } from "@/lib/selected-no-route";
 import { AMOUNT_TOO_SMALL_CODE, formatAmountTooSmallMessage, formatSmallLegMovesPriceMessage, SMALL_LEG_MOVES_PRICE_CODE } from "@/lib/selected-amount-error";
-import Link from "next/link";
 import { captureGrowthEvent } from "@/lib/analytics/client";
 import { GROWTH_EVENTS } from "@/lib/analytics/events";
 import { raydiumPositionSource as positionSource } from "@/lib/unified-positions/sources/raydium";
-import { capabilitiesFor, DEFAULT_DETAIL_VIEW, firstDetailTool, parsePositionKey, positionKey, positionKeysEqual, toolUnavailableReason, type SourceCapabilities, type ToolId, type UnifiedPosition } from "@/lib/unified-positions/model";
+import type { PortfolioView } from "@/lib/unified-positions/url";
+import { capabilitiesFor, parsePositionKey, positionKey, positionKeysEqual, toolUnavailableReason, type SourceCapabilities, type ToolId, type UnifiedPosition } from "@/lib/unified-positions/model";
 import { CLOSED_LABEL, groupPositions, isClosed } from "@/lib/unified-positions/rows";
 import type { ExternalPositions } from "./unified-positions/external-positions";
-import { RegistryPositionDetails, RegistryPositionHeader, useRegistryPositions } from "./unified-positions/registry-positions";
+import { useRegistryPositions } from "./unified-positions/registry-positions";
 import { RegistryPositionTool, RegistryRowCompound, type ToolBalance } from "./unified-positions/registry-tools";
-import { RaydiumCompoundFeedback, RaydiumRowCompound } from "./compound-panel";
+import { RegistryPerformancePanel } from "./unified-positions/registry-performance";
+import { RaydiumActivityRecords, RaydiumRowCompound } from "./compound-panel";
 import { tokenSymbol } from "@/lib/position-label";
-import { type OverviewPosition } from "./stocks-overview";
 import { fetchDexPerformance } from "@/lib/dex/client";
 import type { PositionPerformanceReport } from "@/lib/position-performance-report";
 import { shortAddress } from "@/lib/format/address";
-import { solscanAccountUrl } from "@/lib/format/explorer";
 import { PortfolioSummary } from "./portfolio/portfolio-summary";
-import { PortfolioPositionList, rowActions, type PortfolioRow } from "./portfolio/portfolio-rows";
+import { PortfolioPositionList, rowActions, type PortfolioRow, type RowTool } from "./portfolio/portfolio-rows";
 import { usePositionReports, type LoadedReport } from "./portfolio/use-position-reports";
-import { invalidateReports } from "./portfolio/report-cache";
+import { invalidateReports, type ReportSource } from "./portfolio/report-cache";
 import { portfolioTotals, positionFigures, type FiguresState, type PositionFigures } from "@/lib/portfolio/figures";
 
 const short = shortAddress;
@@ -50,8 +53,9 @@ const money = (value: string, decimals: number, digits = 6) => formatAmount(valu
 const tokenLabel = (mint: string, kind?: "native" | "token") =>
   kind === "native" ? "SOL" : mint === USDC_MINT ? "USDC" : mint === NATIVE_SOL_MINT ? "WSOL" : short(mint);
 
-export function SelectedApp({ initialView = DEFAULT_DETAIL_VIEW, initialMint: initialMintProp = "", initialWallet = "", previewPoolId = "", initialPositionKey: initialKeyProp = "", external, onRescan }: {
-  initialView?: "compound" | "performance" | "deposit" | "withdraw";
+export function SelectedApp({ initialView = "portfolio", initialMint: initialMintProp = "", initialWallet = "", previewPoolId = "", initialPositionKey: initialKeyProp = "", external, onRescan }: {
+  /** `performance`: a Performance link (`?view=performance`, /app/position-performance) opens its position's detail. */
+  initialView?: PortfolioView | "compound" | "deposit" | "withdraw";
   initialMint?: string;
   initialWallet?: string;
   previewPoolId?: string;
@@ -67,6 +71,11 @@ export function SelectedApp({ initialView = DEFAULT_DETAIL_VIEW, initialMint: in
   const linksInline = linkedKey?.source === positionSource.id;
   const initialMint = linksInline ? linkedKey.nativeId : initialMintProp;
   const initialPositionKey = linksInline ? "" : initialKeyProp;
+  // One popup at a time. A close hides it, not its flow: panels keep their transaction state until another target opens.
+  const [popup, setPopup] = useState<{ key: string; view: RowTool; open: boolean } | null>(null);
+  // A position's Performance detail (the row click). Separate from the tool popup: it reads only, so it never moves the
+  // selection or replaces a tool popup whose transaction is still running. `""`: a pool-only link (`?pool=`).
+  const [detail, setDetail] = useState<string | null>(null);
   const [withdrawBusy,setWithdrawBusy]=useState(false);
   const controller = useSelectedController();
   const { wallet, connected, connect, disconnect, connectionError,
@@ -90,7 +99,7 @@ export function SelectedApp({ initialView = DEFAULT_DETAIL_VIEW, initialMint: in
   const { ownedPick, inlineMint, selectionAligned, setInlinePick } = useInlinePositionSelection({
     wallet, connected, discovery, selection, initialMint,
   });
-  const pickPosition = (positionMint: string) => { setPickedPosition(true); setInlinePick({ wallet: wallet || "", mint: positionMint }); choosePosition(positionMint); };
+  const pickPosition = (positionMint: string) => { setInlinePick({ wallet: wallet || "", mint: positionMint }); choosePosition(positionMint); };
   const compound = useCompoundController({ wallet: wallet || undefined, positionMint: selectionAligned ? selection?.positionMint : undefined,
     // Selection alignment gates positionMint above, not wallet-wide leftover recovery.
     externalBlocked: addBusy || withdrawBusy,
@@ -100,28 +109,6 @@ export function SelectedApp({ initialView = DEFAULT_DETAIL_VIEW, initialMint: in
       refreshReports(selectionAligned && selection?.positionMint ? [positionKey(positionSource.id, selection.positionMint)] : undefined);
     } });
   const busy = addBusy || compound.busy || withdrawBusy;
-  // A Raydium row's Compound clicked while another position was selected: run it once that position's fees are read.
-  // Resolved while rendering (run, or its checks say no; a failed read or any other pick drops it); one click = one run.
-  const [compoundIntent, setCompoundIntent] = useState<string | null>(null);
-  const [intentSawLoading, setIntentSawLoading] = useState(false);
-  const [compoundRun, setCompoundRun] = useState<{ id: number; mint: string } | null>(null);
-  const compoundRunDone = useRef(0);
-  if (compoundIntent) {
-    if (!wallet || (selectionAligned && selection?.positionMint !== compoundIntent)) setCompoundIntent(null);
-    else if (compound.positionMint === compoundIntent) {
-      if (compound.loading) { if (!intentSawLoading) setIntentSawLoading(true); }
-      else if (compound.state) {
-        setCompoundIntent(null);
-        if (compound.canCompound) setCompoundRun({ id: (compoundRun?.id ?? 0) + 1, mint: compoundIntent });
-      } else if (intentSawLoading) setCompoundIntent(null);
-    }
-  }
-  useEffect(() => {
-    if (!compoundRun || compoundRunDone.current === compoundRun.id) return;
-    compoundRunDone.current = compoundRun.id;
-    // Same entry and checks as a click on the selected row (the controller re-checks everything before the wallet).
-    if (compound.positionMint === compoundRun.mint && compound.canCompound) compound.compound();
-  }, [compoundRun, compound]);
   useLayoutEffect(() => {
     if (!busy && ownedPick && selection && selection.positionMint !== ownedPick.mint) choosePosition(ownedPick.mint);
   }, [busy, ownedPick, selection, choosePosition]);
@@ -140,11 +127,8 @@ export function SelectedApp({ initialView = DEFAULT_DETAIL_VIEW, initialMint: in
   const metadata = useTokenMetadata(metadataMints);
   const walletBalances: Record<string, ToolBalance> = Object.fromEntries((discovery?.assets ?? []).map((asset) => [asset.mint, { balance: asset.balance, decimals: asset.decimals }]));
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
-  const [assetRisksOpen, setAssetRisksOpen] = useState(false);
-  // No Compound tab (LJ 11/14): an old `view=compound` link opens the default detail tab; Compound is the row's button.
-  const [activeView, setActiveView] = useState<ToolId>(initialView === "compound" ? DEFAULT_DETAIL_VIEW : initialView);
-  // The Performance panel's last read (by position key), handed to the all-stocks overview so it is not read twice.
-  const [panelResult, setPanelResult] = useState<{ key: string; report: PositionPerformanceReport | null; error: boolean } | null>(null);
+  // Old operation links land on Portfolio without starting anything. A Performance deep link opens its position detail.
+  const activeView: ToolId = popup && popup.view !== "activity" ? popup.view : "deposit";
   // Step 1 of a 100% withdrawal closes the position, and its confirmation's balances refresh then reads no
   // position (`state` becomes null). Unmounting the Withdraw panel then aborted its run before step 2 (convert)
   // was prepared. So while a withdrawal is running or partly done (busy, or a checkpoint/Resume is pending),
@@ -161,38 +145,24 @@ export function SelectedApp({ initialView = DEFAULT_DETAIL_VIEW, initialMint: in
   const pinnedWithdraw = withdrawBusy && withdrawTarget && withdrawTarget.wallet === wallet
     && withdrawTarget.positionMint === selection?.positionMint ? withdrawTarget : null;
   const shownWithdraw = selectionAligned ? liveWithdraw ?? pinnedWithdraw : null;
-  // Toasts sit above the phone-only bottom action bar instead of covering its button.
-  // The same measured height (incl. the iPhone home-bar inset) pads the page bottom on phones, so the bar never hides content.
-  const actionBarRef = useRef<HTMLDivElement | null>(null);
-  // The phone bar shows only once the Add form's top is on screen (opened or scrolled to), so it never covers the
-  // positions list above the form.
-  const barOverForm = useFormAtViewportBottom("deposit-view", activeView === "deposit");
-  useNoticeBottomOffset(actionBarRef, activeView === "deposit" && barOverForm);
-  // Performance is a tab inside /app (the URL does not change), so $pageview cannot see it.
-  useEffect(() => {
-    if (activeView === "performance") captureGrowthEvent(GROWTH_EVENTS.performanceView);
-  }, [activeView]);
   // A deep link (?mint=) wins over the wallet's default selection until the user picks a position themselves. It is applied
   // once per wallet (the controller resets the selection whenever the wallet changes).
   const linkedPositionWallet = useRef("");
-  const [pickedPosition, setPickedPosition] = useState(false);
   useEffect(() => {
     if (!wallet || linkedPositionWallet.current === wallet || !initialMint || !discovery) return;
     if (discovery.positions.some((position) => position.positionMint === initialMint)) {
       linkedPositionWallet.current = wallet;
-      choosePosition(initialMint);
+      // Already selected (the wallet's default, or a reload of the ?position= a popup wrote): re-choosing would clear
+      // the amount and start a second state read.
+      if (selection?.positionMint !== initialMint) choosePosition(initialMint);
     }
-  }, [initialMint, discovery, wallet, choosePosition]);
-  const linkActive = Boolean(initialMint) && !pickedPosition;
-  const performanceMint = linkActive ? initialMint : inlineMint || initialMint;
+  }, [initialMint, discovery, wallet, selection, choosePosition]);
   // The exit estimate lives in the Withdraw tool: it reads the selected (held) position, not the Performance deep link.
   const exitTargetMint = !withdrawBusy && liveWithdraw ? liveWithdraw.positionMint : "";
   const nftAccountLookup = resolveNftAccountLookup({ connected, targetMint: exitTargetMint, discovery, state,
     loadingDiscovery, loadingState, hasError: Boolean(stateError) });
   const exitEstimate = exitTargetMint && liveWithdraw ? { positionMint: exitTargetMint, nftAccount: nftAccountLookup.account,
     pending: nftAccountLookup.pending, poolMints: [liveWithdraw.mintA, liveWithdraw.mintB] as const } : null;
-  const linkedForeignPosition = linkActive && connected && discovery !== null && !loadingDiscovery
-    && !discovery.positions.some((position) => position.positionMint === initialMint);
   const visibleAttempt = attempt?.wallet === wallet ? attempt : null;
   useEffect(() => {
     const timer = window.setTimeout(() => setStatusDialogOpen(false), 0);
@@ -220,41 +190,41 @@ export function SelectedApp({ initialView = DEFAULT_DETAIL_VIEW, initialMint: in
   const otherSelected = otherPositions.find((item) => positionKeysEqual(item.key, otherKey) || item.key === otherKey)
     ?? (!otherKey && solanaEmpty && !initialMint ? otherPositions[0] ?? null : null);
   const otherBinding = otherSelected && registry.owns(otherSelected)
-    ? { header: (item: UnifiedPosition) => <RegistryPositionHeader position={item} />, details: (item: UnifiedPosition) => <RegistryPositionDetails position={item} />,
+    ? {
       // Keyed by the position only: the cross-op lock is per position and must not depend on the open tab (PM review of #289).
       tool: (item: UnifiedPosition, view: ToolId) => <RegistryPositionTool key={item.key} position={item} descriptor={registry.descriptor(item)!}
         capabilities={registry.capabilities(item)!} view={view} balances={walletBalances} symbolOf={(token) => tokenSymbol(token.id, metadata, token.symbol)}
         onConfirmed={() => { setOtherKey(item.key); setRegistryRefresh((value) => value + 1); void refreshDiscovery(); refreshReports([item.key]); }}
-        onPerformance={(key, result) => setPanelResult({ key, ...result })} showStockPerformance={!stockShownInOverview} />,
+        showStockPerformance={false} />,
       capabilities: registry.capabilities(otherSelected)! }
-    : otherSelected && external ? { header: external.header, details: external.details, tool: external.tool, capabilities: capabilitiesFor(external.source, otherSelected) }
+    : otherSelected && external ? { tool: external.tool, capabilities: capabilitiesFor(external.source, otherSelected) }
       : null;
   const selectedSolana = solanaPositions.find((item) => item.nativeId === inlineMint) ?? null;
   const capabilities = otherSelected && otherBinding ? otherBinding.capabilities : capabilitiesFor(positionSource, selectedSolana);
   const unavailableReason = toolUnavailableReason(capabilities, activeView);
   const selectedKey = otherSelected?.key ?? (inlineMint ? positionKey(positionSource.id, inlineMint) : "");
-  // Landing on a position whose current tool is unavailable opens its first available tool (a greyed tab clicked later stays).
-  const [viewCheckedFor, setViewCheckedFor] = useState(selectedKey);
-  if (viewCheckedFor !== selectedKey) {
-    setViewCheckedFor(selectedKey);
-    const first = firstDetailTool(capabilities);
-    if (unavailableReason && first) setActiveView(first);
-  }
-  const writeUrl = (key: string, view: ToolId) => {
+  // Keep selection in the URL; only Performance deep-links auto-open a popup on reload. No operation runs from a URL.
+  const writeUrl = (key: string, view?: "performance") => {
     if (!key || typeof window === "undefined") return;
     const url = new URL(window.location.href);
     url.searchParams.delete("mint"); url.searchParams.delete("positionMint");
-    url.searchParams.set("position", key); url.searchParams.set("view", view);
+    url.searchParams.set("position", key);
+    if (view) url.searchParams.set("view", view); else url.searchParams.delete("view");
     window.history.replaceState(window.history.state, "", url);
   };
-  const pickKey = (key: string) => {
-    const found = allPositions.find((item) => item.key === key || positionKeysEqual(item.key, key));
-    if (!found) return;
-    setCompoundIntent(null);
-    if (found.source === positionSource.id) { setOtherKey(""); pickPosition(found.nativeId); } else setOtherKey(found.key);
-    writeUrl(found.key, activeView);
+  // Opening a popup on the position already selected keeps its Add inputs and quote.
+  const selectItem = (item: UnifiedPosition) => {
+    if (item.key === selectedKey) return;
+    if (item.source !== positionSource.id) { setOtherKey(item.key); return; }
+    setOtherKey("");
+    // Already the controller's selection (its pick not owned yet, e.g. right after a reload): own it without re-choosing.
+    if (selection?.positionMint === item.nativeId) setInlinePick({ wallet: wallet || "", mint: item.nativeId });
+    else pickPosition(item.nativeId);
   };
-  const changeView = (view: ToolId) => { setActiveView(view); writeUrl(selectedKey, view); };
+  const closePopup = () => {
+    setPopup((current) => current ? { ...current, open: false } : null);
+    if (selectedKey) writeUrl(selectedKey);
+  };
   const anyBusy = busy || Boolean(external?.busy);
   const assetOptions = discovery?.assets || [];
   const poolLabel = (mint: string) => {
@@ -272,42 +242,21 @@ export function SelectedApp({ initialView = DEFAULT_DETAIL_VIEW, initialMint: in
         ? formatSmallLegMovesPriceMessage({ minority: poolLabel(quoteErrorOutputMint),
           majority: poolLabel(quoteErrorOutputMint === state.mintA ? state.mintB : state.mintA) })
         : error;
-  // Performance tab, all-stocks overview: every open Solana position whose source reads performance (the other chain has none).
-  // The position the Performance panel below reads is taken from that panel instead of being read again.
-  const panelKey = unavailableReason ? "" : otherSelected ? (otherBinding ? otherSelected.key : "")
-    : performanceMint ? positionKey(positionSource.id, performanceMint) : "";
-  const fromPanel = (key: string): OverviewPosition["fromPanel"] => key !== panelKey ? undefined
-    : panelResult?.key === key ? { report: panelResult.report, error: panelResult.error } : "loading";
-  // A registry scan can finish before the inline wallet scan. Until default selection is known,
-  // keep its rows selectable but let the eventual selected panel own the first report read.
-  // Explicit picks/deep links can read immediately; a failed wallet scan must not stall the overview.
-  const awaitingDefaultSelection = !discovery && !stateError && !otherSelected && !performanceMint;
-  // Every open Solana position whose source reads Performance: the Portfolio numbers and the Performance overview read
-  // the same reports (shared cache, one read per position).
-  const performanceSources: Omit<OverviewPosition, "fromPanel">[] = !connected || !wallet ? [] : [
-    ...solanaPositions.filter((item) => !isClosed(item)).map((item): OverviewPosition => ({ key: item.key,
-      positionId: item.nativeId, pool: { id: item.poolId, source: positionSource.displayName,
-        label: `${poolLabel(item.tokenA.id)} / ${poolLabel(item.tokenB.id)}` }, load: async (signal) => {
+  // Every open Solana position whose source reads Performance: the Portfolio rows and totals read these reports (shared
+  // cache, one read per position).
+  const performanceSources: ReportSource[] = !connected || !wallet ? [] : [
+    ...solanaPositions.filter((item) => !isClosed(item)).map((item): ReportSource => ({ key: item.key, load: async (signal) => {
       const params = new URLSearchParams({ positionMint: item.nativeId, wallet });
       const response = await fetch(`/api/position-performance?${params}`, { signal, headers: { Accept: "application/json" } });
       const body = await response.json().catch(() => null) as (PositionPerformanceReport & { error?: string }) | null;
       if (!response.ok || !body || body.positionMint !== item.nativeId) throw new Error(body?.error || "Performance could not be loaded.");
       return body;
     } })),
-    ...registry.positions.filter((item) => !isClosed(item) && registry.capabilities(item)?.performance.supported).map((item): OverviewPosition => ({
-      key: item.key, positionId: item.nativeId, pool: { id: item.poolId, source: registry.optionSource(item, metadata).displayName,
-        label: `${tokenSymbol(item.tokenA.id, metadata, item.tokenA.symbol)} / ${tokenSymbol(item.tokenB.id, metadata, item.tokenB.symbol)}` },
-      load: async (signal) => (await fetchDexPerformance(registry.descriptor(item)!, item.key, { signal })).report ?? null })),
+    ...registry.positions.filter((item) => !isClosed(item) && registry.capabilities(item)?.performance.supported).map((item): ReportSource => ({
+      key: item.key, load: async (signal) => (await fetchDexPerformance(registry.descriptor(item)!, item.key, { signal })).report ?? null })),
   ];
-  const overviewPositions: OverviewPosition[] = awaitingDefaultSelection ? []
-    : performanceSources.map((item) => ({ ...item, fromPanel: fromPanel(item.key) }));
-  // Portfolio numbers: on Performance the selected position's own panel reads its report, so the totals take that result.
-  const panelOwnsReport = activeView === "performance" && Boolean(panelKey);
-  // On Performance an unresolved default selection waits, so its first report read belongs to the panel (no double read).
-  const portfolioReports = usePositionReports(activeView === "performance" && awaitingDefaultSelection ? []
-    : panelOwnsReport ? performanceSources.filter((item) => item.key !== panelKey) : performanceSources, { refresh: reportsRefresh });
-  const reportFor = (key: string): LoadedReport | "loading" | undefined => panelOwnsReport && key === panelKey
-    ? panelResult?.key === key ? panelResult : "loading" : portfolioReports[key];
+  const portfolioReports = usePositionReports(performanceSources, { refresh: reportsRefresh });
+  const reportFor = (key: string): LoadedReport | "loading" | undefined => portfolioReports[key];
   const reportedKeys = new Set(performanceSources.map((item) => item.key));
   const capabilitiesOf = (item: UnifiedPosition): SourceCapabilities => item.source === positionSource.id ? capabilitiesFor(positionSource, item)
     : registry.owns(item) ? registry.capabilities(item)! : capabilitiesFor(external!.source, item);
@@ -320,8 +269,6 @@ export function SelectedApp({ initialView = DEFAULT_DETAIL_VIEW, initialMint: in
     const loaded = reportFor(item.key);
     return !loaded || loaded === "loading" ? { status: "loading" } : loaded.error ? { status: "failed" } : { status: "ready", figures: positionFigures(loaded.report) };
   }), allPositions.filter((item) => !isClosed(item) && !reportedKeys.has(item.key)).map((item) => figuresOf(item)?.valueUsd ?? null));
-  const stockShownInOverview = overviewPositions.length > 0 && panelResult?.key === panelKey
-    && Boolean(panelResult.report?.stock) && overviewPositions.some((item) => item.key === panelKey);
   // One "Refresh" (was "Rescan wallet" + "Reload fees"): the Solana scan, the selected position's on-chain state and fees, the
   // registry DEXes and, on /app, the Robinhood Chain scan via the parent's refresh counter.
   const refreshAll = () => {
@@ -332,34 +279,22 @@ export function SelectedApp({ initialView = DEFAULT_DETAIL_VIEW, initialMint: in
     onRescan?.();
   };
   const selectedItem = otherSelected ?? selectedSolana;
-  // A selected position (the inline scan's selection counts before its row is read); its detail carries the tool tabs.
-  const hasSelection = Boolean(selectedItem) || Boolean(connected && selection?.positionMint);
-  // Tools sit under the selected position; a Performance deep link (`?mint=`, `?pool=`) also shows without one.
-  const showTools = hasSelection || (activeView === "performance" && Boolean(performanceMint || previewPoolId));
+  // The selected panel's flow stays mounted after closing. A different target is blocked while any transaction runs.
+  const popupRegistryLock = usePositionOpLock(popup?.key ?? "");
+  const popupBusy = anyBusy || popupRegistryLock.busy || popupRegistryLock.cancelPending;
+  const popupTarget = popup && allPositions.find((item) => item.key === popup.key);
+  const popupAligned = Boolean(popupTarget && popup.key === selectedKey);
   const loadingPositions = connected && (loadingDiscovery || !discovery) && !stateError;
   const showEmpty = !allPositions.length && !loadingPositions && !registry.loadingNames.length;
   // Portfolio rows (every tool's list). On Performance, stock positions are covered by the overview above them.
   const sourceName = (item: UnifiedPosition) => item.source === positionSource.id ? positionSource.displayName
     : registry.owns(item) ? registry.optionSource(item, metadata).displayName : external?.source.displayName ?? "";
   const pairOf = (item: UnifiedPosition) => `${tokenSymbol(item.tokenA.id, metadata, item.tokenA.symbol || poolLabel(item.tokenA.id))} / ${tokenSymbol(item.tokenB.id, metadata, item.tokenB.symbol || poolLabel(item.tokenB.id))}`;
-  // The row's Compound is the only Compound entry (LJ 11/14). Raydium: one controller for the selected position, so a row
-  // that is not selected is selected first and compounds once its fees are read (`compoundIntent`, one click = at most one
-  // run). Meteora (registry): the row runs its DEX's flow itself. Both keep their checks, wallet prompt and refetch.
-  const compoundRow = (item: UnifiedPosition) => {
-    if (anyBusy || compoundIntent) return;
-    const mint = item.nativeId;
-    if (compound.positionMint === mint && compound.state && !compound.loading) {
-      if (compound.canCompound) compound.compound();
-      return;
-    }
-    setIntentSawLoading(false);
-    setCompoundIntent(mint);
-    setOtherKey(""); pickPosition(mint); writeUrl(item.key, activeView);
-  };
+  // Compound's flow lives with its row (the existing controller for Raydium; usePositionTx for a registry DEX).
   const rowCompound = (item: UnifiedPosition): PortfolioRow["compound"] => {
     if (isClosed(item)) return undefined;
-    if (item.source === positionSource.id) return function raydiumRowCompound(slot) { return <RaydiumRowCompound controller={compound} positionMint={item.nativeId}
-      pending={compoundIntent === item.nativeId} onCompound={() => compoundRow(item)} slot={slot} tokenLabel={poolLabel} />; };
+    if (item.source === positionSource.id) return function raydiumRowCompound(slot) { return <RaydiumRowCompound controller={compound}
+      positionMint={item.nativeId} positionKey={item.key} slot={slot} tokenLabel={poolLabel} />; };
     const descriptor = registry.owns(item) ? registry.descriptor(item) : null;
     if (!descriptor || !registry.capabilities(item)?.compound.supported) return undefined;
     return function registryRowCompound(slot) { return <RegistryRowCompound position={item} descriptor={descriptor} slot={slot}
@@ -374,25 +309,70 @@ export function SelectedApp({ initialView = DEFAULT_DETAIL_VIEW, initialMint: in
     const title = figures?.stock ?? (pair || `Position ${id}`);
     return [item.key, { item, figures, title,
       subtitle: [title !== pair ? pair : null, group.showSourceName ? sourceName(item) : null, title.endsWith(id) ? null : id].filter(Boolean).join(" · "),
-      actions: rowActions(capabilitiesOf(item), isClosed(item)), compound: rowCompound(item) }];
+      actions: rowActions(capabilitiesOf(item), isClosed(item), { activity: item.source === positionSource.id || registry.owns(item) }), compound: rowCompound(item),
+      busy: selectedKey === item.key ? addBusy ? { tool: "deposit", label: "Adding…" } : withdrawBusy ? { tool: "withdraw", label: "Withdrawing…" } : undefined : undefined }];
   })));
-  const openTool = (key: string, view: ToolId) => {
+  const openTool = (key: string, view: RowTool) => {
     const found = allPositions.find((item) => item.key === key || positionKeysEqual(item.key, key));
     if (!found) return;
-    setCompoundIntent(null);
-    setActiveView(view);
-    if (found.source === positionSource.id) { setOtherKey(""); pickPosition(found.nativeId); } else setOtherKey(found.key);
-    writeUrl(found.key, view);
+    // Reopening the running operation is always safe; changing a target while a money flow runs is not.
+    if (popupBusy && (popup?.key !== found.key || popup.view !== view)) return;
+    selectItem(found);
+    setPopup({ key: found.key, view, open: true });
+    writeUrl(found.key);
   };
-  const renderPositionRows = (coveredKeys: ReadonlySet<string>) => <PortfolioPositionList
-    groups={groups.map((group) => ({ ...group, positions: group.positions.filter((item) => !coveredKeys.has(item.key)) }))}
-    rows={portfolioRows} selectedKey={selectedKey} disabled={anyBusy} onSelect={pickKey} onAction={openTool} />;
+  const openDetail = (key: string) => { setDetail(key); writeUrl(key, "performance"); };
+  const closeDetail = () => { setDetail(null); if (detail) writeUrl(detail); };
+  // /app/position-performance and ?view=performance land on Portfolio; a position (or pool) link opens its detail once.
+  const [autoOpened, setAutoOpened] = useState(false);
+  if (!autoOpened && initialView === "performance") {
+    const linked = initialPositionKey ? allPositions.find((item) => positionKeysEqual(item.key, initialPositionKey) || item.key === initialPositionKey)?.key
+      : initialMint ? positionKey(positionSource.id, initialMint) : previewPoolId ? "" : undefined;
+    if (linked !== undefined) { setAutoOpened(true); setDetail(linked); }
+  }
+  // Performance has no tab or page of its own, so $pageview cannot see it: counted each time a position's detail opens.
+  useEffect(() => {
+    if (detail !== null) captureGrowthEvent(GROWTH_EVENTS.performanceView);
+  }, [detail]);
+  // Session-only Activity: signed Add results and cleanup transactions (Compound records are also retained by its controller).
+  useEffect(() => {
+    if (!visibleAttempt) return;
+    const status = attemptStatus === "success" ? "success" : attemptStatus === "failed" || attemptStatus === "expired" ? "failed" : "pending";
+    recordActivity({ id: `add:${visibleAttempt.signature}`, positionKey: positionKey(positionSource.id, visibleAttempt.positionMint), signature: visibleAttempt.signature,
+      status, title: status === "success" ? "Liquidity added" : status === "failed" ? "Add did not complete" : "Add confirming", detail: status === "failed" ? error || undefined : undefined });
+  }, [visibleAttempt, attemptStatus, error]);
+  useEffect(() => {
+    if (!compound.cleanupBatch) return;
+    for (const tx of compound.cleanupBatch.transactions) {
+      if (tx.unsent || !tx.signature) continue;
+      const status = tx.status === "success" ? "success" : tx.status === "pending" ? "pending" : "failed";
+      recordActivity({ id: `cleanup:${tx.signature}`, positionKey: positionKey(positionSource.id, compound.positionMint || ""), signature: tx.signature,
+        status, title: status === "success" ? "Harvest accounts cleaned" : status === "pending" ? "Cleanup confirming" : "Cleanup did not complete" });
+    }
+  }, [compound.cleanupBatch, compound.positionMint]);
+  const renderPositionRows = () => <PortfolioPositionList groups={groups} rows={portfolioRows} disabled={popupBusy}
+    popup={popup ? { key: popup.key, tool: popup.view, open: popup.open } : null}
+    onOpenDetail={openDetail} onAction={openTool} onClosePopup={closePopup} />;
+  const popupTitle = popup?.view === "deposit" ? "Add to position"
+    : popup?.view === "withdraw" ? portfolioRows.get(popup.key)?.actions.some((action) => action.tool === "withdraw" && action.label === "Close") ? "Close position" : "Withdraw"
+      : "Activity";
+  const popupIsPanel = popup && popup.view !== "compound";
+  const detailItem = detail ? allPositions.find((item) => item.key === detail || positionKeysEqual(item.key, detail)) ?? null : null;
+  const detailParsed = detail ? parsePositionKey(detail) : null;
+  // The inline Solana source's detail reads by its mint, held or not (a shared link shows public data).
+  const detailMint = detail === "" ? "" : detailParsed?.source === positionSource.id ? detailParsed.nativeId : null;
+  const detailForeign = Boolean(detailMint) && connected && discovery !== null && !loadingDiscovery
+    && !discovery.positions.some((position) => position.positionMint === detailMint);
+  const detailRow = detailItem ? portfolioRows.get(detailItem.key) : undefined;
+  const detailWithdraw = detailItem && !isClosed(detailItem) && detailRow?.actions.length === 0 ? capabilitiesOf(detailItem).withdraw : null;
+  const detailNoActionReason = detailWithdraw && !detailWithdraw.supported ? detailWithdraw.reason : null;
+  const detailRegistry = detailItem && registry.owns(detailItem) ? { descriptor: registry.descriptor(detailItem)!, capabilities: registry.capabilities(detailItem)! } : null;
+  const popupOpen = Boolean(popupIsPanel && popup.open);
   return <div className="min-h-screen bg-canvas text-cream">
     <div className="relative mx-auto max-w-[1280px] px-3 pb-32 pt-3 max-sm:pb-[max(8rem,calc(var(--tx-notice-bottom-offset,0px)+2rem))] sm:px-5 sm:pt-5">
       <InkNav wallet={wallet} connected={connected} onConnect={connect} onDisconnect={disconnect} />
 
       <div className="relative">
-      <RaydiumCompoundFeedback controller={compound} />
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 px-1">
         <h1 className="text-xl font-semibold text-cream sm:text-2xl">Portfolio</h1>
         <button type="button" disabled={(!wallet && !(external && onRescan)) || anyBusy} onClick={refreshAll}
@@ -403,33 +383,41 @@ export function SelectedApp({ initialView = DEFAULT_DETAIL_VIEW, initialMint: in
 
       {allPositions.length > 0 && <PortfolioSummary totals={portfolio} />}
 
-      <PositionToolsSection
-        activeView={activeView}
-        onChangeView={changeView}
-        capabilities={capabilities}
-        otherSelected={otherSelected}
-        state={state}
-        wallet={wallet || ""}
-        busy={busy}
-        unavailableReason={unavailableReason}
-        otherBinding={otherBinding}
-        shownWithdraw={shownWithdraw}
-        poolLabel={poolLabel}
-        onCloseWithdraw={() => setActiveView(DEFAULT_DETAIL_VIEW)}
-        onWithdrawBusy={onWithdrawBusy}
-        onWithdrawConfirmed={() => { void refreshState(); void refreshDiscovery(); }}
-        compound={compound}
-        linkedForeignPosition={Boolean(linkedForeignPosition)}
-        initialMint={initialMint}
-        performanceMint={performanceMint}
-        exitEstimate={exitEstimate}
-        showTools={showTools}
-        initialWallet={initialWallet}
-        previewPoolId={previewPoolId}
-        stockShownInOverview={stockShownInOverview}
-        onPerformanceResult={(mint, result) => setPanelResult({ key: positionKey(positionSource.id, mint), ...result })}
-        addLiquidity={<AddLiquiditySection
-          hidden={activeView !== "deposit"}
+      <section aria-labelledby="all-positions-heading" className="mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-7">
+        <h2 id="all-positions-heading" className="mb-5 text-base font-semibold text-cream">All positions</h2>
+        {showEmpty ? <PositionsEmptyState connected={connected} onConnect={connect} />
+          : !allPositions.length ? <p role="status" className="text-sm text-smoke">Loading positions…</p>
+          : <div>{renderPositionRows()}</div>}
+        {registry.loadingNames.length ? <p role="status" className="mt-2 text-xs text-smoke" data-testid="registry-positions-loading">Loading {registry.loadingNames.join(", ")} positions…</p> : null}
+        {registry.errors.map((message) => <p key={message} role="alert" className="mt-2 text-xs text-cream/80" data-testid="registry-positions-error">{message}</p>)}
+        {external?.status}
+      </section>
+      </div>
+      <InkFooter />
+    </div>
+    {popupIsPanel && <ActionDialog open={popupOpen} onClose={closePopup} title={popupTitle} testId={`${popup.view}-popup`}
+      size={popup.view === "activity" ? "md" : "lg"}>
+      <p className="mt-1 text-xs text-smoke" data-testid="popup-target" data-selected-key={selectedKey}>
+        {selectedItem ? `${pairOf(selectedItem)} · #${short(selectedItem.nativeId)}` : null}</p>
+      {!popupAligned ? <p role="status" className="mt-4 text-sm text-smoke">Loading position…</p>
+        : popup.view === "activity" ? <ActivityList positionKey={popup.key} savedSignatures={popupTarget?.source === positionSource.id && compound.positionMint === popupTarget.nativeId
+          ? [...(compound.attempt ? [compound.attempt.signature] : []), ...(compound.cleanup?.compoundSignature ? [compound.cleanup.compoundSignature] : []),
+            ...(compound.cleanupBatch?.transactions.filter((tx) => !tx.unsent && tx.signature).map((tx) => tx.signature) ?? [])] : []} records={popupTarget?.source === positionSource.id
+          ? <RaydiumActivityRecords controller={compound} positionMint={popupTarget.nativeId} tokenLabel={poolLabel} /> : undefined} />
+        : unavailableReason ? <UnavailableTool id={`${activeView}-view`} reason={unavailableReason} />
+        : otherSelected && otherBinding ? <div id={`${activeView}-view`}>{otherBinding.tool(otherSelected, activeView)}</div>
+        : popup.view === "withdraw" ? <div id="withdraw-view">{shownWithdraw ? <WithdrawPanel key={`${shownWithdraw.wallet}:${shownWithdraw.positionMint}`}
+            wallet={shownWithdraw.wallet} positionMint={shownWithdraw.positionMint} mintA={shownWithdraw.mintA} mintB={shownWithdraw.mintB}
+            label={poolLabel} outputs={capabilities.withdrawOutputs} onClose={closePopup} onBusyChange={onWithdrawBusy}
+            onConfirmed={() => { void refreshState(); void refreshDiscovery(); refreshReports(); }} />
+          : <p className="mt-4 text-sm text-smoke">Connect your wallet and choose a position to withdraw.</p>}
+          {shownWithdraw && exitEstimate && exitEstimate.positionMint === shownWithdraw.positionMint && <div data-testid="withdraw-exit-estimate" className="mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-7">
+            <PositionExitEstimate key={exitEstimate.positionMint} positionId={exitEstimate.positionMint} nftAccount={exitEstimate.nftAccount}
+              nftAccountPending={exitEstimate.pending} autoExit poolMints={exitEstimate.poolMints} className="border-t-0! pt-0!" />
+          </div>}
+        </div>
+        : <AddLiquiditySection
+          hidden={false}
           assetOptions={assetOptions}
           selectedAsset={selectedAsset}
           metadata={metadata}
@@ -467,44 +455,30 @@ export function SelectedApp({ initialView = DEFAULT_DETAIL_VIEW, initialMint: in
           attemptStatus={attemptStatus || ""}
           onOpenStatus={() => setStatusDialogOpen(true)}
         />}
-      >
-      {(tabs) => <section aria-labelledby="all-positions-heading" className="mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-7">
-        <h2 id="all-positions-heading" className="mb-5 text-base font-semibold text-cream">All positions</h2>
-        {showEmpty ? <PositionsEmptyState connected={connected} onConnect={connect} />
-          : !allPositions.length ? <p role="status" className="text-sm text-smoke">Loading positions…</p>
-          : activeView === "performance" ? <StocksSection positions={overviewPositions} selectedPositionKey={selectedKey} onSelectPosition={pickKey} selectionDisabled={anyBusy} renderRemainingPositions={renderPositionRows} /> : renderPositionRows(new Set())}
-        {registry.loadingNames.length ? <p role="status" className="mt-2 text-xs text-smoke" data-testid="registry-positions-loading">Loading {registry.loadingNames.join(", ")} positions…</p> : null}
-        {registry.errors.map((message) => <p key={message} role="alert" className="mt-2 text-xs text-cream/80" data-testid="registry-positions-error">{message}</p>)}
-        {external?.status}
-        {hasSelection && <div className="mt-5 border-t border-white/10 pt-4" data-testid="selected-position-detail" data-selected-key={selectedKey}>
-        {selectedItem && isClosed(selectedItem) && <p className="mt-3 w-fit rounded-full border border-white/20 px-2.5 py-1 text-xs font-semibold text-smoke" data-testid="position-closed">{CLOSED_LABEL}: no liquidity left</p>}
-        {otherSelected && otherBinding ? otherBinding.header(otherSelected) : <>
-        {/* No range badge or per-token Liquidity / Unclaimed fees rows here: the position's row above already shows its
-            shares, value and fees (LJ 11/14). */}
-        </>}
-        <button type="button" aria-haspopup="dialog" onClick={() => setAssetRisksOpen(true)}
-          className="mt-4 text-xs font-semibold text-cream/80 transition-opacity hover:opacity-70 disabled:opacity-40">
-          Learn more details
-        </button>
-        {/* Harvest account recovery has its own page (LJ 11/14): linked only from a Raydium position's details. */}
-        {selectedSolana && !otherSelected && <Link href={`${APP_ROUTES.portfolioRecovery}?position=${encodeURIComponent(selectedSolana.key)}`}
-          data-testid="harvest-recovery-link" className="ml-4 mt-4 inline-block text-xs font-semibold text-cream/80 underline underline-offset-2 hover:opacity-70">
-          Recover leftover compound balances</Link>}
-        {tabs}
-        </div>}
-      </section>}
-      </PositionToolsSection>
+      {popup.view === "deposit" && <p className="mt-4 text-xs leading-5 text-smoke">Different tokens may have issuer, transfer restriction or routing liquidity risks.{" "}
+        <Link href={DOCS_ROUTES.risks} className="text-lemon underline underline-offset-2 hover:text-[#fff27f]">Read the Risks docs</Link> before adding liquidity.</p>}
+    </ActionDialog>}
+    {detail !== null && <ActionDialog open onClose={closeDetail} title={detailRow?.title ?? "Position performance"} testId="performance-popup" size="lg">
+      {detailRow?.subtitle ? <p className="mt-1 text-xs text-smoke">{detailRow.subtitle}</p> : null}
+      {detailItem && isClosed(detailItem) && <p className="mt-3 w-fit rounded-full border border-white/20 px-2.5 py-1 text-xs font-semibold text-smoke" data-testid="position-closed">{CLOSED_LABEL}: no liquidity left</p>}
+      {/* A row with no operation buttons says why here (it was a greyed tab before LJ 11/14). */}
+      {detailNoActionReason && <UnavailableTool id="detail-unavailable" reason={detailNoActionReason} />}
+      <div id="performance-view" className="mt-3 space-y-3">
+        {detailForeign && <p role="status" className="rounded-2xl border border-white/15 bg-white/[0.04] px-4 py-3 text-xs leading-5 text-smoke">
+          Showing the linked position {short(detailMint!)}. It is not held by the connected wallet, so only public data is shown.
+        </p>}
+        {detailMint !== null ? <PositionPerformancePanel key={detailMint} embedded selectedMint={detailMint} initialWallet={initialWallet} previewPoolId={previewPoolId} />
+          : detailItem && detailRegistry ? detailRegistry.capabilities.performance.supported
+            ? <RegistryPerformancePanel key={detailItem.key} position={detailItem} descriptor={detailRegistry.descriptor} />
+            : <UnavailableTool id="performance-unavailable" reason={detailRegistry.capabilities.performance.reason} />
+          : detailItem && external && detailItem.chain === external.chain ? <>{external.header(detailItem)}<div className="mt-3 space-y-1 text-xs text-smoke">{external.details(detailItem)}</div></>
+          : <p role="status" className="text-sm text-smoke">Loading position…</p>}
       </div>
-      <InkFooter />
-    </div>
-    <AssetRisksDialog open={hasSelection && assetRisksOpen} onOpenChange={setAssetRisksOpen}>
-      {otherSelected && otherBinding ? otherBinding.details(otherSelected) : state && <p>Pool: <a className="text-cream/80 underline" href={solscanAccountUrl(state.poolId)} target="_blank" rel="noreferrer">{state.poolId} <ArrowUpRight className="inline h-3 w-3" /></a></p>}<p>Different tokens may have issuer, transfer restrictions, or routing liquidity risks. APR does not represent this position&apos;s realizable returns; no trading fees collected for this range while outside.</p>
-      <p><Link href={DOCS_ROUTES.risks} className="text-lemon underline underline-offset-2 hover:text-[#fff27f]">Read the Risks docs</Link> before adding liquidity.</p>
-    </AssetRisksDialog>
+    </ActionDialog>}
     <TransactionStatusDialog attempt={visibleAttempt} status={attemptStatus} error={error} open={statusDialogOpen}
       onOpenChange={setStatusDialogOpen}
       onRetry={selectionAligned && !busy && retryAdd ? () => { if (!selectionAligned || busy) return; setStatusDialogOpen(false); retryAdd(); } : undefined} />
-    {showTools && activeView === "deposit" && barOverForm && !otherSelected && !unavailableReason && <div ref={actionBarRef} data-testid="mobile-action-bar" className="fixed inset-x-0 bottom-0 z-10 border-t border-white/12 bg-canvas/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] backdrop-blur sm:hidden"><button className={buttonClass} disabled={actionDisabled} aria-busy={actionLoading} onClick={primaryAction}>{actionLoading ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <ArrowDown aria-hidden="true" className="h-4 w-4" />}{buttonLabel}</button></div>}
+
   </div>;
 }
 

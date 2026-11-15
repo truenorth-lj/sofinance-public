@@ -51,8 +51,24 @@ export function TxNoticeHost({ wallet }: { wallet?: string }) {
       // Success notices stay until the user closes them (X), so the Solscan link is always reachable.
     }
   }, [notices]);
+  const hostRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const root = document.documentElement;
+    const update = () => root.style.setProperty("--portfolio-toast-height", `${Math.ceil(host.getBoundingClientRect().height)}px`);
+    update();
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(update) : null;
+    observer?.observe(host);
+    window.addEventListener("resize", update);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", update);
+      root.style.removeProperty("--portfolio-toast-height");
+    };
+  }, [notices.length]);
   if (!notices.length) return null;
-  return <div className="pointer-events-none fixed inset-x-3 bottom-[calc(var(--tx-notice-bottom-offset,0px)+0.75rem)] z-[60] flex flex-col gap-2 sm:inset-x-auto sm:right-5 sm:bottom-5 sm:w-[380px]"
+  return <div ref={hostRef} data-testid="tx-notice-host" className="portfolio-tx-notices pointer-events-none fixed inset-x-3 bottom-[calc(var(--tx-notice-bottom-offset,0px)+0.75rem)] z-[60] flex flex-col gap-2 sm:inset-x-auto sm:right-5 sm:bottom-5 sm:w-[380px]"
     aria-live="polite">
     {notices.map((notice) => <div key={notice.id} role={notice.state === "failure" ? "alert" : "status"}
       data-tx-notice={notice.state}

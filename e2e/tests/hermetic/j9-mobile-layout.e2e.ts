@@ -9,7 +9,7 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 import { installFakeWallet } from "../../fake-wallet/install";
 import { FakeWallet } from "../../fake-wallet/node-signer";
 import { ConnectModal } from "../../pages/connect-modal";
-import { selectPosition } from "../../pages/all-positions";
+import { closePopup, openRowDetail, openRowTool } from "../../pages/all-positions";
 import { expectFitsScreen } from "../../support/layout-check";
 import { installLayoutMocks } from "../../support/layout-mocks";
 
@@ -72,51 +72,40 @@ for (const width of widths) {
       await context.close();
     });
 
-    test("every /app view, the input asset picker and the details dialog", async ({ browser, baseURL }) => {
+    test("every position popup and the input asset picker", async ({ browser, baseURL }) => {
       test.setTimeout(180_000);
       const { context, page, wallet, phone } = await setup(browser, baseURL, width);
       const check = checker(page, width, phone);
       await page.goto("/app/portfolio", { waitUntil: "domcontentloaded" });
       await new ConnectModal(page, wallet).connect();
-      // All positions lists the wallet's positions on every tool; the first one opens with the tool tabs.
-      await page.getByRole("region", { name: "All positions", exact: true }).getByTestId("position-fallback-select").first().waitFor();
-      const show = async (view: string) => {
-        if (phone) await page.locator("#position-action").selectOption(view);
-        else {
-          const values = await page.locator("#position-action option").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
-          await page.getByRole("navigation", { name: "Position operations" }).getByRole("button").nth(values.indexOf(view)).click();
-        }
-      };
-      const views = () => page.locator("#position-action option").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
-      await show("deposit");
+      // Every position stays a row. Each operation opens its popup; the row itself opens its Performance detail.
       const positionRows = page.getByRole("region", { name: "All positions", exact: true }).getByTestId("position-fallback-select");
       await expect(positionRows).toHaveCount(2);
       const positions = await positionRows.evaluateAll((rows) => rows.map((row) => row.getAttribute("data-position-key") ?? ""));
       expect(positions, "layout coverage must visit both fixture positions, not silently skip an empty selector").toHaveLength(2);
       expect(positions.map((key) => key.split(":")[0]).sort()).toEqual(["meteora-dlmm", "raydium-clmm"]);
+      await check("app-portfolio-list");
       for (const position of positions) {
-        // Non-Performance tools expose every position as a lightweight All positions row.
-        await show("deposit");
-        await selectPosition(page, position);
-        await page.getByTestId("range-badge").first().waitFor();
         const source = position.startsWith("meteora") ? "meteora" : "raydium";
-        const positionViews = await views();
-        expect(positionViews).toContain("performance");
-        for (const view of positionViews) {
-          await show(view);
-          await check(`app-${source}-${view}`);
+        for (const view of ["compound", "deposit", "withdraw", "activity"] as const) {
+          const popup = await openRowTool(page, position, view);
+          await check(`app-${source}-${view}`, { fullPage: false });
           if (view === "deposit" && source === "raydium") {
-            await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+            await popup.evaluate((el) => { el.scrollTop = el.scrollHeight; });
             await check("app-raydium-deposit-bottom", { fullPage: false });
-            await page.locator("button[aria-labelledby=asset-label]").first().click();
+            await popup.locator("button[aria-labelledby=asset-label]").first().click();
             await page.getByRole("dialog", { name: /input asset/i }).waitFor();
             await check("app-input-asset-picker", { fullPage: false });
             await page.keyboard.press("Escape");
           }
+          await closePopup(page);
         }
+        await openRowDetail(page, position);
+        await check(`app-${source}-performance`, { fullPage: false });
+        await closePopup(page);
       }
-      await page.getByRole("button", { name: "Learn more details" }).click();
-      await check("app-details-dialog", { fullPage: false });
+      await expect(page.getByRole("button", { name: "Learn more details" })).toHaveCount(0);
+      await expect(page.getByTestId("mobile-action-bar")).toHaveCount(0);
       await context.close();
     });
 

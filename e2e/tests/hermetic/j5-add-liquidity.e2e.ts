@@ -1,5 +1,6 @@
 import { expect, test } from "../fixtures";
 import { ConnectModal } from "../../pages/connect-modal";
+import { openRowTool } from "../../pages/all-positions";
 import { randomAddress, buildSingleSignerTx } from "../../support/tx";
 import type { Page } from "@playwright/test";
 import type { FakeWallet } from "../../fake-wallet/node-signer";
@@ -23,7 +24,8 @@ async function setup(page: Page, wallet: FakeWallet, options: { selectedStateGat
     mintA, mintB, decimalsA: 6, decimalsB: 6, ownsNft: true, sufficientSol: true, unsupportedExtensions: [],
     paused: false, frozen: false, transferFee: false, rangeSide: "inside", inRange: true,
     price: "1", tickLower: -10, tickUpper: 10, liquidity: "100", currentAmounts: { a: "1000000", b: "1000000" },
-    balances: { input: options.nativeSol ? "200000311000" : "200000311", a: "0", b: "0" }, fees: { a: "0", b: "0" }, rewards: [], eligible: true };
+    balances: { input: options.nativeSol ? "200000311000" : "200000311", a: "0", b: "0" }, fees: { a: "0", b: "0" }, rewards: [], eligible: true,
+    pricing: { priceUsdInput: null, priceUsdA: 2, priceUsdB: 0.5 } };
   const calls: string[] = [];
   const quoteRequests: Record<string, unknown>[] = [];
   await page.route("**/api/**", async (route) => {
@@ -36,6 +38,7 @@ async function setup(page: Page, wallet: FakeWallet, options: { selectedStateGat
       toleranceBps: body.toleranceBps ?? 100, expiresAt: Date.now() + 75000, passesFloor: false,
       spendA: "500000", spendB: "500000", minOutA: "495000", minOutB: "495000", decimalsA: 6, decimalsB: 6,
       mintA, mintB, liquidity: "100", roundtripCostInput: null,
+      requiredA: "490000", requiredB: "480000", dustA: "5000", dustB: "15000",
       feeBps: 10, feeAmount: String(Math.floor(Number(requested) * 10 / 10_000)), feeWallet: randomAddress() };
     let value: unknown = {};
     if (pathname === "/api/wallet") value = { wallet: wallet.address, slot: 1, fetchedAt: Date.now(),
@@ -80,11 +83,16 @@ async function setup(page: Page, wallet: FakeWallet, options: { selectedStateGat
   }
   await page.goto("/app?view=deposit");
   await new ConnectModal(page, wallet).connect();
+  // Add to existing position is the row's Add popup (LJ 11/14); an old view=deposit link opens nothing.
+  await openAdd(page);
   if (!options.connectOnly) await fillReadyInput(page);
   const add = page.getByRole("button", { name: "Add liquidity", exact: true });
   if (!options.connectOnly && !options.skipPreviewWait) await expect(add).toBeEnabled();
   return { calls, add, quoteRequests, selection };
 }
+
+/** The position's Add popup (the fixture wallet holds one position). */
+const openAdd = (page: Page) => openRowTool(page, null, "deposit");
 
 // Hold the actual selected-state response, without changing product timers. The
 // disabled assertion must run BEFORE the readiness wait used by ordinary setup.
@@ -103,7 +111,7 @@ for (const historyStatus of [undefined, "legacy"] as const) {
           historyStatus, selectedStateGate, connectOnly: entry === "connect",
         });
         const previousQuotes = quoteRequests.length;
-        if (entry === "reload") { holdState = true; await page.reload(); }
+        if (entry === "reload") { holdState = true; await page.reload(); await openAdd(page); }
         await expect.poll(() => heldRequests).toBe(1);
         const input = page.getByRole("textbox", { name: "Input limit" });
         await expect(page.getByText("Verifying selected position", { exact: true })).toBeVisible();
@@ -148,6 +156,10 @@ test("input enables Add after a lightweight preview; no automatic simulation or 
   await expect(page.getByText("Protocol fee (0.10%)")).toBeVisible();
   const inputLabel = `${selection.inputMint.slice(0, 4)}…${selection.inputMint.slice(-4)}`;
   await expect(page.getByText(`0.001 ${inputLabel}`, { exact: true })).toBeVisible();
+  // Before signing: the wallet preview shows only the reserve coming back (0.005 A at $2 + 0.015 B at $0.50);
+  // the deposit (0.49 A + 0.48 B) goes into the position.
+  await expect(page.getByTestId("add-wallet-preview-note")).toHaveText(
+    "Your wallet preview will show only about $0.02 of tokens coming back. The other ~$1.22 goes into this position.");
   await page.screenshot({ path: test.info().outputPath("add-preview-desktop.png") });
 });
 
@@ -173,7 +185,7 @@ for (const viewport of [{ name: "desktop", width: 1280, height: 900 }, { name: "
     const statusButton = page.getByRole("button", { name: "View transaction status and tx hash" });
     await statusButton.focus();
     await page.keyboard.press("Enter");
-    const dialog = page.getByRole("dialog");
+    const dialog = page.locator('dialog[aria-labelledby="transaction-status-title"]'); // not the Add popup it opens over
     await expect(dialog.getByRole("heading", { name: "Transaction expired" })).toBeVisible();
     const retry = dialog.getByRole("button", { name: "Try again", exact: true });
     await expect(retry).toBeVisible();
@@ -203,7 +215,7 @@ for (const viewport of [{ name: "desktop", width: 1280, height: 900 }, { name: "
     const statusButton = page.getByRole("button", { name: "View transaction status and tx hash" });
     await statusButton.focus();
     await page.keyboard.press("Enter");
-    const dialog = page.getByRole("dialog");
+    const dialog = page.locator('dialog[aria-labelledby="transaction-status-title"]'); // not the Add popup it opens over
     await expect(dialog.getByRole("heading", { name: "Liquidity added" })).toBeVisible();
     await expect(dialog.getByRole("heading", { name: "Confirming on Solana…" })).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath(`add-dialog-success-after-toast-${viewport.name}.png`), animations: "disabled" });
@@ -222,7 +234,7 @@ for (const viewport of [{ name: "desktop", width: 1280, height: 900 }, { name: "
     const statusButton = page.getByRole("button", { name: "View transaction status and tx hash" });
     await statusButton.focus();
     await page.keyboard.press("Enter");
-    const dialog = page.getByRole("dialog");
+    const dialog = page.locator('dialog[aria-labelledby="transaction-status-title"]'); // not the Add popup it opens over
     await expect(dialog.getByRole("heading", { name: "Transaction expired" })).toBeVisible();
     await expect(dialog.getByRole("button", { name: "Try again", exact: true })).toBeVisible();
     await page.screenshot({ path: test.info().outputPath(`add-dialog-expired-toast-dismissed-${viewport.name}.png`), animations: "disabled" });
@@ -268,6 +280,7 @@ test("ambiguous send warns after reload without locking or automatically resendi
   await page.reload();
   // The shared notice host resumes the saved signature and only polls its status; it never resends.
   await expect(page.getByText("Checking a previous transaction…", { exact: true }).first()).toBeVisible();
+  await openAdd(page);
   await fillReadyInput(page);
   await expect(add).toBeEnabled();
   expect(wallet.ledger).toHaveLength(1);
@@ -288,8 +301,10 @@ for (const historyStatus of ["pending", "manual-review", "invalid", "legacy"] as
     const { calls, add } = await setup(page, wallet, { historyStatus });
     // Records from the removed per-flow attempt store are ignored: no blocking banner, no dialog.
     await expect(page.getByText(/Previous transaction is unconfirmed or needs verification/)).toHaveCount(0);
-    await expect(page.getByRole("dialog")).toHaveCount(0);
+    // The only dialog is the Add popup itself.
+    await expect(page.getByRole("dialog").and(page.locator(':not([data-testid="deposit-popup"])'))).toHaveCount(0);
     await page.reload();
+    await openAdd(page);
     await fillReadyInput(page);
     await expect(add).toBeEnabled();
     expect(calls).not.toContain("/api/selected-prepare");

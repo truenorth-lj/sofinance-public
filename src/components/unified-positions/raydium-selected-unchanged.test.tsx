@@ -4,6 +4,7 @@
 import { act, createElement, type FunctionComponent } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { openRowTool } from "../test-support/portfolio-popups";
 import { SelectedApp } from "../selected-app";
 import { initialSelectionFromQuery } from "@/lib/unified-positions/url";
 import { testKeypair } from "@/lib/test-support/send-fixtures";
@@ -60,23 +61,24 @@ async function renderLinked() {
   return container.innerHTML.replace(/_r_[0-9a-z]+_/g, "_r_id_");
 }
 const rows = () => [...container.querySelectorAll<HTMLButtonElement>('[data-testid="position-fallback-select"]')];
-const selectedKey = () => rows().find((row) => row.getAttribute("aria-pressed") === "true")?.getAttribute("data-position-key");
+const selectedKey = () => new URL(window.location.href).searchParams.get("position");
+// An old operation link (view=deposit) lands on Portfolio with nothing open (LJ 11/14).
+const nothingOpen = () => container.querySelector('dialog[data-open="true"]') === null;
 
 describe("/app Raydium selected state (unchanged by the registry DEXes)", () => {
-  it("?position=raydium-clmm:<mint> selects that Raydium position, and the panel matches the All positions snapshot", async () => {
+  it("?position=raydium-clmm:<mint>&view=deposit lands on Portfolio, and the page matches the All positions snapshot", async () => {
     const html = await renderLinked();
-    expect(selectedKey()).toBe(`raydium-clmm:${LINKED}`);
+    expect(nothingOpen()).toBe(true);
     expect(rows().map((row) => row.firstChild?.textContent).join("\n")).not.toMatch(/Raydium|Meteora/);
     expect(html).toMatchSnapshot();
   });
 
-  it("keeps read-only selection reachable when no eligible input asset exists", async () => {
+  it("keeps read-only positions reachable when no eligible input asset exists", async () => {
     await renderLinked();
-    const target = rows().find((row) => row.getAttribute("data-position-key") === `raydium-clmm:${FIRST}`)!;
-    await act(async () => target.click());
+    await openRowTool(container, "deposit", `raydium-clmm:${FIRST}`);
     await settle();
     expect(selectedKey()).toBe(`raydium-clmm:${FIRST}`);
-    expect(new URL(window.location.href).searchParams.get("position")).toBe(`raydium-clmm:${FIRST}`);
+    expect(container.querySelector('dialog[data-open="true"] [data-testid="popup-target"]')?.getAttribute("data-selected-key")).toBe(`raydium-clmm:${FIRST}`);
   });
 
   const remount = async () => {
@@ -100,14 +102,14 @@ describe("/app Raydium selected state (unchanged by the registry DEXes)", () => 
     state.dex = "hang";
     await renderLinked();
     expect(state.dexCalls).toBe(1);
-    expect(selectedKey()).toBe(`raydium-clmm:${LINKED}`);
+    expect(nothingOpen()).toBe(true);
     expect(rows().map((row) => row.getAttribute("data-position-key")).sort()).toEqual([`raydium-clmm:${FIRST}`, `raydium-clmm:${LINKED}`].sort());
   });
 
   it("a failing (500) Meteora positions read leaves the Raydium list in place and only adds its plain error", async () => {
     state.dex = "500";
     await renderLinked();
-    expect(selectedKey()).toBe(`raydium-clmm:${LINKED}`);
+    expect(nothingOpen()).toBe(true);
     expect(rows().map((row) => row.getAttribute("data-position-key")).sort()).toEqual([`raydium-clmm:${FIRST}`, `raydium-clmm:${LINKED}`].sort());
     expect(container.textContent).toContain("Meteora is down");
   });

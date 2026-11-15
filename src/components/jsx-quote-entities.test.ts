@@ -6,8 +6,6 @@ const quotedFiles = [
   "src/components/selected-app.tsx",
   "src/components/compound-panel.tsx",
   "src/components/add-liquidity-section.tsx",
-  "src/components/position-tools-section.tsx",
-  "src/components/stocks-section.tsx",
 ];
 
 describe("JSX quote entities", () => {

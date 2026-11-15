@@ -12,6 +12,7 @@ import { getTxNotices, resetTxNotices } from "@/lib/tx-pipeline";
 import { RegistryPositionTool } from "./registry-tools";
 import { resetPositionOpLocks } from "./position-op-lock";
 import { clearReportCache } from "../portfolio/report-cache";
+import { compoundConfirmButton, openPopup, openRowDetail, openRowTool } from "../test-support/portfolio-popups";
 
 const WALLET = testKeypair(91).publicKey.toBase58();
 const RAYDIUM_MINT = testKeypair(92).publicKey.toBase58();
@@ -103,46 +104,51 @@ async function render(props: Record<string, unknown> = {}) {
   await act(async () => root.render(createElement(SelectedApp as FunctionComponent<Record<string, unknown>>, props)));
   await settle();
 }
-/** Opens on Add to position (also the default since the Compound fees tab went away, LJ 11/14). */
+/** An old ?view=deposit link: it lands on Portfolio with nothing open (LJ 11/14). */
 const LISTED = { initialView: "deposit" } as const;
+const KEY = `meteora-dlmm:${POSITION}`;
+/** Operations are row popups and the row opens the Performance detail (LJ 11/14). */
+async function openTool(view: "compound" | "deposit" | "withdraw" | "activity", key = KEY) { await openRowTool(container, view, key); await settle(); }
+async function openDetail(key = KEY) { await openRowDetail(container, key); await settle(); }
+const closeOpen = async () => {
+  const close = container.querySelector<HTMLButtonElement>('dialog[data-open="true"] button[aria-label="Close"]');
+  if (close) { await act(async () => close.click()); await settle(); }
+};
+const compoundPopup = () => container.querySelector<HTMLDialogElement>('dialog[data-testid="compound-popup"]')!;
 const rows = () => [...container.querySelectorAll<HTMLButtonElement>('[data-testid="position-fallback-select"]')];
-const selectedKey = () => rows().find((row) => row.getAttribute("aria-pressed") === "true")?.getAttribute("data-position-key");
 const groups = () => [...container.querySelectorAll('[data-testid="position-chain-group"]')].map((group) => [group.getAttribute("aria-label"),
   [...group.querySelectorAll('[data-testid="position-fallback-select"]')].map((row) =>
     `${row.querySelector('[data-testid="position-row-title"]')?.textContent} · ${row.querySelector('[data-testid="position-row-subtitle"]')?.textContent}`)]);
 const rowCompound = () => container.querySelector<HTMLButtonElement>('[data-testid="position-row-action"][data-tool="compound"]')!;
-const tab = (label: string) => [...container.querySelectorAll<HTMLButtonElement>("nav[aria-label='Position operations'] button")].find((b) => b.textContent === label)!;
 
 describe("/app My positions with registry DEXes", () => {
-  it("lists the wallet's served-DEX positions in the Solana group and selects one when the scan has none", async () => {
+  it("lists the wallet's served-DEX positions in the Solana group; the row has Compound, Add, Withdraw and Activity and opens its detail", async () => {
     await render();
     // Portfolio reads the position's Performance report once for its row and totals (value, unclaimed and cumulative fees).
     expect(state.dexCalls).toEqual([["/api/dex/meteora-dlmm/positions", { owner: WALLET }],
-      ["/api/dex/meteora-dlmm/performance", { positionKey: `meteora-dlmm:${POSITION}` }]]);
-    // No Compound fees tab or panel (LJ 11/14): the Meteora row carries its own Compound button; Add to position opens by default.
+      ["/api/dex/meteora-dlmm/performance", { positionKey: KEY }]]);
+    // No tabs, panels or details under the row (LJ 11/14): the Meteora row carries its own buttons.
     expect(container.querySelector("#compound-view")).toBeNull();
     expect(container.querySelector("[data-testid=registry-compound]")).toBeNull();
-    expect([...container.querySelectorAll("nav[aria-label='Position operations'] button")].map((b) => b.textContent)).not.toContain("Compound fees");
-    expect(container.querySelector(`[data-position-key="meteora-dlmm:${POSITION}"]`)?.closest("li")?.querySelector('[data-testid="position-row-action"][data-tool="compound"]')?.textContent).toBe("Compound");
-    expect(container.querySelector('[aria-labelledby="all-positions-heading"]')).not.toBeNull();
-    expect(container.querySelector("#compound-position")).toBeNull();
-    await act(async () => tab("Add to position").click());
-    await settle();
+    expect(container.querySelector("nav[aria-label='Position operations']")).toBeNull();
+    expect(container.querySelector("[data-testid=registry-position-header]")).toBeNull();
+    expect([...container.querySelector(`[data-position-key="${KEY}"]`)!.closest("li")!.querySelectorAll('[data-testid="position-row-action"]')]
+      .map((b) => b.textContent)).toEqual(["Compound", "Add", "Withdraw", "Activity"]);
     expect(groups()).toEqual([["Solana", [`TSLA / TSLAx · Meteora · #${POSITION.slice(0, 4)}…${POSITION.slice(-4)}`]]]);
-    expect(selectedKey()).toBe(`meteora-dlmm:${POSITION}`);
-    // Only the range pill: no range badge, no per-token rows (the position's row shows them, LJ 11/14).
-    expect(container.querySelector("[data-testid=registry-position-header]")?.textContent).toBe("Range 0.9800–1.0200");
+    await openTool("deposit");
+    expect(openPopup(container, "deposit-popup")?.querySelector("[data-testid=registry-add]")).toBeTruthy();
+    await closeOpen();
     // PR9: Performance has a registry panel too (never the Raydium one).
-    await act(async () => tab("Performance").click());
-    await settle();
-    expect(container.querySelector("#performance-view [data-testid=registry-performance]")).toBeTruthy();
+    await openDetail();
+    expect(openPopup(container, "performance-popup")?.querySelector("#performance-view [data-testid=registry-performance]")).toBeTruthy();
   });
 
   it("Performance: the adapter's report in the shared summary and the pool chart with the realized fee overlay; the greyed exit estimate sits in Withdraw", async () => {
     const meteora = dexDescriptors.descriptorFor("meteora-dlmm")!.capabilities;
     expect(meteora.performance).toEqual({ supported: true });
     expect(meteora.exitPreview).toEqual({ supported: false, reason: "Not available for this pool yet" });
-    await render({ initialView: "performance" });
+    // A Performance link with its position opens that position's detail.
+    await render({ initialView: "performance", initialPositionKey: KEY });
     expect(state.dexCalls).toContainEqual(["/api/dex/meteora-dlmm/performance", { positionKey: `meteora-dlmm:${POSITION}` }]);
     const panel = container.querySelector("[data-testid=registry-performance]")!;
     expect(panel.textContent).toContain("Est. fee-only APR (USD) · not a prediction4.71%");
@@ -153,14 +159,14 @@ describe("/app My positions with registry DEXes", () => {
     expect(chart.getAttribute("data-overlay")).toBe("1");
     expect(panel.querySelector("[data-testid=exit-preview-unavailable]")).toBeNull();
     expect(panel.textContent).not.toContain("Meteora");
-    await act(async () => tab("Withdraw").click());
-    await settle();
+    await closeOpen();
+    await openTool("withdraw");
     const exit = container.querySelector("#withdraw-view [data-testid=exit-preview-unavailable]")!;
     expect(exit.getAttribute("aria-disabled")).toBe("true");
     expect(exit.textContent).toBe("Exit estimateNot available for this pool yet");
   });
 
-  it("Performance: a stock represented in the overview keeps registry position details without duplicate stock cards", async () => {
+  it("Performance: a stock position's detail shows its price change vs fee income split, with no Portfolio stock overview", async () => {
     state.raydium = [raydiumRow];
     const body = performanceBody();
     state.performance.body = { ...body, report: { ...body.report, stock: {
@@ -171,30 +177,35 @@ describe("/app My positions with registry DEXes", () => {
     } } };
     await render({ initialView: "performance", initialPositionKey: `meteora-dlmm:${POSITION}` });
     const panel = container.querySelector('[data-testid="registry-performance"]')!;
-    expect(container.querySelector('[data-testid="stocks-overview"]')).not.toBeNull();
-    expect(panel.textContent).toContain("Position details");
-    expect(panel.querySelector('[data-testid="stock-performance"]')).toBeNull();
-    expect(panel.querySelector('[data-testid="position-detail-identity"]')?.textContent).toContain(POSITION);
+    // No stock overview on Portfolio (LJ 11/15): the detail holds the price change vs fee income split, without the
+    // stock/value header the row already shows.
+    expect(container.querySelector('[data-testid="stocks-overview"]')).toBeNull();
+    expect(panel.textContent).toContain("Performance results");
+    expect(panel.querySelector('[data-testid="stock-performance"]')).not.toBeNull();
+    expect(panel.querySelector('[data-testid="stock-performance"]')?.textContent).not.toContain("Position value");
     expect(panel.querySelector('[data-testid="pool-daily-apr-chart"]')).not.toBeNull();
   });
 
   it("Performance: a failed read shows the server's plain message and retries on request", async () => {
     state.performance = { status: 404, body: { error: "No Meteora position exists at that address.", code: "POSITION_NOT_FOUND" } };
-    await render({ initialView: "performance" });
+    await render();
+    const before = state.dexCalls.filter(([path]) => path.endsWith("/performance")).length;
+    await openDetail();
     const panel = () => container.querySelector("[data-testid=registry-performance]")!;
     expect(panel().querySelector("[role=alert]")?.textContent).toBe("No Meteora position exists at that address.");
     expect(panel().querySelector("[data-testid=exit-preview-unavailable]")).toBeNull();
-    expect(state.dexCalls.filter(([path]) => path.endsWith("/performance"))).toHaveLength(1);
+    // The detail reads its own report when it opens (the row's read stays the row's).
+    expect(state.dexCalls.filter(([path]) => path.endsWith("/performance"))).toHaveLength(before + 1);
     state.performance = { status: 200, body: performanceBody() };
     const retry = [...panel().querySelectorAll("button")].find((button) => button.textContent === "Retry performance")!;
     await act(async () => retry.click());
     await settle();
     expect(panel().querySelector("[role=alert]")).toBeNull();
     expect(panel().textContent).toContain("4.71%");
-    expect(state.dexCalls.filter(([path]) => path.endsWith("/performance"))).toHaveLength(2);
+    expect(state.dexCalls.filter(([path]) => path.endsWith("/performance"))).toHaveLength(before + 2);
   });
 
-  it.each(["registry-first", "wallet-first"] as const)("cold default selection shares its report read when %s", async (order) => {
+  it.each(["registry-first", "wallet-first"] as const)("a Performance link without a position opens nothing; the row stays usable when %s", async (order) => {
     // Unique keys prevent a previous test's overview cache from concealing a duplicate read.
     const id = testKeypair(order === "registry-first" ? 181 : 182).publicKey.toBase58();
     const key = `meteora-dlmm:${id}`;
@@ -208,13 +219,14 @@ describe("/app My positions with registry DEXes", () => {
     else state.positionsHold = pending;
     try {
       await render({ initialView: "performance" });
-      // No report belongs to an unresolved default selection yet. The registry row remains navigable.
-      expect(state.dexCalls.filter(([path]) => path.endsWith("/performance"))).toHaveLength(0);
       if (order === "registry-first") expect(rows().map((row) => row.getAttribute("data-position-key"))).toContain(key);
       await act(async () => { release(); }); await settle();
+      expect(container.querySelector('dialog[data-open="true"]')).toBeNull();
+      // The row's one read for its numbers.
       expect(state.dexCalls.filter(([path]) => path.endsWith("/performance"))).toEqual([
         ["/api/dex/meteora-dlmm/performance", { positionKey: key }],
       ]);
+      await openDetail(key);
       const panel = () => container.querySelector("[data-testid=registry-performance]")!;
       expect(panel().querySelector("[role=alert]")?.textContent).toBe("Position temporarily unavailable");
       state.performance = { status: 200, body: success };
@@ -222,11 +234,11 @@ describe("/app My positions with registry DEXes", () => {
       await act(async () => retry.click()); await settle();
       expect(panel().querySelector("[role=alert]")).toBeNull();
       expect(panel().textContent).toContain("4.71%");
-      expect(state.dexCalls.filter(([path]) => path.endsWith("/performance"))).toHaveLength(2);
+      expect(state.dexCalls.filter(([path]) => path.endsWith("/performance"))).toHaveLength(3);
     } finally { await act(async () => { release(); }); }
   });
 
-  it("does not delay an explicitly linked registry selection behind wallet discovery", async () => {
+  it("does not delay an explicitly linked registry detail behind wallet discovery", async () => {
     const id = testKeypair(183).publicKey.toBase58();
     const key = `meteora-dlmm:${id}`;
     state.dex.body = { positions: [{ ...meteoraRow(), key, nativeId: id }] };
@@ -236,10 +248,10 @@ describe("/app My positions with registry DEXes", () => {
     state.walletHold = new Promise<void>((resolve) => { release = resolve; });
     try {
       await render({ initialView: "performance", initialPositionKey: key });
-      expect(container.querySelector("[data-testid=registry-performance]")?.textContent).toContain("4.71%");
-      expect(state.dexCalls.filter(([path]) => path.endsWith("/performance"))).toHaveLength(1);
+      expect(openPopup(container, "performance-popup")?.querySelector("[data-testid=registry-performance]")?.textContent).toContain("4.71%");
+      const reads = state.dexCalls.filter(([path]) => path.endsWith("/performance")).length;
       await act(async () => { release(); }); await settle();
-      expect(state.dexCalls.filter(([path]) => path.endsWith("/performance"))).toHaveLength(1);
+      expect(state.dexCalls.filter(([path]) => path.endsWith("/performance"))).toHaveLength(reads);
     } finally { await act(async () => { release(); }); }
   });
 
@@ -254,7 +266,7 @@ describe("/app My positions with registry DEXes", () => {
   it("Withdraw: partial slider, the outputs the descriptor lists, and the rent refund stated before signing at 100%", async () => {
     state.dex = { status: 200, body: { positions: [{ ...meteoraRow(), closeRefundLamports: "41899840" }] } };
     await render();
-    await act(async () => tab("Withdraw").click());
+    await openTool("withdraw");
     const panel = container.querySelector("[data-testid=registry-withdraw]")!;
     // One output (pool tokens) → no "Receive" select, a plain line instead; no USDC option anywhere.
     expect(panel.querySelector("select")).toBeNull();
@@ -279,7 +291,7 @@ describe("/app My positions with registry DEXes", () => {
 
   it("a full withdraw goes through the shared pipeline to the generic route and shows the server's plain refusal", async () => {
     await render();
-    await act(async () => tab("Withdraw").click());
+    await openTool("withdraw");
     const button = [...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-withdraw] button")].find((b) => b.textContent === "Withdraw all and close")!;
     await act(async () => button.click());
     await settle();
@@ -289,31 +301,43 @@ describe("/app My positions with registry DEXes", () => {
     expect(getTxNotices().filter((notice) => notice.state === "failure")).toEqual([]);
   });
 
-  it("row Compound: states 'No platform fee' before signing, posts to the generic route and shows the server's plain refusal on the row", async () => {
+  it("row Compound: the popup states the facts, Confirm posts to the generic route, and the server's plain refusal shows in the popup", async () => {
     let finish!: () => void;
     state.hold = new Promise<void>((resolve) => { finish = resolve; });
     state.op = { status: 400, body: { error: "This position has no unclaimed fees yet, so there is nothing to compound.", code: "INVALID_REQUEST" } };
     await render();
-    // Nothing under the row until it is used: no per-token fees line, no 'Fees to compound' card.
-    expect(container.querySelector("[data-testid=row-compound-status]")).toBeNull();
+    // Nothing under the row: no per-token fees line, no 'Fees to compound' card.
     expect(container.querySelector('section[aria-label="Fees to compound"]')).toBeNull();
-    const button = rowCompound();
-    expect(button.disabled).toBe(false);
-    await act(async () => button.click());
+    expect(rowCompound().disabled).toBe(false);
+    await openTool("compound");
+    expect(compoundPopup().dataset.open).toBe("true");
+    expect(compoundPopup().querySelector("[data-testid=compound-confirm-fee]")?.textContent).toBe("Free");
+    expect((state.dexCalls as [string, unknown][]).filter(([path]) => path.endsWith("/compound"))).toEqual([]);
+    await act(async () => compoundConfirmButton(container)!.click());
     await settle();
-    expect(state.dexCalls.at(-1)).toEqual(["/api/dex/meteora-dlmm/compound", { owner: WALLET, positionKey: `meteora-dlmm:${POSITION}`, step: 1, priorSignatures: [] }]);
-    // Before anything can be signed (prepare in flight): loading on the row, the fee rule and the in-range pool fee stated under it.
-    expect(rowCompound().disabled).toBe(true);
+    expect(state.dexCalls.at(-1)).toEqual(["/api/dex/meteora-dlmm/compound", { owner: WALLET, positionKey: KEY, step: 1, priorSignatures: [] }]);
+    // Before anything can be signed (prepare in flight): the row shows it, the popup states the fee rule and pool fee.
     expect(rowCompound().textContent).toBe("Compounding…");
-    expect(container.querySelector("[data-testid=registry-compound-fee]")?.textContent).toBe("No platform fee.");
-    expect(container.querySelector("[data-testid=registry-compound-range]")).toBeNull(); // in range
-    expect(container.querySelector("[data-testid=registry-compound-pool-fee]")?.textContent).toContain("composition fee");
+    expect(rowCompound().disabled).toBe(false); // reopens its own popup
+    expect(compoundPopup().querySelector("[data-testid=registry-compound-fee]")?.textContent).toBe("No platform fee.");
+    expect(compoundPopup().querySelector("[data-testid=registry-compound-range]")).toBeNull(); // in range
+    expect(compoundPopup().querySelector("[data-testid=registry-compound-pool-fee]")?.textContent).toContain("composition fee");
+    // While preparing / signing / sending, the popup cannot be closed (same as Raydium's in-flight state).
+    expect(compoundPopup().querySelector('button[aria-label="Close"]')).toBeNull();
+    await act(async () => compoundPopup().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    await act(async () => container.querySelector<HTMLElement>('[data-testid="compound-popup-backdrop"]')!.click());
+    expect(compoundPopup().dataset.open).toBe("true");
     await act(async () => finish());
     await settle();
-    const alert = container.querySelector("[data-testid=row-compound-status] [role=alert]")!;
+    const alert = compoundPopup().querySelector("[role=alert]")!;
     expect(alert.textContent).toContain("This position has no unclaimed fees yet, so there is nothing to compound.");
     expect(alert.textContent).not.toContain("INVALID_REQUEST");
-    expect(rowCompound().disabled).toBe(false);
+    expect(rowCompound().textContent).toBe("Compound");
+    // Done closes; the next open starts again at the confirm screen.
+    await act(async () => compoundPopup().querySelector<HTMLButtonElement>("[data-testid=compound-submit-done]")!.click());
+    expect(compoundPopup().dataset.open).toBe("false");
+    await openTool("compound");
+    expect(compoundConfirmButton(container)).not.toBeNull();
   });
 
   it("Refresh and a confirmed Meteora compound each send a new Meteora performance read for the Portfolio numbers", async () => {
@@ -334,23 +358,24 @@ describe("/app My positions with registry DEXes", () => {
   it("Compound with no unclaimed fees is disabled up front with a plain reason, and nothing is requested", async () => {
     state.dex = { status: 200, body: { positions: [meteoraRow("5000", { liquidityRaw: HOLDINGS.liquidityRaw, unclaimedFeesRaw: { a: "0", b: "0" } })] } };
     await render();
-    expect(container.querySelector("[data-testid=registry-compound-blocked]")?.textContent).toBe("This position has no unclaimed fees yet, so there is nothing to compound.");
-    const button = rowCompound();
+    await openTool("compound");
+    expect(compoundPopup().querySelector("[data-testid=compound-confirm-blocked]")?.textContent).toBe("This position has no unclaimed fees yet, so there is nothing to compound.");
+    const button = compoundConfirmButton(container)!;
     expect(button.disabled).toBe(true);
     await act(async () => button.click());
     await settle();
     expect((state.dexCalls as [string, unknown][]).filter(([path]) => path.endsWith("/compound"))).toEqual([]);
-    expect(container.querySelector("[data-testid=row-compound-status] [role=alert]")).toBeNull(); // no submit-then-error, no Try again
+    expect(compoundPopup().querySelector("[role=alert]")).toBeNull(); // no submit-then-error, no Try again
   });
 
   it("Compound out of range names the tokens before signing: which fees go back in and which go to the wallet", async () => {
     state.hold = new Promise<void>(() => {}); // the prepare stays in flight: nothing reaches the wallet
     state.dex = { status: 200, body: { positions: [{ ...meteoraRow(), rangeStatus: "below" }] } };
     await render();
-    expect(rowCompound().disabled).toBe(false);
-    await act(async () => rowCompound().click());
+    await openTool("compound");
+    await act(async () => compoundConfirmButton(container)!.click());
     await settle();
-    expect(container.querySelector("[data-testid=registry-compound-range]")?.textContent)
+    expect(compoundPopup().querySelector("[data-testid=registry-compound-range]")?.textContent)
       .toBe("The price is outside this position's range. Only TSLA fees go back into the position; TSLAx fees go to your wallet.");
     expect(container.querySelector("[data-testid=registry-compound-pool-fee]")).toBeNull(); // out of range: no active-bin deposit
   });
@@ -358,16 +383,17 @@ describe("/app My positions with registry DEXes", () => {
   it("Compound out of range with fees only in the token the range can't hold is disabled and points to Claim", async () => {
     state.dex = { status: 200, body: { positions: [{ ...meteoraRow("5000", { liquidityRaw: HOLDINGS.liquidityRaw, unclaimedFeesRaw: { a: "0", b: "230000" } }), rangeStatus: "below" }] } };
     await render();
-    expect(container.querySelector("[data-testid=registry-compound-blocked]")?.textContent)
+    await openTool("compound");
+    expect(compoundPopup().querySelector("[data-testid=compound-confirm-blocked]")?.textContent)
       .toBe("There are no TSLA fees to put back while the price is outside the range. Claim the TSLAx fees to your wallet instead.");
-    expect(rowCompound().disabled).toBe(true);
+    expect(compoundConfirmButton(container)!.disabled).toBe(true);
   });
 
-  it("one lock per position across ops: a Claim in flight locks Add / Withdraw / Compound, and switching tabs does not unlock", async () => {
+  it("one lock per position across ops: a Claim in flight locks Add / Withdraw / Compound, and closing the popup does not unlock", async () => {
     let finish!: () => void;
     state.hold = new Promise<void>((resolve) => { finish = resolve; });
     await render();
-    await act(async () => tab("Withdraw").click());
+    await openTool("withdraw");
     const claim = [...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-claim] button")].find((b) => b.textContent === "Claim fees")!;
     await act(async () => claim.click());
     await settle();
@@ -376,26 +402,26 @@ describe("/app My positions with registry DEXes", () => {
     const withdraw = [...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-withdraw] button")].find((b) => b.textContent === "Withdraw all and close")!;
     expect(withdraw.disabled).toBe(true);
     expect(container.querySelector("[data-testid=registry-withdraw] [data-testid=registry-position-locked]")?.textContent).toContain("Another transaction on this position is still in progress");
-    // The row's Compound is locked too and says why; another tab (the Claim panel unmounts) keeps Add locked; nothing else is requested.
-    const compound = rowCompound();
-    expect(compound.disabled).toBe(true);
-    expect(container.querySelector("[data-testid=row-compound-status] [data-testid=registry-position-locked]")?.textContent).toContain("Another transaction on this position is still in progress");
-    await act(async () => compound.click());
-    await act(async () => tab("Add to position").click());
-    const add = [...container.querySelectorAll<HTMLButtonElement>("[data-testid=registry-add] button")].find((b) => b.textContent === "Add liquidity")!;
-    expect(add.disabled).toBe(true);
-    expect(container.querySelector<HTMLInputElement>("input#registry-add-amount")!.disabled).toBe(true);
+    // The row's other buttons are locked too while the claim runs; closing the popup does not unlock; nothing else is requested.
+    expect(rowCompound().disabled).toBe(true);
+    await closeOpen();
+    const rowAdd = container.querySelector<HTMLButtonElement>('[data-testid="position-row-action"][data-tool="deposit"]')!;
+    expect(rowAdd.disabled).toBe(true);
+    expect(rowCompound().disabled).toBe(true);
+    await act(async () => rowCompound().click());
     expect((state.dexCalls as [string, unknown][]).filter(([path]) => path.endsWith("/compound"))).toEqual([]);
     // The claim's prepare ends (refused here): the lock is released for every op.
     await act(async () => finish());
     await settle();
     expect(rowCompound().disabled).toBe(false);
     expect(container.querySelector("[data-testid=registry-position-locked]")).toBeNull();
+    await openTool("deposit");
+    expect(container.querySelector<HTMLInputElement>("input#registry-add-amount")!.disabled).toBe(false);
   });
 
   it("Add offers the pool tokens and USDC (descriptor deposit inputs), states the swap fee, and posts the raw amount", async () => {
     await render();
-    await act(async () => tab("Add to position").click());
+    await openTool("deposit");
     const panel = container.querySelector("[data-testid=registry-add]")!;
     expect([...panel.querySelectorAll("option")].map((o) => o.textContent)).toEqual(["TSLA", "TSLAx", "USDC"]);
     expect(panel.textContent).toContain("A 0.1% platform fee applies only to the part we swap into the pool tokens");
@@ -416,7 +442,7 @@ describe("/app My positions with registry DEXes", () => {
   it("Add: an amount that would round to 0 in the range's steps greys Add and says the minimum (from quote-add)", async () => {
     state.quoteAdd = { status: 200, body: { depositMinimum: { token: MINT_A, tooSmall: true, minimumRaw: "48336" } } };
     await render();
-    await act(async () => tab("Add to position").click());
+    await openTool("deposit");
     const panel = container.querySelector("[data-testid=registry-add]")!;
     const input = panel.querySelector<HTMLInputElement>("input#registry-add-amount")!;
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
@@ -433,7 +459,7 @@ describe("/app My positions with registry DEXes", () => {
   it("Add: a failed quote-add check is not skipped: Add stays disabled with a plain try-again line", async () => {
     state.quoteAdd = { status: 503, body: { error: "Jupiter is busy" } };
     await render();
-    await act(async () => tab("Add to position").click());
+    await openTool("deposit");
     const panel = container.querySelector("[data-testid=registry-add]")!;
     const input = panel.querySelector<HTMLInputElement>("input#registry-add-amount")!;
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
@@ -449,7 +475,7 @@ describe("/app My positions with registry DEXes", () => {
   it("Add: the server could not price the input (unavailable) keeps Add disabled", async () => {
     state.quoteAdd = { status: 200, body: { depositMinimum: { token: MINT_A, tooSmall: true, minimumRaw: null, quoteChecked: false, unavailable: true } } };
     await render();
-    await act(async () => tab("Add to position").click());
+    await openTool("deposit");
     const panel = container.querySelector("[data-testid=registry-add]")!;
     const input = panel.querySelector<HTMLInputElement>("input#registry-add-amount")!;
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
@@ -479,20 +505,20 @@ describe("/app My positions with registry DEXes", () => {
     expect(container.querySelector("[data-testid=registry-compound]")).toBeNull();
   });
 
-  it("Meteora details: no range badge and no per-token Liquidity / Unclaimed fees rows above the tabs; the range pill stays", async () => {
+  it("Meteora: no details block under the row; the row keeps the range badge and the detail holds the performance panel", async () => {
     await render(LISTED);
-    const header = container.querySelector("[data-testid=registry-position-header]")!;
-    expect(header.textContent).toBe("Range 0.9800–1.0200");
-    expect(header.querySelector("[data-testid=range-badge]")).toBeNull();
+    expect(container.querySelector("[data-testid=registry-position-header]")).toBeNull();
     expect(container.querySelector("[data-testid=registry-position-assets]")).toBeNull();
     expect(container.querySelector('[aria-label="Position assets"]')).toBeNull();
-    expect(container.querySelector('[data-testid="selected-position-detail"] nav[aria-label="Position operations"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="selected-position-detail"]')).toBeNull();
+    await openDetail();
+    expect(openPopup(container, "performance-popup")!.querySelector("[data-testid=registry-performance]")).not.toBeNull();
   });
 
-  it("a ?position= deep link to a registry position selects it over the scanned positions", async () => {
+  it("a ?position= Performance link to a registry position opens its detail over the scanned positions", async () => {
     state.raydium = [raydiumRow];
-    await render({ ...LISTED, initialPositionKey: `meteora-dlmm:${POSITION}` });
-    expect(selectedKey()).toBe(`meteora-dlmm:${POSITION}`);
+    await render({ initialView: "performance", initialPositionKey: KEY });
+    expect(openPopup(container, "performance-popup")?.querySelector("[data-testid=registry-performance]")).not.toBeNull();
     expect(groups()[0]![1]).toHaveLength(2);
   });
 
@@ -511,7 +537,9 @@ describe("/app My positions with registry DEXes", () => {
     await render(LISTED);
     expect(container.querySelector("[data-testid=registry-positions-error]")?.textContent)
       .toBe("Meteora: Solana RPC is temporarily unavailable. Try again shortly.");
-    expect(selectedKey()).toBe(`raydium-clmm:${RAYDIUM_MINT}`);
+    expect(rows().map((row) => row.getAttribute("data-position-key"))).toEqual([`raydium-clmm:${RAYDIUM_MINT}`]);
+    await openTool("deposit", `raydium-clmm:${RAYDIUM_MINT}`);
+    expect(openPopup(container, "deposit-popup")).not.toBeNull();
   });
 
   it("rejects a response whose rows are not this DEX's positions", async () => {
