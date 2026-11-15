@@ -58,7 +58,7 @@ export function openPositionStatusCopy(input: {
 }
 
 
-/** Button label for the compound panel (cleanup vs compound, same strings as before). */
+/** Label of the position row's Compound button while it runs (cleanup vs compound); between stages, "Compounding…". */
 export function compoundActionLabel(input: {
   cleanupRunning: boolean;
   stage: string | null | undefined;
@@ -77,5 +77,5 @@ export function compoundActionLabel(input: {
     wallet: "Confirming in wallet…",
     checking: input.checkingCopy,
     broadcasting: "Sending and verifying…",
-  }, "One-click compound")!;
+  }, "Compounding…")!;
 }
