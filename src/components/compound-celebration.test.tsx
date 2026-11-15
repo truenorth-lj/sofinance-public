@@ -177,8 +177,9 @@ describe("compound success coins", () => {
     await confirmAndDone();
     const catcher = document.querySelector<HTMLElement>("[data-catcher]")!;
     expect(catcher).not.toBeNull();
-    // 6 CSS px a sprite pixel on a wide screen: 72 × 84.
-    expect([parseFloat(catcher.style.width), parseFloat(catcher.style.height)]).toEqual([72, 84]);
+    // A 24 × 28 sprite at 4 CSS px a pixel on a wide screen: 96 × 112.
+    expect([parseFloat(catcher.style.width), parseFloat(catcher.style.height)]).toEqual([96, 112]);
+    expect(catcher.querySelector("svg")!.getAttribute("viewBox")).toBe("0 0 24 28");
     expect(catcher.querySelectorAll("[data-catcher-pose]")).toHaveLength(3);
     expect(catcher.querySelectorAll("rect").length).toBeGreaterThan(20);
     const on = (target: Element | null) => animations.filter((animation) => animation.target === target);

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import {
-  CATCHER_SPRITES, COIN_COLORS, COIN_FACE, COIN_GRID, COIN_SPRITE, CELEBRATION_MS, COIN_COUNT, FALL_MS, REDUCED_MS, beadFlights, beadKeyframes, catcherKeyframes, celebrationToPlay,
+  CATCHER, CATCHER_SPRITES, COIN_COLORS, COIN_FACE, COIN_GRID, COIN_SPRITE, CELEBRATION_MS, COIN_COUNT, FALL_MS, REDUCED_MS, beadFlights, beadKeyframes, catcherKeyframes, celebrationToPlay,
   pickCoinLogos, planCatcher, reducedSpots, seedFrom, seededRandom, spriteRuns,
   type CatcherPlan, type CatcherPose, type Point,
 } from "@/lib/compound-celebration/coins";
@@ -97,7 +97,7 @@ function CatcherView({ plan }: { plan: CatcherPlan }) {
   return <div data-catcher="" style={{ position: "absolute", left: plan.startX - plan.width / 2, top: plan.feetY - plan.height,
     width: plan.width, height: plan.height, opacity: 0, zIndex: 6, willChange: "transform, opacity" }}>
     <div data-catcher-tilt="" style={{ position: "absolute", inset: 0, transformOrigin: "50% 100%", willChange: "transform" }}>
-      {POSES.map((pose) => <svg key={pose} data-catcher-pose={pose} viewBox="0 0 12 14" width={plan.width} height={plan.height} shapeRendering="crispEdges"
+      {POSES.map((pose) => <svg key={pose} data-catcher-pose={pose} viewBox={`0 0 ${CATCHER.grid.width} ${CATCHER.grid.height}`} width={plan.width} height={plan.height} shapeRendering="crispEdges"
         style={{ position: "absolute", inset: 0, opacity: pose === "stand" ? 1 : 0 }}>
         {spriteRuns(CATCHER_SPRITES[pose]).map((run) => <rect key={`${run.x}-${run.y}`} x={run.x} y={run.y} width={run.width} height={1} fill={run.color} />)}
       </svg>)}

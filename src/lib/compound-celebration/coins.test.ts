@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  CATCHER, CATCHER_SPRITES, coinSymbol, CELEBRATION_MS, COIN_COLORS, COIN_COUNT, COIN_FACE, COIN_GRID, COIN_SIZE, COIN_SPRITE, FALL_MS, KNOCK_COIN_SIZE, coinPixel,
+  CATCHER, CATCHER_COLORS, CATCHER_SPRITES, coinSymbol, CELEBRATION_MS, COIN_COLORS, COIN_COUNT, COIN_FACE, COIN_GRID, COIN_SIZE, COIN_SPRITE, FALL_MS, KNOCK_COIN_SIZE, coinPixel,
   PHYSICS, REDUCED_COINS, SAMPLE_MS, STAGGER_MS, STOCK_COIN_LOGOS, beadFlights, beadKeyframes, catcherKeyframes, celebrationToPlay,
   pickCoinLogos, planCatcher, reducedSpots, seedFrom, seededRandom, spriteRuns, stockTicker, type BeadFlight,
 } from "./coins";
@@ -191,7 +191,13 @@ describe("the little character", () => {
     const flights = beadFlights(14, from, view, rand);
     return { flights, plan: planCatcher(flights, from, view, rand) };
   };
-  it("has three 12 × 14 poses in the app's colours", () => {
+  it("has three 24 × 28 poses in the app's colours, outlined, with a lit and a shaded side", () => {
+    expect(CATCHER.grid).toEqual({ width: 24, height: 28 });
+    for (const rows of Object.values(CATCHER_SPRITES)) {
+      const keys = new Set(rows.join(""));
+      for (const key of ["O", "Y", "L", "y", "K", "W", "E", "C", "B", "b"]) expect(keys.has(key)).toBe(true);
+      for (const key of keys) if (key !== ".") expect(CATCHER_COLORS[key]).toMatch(/^#[0-9a-f]{6}$/);
+    }
     for (const rows of Object.values(CATCHER_SPRITES)) {
       expect(rows).toHaveLength(CATCHER.grid.height);
       for (const row of rows) expect(row).toHaveLength(CATCHER.grid.width);
@@ -205,7 +211,7 @@ describe("the little character", () => {
       const { flights, plan } = setup(seed);
       expect(plan.startX).toBe(origin.x);
       expect(plan.feetY).toBe(viewport.height - CATCHER.feetMargin);
-      expect(plan.pixel).toBe(6);
+      expect(plan.pixel).toBe(4);
       expect(plan.catches.length).toBeGreaterThanOrEqual(1);
       expect(plan.catches.length).toBeLessThanOrEqual(CATCHER.maxCatches);
       let x = plan.startX, t = CATCHER.appearMs / 1000;
@@ -277,7 +283,7 @@ describe("the little character", () => {
   });
   it("is smaller on a phone and keeps inside a 390 px screen", () => {
     const { plan } = setup(5, { width: 390, height: 844 }, { x: 195, y: 545 });
-    expect(plan.pixel).toBe(4);
+    expect(plan.pixel).toBe(3);
     expect(plan.knock.size).toBe(KNOCK_COIN_SIZE.narrow);
     for (const frame of plan.frames) {
       expect(frame.x).toBeGreaterThanOrEqual(plan.width / 2);

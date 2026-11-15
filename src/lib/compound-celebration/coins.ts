@@ -241,9 +241,9 @@ export function celebrationToPlay(feedback: { phase: string; signature: string }
   return feedback?.phase === "success" && signature && signature !== lastPlayed ? signature : null;
 }
 
-/** The little pixel character: 12 × 14 sprite pixels, drawn at 6 px a pixel (4 on phones). */
+/** The little pixel character: 24 × 28 sprite pixels, drawn at 4 px a pixel (3 on phones): 96 × 112 (72 × 84). */
 export const CATCHER = Object.freeze({
-  grid: { width: 12, height: 14 }, pixel: { wide: 6, narrow: 4 },
+  grid: { width: 24, height: 28 }, pixel: { wide: 4, narrow: 3 },
   /** Sprite pixels per second, scaled with the screen width like the coins' spread. */
   runSpeed: 540, appearMs: 150, maxCatches: 3, stepMs: 100,
   /** It is hit no earlier than this, and at least `afterCatchMs` after its last catch. */
@@ -376,17 +376,106 @@ export function catcherKeyframes(plan: CatcherPlan): {
 }
 
 /**
- * The character's sprites, one row per string, 12 × 14. Y lemon hoodie, y its shade, K face in shadow, W eyes,
- * C hands, N trousers, B shoes, "." empty. Original pixel art in the app's colours.
+ * The character's sprites, one row per string, 24 × 28 (original pixel art in the app's colours): O outline, Y lemon
+ * hoodie, L its highlight, y its shade, K the face in the hood's shadow, W eyes and drawstrings, E the eyes' shine,
+ * C hands, N trousers, n their shade, B shoes, b soles, "." empty. Generated once (a hood, a face opening, a torso with a
+ * pocket, arms a pixel apart from it, legs), then outlined; kept here as data.
  */
 export const CATCHER_COLORS: Readonly<Record<string, string>> = Object.freeze({
-  Y: "#f3e76b", y: "#c9bd45", K: "#0d0d0c", W: "#f4f0e6", C: "#f4f0e6", N: "#3a4a8c", B: "#98948b",
+  O: "#2a250c", Y: "#f3e76b", L: "#fff6b0", y: "#c9bd45", K: "#0d0d0c", W: "#f4f0e6", E: "#ffffff",
+  C: "#f4d9b8", N: "#3a4a8c", n: "#2a3668", B: "#98948b", b: "#5f5c55",
 });
-const head = ["....YYYY....", "...YYYYYY...", "..YYKKKKYY..", "..YKWKKWKY..", "..YKKKKKKY..", "..yYKKKKYy..", "...yYYYYy..."];
 export const CATCHER_SPRITES: Readonly<Record<CatcherPose, readonly string[]>> = Object.freeze({
-  stand: [...head, "..YYYYYYYY..", ".CyYYYYYYyC.", ".C.YYYYYY.C.", "...yyyyyy...", "...NN..NN...", "...NN..NN...", "..BBB..BBB.."],
-  runA: [...head, "..YYYYYYYY..", "..CYYYYYYy..", "...YYYYYYC..", "...yyyyyy...", "..NN....NN..", ".NN......NN.", ".BB......BB."],
-  runB: [...head, "..YYYYYYYY..", "..yYYYYYYC..", "..CYYYYYY...", "...yyyyyy...", "....NNNN....", "....NN.N....", "...BBB.BB..."],
+  stand: [
+    ".........OOOOOO.........",
+    ".......OOYYYYYYOO.......",
+    "......OYLLYYYYYYyO......",
+    ".....OYLLYYYYYYYyyO.....",
+    "....OYLLYYYYYYYYyyyO....",
+    "....OYLYYYYKKYYYyyyO....",
+    "....OYYYYKKKKKKYyyyO....",
+    "...OYYYYKKKKKKKKyyyyO...",
+    "...OYYYKKEWKKKEWKyyyO...",
+    "....OYYKKWWKKKWWKyyO....",
+    "....OYYYKKKKKKKKyyyO....",
+    "....OYYYYKKKKKKYyyyO....",
+    ".....OYYYYYKKYYYyyO.....",
+    "......OYYYYYYYYYyO......",
+    "...OOO.OYYYYYYYYO.OOO...",
+    "..OYYYOYYYWYYWYyyOYYyO..",
+    "..OYYYOYYYWYYWYyyOYYyO..",
+    "..OYYYOYYYWYYWYyyOYYyO..",
+    "..OYYYOYYYYYYYYyyOYYyO..",
+    "..OYYYOYyyyyyyyyyOYYyO..",
+    "..OyyyOYyYYYYYYyyOyyyO..",
+    "..OCCCOYyYYYYYYyyOCCCO..",
+    "..OCCCOyyyyyyyyyyOCCCO..",
+    "...OOO.ONNNNONNnO.OOO...",
+    ".......ONNNNONNnO.......",
+    ".......ONNNNONNnOO......",
+    "......OBBBBBOBBBBBO.....",
+    "......ObbbbbObbbbbO.....",
+  ],
+  runA: [
+    ".........OOOOOO.........",
+    ".......OOYYYYYYOO.......",
+    "......OYLLYYYYYYyO......",
+    ".....OYLLYYYYYYYyyO.....",
+    "....OYLLYYYYYYYYyyyO....",
+    "....OYLYYYYKKYYYyyyO....",
+    "....OYYYYKKKKKKYyyyO....",
+    "...OYYYYKKKKKKKKyyyyO...",
+    "...OYYYKKEWKKKEWKyyyO...",
+    "....OYYKKWWKKKWWKyyO....",
+    "....OYYYKKKKKKKKyyyO....",
+    "....OYYYYKKKKKKYyyyO....",
+    "...OOOYYYYYKKYYYyyO.....",
+    "..OYYYOYYYYYYYYYyO......",
+    "..OYYYOOYYYYYYYYO.......",
+    "..OYYYOYYYWYYWYyyOOOO...",
+    "..OYYYOYYYWYYWYyyOYYyO..",
+    "..OYYYOYYYWYYWYyyOYYyO..",
+    "..OyyyOYYYYYYYYyyOYYyO..",
+    "..OCCCOYyyyyyyyyyOYYyO..",
+    "..OCCCOYyYYYYYYyyOYYyO..",
+    "...OOOOYyYYYYYYyyOyyyO..",
+    "......OyyyyyyyyyyOCCCO..",
+    "......ONNNNOOnnnnOCCCO..",
+    ".....OONNNNOOnnnnOOOO...",
+    "...OONNNNOO..OOnnnnOO...",
+    "..OBBBBBO......OBBBBBO..",
+    "..ObbbbbO......ObbbbbO..",
+  ],
+  runB: [
+    ".........OOOOOO.........",
+    ".......OOYYYYYYOO.......",
+    "......OYLLYYYYYYyO......",
+    ".....OYLLYYYYYYYyyO.....",
+    "....OYLLYYYYYYYYyyyO....",
+    "....OYLYYYYKKYYYyyyO....",
+    "....OYYYYKKKKKKYyyyO....",
+    "...OYYYYKKKKKKKKyyyyO...",
+    "...OYYYKKEWKKKEWKyyyO...",
+    "....OYYKKWWKKKWWKyyO....",
+    "....OYYYKKKKKKKKyyyO....",
+    "....OYYYYKKKKKKYyyyO....",
+    ".....OYYYYYKKYYYyyOOO...",
+    "......OYYYYYYYYYyOYYyO..",
+    ".......OYYYYYYYYOOYYyO..",
+    "...OOOOYYYWYYWYyyOYYyO..",
+    "..OYYYOYYYWYYWYyyOYYyO..",
+    "..OYYYOYYYWYYWYyyOYYyO..",
+    "..OYYYOYYYYYYYYyyOyyyO..",
+    "..OYYYOYyyyyyyyyyOCCCO..",
+    "..OYYYOYyYYYYYYyyOCCCO..",
+    "..OyyyOYyYYYYYYyyOOOO...",
+    "..OCCCOyyyyyyyyyyO......",
+    "..OCCCOOONNNNnnOO.......",
+    "...OOO..ONNNNnnO........",
+    ".........ONNNNO.........",
+    "........OBBBBBBO........",
+    "........ObbbbbbO........",
+  ],
 });
 
 /** Sprite rows as runs of same-coloured pixels (fewer SVG rects than one per pixel). */
