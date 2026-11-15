@@ -26,7 +26,7 @@ import { fetchTokenPricesUsd } from "@sofinance/engine/token-prices";
 import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
 import { DEX_DESCRIPTORS } from "@/lib/dex/descriptors";
 import { createDexDescriptorRegistry } from "@/lib/dex/registry";
-import { AddValueTooLowError, assessAddValue } from "@/lib/dex/add-value-guard";
+import { AddValueBlockedError, assessAddValue } from "@/lib/dex/add-value-guard";
 
 const MIN_JUPITER_SWAP = minJupiterSwapAmount(SLIPPAGE_BPS);
 /**
@@ -131,7 +131,7 @@ async function assertAddValue(state: SelectedPositionState, input: bigint,
     deposit: [a(amounts.requiredA), b(amounts.requiredB)],
     buffer: [a(amounts.outA - amounts.requiredA), b(amounts.outB - amounts.requiredB)],
   });
-  if (result.kind === "too-low" || result.kind === "unpriced") throw new AddValueTooLowError(result.message);
+  if (result.kind !== "ok") throw new AddValueBlockedError(result.kind, result.message);
 }
 
 type SwapLeg = { inputMint: string; outputMint: string; spend: bigint; feeAmount: bigint; feeInRoute?: boolean; minOut: bigint; route: QuoteRoute | null };

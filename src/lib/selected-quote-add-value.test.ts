@@ -12,7 +12,7 @@ vi.mock("@sofinance/engine/swap/jupiter", async (importOriginal) => ({
 import type { SelectedPositionState } from "@sofinance/engine/selected-state";
 import { buildRoute, quoteRoute } from "@sofinance/engine/swap/jupiter";
 import { getSelectedQuoteBundle, isNarrowRange, type UsdPriceReader } from "./selected-quote";
-import { ADD_VALUE_TOO_LOW_CODE, ADD_VALUE_UNPRICED_MESSAGE, ADD_VALUE_UNPRICED_NARROW_MESSAGE, AddValueTooLowError } from "./dex/add-value-guard";
+import { ADD_VALUE_TOO_LOW_CODE, ADD_VALUE_UNPRICED_CODE, ADD_VALUE_UNPRICED_MESSAGE, ADD_VALUE_UNPRICED_NARROW_MESSAGE, AddValueBlockedError } from "./dex/add-value-guard";
 import { publicErrorCode, sanitizePublicError } from "./public-error";
 
 // LJ's 2026-11-15 12:44 add (Asia/Taipei): 400 USDC into the INTCx/INTC 1 bps pool 9Ur3…C41K, position range
@@ -79,7 +79,7 @@ describe("Add value floor (independent USD prices, before anything is built or s
   it("blocks a swap that would hand back far less than the input is worth, even with a 0% reported impact", async () => {
     routesAt(STOCK_USD * 60); // ~$6.6 of INTCx for 400 USDC, the shape the wallet warned about
     const error = await add(state(), market).catch((caught: unknown) => caught);
-    expect(error).toBeInstanceOf(AddValueTooLowError);
+    expect(error).toBeInstanceOf(AddValueBlockedError);
     const message = sanitizePublicError(error, "Quote failed");
     expect(message).toMatch(/^Only about \$6\.\d\d of your \$400 would go into this position \(plus about \$0\.\d\d left in your wallet\), because the swap price/);
     expect(message).toMatch(/Nothing was sent\. Try a smaller amount\.$/);
@@ -91,7 +91,7 @@ describe("Add value floor (independent USD prices, before anything is built or s
     routesAt(STOCK_USD * 1.02);
     await expect(add(state(), market)).resolves.toBeDefined();
     routesAt(STOCK_USD * 1.035);
-    await expect(add(state(), market)).rejects.toBeInstanceOf(AddValueTooLowError);
+    await expect(add(state(), market)).rejects.toBeInstanceOf(AddValueBlockedError);
   });
 
   describe("1-tick range", () => {
@@ -111,16 +111,22 @@ describe("Add value floor (independent USD prices, before anything is built or s
       expect(BigInt(quote.requiredB)).toBeGreaterThan(0n);
       // The pool tokens are actually worth much less than the routes assumed: blocked, though no route touches the pool.
       const cheap: UsdPriceReader = async () => new Map([[USDC, 1], [INTCX, STOCK_USD * 0.9], [INTC, STOCK_USD * 0.9]]);
-      await expect(add(inside, cheap)).rejects.toBeInstanceOf(AddValueTooLowError);
+      await expect(add(inside, cheap)).rejects.toBeInstanceOf(AddValueBlockedError);
     });
 
     it("fails closed when prices are missing on both one-tick and wider ranges", async () => {
       routesAt(STOCK_USD);
       const error = await add(state(), noPrices).catch((caught: unknown) => caught);
       expect(sanitizePublicError(error, "Quote failed")).toBe(ADD_VALUE_UNPRICED_NARROW_MESSAGE);
+      // Its own code, so a price feed outage is not reported as a bad swap.
+      expect(publicErrorCode(error)).toBe(ADD_VALUE_UNPRICED_CODE);
+      expect(ADD_VALUE_UNPRICED_CODE).not.toBe(ADD_VALUE_TOO_LOW_CODE);
       const wide = state({ tickLower: -46056, tickUpper: -46040, lowerSqrtX64: TickUtil.getSqrtPriceAtTick(-46056).toString(),
         upperSqrtX64: TickUtil.getSqrtPriceAtTick(-46040).toString() });
-      await expect(add(wide, noPrices)).rejects.toThrow(ADD_VALUE_UNPRICED_MESSAGE);
+      const wideError = await add(wide, noPrices).catch((caught: unknown) => caught);
+      expect(wideError).toBeInstanceOf(AddValueBlockedError);
+      expect((wideError as Error).message).toBe(ADD_VALUE_UNPRICED_MESSAGE);
+      expect(publicErrorCode(wideError)).toBe(ADD_VALUE_UNPRICED_CODE);
     });
   });
 });

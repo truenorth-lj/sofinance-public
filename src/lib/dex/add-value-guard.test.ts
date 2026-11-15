@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-import { ADD_VALUE_FLOOR_BPS, ADD_VALUE_UNPRICED_MESSAGE, ADD_VALUE_UNPRICED_NARROW_MESSAGE, AddValueTooLowError, addValueTooLowMessage, assessAddValue } from "./add-value-guard";
+import { ADD_VALUE_FLOOR_BPS, ADD_VALUE_UNPRICED_MESSAGE, ADD_VALUE_UNPRICED_NARROW_MESSAGE, ADD_VALUE_TOO_LOW_CODE, ADD_VALUE_UNPRICED_CODE, AddValueBlockedError, addValueTooLowMessage, assessAddValue } from "./add-value-guard";
 import { dexDescriptors } from "./client";
-import { sanitizePublicError } from "../public-error";
+import { publicErrorCode, sanitizePublicError } from "../public-error";
 
 const token = (units: number, usd: number | null = 1) => ({ raw: BigInt(Math.round(units * 1e6)), decimals: 6, usd });
 const check = (deposit: number, buffer = 0, narrowRange = false) => assessAddValue({
@@ -50,8 +50,11 @@ describe("Add market-value floor", () => {
       expect(message).not.toMatch(/backtest|\bearn\b|\byield\b|auto-rebalance|guarantee|cancel(?:led|ed)|https?:|\b\d{4,}\b|add_value_/i);
       expect(message).toMatch(/Nothing was sent/);
       expect(message).toMatch(/Try /);
-      expect(sanitizePublicError(new AddValueTooLowError(message), "Add failed")).toBe(message);
+      expect(sanitizePublicError(new AddValueBlockedError("too-low", message), "Add failed")).toBe(message);
     }
+    expect(publicErrorCode(new AddValueBlockedError("too-low", messages[0]!))).toBe(ADD_VALUE_TOO_LOW_CODE);
+    expect(publicErrorCode(new AddValueBlockedError("unpriced", ADD_VALUE_UNPRICED_MESSAGE))).toBe(ADD_VALUE_UNPRICED_CODE);
+    expect(ADD_VALUE_UNPRICED_CODE).not.toBe(ADD_VALUE_TOO_LOW_CODE);
     expect(messages[0]).toBe("Only about $6.00 of your $400 would go into this position (plus about $0.40 left in your wallet), because the swap price for this amount is too far from the market price. Nothing was sent. Try a smaller amount.");
   });
 });

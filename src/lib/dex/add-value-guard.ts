@@ -84,12 +84,18 @@ export function assessAddValue(check: AddValueInput): AddValueResult {
 }
 
 export const ADD_VALUE_TOO_LOW_CODE = "add_value_too_low";
+/** Separate from too-low so logs and alerts tell a bad swap apart from a price feed outage. */
+export const ADD_VALUE_UNPRICED_CODE = "add_value_unpriced";
+
+const ADD_VALUE_BLOCK_CODES = { "too-low": ADD_VALUE_TOO_LOW_CODE, unpriced: ADD_VALUE_UNPRICED_CODE } as const;
+type AddValueBlockKind = keyof typeof ADD_VALUE_BLOCK_CODES;
 
 /** Thrown before an Add is built or signed when `assessAddValue` blocks it. The message is the plain reason. */
-export class AddValueTooLowError extends Error {
-  readonly code = ADD_VALUE_TOO_LOW_CODE;
-  constructor(message: string) {
+export class AddValueBlockedError extends Error {
+  readonly code: (typeof ADD_VALUE_BLOCK_CODES)[AddValueBlockKind];
+  constructor(kind: AddValueBlockKind, message: string) {
     super(message);
-    this.name = "AddValueTooLowError";
+    this.name = "AddValueBlockedError";
+    this.code = ADD_VALUE_BLOCK_CODES[kind];
   }
 }
