@@ -10,7 +10,6 @@ import { persistCompoundAttempt } from "@sofinance/engine/compound-attempt";
 import { compoundHistoryFixture } from "@/lib/test-support/compound-history-fixture";
 import { testKeypair } from "@/lib/test-support/send-fixtures";
 import { USDC_MINT } from "@sofinance/engine/ids";
-import { clearReportCache } from "./portfolio/report-cache";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/app" }));
 vi.mock("./use-sol-usdc-price", () => ({ useSolUsdcPrices: () => ({ rate: null, usdcUsd: null }) }));
@@ -60,7 +59,14 @@ function serve(confirmation: Record<string, unknown>) {
   vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input), "http://x");
     paths.push(url.pathname);
-    if (url.pathname === "/api/position-performance") reportMints.push(url.searchParams.get("positionMint") ?? (typeof init?.body === "string" ? (JSON.parse(init.body) as { positionMint?: string }).positionMint ?? "" : ""));
+    if (url.pathname === "/api/portfolio") {
+      const request = JSON.parse(String(init?.body)) as { wallet: string; positions: { key: string }[] };
+      reportMints.push(...request.positions.map((item) => item.key.split(":")[1]!));
+      await new Promise((resolve) => setTimeout(resolve, latencyMs));
+      return Response.json({ wallet: request.wallet, positions: request.positions.map(({ key }) => ({ key, status: "ready",
+        figures: { stock: "TSLA", shares: 1, valueUsd: 100, unclaimedFeesUsd: 1, cumulativeFeesUsd: 2 },
+        evaluatedAt: new Date().toISOString(), historyComplete: true, historyRefreshResolved: true })) });
+    }
     await new Promise((resolve) => setTimeout(resolve, latencyMs));
     const body = typeof init?.body === "string" ? JSON.parse(init.body) as { positionMint?: string } : {};
     const positionMint = url.searchParams.get("positionMint") || body.positionMint || fixture.state.positionMint;
@@ -82,7 +88,7 @@ async function open(initialMint = "") {
 
 beforeEach(() => {
   vi.useFakeTimers(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); window.localStorage.clear();
-  fixture = compoundHistoryFixture(); wallet = fixture.wallet; paths = []; reportMints = []; clearReportCache();
+  fixture = compoundHistoryFixture(); wallet = fixture.wallet; paths = []; reportMints = [];
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); });
@@ -92,9 +98,9 @@ describe("opening the Compound fees tab reads each position source once", () => 
     serve({ status: "pending", chainStatus: "pending", state: null });
     await open(fixture.state.positionMint);
     // The registry DEX (Meteora, dex route on by default) is read exactly once per wallet; the Raydium reads are unchanged.
-    // Portfolio's summary reads one Performance report per position (two Raydium positions here), once each.
-    expect([...paths].sort()).toEqual(["/api/compound-state", "/api/dex/meteora-dlmm/positions", "/api/position-performance", "/api/position-performance", "/api/selected-state", "/api/wallet"]);
-    expect(paths.filter((path) => !path.startsWith("/api/dex/") && path !== "/api/position-performance")).toEqual(["/api/wallet", "/api/selected-state", "/api/compound-state"]);
+    // The two Raydium rows share one compact Portfolio request.
+    expect([...paths].sort()).toEqual(["/api/compound-state", "/api/dex/meteora-dlmm/positions", "/api/portfolio", "/api/selected-state", "/api/wallet"]);
+    expect(paths.filter((path) => !path.startsWith("/api/dex/") && path !== "/api/portfolio")).toEqual(["/api/wallet", "/api/selected-state", "/api/compound-state"]);
     expect(new Set(reportMints)).toEqual(new Set([otherMint, fixture.state.positionMint]));
   });
 
@@ -112,11 +118,12 @@ describe("opening the Compound fees tab reads each position source once", () => 
     await act(async () => refresh.click());
     for (let step = 0; step < 20; step++) await advance(100);
     expect(reportMints.slice(loaded).sort()).toEqual([otherMint, fixture.state.positionMint].sort());
-    // A confirmed compound on the selected position reads only that position's report again.
+    // A confirmed compound re-reads the aggregate, so totals and every row stay on the same response.
     const refreshed = reportMints.length;
     await act(async () => compoundProbe.onConfirmed?.());
     for (let step = 0; step < 20; step++) await advance(100);
-    expect(reportMints.slice(refreshed)).toEqual([fixture.state.positionMint]);
+    expect(reportMints.slice(refreshed).sort()).toEqual([otherMint, fixture.state.positionMint].sort());
+    expect(count("/api/portfolio")).toBe(3);
   });
 
   it("a saved compound that already finalized is checked once, and its fresh position read replaces a second compound read", async () => {

@@ -1,7 +1,9 @@
 import type { PoolDailyAprResult } from "@/lib/pool-daily-apr";
 import type { PoolSource } from "@/lib/pool-sources/types";
 import type { Lease, RwaStore } from "@/lib/rwa-store-types";
-import type { UnifiedPosition } from "@/lib/unified-positions/model";
+import type { PortfolioRequest, PortfolioReader } from "@/lib/portfolio/model";
+import { positionFigures } from "@/lib/portfolio/figures";
+import type { PositionKey, UnifiedPosition } from "@/lib/unified-positions/model";
 import type { DexAdapter } from "./adapter";
 import { feePolicyProblems } from "./fees";
 import { normalizeDexId, type DexCapabilities, type DexDescriptor, type DexId } from "./types";
@@ -10,6 +12,8 @@ import { normalizeDexId, type DexCapabilities, type DexDescriptor, type DexId } 
 export type DexModule = {
   descriptor: DexDescriptor;
   adapter?: () => Promise<DexAdapter>;
+  /** Compact Portfolio reader; a dedicated binding does not enable generic trading routes. */
+  preparePortfolio?: (input: PortfolioRequest, signal: AbortSignal) => Promise<PortfolioReader>;
   poolSource?: PoolSource;
   /**
    * Daily fee APR series for one of this DEX's pools (same shape as the Raydium series of /api/pool-daily-apr), or
@@ -57,6 +61,7 @@ export type DexDescriptorRegistry = {
 
 export type DexRegistry = DexDescriptorRegistry & {
   adapterFor(id: string): Promise<DexAdapter | null>;
+  preparePortfolio(id: string, input: PortfolioRequest, signal: AbortSignal): Promise<PortfolioReader | null>;
   /**
    * True only when this id is a registered module whose `enabled(op)` hook returned false.
    * Unknown ids and modules with no hook are not disabled, so the route can still resolve a
@@ -138,6 +143,24 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
       const canonical = normalizeDexId(id);
       const entry = canonical ? byId.get(canonical) : undefined;
       return entry?.adapter ? entry.adapter() : null;
+    },
+    async preparePortfolio(id: string, input: PortfolioRequest, signal: AbortSignal): Promise<PortfolioReader | null> {
+      const canonical = normalizeDexId(id);
+      const entry = canonical ? byId.get(canonical) : undefined;
+      if (!entry) return null;
+      if (entry.preparePortfolio) return entry.preparePortfolio(input, signal);
+      const { capabilities, ui } = entry.descriptor;
+      if (capabilities.signer !== "solana-wallet" || ui?.listPositions === false || !capabilities.performance.supported
+        || (entry.enabled && !entry.enabled("performance"))) return null;
+      const adapter = await entry.adapter?.();
+      if (!adapter) return null;
+      return async (position, readSignal) => {
+        const result = await adapter.performance(position.key as PositionKey, { signal: readSignal });
+        const figures = positionFigures(result.report);
+        if (result.partial) figures.cumulativeFeesUsd = null;
+        return { figures, evaluatedAt: result.report?.evaluatedAtIso ?? null, historyComplete: !result.partial,
+          historyRefreshResolved: false };
+      };
     },
     isDisabled(id: string, op: string) {
       const canonical = normalizeDexId(id);

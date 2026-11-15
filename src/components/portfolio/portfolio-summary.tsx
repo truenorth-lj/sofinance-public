@@ -35,7 +35,7 @@ function Total({ value, totals }: { value: number | null; totals: PortfolioTotal
 function Note({ totals }: { totals: PortfolioTotals }) {
   if (totals.pending) return <p role="status" data-testid="portfolio-loading" className="mt-1 flex items-center gap-1.5 text-xs text-smoke">
     <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />Loading {totals.positions - totals.pending} of {totals.positions} positions…</p>;
-  if (totals.missing) return <p className="mt-1 text-xs text-smoke">{count(totals.missing)} could not be read and {totals.missing === 1 ? "is" : "are"} not included.</p>;
+  if (totals.missing) return <p className="mt-1 text-xs text-smoke">Some values are unavailable for {count(totals.missing)}; totals include available values only.</p>;
   return null;
 }
 

@@ -56,7 +56,7 @@ export function portfolioTotals(states: readonly FiguresState[], extraValue: rea
     ? values.reduce<number>((total, value) => total + (value ?? 0), 0) : null;
   const values = [...ready.map((item) => item.valueUsd), ...extraValue];
   const missing = states.filter((state) => state.status === "failed").length
-    + ready.filter((item) => item.valueUsd === null).length + extraValue.filter((value) => value === null).length;
+    + ready.filter((item) => item.valueUsd === null || item.unclaimedFeesUsd === null || item.cumulativeFeesUsd === null).length + extraValue.filter((value) => value === null).length;
   return {
     positions: states.length + extraValue.length,
     valueUsd: sum(values),

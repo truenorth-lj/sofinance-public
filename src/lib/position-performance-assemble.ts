@@ -54,6 +54,8 @@ export async function priceAndLabel(input: {
   jupiterApiKey?: string;
   /** When set, fill a missing mint from the Raydium pool mid / stable-USD fallback (engine helper, fail-soft). */
   raydiumPoolId?: string;
+  /** A portfolio read shares one price batch across all positions. */
+  quotes?: ReadonlyMap<string, TokenPriceQuote>;
 }): Promise<{
   quotes: Map<string, TokenPriceQuote>;
   priceUsdA: number | null;
@@ -70,7 +72,7 @@ export async function priceAndLabel(input: {
   let quotes = new Map<string, TokenPriceQuote>();
   if (!input.skipPricing) {
     try {
-      quotes = await fetchTokenPricesUsd([input.mintA, input.mintB], input.fetcher, input.jupiterApiKey ?? getJupiterApiKey());
+      quotes = input.quotes ? new Map(input.quotes) : await fetchTokenPricesUsd([input.mintA, input.mintB], input.fetcher, input.jupiterApiKey ?? getJupiterApiKey());
       let quoteA = quotes.get(input.mintA);
       let quoteB = quotes.get(input.mintB);
       if (input.raydiumPoolId && (!quoteA || !quoteB)) {

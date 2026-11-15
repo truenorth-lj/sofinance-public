@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => {
 vi.mock("./use-sol-usdc-price", () => ({ useSolUsdcPrices: () => ({ rate: null, usdcUsd: null }) }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/app" }));
 vi.mock("./use-token-metadata", () => ({ useTokenMetadata: () => ({}) }));
-vi.mock("@/lib/position-history-refresh", () => ({ notifyPositionHistoryChange: mocks.historyChange }));
+vi.mock("@/lib/position-history-refresh", async original => ({ ...await original<typeof import("@/lib/position-history-refresh")>(), notifyPositionHistoryChange: mocks.historyChange }));
 vi.mock("./wallet-connection", () => ({ useWalletConnection: () => ({ address: withdrawWallet, connected: true, signTransaction: mocks.sign, connect: vi.fn() }) }));
 vi.mock("./use-selected-controller", () => ({ useSelectedController: () => {
   const { state, selection } = useSyncExternalStore(mocks.subscribe, mocks.getSnapshot);
@@ -59,7 +59,7 @@ afterEach(async () => { await act(async () => root.unmount()); container.remove(
 // the Raydium withdrawal runs, and that read must not consume or trigger a Raydium response.
 const DEX_POSITIONS = "/api/dex/meteora-dlmm/positions";
 // Rows read their performance reports for their values; that read is not part of the withdrawal.
-const REPORTS = "/api/position-performance";
+const REPORTS = "/api/portfolio";
 const urlOf = (input: unknown) => new URL(String(input), "http://x").pathname;
 // Withdraw is the position row's popup (LJ 11/14).
 async function renderWithdraw() {

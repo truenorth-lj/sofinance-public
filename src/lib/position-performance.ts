@@ -34,12 +34,17 @@ import {
   priceAndLabel,
   resolveSymbols,
 } from "./position-performance-assemble";
+import type { ClmmPositionAccounts } from "@sofinance/engine/protocols/types";
+import type { TokenPriceQuote } from "@sofinance/engine/token-prices";
+import type { PositionFigures } from "./portfolio/figures";
 import { resetRpcCache } from "@sofinance/engine/rpc/cache";
 import { createHistoryRpcConnections } from "./position-history-rpc";
 
 // At four public-RPC starts/second, 500 details cannot finish within the shared
 // fifty-second deadline. Durable reads checkpoint in bounded chunks instead.
 const MAX_PACED_HISTORY_DETAILS = 100;
+// Two Portfolio readers share a public RPC pacer; small checkpoints fit the 12-second row deadline.
+const PORTFOLIO_HISTORY_DETAILS = 8;
 export { DEFAULT_MAX_SIGNATURES, MAX_PERFORMANCE_SIGNATURES, PERFORMANCE_READ_TIMEOUT_MS, describePositionPricing } from "./position-performance-assemble";
 export { JUPITER_PRICE_V3 };
 export const RAYDIUM_POOL_IDS = "https://api-v3.raydium.io/pools/info/ids";
@@ -139,24 +144,28 @@ export type GetPositionPerformanceOptions = {
   signal?: AbortSignal;
 };
 
-async function fetchRaydiumPoolSymbols(
-  poolId: string,
-  fetcher: typeof fetch,
-): Promise<{ symbolA: string | null; symbolB: string | null }> {
-  const url = `${RAYDIUM_POOL_IDS}?ids=${encodeURIComponent(poolId)}`;
+/** Pool labels keep the same precedence in a single-position detail and a portfolio batch. */
+export async function fetchRaydiumPoolSymbolsBatch(poolIds: readonly string[], fetcher: typeof fetch = fetch) {
+  const symbols = new Map<string, { symbolA: string | null; symbolB: string | null }>();
+  if (!poolIds.length) return symbols;
   try {
-    const response = await fetcher(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(5_000) });
-    if (!response.ok) return { symbolA: null, symbolB: null };
-    const body = (await response.json()) as {
-      data?: Array<{ mintA?: { symbol?: string }; mintB?: { symbol?: string } } | null>;
-    };
-    const pool = body.data?.[0];
-    const symbolA = typeof pool?.mintA?.symbol === "string" ? pool.mintA.symbol.trim() : null;
-    const symbolB = typeof pool?.mintB?.symbol === "string" ? pool.mintB.symbol.trim() : null;
-    return { symbolA: symbolA || null, symbolB: symbolB || null };
-  } catch {
-    return { symbolA: null, symbolB: null };
-  }
+    const response = await fetcher(`${RAYDIUM_POOL_IDS}?ids=${encodeURIComponent([...new Set(poolIds)].join(","))}`, {
+      headers: { Accept: "application/json" }, signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) return symbols;
+    const body = await response.json() as { data?: Array<{ id?: string; mintA?: { symbol?: string }; mintB?: { symbol?: string } } | null> };
+    for (const pool of body.data ?? []) {
+      if (!pool) continue;
+      const id = pool.id ?? (poolIds.length === 1 ? poolIds[0] : undefined);
+      if (!id || !poolIds.includes(id)) continue;
+      symbols.set(id, { symbolA: pool.mintA?.symbol?.trim() || null, symbolB: pool.mintB?.symbol?.trim() || null });
+    }
+  } catch { /* Metadata failure leaves symbols unknown, never a fabricated stock pair. */ }
+  return symbols;
+}
+
+async function fetchRaydiumPoolSymbols(poolId: string, fetcher: typeof fetch) {
+  return (await fetchRaydiumPoolSymbolsBatch([poolId], fetcher)).get(poolId) ?? { symbolA: null, symbolB: null };
 }
 
 async function walletOwnsNft(connection: Connection, wallet: PublicKey, mint: PublicKey): Promise<boolean> {
@@ -181,9 +190,42 @@ export async function getPositionPerformance(
   positionMint: string,
   options: GetPositionPerformanceOptions = {},
 ): Promise<PositionPerformanceResult> {
+  return assemblePerformanceResult(await readPositionValuation(positionMint, options));
+}
+
+/** Reuse the valuation and history contracts without building entry prices, APR series or a detail report. */
+export async function getPositionFigures(positionMint: string, options: PositionValuationOptions = {}) {
+  // Public valuation does not need the NFT-owner read; transaction endpoints still verify ownership.
+  const data = await readPositionValuation(positionMint, { ...options, wallet: undefined, historyDetailBudget: PORTFOLIO_HISTORY_DETAILS });
+  const equivalent = data.tokenNative.tokenEquivalent;
+  const finite = (value: number | null | undefined) => typeof value === "number" && Number.isFinite(value) ? value : null;
+  const historyComplete = !data.stockIncomplete;
+  const figures: PositionFigures = {
+    stock: equivalent?.baseSymbol ?? null,
+    shares: finite(equivalent?.metrics.equity),
+    valueUsd: finite(data.metrics.currentEquityUsd),
+    unclaimedFeesUsd: finite(data.metrics.uncollectedFeesUsd),
+    cumulativeFeesUsd: !historyComplete ? null : finite(data.metrics.feesEarnedUsd),
+  };
+  return { figures, evaluatedAt: new Date(data.identity.evaluatedAt * 1000).toISOString(),
+    historyComplete, historyRefreshResolved: options.historyAfterSignatures?.length
+      ? data.historyFetch.refreshSignaturesResolved === true : historyComplete,
+    timings: { totalMs: Date.now() - data.started, accountsMs: data.accountsMs, historyMs: data.historyFetch.elapsedMs,
+      pricingMs: data.pricingMs, metadataMs: Date.now() - data.metadataStarted }, historyFetch: data.historyFetch };
+}
+
+type PositionValuationOptions = GetPositionPerformanceOptions & {
+  snapshot?: ClmmPositionAccounts;
+  prices?: ReadonlyMap<string, TokenPriceQuote>;
+  symbols?: { symbolA: string | null; symbolB: string | null };
+  accountConnection?: Connection;
+  historyDetailBudget?: number;
+};
+
+async function readPositionValuation(positionMint: string, options: PositionValuationOptions): Promise<Parameters<typeof assemblePerformanceResult>[0]> {
   const started = Date.now();
   // A browser refresh after a trade can land on another serverless instance.
-  if (options.refreshHistory || options.historyAfterSignatures?.length) resetRpcCache();
+  if (!options.snapshot && (options.refreshHistory || options.historyAfterSignatures?.length)) resetRpcCache();
   const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(PERFORMANCE_READ_TIMEOUT_MS)]) : AbortSignal.timeout(PERFORMANCE_READ_TIMEOUT_MS);
   const connection = options.connection ?? rpcConnection(undefined, { signal });
   const maxSignatures = capMaxSignatures(options.maxSignatures);
@@ -191,7 +233,8 @@ export async function getPositionPerformance(
   const nowSeconds = options.nowSeconds ?? Math.floor(Date.now() / 1000);
 
   const mint = new PublicKey(positionMint);
-  const snapshot = await readRaydiumPositionAccounts(positionMint, connection);
+  const accounts = options.accountConnection ?? connection;
+  const snapshot = options.snapshot ?? await readRaydiumPositionAccounts(positionMint, accounts);
   const positionPda = new PublicKey(snapshot.positionAccount);
 
   const accountsMs = Date.now() - started;
@@ -202,7 +245,7 @@ export async function getPositionPerformance(
   const [fetched, uncollected, ownsNft] = await Promise.all([loadPerformanceHistory({
     address: positionPda,
     maxSignatures,
-    maxDetailRequests: options.connection ? undefined : MAX_PACED_HISTORY_DETAILS,
+    maxDetailRequests: options.historyDetailBudget ?? (options.connection ? undefined : MAX_PACED_HISTORY_DETAILS),
     connection,
     provider,
     fallbackConnection,
@@ -221,8 +264,8 @@ export async function getPositionPerformance(
         rpcMetrics: () => connections.observer.snapshot(),
         receiptProvider: (signature: string) => connections.observer.receiptProvider(signature) };
     } : undefined,
-  }), readRaydiumUncollectedFees(connection, snapshot),
-  options.wallet ? walletOwnsNft(connection, new PublicKey(options.wallet), mint) : Promise.resolve(null)]);
+  }), readRaydiumUncollectedFees(accounts, snapshot),
+  options.wallet ? walletOwnsNft(accounts, new PublicKey(options.wallet), mint) : Promise.resolve(null)]);
   const truncated = fetched.truncated;
   const history: PositionHistoryEvent[] = fetched.history;
 
@@ -239,7 +282,7 @@ export async function getPositionPerformance(
   const mintB = snapshot.mintB;
   const priced = await priceAndLabel({
     mintA, mintB, skipPricing: options.skipPricing, fetcher,
-    jupiterApiKey: options.jupiterApiKey, raydiumPoolId: snapshot.poolId,
+    jupiterApiKey: options.jupiterApiKey, raydiumPoolId: snapshot.poolId, quotes: options.prices,
   });
   const { priceUsdA, priceUsdB, quotes, pricingMs } = priced;
 
@@ -260,7 +303,7 @@ export async function getPositionPerformance(
   });
 
   const metadataStarted = Date.now();
-  const { symbolA, symbolB } = await resolveSymbols({
+  const { symbolA, symbolB } = options.symbols ?? await resolveSymbols({
     mintA, mintB, fetcher, jupiterApiKey: options.jupiterApiKey, metadata: "fill-missing",
     prefetch: () => fetchRaydiumPoolSymbols(snapshot.poolId, fetcher),
   });
@@ -290,7 +333,7 @@ export async function getPositionPerformance(
   });
 
   const incomplete = Boolean(historyStore && truncated) || fetched.metric.refreshSignaturesResolved === false;
-  return assemblePerformanceResult({
+  return {
     identity: {
       wallet: options.wallet ?? null,
       ownsNft,
@@ -340,5 +383,5 @@ export async function getPositionPerformance(
     accountsMs,
     pricingMs,
     metadataStarted,
-  });
+  };
 }

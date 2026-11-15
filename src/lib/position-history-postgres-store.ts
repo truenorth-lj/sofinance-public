@@ -76,6 +76,10 @@ export class PostgresPositionHistoryStore implements PositionHistoryStore {
     const metadataBytes = Buffer.byteLength(JSON.stringify(result));
     if (metadataBytes > MAX_POSITION_HISTORY_RESPONSE_BYTES)
       throw new PositionHistoryStoreError("POSITION_HISTORY_RESPONSE_TOO_LARGE");
+    // Warm ledgers need no receipt replay. Avoid a further database round trip
+    // after the bounded metadata already proves every row is current.
+    if (!rows.some((transaction) => transaction.status !== "ignored"
+      && (transaction.status === "pending" || transaction.parserVersion !== parserVersion))) return result;
     const receiptBudget = MAX_POSITION_HISTORY_RESPONSE_BYTES - metadataBytes;
     // Measure raw JSON in PostgreSQL before loading it into the gateway process. A giant
     // individual receipt is omitted before the cumulative sum so smaller rows still progress.
@@ -104,17 +108,25 @@ export class PostgresPositionHistoryStore implements PositionHistoryStore {
   private async claim(context: PositionContext, parserVersion: number): Promise<PositionHistorySnapshot> {
     return this.orm.transaction(async (tx) => {
       await tx.execute(sql`SET LOCAL transaction_timeout = '8s'`);
-      await tx.insert(state).values({ positionMint: context.positionMint, context, parserVersion }).onConflictDoNothing();
-      const [old] = await tx.select().from(state).where(identity(context.positionMint)).for("update");
-      if (!old || Object.entries(context).some(([key, value]) => old.context[key as keyof PositionContext] !== value))
+      const owner = randomUUID();
+      const expiresAt = sql`${now}+(${POSITION_HISTORY_LEASE_MS}::integer * interval '1 millisecond')`;
+      // The upsert locks an existing row before testing its lease. Concurrent
+      // first readers therefore follow the same acquisition path as warm ones.
+      const [claimed] = await tx.insert(state).values({ positionMint: context.positionMint, context, parserVersion,
+        leaseOwner: owner, leaseEpoch: 1, leaseExpiresAt: expiresAt }).onConflictDoUpdate({
+        target: state.positionMint,
+        set: { leaseOwner: owner, leaseEpoch: sql`${state.leaseEpoch}+1`, leaseExpiresAt: expiresAt },
+        setWhere: and(sql`${state.context} @> ${JSON.stringify(context)}::jsonb`,
+          sql`(${state.leaseOwner} IS NULL OR ${state.leaseExpiresAt}<=${now})`),
+      }).returning();
+      // A busy lease or context mismatch returns no row. A new statement sees a
+      // concurrent cold insertion after ON CONFLICT has waited for it to commit.
+      const row = claimed ?? (await tx.select().from(state).where(identity(context.positionMint)).for("update"))[0];
+      if (!row || Object.entries(context).some(([key, value]) => row.context[key as keyof PositionContext] !== value))
         throw new PositionHistoryStoreError("CONTEXT_MISMATCH");
-      const [claimed] = await tx.update(state).set({ leaseOwner: randomUUID(), leaseEpoch: sql`${state.leaseEpoch}+1`,
-        leaseExpiresAt: sql`${now}+(${POSITION_HISTORY_LEASE_MS}::integer * interval '1 millisecond')` })
-        .where(and(identity(context.positionMint), sql`(${state.leaseOwner} IS NULL OR ${state.leaseExpiresAt}<=${now})`))
-        .returning();
       const lease = claimed ? { positionMint: claimed.positionMint, owner: claimed.leaseOwner!,
         epoch: claimed.leaseEpoch, revision: claimed.revision } : null;
-      return this.snapshot(tx, claimed ?? old, parserVersion, lease);
+      return this.snapshot(tx, row, parserVersion, lease);
     });
   }
 

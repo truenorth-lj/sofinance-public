@@ -55,6 +55,39 @@ describe.skipIf(!url)("Position PostgreSQL persistence and fencing", () => {
     expect(rwa!.summary).toEqual({ retained: true });
   });
 
+  it("reads a warm complete ledger within six SQL round trips, including transaction boundaries", async () => {
+    const c = context("M".repeat(32)), first = await claim(c), transaction = opening(c, "q");
+    await store!.request({ op: "commit", lease: first.lease!, state: { ...first.state,
+      complete: true, headSignature: transaction.signature }, transactions: [transaction] });
+    const queries: string[] = [];
+    const debug = db!.options.debug;
+    db!.options.debug = (_connection, query) => { queries.push(query); };
+    let warm;
+    try { warm = await claim(c); }
+    finally { db!.options.debug = debug; }
+    expect(warm.lease!.epoch).toBe(first.lease!.epoch + 1);
+    expect(warm.transactions).toEqual([{ ...transaction, receipt: null }]);
+    expect(queries[0]).toMatch(/^begin/i);
+    expect(queries.at(-1)).toMatch(/^commit/i);
+    expect(queries.length).toBeLessThanOrEqual(6);
+    await store!.request({ op: "release", lease: warm.lease! });
+  });
+
+  it("keeps an available row unchanged when a caller supplies a different position context", async () => {
+    const c = context("N".repeat(32)), first = await claim(c);
+    await store!.request({ op: "release", lease: first.lease! });
+    const [before] = await db!`SELECT context,parser_version,lease_epoch,lease_owner,lease_expires_at,revision
+      FROM position_history_state WHERE position_mint=${c.positionMint}`;
+    await expect(claim({ ...c, mintA: "P".repeat(32) }, 2)).rejects.toMatchObject({ code: "CONTEXT_MISMATCH" });
+    const [after] = await db!`SELECT context,parser_version,lease_epoch,lease_owner,lease_expires_at,revision
+      FROM position_history_state WHERE position_mint=${c.positionMint}`;
+    expect(after).toEqual(before);
+    const next = await claim(c);
+    expect(next.lease!.epoch).toBe(first.lease!.epoch + 1);
+    expect(next.state.parserVersion).toBe(1);
+    await store!.request({ op: "release", lease: next.lease! });
+  });
+
   it("persists missing delta receipts without advancing a complete checkpoint, then repairs atomically", async () => {
     const c = context();
     const first = await claim(c);

@@ -88,6 +88,22 @@ function rpc(ids: number[], txs = new Map(ids.map(id => [id, receipt(id, id === 
 }
 
 describe("incremental position history", () => {
+  it("checkpoints a cold Portfolio ledger in eight-detail reads until history is complete", async () => {
+    const store = new MemoryStore();
+    const upstream = rpc(Array.from({ length: 40 }, (_, index) => 40 - index));
+    for (let read = 1; read <= 5; read++) {
+      const result = await syncPositionHistory({ context, store, connection: upstream.connection,
+        maxSignatures: 100, maxDetailRequests: 8 });
+      expect(result.metric.fetchedTxCount).toBe(8);
+      expect(result.signatureCount).toBe(read * 8);
+      expect(store.snapshot.state.revision).toBe(read);
+      expect(result.truncated).toBe(read !== 5);
+    }
+    expect(store.commitSizes).toEqual([8, 8, 8, 8, 8]);
+    expect(upstream.parsed).toHaveBeenCalledTimes(40);
+    expect(store.snapshot.state.complete).toBe(true);
+  });
+
   it("starts opening work past a slow newest receipt but never advances its checkpoint over a pending result", async () => {
     const store = new MemoryStore();
     const upstream = rpc(Array.from({ length: 9 }, (_, index) => 9 - index));

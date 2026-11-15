@@ -285,12 +285,14 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
     }),
     // PR9: the same report as /api/position-performance (cashflows from the position's own history, current prices),
     // for a position in a listed pool; the summary fields are lifted from its metrics.
-    performance: (key: PositionKey) => guarded(async (): Promise<PositionPerformance> => {
+    performance: (key: PositionKey, readOptions?: { signal?: AbortSignal }) => guarded(async (): Promise<PositionPerformance> => {
       if (!descriptor.capabilities.performance.supported) throw notYet(descriptor.capabilities.performance);
       const id = nativeIdOf(key);
       const { connection, listedPool } = deps();
+      const readConnection = readOptions?.signal && !options.connection ? rpcConnection(undefined, { signal: readOptions.signal }) : connection;
       const report = await (options.readPerformance ?? getMeteoraPositionPerformance)(id, {
-        connection: connection as unknown as NonNullable<MeteoraPerformanceOptions["connection"]>, listedPool,
+        connection: readConnection as unknown as NonNullable<MeteoraPerformanceOptions["connection"]>, listedPool,
+        ...(readOptions?.signal ? { signal: readOptions.signal } : {}),
       });
       if (!report) throw new DexError("POSITION_NOT_FOUND", "No Meteora position exists at that address.");
       const { metrics } = report;

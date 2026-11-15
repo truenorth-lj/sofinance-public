@@ -11,7 +11,6 @@ import { DEPOSIT_MINIMUM_UNAVAILABLE, dexDescriptors } from "@/lib/dex/client";
 import { getTxNotices, resetTxNotices } from "@/lib/tx-pipeline";
 import { RegistryPositionTool } from "./registry-tools";
 import { resetPositionOpLocks } from "./position-op-lock";
-import { clearReportCache } from "../portfolio/report-cache";
 import { compoundConfirmButton, openPopup, openRowDetail, openRowTool } from "../test-support/portfolio-popups";
 
 const WALLET = testKeypair(91).publicKey.toBase58();
@@ -21,6 +20,7 @@ const POOL = "8k2c9Kiavx5pbWc2dmzhL7vFp11sLgMcKFfSueq8haAh";
 const POSITION = testKeypair(94).publicKey.toBase58();
 const MINT_A = "TSLAqBbv4CNCnzWFeB7LmydAyEiNMJtve7DYKLpdK4S";
 const MINT_B = "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB";
+let portfolioCalls: { wallet: string; positions: { key: string }[] }[] = [];
 const state = vi.hoisted(() => ({ dex: { status: 200, body: {} as unknown }, op: { status: 422, body: {} as unknown }, raydium: [] as unknown[], dexCalls: [] as [string, unknown][], hold: null as Promise<void> | null,
   performance: { status: 200, body: {} as unknown }, walletHold: null as Promise<void> | null, positionsHold: null as Promise<void> | null, quoteAdd: { status: 200, body: {} as unknown } }));
 
@@ -68,7 +68,8 @@ const raydiumRow = { positionMint: RAYDIUM_MINT, positionAccount: "p", poolId: P
 
 let container: HTMLDivElement; let root: Root;
 beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); localStorage.clear(); resetTxNotices(); clearReportCache(); toolProbe.onConfirmed = undefined; toolProbe.compoundConfirmed = undefined;
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); localStorage.clear(); resetTxNotices(); toolProbe.onConfirmed = undefined; toolProbe.compoundConfirmed = undefined;
+  portfolioCalls = [];
   state.dex = { status: 200, body: { positions: [meteoraRow()] } }; state.raydium = []; state.dexCalls = []; state.hold = null; resetPositionOpLocks();
   state.performance = { status: 200, body: performanceBody() }; state.walletHold = null; state.positionsHold = null;
   state.quoteAdd = { status: 200, body: {} };
@@ -79,6 +80,14 @@ beforeEach(() => {
     if (url.pathname === "/api/wallet") {
       if (state.walletHold) await state.walletHold;
       return Response.json({ wallet: WALLET, slot: 1, fetchedAt: 1, positions: state.raydium, assets: [] });
+    }
+    if (url.pathname === "/api/portfolio") {
+      const request = JSON.parse(String(init?.body)) as typeof portfolioCalls[number];
+      portfolioCalls.push(request);
+      return Response.json({ wallet: WALLET, positions: request.positions.map(({ key }) => ({ key,
+        status: state.performance.status === 200 ? "ready" : "failed",
+        figures: { stock: null, shares: null, valueUsd: 502, unclaimedFeesUsd: 0.75, cumulativeFeesUsd: 2 },
+        evaluatedAt: "2026-11-15T00:00:00Z", historyComplete: true, historyRefreshResolved: true })) });
     }
     if (url.pathname.startsWith("/api/dex/")) {
       state.dexCalls.push([url.pathname, JSON.parse(String(init?.body))]);
@@ -125,8 +134,8 @@ describe("/app My positions with registry DEXes", () => {
   it("lists the wallet's served-DEX positions in the Solana group; the row has Compound, Add, Withdraw and Activity and opens its detail", async () => {
     await render();
     // Portfolio reads the position's Performance report once for its row and totals (value, unclaimed and cumulative fees).
-    expect(state.dexCalls).toEqual([["/api/dex/meteora-dlmm/positions", { owner: WALLET }],
-      ["/api/dex/meteora-dlmm/performance", { positionKey: KEY }]]);
+    expect(state.dexCalls).toEqual([["/api/dex/meteora-dlmm/positions", { owner: WALLET }]]);
+    expect(portfolioCalls.map((call) => call.positions)).toEqual([[{ key: KEY }]]);
     // No tabs, panels or details under the row (LJ 11/14): the Meteora row carries its own buttons.
     expect(container.querySelector("#compound-view")).toBeNull();
     expect(container.querySelector("[data-testid=registry-compound]")).toBeNull();
@@ -223,9 +232,8 @@ describe("/app My positions with registry DEXes", () => {
       await act(async () => { release(); }); await settle();
       expect(container.querySelector('dialog[data-open="true"]')).toBeNull();
       // The row's one read for its numbers.
-      expect(state.dexCalls.filter(([path]) => path.endsWith("/performance"))).toEqual([
-        ["/api/dex/meteora-dlmm/performance", { positionKey: key }],
-      ]);
+      expect(state.dexCalls.filter(([path]) => path.endsWith("/performance"))).toEqual([]);
+      expect(portfolioCalls.map((call) => call.positions)).toEqual([[{ key }]]);
       await openDetail(key);
       const panel = () => container.querySelector("[data-testid=registry-performance]")!;
       expect(panel().querySelector("[role=alert]")?.textContent).toBe("Position temporarily unavailable");
@@ -234,7 +242,7 @@ describe("/app My positions with registry DEXes", () => {
       await act(async () => retry.click()); await settle();
       expect(panel().querySelector("[role=alert]")).toBeNull();
       expect(panel().textContent).toContain("4.71%");
-      expect(state.dexCalls.filter(([path]) => path.endsWith("/performance"))).toHaveLength(3);
+      expect(state.dexCalls.filter(([path]) => path.endsWith("/performance"))).toHaveLength(2);
     } finally { await act(async () => { release(); }); }
   });
 
@@ -343,8 +351,8 @@ describe("/app My positions with registry DEXes", () => {
 
   it("Refresh and a confirmed Meteora compound each send a new Meteora performance read for the Portfolio numbers", async () => {
     await render();
-    const reads = () => state.dexCalls.filter(([path]) => path === "/api/dex/meteora-dlmm/performance");
-    expect(reads()).toEqual([["/api/dex/meteora-dlmm/performance", { positionKey: `meteora-dlmm:${POSITION}` }]]);
+    const reads = () => portfolioCalls.map((call) => call.positions);
+    expect(reads()).toEqual([[{ key: `meteora-dlmm:${POSITION}` }]]);
     const refresh = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Refresh")!;
     await act(async () => refresh.click());
     await settle();
@@ -353,7 +361,7 @@ describe("/app My positions with registry DEXes", () => {
     await act(async () => toolProbe.compoundConfirmed!());
     await settle();
     expect(reads()).toHaveLength(3);
-    expect(reads().at(-1)).toEqual(["/api/dex/meteora-dlmm/performance", { positionKey: `meteora-dlmm:${POSITION}` }]);
+    expect(reads().at(-1)).toEqual([{ key: `meteora-dlmm:${POSITION}` }]);
   });
 
   it("Compound with no unclaimed fees is disabled up front with a plain reason, and nothing is requested", async () => {

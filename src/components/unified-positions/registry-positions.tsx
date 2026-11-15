@@ -17,6 +17,8 @@ export type RegistryPositions = {
   /** Display names of served DEXes being re-read (a rescan or a new wallet after one served). Never named before a DEX
    * has answered once, so a deployment that does not serve it shows nothing about it. */
   loadingNames: string[];
+  /** Includes the first discovery, before any source has been named. */
+  loading: boolean;
   positions: UnifiedPosition[];
   /** Plain per-DEX failures (one DEX failing never hides another's positions). */
   errors: string[];
@@ -31,6 +33,30 @@ export type RegistryPositions = {
 
 type Loaded = { owner: string; refresh: number; served: PositionSourceId[]; positions: UnifiedPosition[]; errors: string[] };
 
+
+const REGISTRY_DISCOVERY_TIMEOUT_MS = 6_000;
+
+/** Bound discovery so an unavailable source cannot indefinitely pause healthy Portfolio figures. */
+async function readPositions(descriptor: DexDescriptor, owner: string, parent: AbortSignal) {
+  const deadline = new AbortController();
+  const signal = AbortSignal.any([parent, deadline.signal]);
+  const timer = setTimeout(() => deadline.abort(new DOMException("Position discovery timed out", "TimeoutError")), REGISTRY_DISCOVERY_TIMEOUT_MS);
+  let onAbort: (() => void) | undefined;
+  try {
+    signal.throwIfAborted();
+    const cancelled = new Promise<never>((_, reject) => {
+      onAbort = () => reject(signal.reason);
+      signal.addEventListener("abort", onAbort, { once: true });
+      if (signal.aborted) onAbort();
+    });
+    return await Promise.race([fetchDexPositions(descriptor, owner, { signal }), cancelled]);
+  } finally {
+    clearTimeout(timer);
+    if (onAbort) signal.removeEventListener("abort", onAbort);
+    deadline.abort();
+  }
+}
+
 export function useRegistryPositions({ owner, signer, exclude, refresh }: {
   owner: string | null; signer: DexSigner; exclude: readonly string[]; refresh: number;
 }): RegistryPositions {
@@ -40,7 +66,7 @@ export function useRegistryPositions({ owner, signer, exclude, refresh }: {
   useEffect(() => {
     if (!owner || !descriptors.length) return;
     const controller = new AbortController();
-    void Promise.all(descriptors.map((descriptor) => fetchDexPositions(descriptor, owner, { signal: controller.signal })
+    void Promise.all(descriptors.map((descriptor) => readPositions(descriptor, owner, controller.signal)
       .then((positions) => ({ id: descriptor.id, served: positions !== null, positions: positions ?? [], error: null as string | null }))
       .catch((error: unknown) => ({ id: descriptor.id, served: true, positions: [] as UnifiedPosition[], error: controller.signal.aborted ? null : `${descriptor.displayName}: ${error instanceof Error ? error.message : "positions could not be loaded."}` }))))
       .then((results) => {
@@ -55,6 +81,7 @@ export function useRegistryPositions({ owner, signer, exclude, refresh }: {
     position ? descriptors.find((descriptor) => descriptor.id === position.source) ?? null : null;
   return {
     sourceIds: current?.served ?? [],
+    loading,
     loadingNames: loading ? descriptors.filter((descriptor) => loaded?.served.includes(descriptor.id)).map((descriptor) => descriptor.displayName) : [],
     positions: current?.positions ?? [],
     errors: current?.errors ?? [],
