@@ -17,6 +17,8 @@ export type RegistryPositions = {
   /** Display names of served DEXes being re-read (a rescan or a new wallet after one served). Never named before a DEX
    * has answered once, so a deployment that does not serve it shows nothing about it. */
   loadingNames: string[];
+  /** Includes the first discovery, before any source has been named. */
+  loading?: boolean;
   positions: UnifiedPosition[];
   /** Plain per-DEX failures (one DEX failing never hides another's positions). */
   errors: string[];
@@ -55,6 +57,7 @@ export function useRegistryPositions({ owner, signer, exclude, refresh }: {
     position ? descriptors.find((descriptor) => descriptor.id === position.source) ?? null : null;
   return {
     sourceIds: current?.served ?? [],
+    loading,
     loadingNames: loading ? descriptors.filter((descriptor) => loaded?.served.includes(descriptor.id)).map((descriptor) => descriptor.displayName) : [],
     positions: current?.positions ?? [],
     errors: current?.errors ?? [],

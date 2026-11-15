@@ -79,6 +79,6 @@ describe("PortfolioSummary", () => {
     expect(container.querySelector("[data-testid=portfolio-loading]")).toBeNull();
     expect(container.querySelector("[data-testid=portfolio-total-value] p")!.getAttribute("aria-busy")).toBe("false");
     await act(async () => root.render(createElement(PortfolioSummary, { totals: { ...totals, missing: 1 } })));
-    expect(container.textContent).toContain("1 position could not be read and is not included.");
+    expect(container.textContent).toContain("Some values are unavailable for 1 position; totals include available values only.");
   });
 });

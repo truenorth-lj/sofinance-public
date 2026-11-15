@@ -115,7 +115,8 @@ describe("the exit estimate lives in the Withdraw tool, not in Performance", () 
     await mount({ wallet: OWN_WALLET, positions: [OWNED_MINT], stateOk: true, initialMint: DEEP_LINK_MINT });
     await settle();
     // The single owned position now belongs to the overview too; the linked report remains first and is not re-read.
-    expect(perfMints()).toEqual([DEEP_LINK_MINT, OWNED_MINT]);
+    expect(perfMints()).toEqual([DEEP_LINK_MINT]);
+    expect(calls).toContain("/api/portfolio");
     expect(container.textContent).toContain("Showing the linked position Deep…1111");
     expect(exitSection()).toBeNull();
     expect(count("/api/lp-decision/exit-preview")).toBe(0);
@@ -171,7 +172,7 @@ describe("stock summary and position detail hierarchy", () => {
     await settle();
     const rows = [...container.querySelectorAll<HTMLButtonElement>('[data-testid="position-fallback-select"]')];
     expect(rows.map((row) => row.getAttribute("data-position-key")).sort()).toEqual([OWNED_MINT, OTHER_OWNED_MINT].map((mint) => `raydium-clmm:${mint}`).sort());
-    expect(container.textContent).toContain("2 positions could not be read");
+    expect(container.textContent).toContain("Some values are unavailable for 2 positions");
     await act(async () => rows.find((row) => row.getAttribute("data-position-key") === `raydium-clmm:${OTHER_OWNED_MINT}`)!.click());
     await settle();
     expect(perfMints().at(-1)).toBe(OTHER_OWNED_MINT);

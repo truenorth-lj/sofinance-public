@@ -282,6 +282,7 @@ export async function readMeteoraPositionRangeFacts(positionAccount: string, opt
 }
 
 export type MeteoraPerformanceOptions = {
+  signal?: AbortSignal;
   connection?: MeteoraConnection & Pick<Connection, "getSignaturesForAddress" | "getParsedTransaction">;
   wallet?: string;
   maxSignatures?: number;
@@ -306,7 +307,7 @@ export type MeteoraPerformanceOptions = {
  */
 export async function getMeteoraPositionPerformance(positionAccount: string, options: MeteoraPerformanceOptions = {}): Promise<PositionPerformanceResult | null> {
   const started = Date.now();
-  const signal = AbortSignal.timeout(PERFORMANCE_READ_TIMEOUT_MS);
+  const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(PERFORMANCE_READ_TIMEOUT_MS)]) : AbortSignal.timeout(PERFORMANCE_READ_TIMEOUT_MS);
   const connection = options.connection ?? rpcConnection(undefined, { signal });
   const read = await readMeteoraPosition(positionAccount, { connection, listedPool: options.listedPool });
   if (!read) return null;

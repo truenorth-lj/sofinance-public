@@ -39,14 +39,11 @@ import { RegistryPositionTool, RegistryRowCompound, type ToolBalance } from "./u
 import { RegistryPerformancePanel } from "./unified-positions/registry-performance";
 import { RaydiumActivityRecords, RaydiumRowCompound } from "./compound-panel";
 import { tokenSymbol } from "@/lib/position-label";
-import { fetchDexPerformance } from "@/lib/dex/client";
-import type { PositionPerformanceReport } from "@/lib/position-performance-report";
 import { shortAddress } from "@/lib/format/address";
 import { PortfolioSummary } from "./portfolio/portfolio-summary";
 import { PortfolioPositionList, rowActions, type PortfolioRow, type RowTool } from "./portfolio/portfolio-rows";
-import { usePositionReports, type LoadedReport } from "./portfolio/use-position-reports";
-import { invalidateReports, type ReportSource } from "./portfolio/report-cache";
-import { portfolioTotals, positionFigures, type FiguresState, type PositionFigures } from "@/lib/portfolio/figures";
+import { usePortfolioFigures } from "./portfolio/use-portfolio-figures";
+import { portfolioTotals, type FiguresState, type PositionFigures } from "@/lib/portfolio/figures";
 
 const short = shortAddress;
 const money = (value: string, decimals: number, digits = 6) => formatAmount(value, decimals, digits);
@@ -87,9 +84,9 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
     loadingDiscovery, loadingState, stateError } = controller;
   // My positions from DEXes served through the registry (PR5): every Solana-wallet DEX except the inline source above.
   const [registryRefresh, setRegistryRefresh] = useState(0);
-  // Portfolio numbers: forget the cached reports (all, or the given positions) and read them again.
+  // A confirmed operation or Refresh re-reads one aggregate of all Portfolio numbers.
   const [reportsRefresh, setReportsRefresh] = useState(0);
-  const refreshReports = (keys?: readonly string[]) => { invalidateReports(keys); setReportsRefresh((value) => value + 1); };
+  const refreshReports = () => setReportsRefresh((value) => value + 1);
   const registry = useRegistryPositions({ owner: connected ? wallet || null : null, signer: "solana-wallet", exclude: [positionSource.id], refresh: registryRefresh });
   const totalCostPercent = quote && typeof quote.roundtripCostInput === "string" && BigInt(quote.requested) > 0n
     ? (Number(quote.roundtripCostInput) / Number(quote.requested) * 100).toFixed(2)
@@ -106,7 +103,7 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
     // A confirmed compound changed this position's fees and value: read its Portfolio numbers again.
     onConfirmed: () => {
       void refreshState();
-      refreshReports(selectionAligned && selection?.positionMint ? [positionKey(positionSource.id, selection.positionMint)] : undefined);
+      refreshReports();
     } });
   const busy = addBusy || compound.busy || withdrawBusy;
   useLayoutEffect(() => {
@@ -194,7 +191,7 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
       // Keyed by the position only: the cross-op lock is per position and must not depend on the open tab (PM review of #289).
       tool: (item: UnifiedPosition, view: ToolId) => <RegistryPositionTool key={item.key} position={item} descriptor={registry.descriptor(item)!}
         capabilities={registry.capabilities(item)!} view={view} balances={walletBalances} symbolOf={(token) => tokenSymbol(token.id, metadata, token.symbol)}
-        onConfirmed={() => { setOtherKey(item.key); setRegistryRefresh((value) => value + 1); void refreshDiscovery(); refreshReports([item.key]); }}
+        onConfirmed={() => { setOtherKey(item.key); setRegistryRefresh((value) => value + 1); void refreshDiscovery(); refreshReports(); }}
         showStockPerformance={false} />,
       capabilities: registry.capabilities(otherSelected)! }
     : otherSelected && external ? { tool: external.tool, capabilities: capabilitiesFor(external.source, otherSelected) }
@@ -242,32 +239,24 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
         ? formatSmallLegMovesPriceMessage({ minority: poolLabel(quoteErrorOutputMint),
           majority: poolLabel(quoteErrorOutputMint === state.mintA ? state.mintB : state.mintA) })
         : error;
-  // Every open Solana position whose source reads Performance: the Portfolio rows and totals read these reports (shared
-  // cache, one read per position).
-  const performanceSources: ReportSource[] = !connected || !wallet ? [] : [
-    ...solanaPositions.filter((item) => !isClosed(item)).map((item): ReportSource => ({ key: item.key, load: async (signal) => {
-      const params = new URLSearchParams({ positionMint: item.nativeId, wallet });
-      const response = await fetch(`/api/position-performance?${params}`, { signal, headers: { Accept: "application/json" } });
-      const body = await response.json().catch(() => null) as (PositionPerformanceReport & { error?: string }) | null;
-      if (!response.ok || !body || body.positionMint !== item.nativeId) throw new Error(body?.error || "Performance could not be loaded.");
-      return body;
-    } })),
-    ...registry.positions.filter((item) => !isClosed(item) && registry.capabilities(item)?.performance.supported).map((item): ReportSource => ({
-      key: item.key, load: async (signal) => (await fetchDexPerformance(registry.descriptor(item)!, item.key, { signal })).report ?? null })),
+  const figureKeys = !connected || !wallet ? [] : [
+    ...solanaPositions.filter((item) => !isClosed(item)).map((item) => item.key),
+    ...registry.positions.filter((item) => !isClosed(item) && registry.capabilities(item)?.performance.supported).map((item) => item.key),
   ];
-  const portfolioReports = usePositionReports(performanceSources, { refresh: reportsRefresh });
-  const reportFor = (key: string): LoadedReport | "loading" | undefined => portfolioReports[key];
-  const reportedKeys = new Set(performanceSources.map((item) => item.key));
+  const figures = usePortfolioFigures(connected ? wallet || null : null, figureKeys, {
+    refresh: reportsRefresh, paused: loadingDiscovery || (!discovery && !stateError) || Boolean(registry.loading),
+  });
+  const reportedKeys = new Set(figureKeys);
   const capabilitiesOf = (item: UnifiedPosition): SourceCapabilities => item.source === positionSource.id ? capabilitiesFor(positionSource, item)
     : registry.owns(item) ? registry.capabilities(item)! : capabilitiesFor(external!.source, item);
   const figuresOf = (item: UnifiedPosition): PositionFigures | null => {
     if (!reportedKeys.has(item.key)) return external && item.chain === external.chain ? external.figures?.(item) ?? null : null;
-    const loaded = reportFor(item.key);
-    return loaded && loaded !== "loading" && !loaded.error ? positionFigures(loaded.report) : null;
+    const loaded = figures[item.key];
+    return loaded && loaded.status !== "failed" ? loaded.figures : null;
   };
   const portfolio = portfolioTotals(allPositions.filter((item) => !isClosed(item) && reportedKeys.has(item.key)).map((item): FiguresState => {
-    const loaded = reportFor(item.key);
-    return !loaded || loaded === "loading" ? { status: "loading" } : loaded.error ? { status: "failed" } : { status: "ready", figures: positionFigures(loaded.report) };
+    const loaded = figures[item.key];
+    return !loaded ? { status: "loading" } : loaded.status === "failed" ? { status: "failed" } : { status: "ready", figures: loaded.figures };
   }), allPositions.filter((item) => !isClosed(item) && !reportedKeys.has(item.key)).map((item) => figuresOf(item)?.valueUsd ?? null));
   // One "Refresh" (was "Rescan wallet" + "Reload fees"): the Solana scan, the selected position's on-chain state and fees, the
   // registry DEXes and, on /app, the Robinhood Chain scan via the parent's refresh counter.
@@ -299,7 +288,7 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
     if (!descriptor || !registry.capabilities(item)?.compound.supported) return undefined;
     return function registryRowCompound(slot) { return <RegistryRowCompound position={item} descriptor={descriptor} slot={slot}
       symbolOf={(token) => tokenSymbol(token.id, metadata, token.symbol)}
-      onConfirmed={() => { setRegistryRefresh((value) => value + 1); void refreshDiscovery(); refreshReports([item.key]); }} />; };
+      onConfirmed={() => { setRegistryRefresh((value) => value + 1); void refreshDiscovery(); refreshReports(); }} />; };
   };
   const portfolioRows = new Map<string, PortfolioRow>(groups.flatMap((group) => group.positions.map((item): [string, PortfolioRow] => {
     const figures = figuresOf(item);

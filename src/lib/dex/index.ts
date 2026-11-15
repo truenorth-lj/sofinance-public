@@ -15,3 +15,8 @@ export { DexError, DexUnsupportedError, type DexErrorCode } from "./errors";
 export { NO_FEE_POLICY, bpsFeeStrategy } from "./fees";
 export { publicDexMessage } from "./public-message";
 export type { DailyTvlStats, DexModule, DexRegistry } from "./registry";
+
+/** Aggregate the discovered positions without loading protocol readers into unrelated DEX routes. */
+export async function readPortfolio(input: import("@/lib/portfolio/model").PortfolioRequest, signal: AbortSignal) {
+  return (await import("./portfolio.server")).readPortfolio(input, signal);
+}

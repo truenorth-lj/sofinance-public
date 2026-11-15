@@ -32,7 +32,8 @@ const { loadPerformanceHistory } = await import("./position-performance-history-
 const { fetchTokenPricesUsd } = await import("@sofinance/engine/token-prices");
 const { getOrcaPositionPerformance } = await import("./orca-positions");
 const { getMeteoraPositionPerformance } = await import("./meteora-positions");
-const { getPositionPerformance } = await import("./position-performance");
+const { getPositionPerformance, getPositionFigures } = await import("./position-performance");
+const { positionFigures } = await import("./portfolio/figures");
 
 const NOW = 1_800_000_000;
 const PRICE = 100_000;
@@ -259,6 +260,29 @@ describe("Raydium position performance characterization", () => {
   it("records full history", async () => {
     expect(stable(await run("full"))).toMatchSnapshot();
   });
+  it("compact Portfolio figures match the full report without entry-price or curve assembly", async () => {
+    await run("full");
+    const options = { connection, nowSeconds: NOW, historyStore: { request: vi.fn() },
+      prices: quotes(mintA.toBase58(), mintB.toBase58()), symbols: { symbolA: "HOODx", symbolB: "HOOD" },
+      fetcher: vi.fn(async () => { throw new Error("Unexpected entry-price I/O"); }) as never };
+    const compact = await getPositionFigures(nft.toBase58(), options);
+    // Supply the same labels to the full reader's existing Raydium metadata path.
+    const full = await getPositionPerformance(nft.toBase58(), { ...options,
+      fetcher: vi.fn(async () => Response.json({ data: [{ mintA: { symbol: "HOODx" }, mintB: { symbol: "HOOD" } }] })) });
+    expect(compact.figures).toEqual(positionFigures(full));
+    expect(compact.historyComplete).toBe(true);
+    expect(compact).not.toHaveProperty("history"); expect(compact).not.toHaveProperty("realizedFeeAprSeries");
+    expect(options.fetcher).not.toHaveBeenCalled();
+  });
+  it("keeps current value/shares but withholds cumulative fees for missing opening or truncated history", async () => {
+    await run("truncated");
+    const compact = await getPositionFigures(nft.toBase58(), { connection, nowSeconds: NOW,
+      prices: quotes(mintA.toBase58(), mintB.toBase58()), symbols: { symbolA: "HOODx", symbolB: "HOOD" } });
+    expect(compact.historyComplete).toBe(false);
+    expect(compact.figures.valueUsd).toBeTypeOf("number"); expect(compact.figures.shares).toBeTypeOf("number");
+    expect(compact.figures.cumulativeFeesUsd).toBeNull();
+  });
+
   it("records truncated history", async () => {
     expect(stable(await run("truncated"))).toMatchSnapshot();
   });

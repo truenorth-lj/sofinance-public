@@ -31,6 +31,9 @@ describe("portfolioTotals", () => {
       cumulativeFeesUsd: 10, pending: 1, missing: 0 });
     expect(portfolioTotals([{ status: "loading" }, { status: "loading" }])).toMatchObject({ valueUsd: null, unclaimedFeesUsd: null, pending: 2 });
   });
+  it("identifies missing cumulative fees while retaining current value and unclaimed fees", () => {
+    expect(portfolioTotals([ready(100, 2, null)])).toMatchObject({ valueUsd: 100, unclaimedFeesUsd: 2, cumulativeFeesUsd: null, missing: 1 });
+  });
   it("counts failed or unpriced positions as missing instead of zero", () => {
     expect(portfolioTotals([ready(100, 2, 10), { status: "failed" }], [null])).toMatchObject({ valueUsd: 100, missing: 2 });
     expect(portfolioTotals([{ status: "failed" }])).toMatchObject({ valueUsd: null, unclaimedFeesUsd: null, missing: 1 });

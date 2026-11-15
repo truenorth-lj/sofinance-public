@@ -11,4 +11,5 @@ export const raydiumClmmModule: DexModule = Object.freeze({
   descriptor: raydiumClmmDescriptor,
   adapter: async () => (await import("./adapter.server")).createRaydiumClmmAdapter(),
   enabled: () => false,
+  preparePortfolio: async (input, signal) => (await import("./portfolio.server")).prepareRaydiumPortfolio(input, signal),
 });

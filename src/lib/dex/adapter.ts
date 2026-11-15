@@ -175,7 +175,7 @@ export interface DexAdapter<N = unknown> {
   // reads
   listPositions(owner: string): Promise<UnifiedPosition<N>[]>;
   readPosition(key: PositionKey): Promise<UnifiedPosition<N> | null>;
-  performance(key: PositionKey): Promise<PositionPerformance>;
+  performance(key: PositionKey, options?: { signal?: AbortSignal }): Promise<PositionPerformance>;
   // quotes and previews (no transaction)
   quoteOpen(request: OpenRequest): Promise<OpenQuote>;
   /** The preset ranges `quoteOpen` / `prepareOpen` resolve a `preset` range to, from on-chain state only (no volume or APR). */
