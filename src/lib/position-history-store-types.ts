@@ -4,6 +4,8 @@ import type { PositionCashflowEvent, PositionEventContext } from "./position-per
 export const POSITION_HISTORY_PARSER_VERSION = 1;
 export const POSITION_HISTORY_LEASE_MS = 120_000;
 export const MAX_POSITION_HISTORY_TRANSACTIONS = 10_000;
+/** Persisted progress can be useful while its head has not yet been certified. */
+export const UNVERIFIED_POSITION_HISTORY_UPDATED_AT = "1970-01-01T00:00:00.000Z";
 const pubkey = z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
 const signature = z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{64,88}$/);
 const integerAmount = z.string().regex(/^\d{1,78}$/);
@@ -37,18 +39,25 @@ export type PositionHistorySnapshot = {
   lease: PositionHistoryLease | null; state: PositionHistoryState;
   transactions: StoredPositionTransaction[];
 };
+/** Atomic persisted ledger read; observing it never acquires the synchronization lease. */
+export type PositionHistoryReadSnapshot = PositionHistorySnapshot & {
+  lease: null; updatedAt: string; syncing: boolean;
+};
+/** The DB clock is returned even before the first persisted position row exists. */
+export type PositionHistoryReadResult = { readAt: string; snapshot: PositionHistoryReadSnapshot | null };
 const transactionSchema = z.object({ signature, slot: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   blockTime: z.number().int().nonnegative().nullable(), status: z.enum(["parsed", "pending", "failed", "ignored"]),
   receipt: z.record(z.string(), z.unknown()).nullable(), events: z.array(eventSchema).max(100),
   parserVersion: z.number().int().positive() }).refine((row) => row.status !== "ignored" || row.events.length === 0, { message: "Ignored transactions cannot contain events" });
 export const positionStoreRequestSchema = z.discriminatedUnion("op", [
+  z.object({ op: z.literal("read"), context: positionContextSchema, parserVersion: z.number().int().positive() }),
   z.object({ op: z.literal("claim"), context: positionContextSchema, parserVersion: z.number().int().positive() }),
   z.object({ op: z.literal("commit"), lease: positionLeaseSchema,
     state: z.object({ headSignature: signature.nullable(), backfillBefore: signature.nullable(),
       deltaBefore: signature.nullable().optional(), deltaHead: signature.nullable().optional(),
       complete: z.boolean(), parserVersion: z.number().int().positive() }),
-    transactions: z.array(transactionSchema).max(500) }),
-  z.object({ op: z.literal("release"), lease: positionLeaseSchema }),
+    transactions: z.array(transactionSchema).max(500), checked: z.boolean().optional() }),
+  z.object({ op: z.literal("release"), lease: positionLeaseSchema, checked: z.boolean().optional() }),
 ]);
 type ParsedPositionStoreRequest = z.infer<typeof positionStoreRequestSchema>;
 export type PositionStoreOperation = ParsedPositionStoreRequest["op"];
@@ -56,6 +65,7 @@ export type PositionStoreRequest<K extends PositionStoreOperation = PositionStor
   [P in K]: Extract<ParsedPositionStoreRequest, { op: P }>;
 }[K];
 export type PositionStoreResultMap = {
+  read: PositionHistoryReadResult;
   claim: PositionHistorySnapshot;
   commit: PositionHistorySnapshot;
   release: boolean;

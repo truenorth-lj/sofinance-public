@@ -1,13 +1,13 @@
 import "server-only";
 import { dexRegistry } from "./index";
 import { positionFigures, portfolioTotals } from "@/lib/portfolio/figures";
-import type { PortfolioPosition, PortfolioReader, PortfolioRequest, PortfolioResponse } from "@/lib/portfolio/model";
+import type { PortfolioPosition, PortfolioReader, PortfolioInput, PortfolioResponse } from "@/lib/portfolio/model";
 import { mapPortfolioPositions, portfolioAbortable, PORTFOLIO_POSITION_DEADLINE_MS } from "./portfolio-workers";
 
-export async function readPortfolio(input: PortfolioRequest, signal: AbortSignal): Promise<PortfolioResponse> {
+export async function readPortfolio(input: PortfolioInput, signal: AbortSignal): Promise<PortfolioResponse> {
   const started = Date.now();
   const positions = [...new Map(input.positions.map((item) => [item.key, item])).values()];
-  const groups = new Map<string, PortfolioRequest["positions"]>();
+  const groups = new Map<string, PortfolioInput["positions"]>();
   for (const item of positions) {
     const source = item.key.split(":")[0]!;
     groups.set(source, [...(groups.get(source) ?? []), item]);
@@ -27,10 +27,10 @@ export async function readPortfolio(input: PortfolioRequest, signal: AbortSignal
       rowSignal.throwIfAborted();
       if (!reader) throw new Error("Position source unavailable");
       const result = await portfolioAbortable(reader(item, rowSignal), rowSignal);
-      const { figures, evaluatedAt, historyComplete, historyRefreshResolved } = result;
+      const { figures, evaluatedAt, historyComplete, historyRefreshResolved, historyUpdatedAt, historyStatus, historyRefreshAfter } = result;
       if (result.timings) timings[item.key] = result.timings;
       const complete = historyComplete && [figures.valueUsd, figures.unclaimedFeesUsd, figures.cumulativeFeesUsd].every((value) => value !== null);
-      return { key: item.key, status: complete ? "ready" : "partial", figures, evaluatedAt, historyComplete, historyRefreshResolved };
+      return { key: item.key, status: complete ? "ready" : "partial", figures, evaluatedAt, historyComplete, historyRefreshResolved, historyUpdatedAt, historyStatus, historyRefreshAfter };
     } catch {
       return { key: item.key, status: "failed", figures: positionFigures(null), evaluatedAt: null, historyComplete: false, historyRefreshResolved: false };
     } finally {

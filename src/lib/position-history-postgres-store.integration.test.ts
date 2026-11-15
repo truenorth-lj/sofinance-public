@@ -1,13 +1,19 @@
 /** Real SQL checks are confined to a disposable schema in the dedicated database. */
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
+import { PublicKey, type ParsedTransactionWithMeta } from "@solana/web3.js";
+import bs58 from "bs58";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 vi.setConfig({ testTimeout: 30_000 });
 import { createRwaDatabase } from "./rwa-postgres-store";
 import { MAX_POSITION_HISTORY_RESPONSE_BYTES, PostgresPositionHistoryStore } from "./position-history-postgres-store";
-import { MAX_POSITION_HISTORY_TRANSACTIONS, type PositionContext, type StoredPositionTransaction } from "./position-history-store-types";
+import { MAX_POSITION_HISTORY_TRANSACTIONS, UNVERIFIED_POSITION_HISTORY_UPDATED_AT, type PositionContext, type StoredPositionTransaction } from "./position-history-store-types";
+import { syncPositionHistory } from "./position-history-sync";
+import { readPortfolioHistory } from "./portfolio/history-snapshot";
+import { INCREASE_LIQUIDITY_DISC } from "./position-performance-events";
+import type { HistoryConnection } from "./position-performance-history";
 
 const url = process.env.RWA_DB_TEST_URL;
 describe.skipIf(!url)("Position PostgreSQL persistence and fencing", () => {
@@ -23,6 +29,8 @@ describe.skipIf(!url)("Position PostgreSQL persistence and fencing", () => {
       tickLower: 0, tickUpper: 10, liquidity: "12345678901234567890", amountA: "100", amountB: "200" }],
   });
   const claim = async (c = context(), parserVersion = 1) => await store!.request({ op: "claim", context: c, parserVersion });
+  const readSnapshot = async (c = context(), parserVersion = 1) =>
+    (await store!.request({ op: "read", context: c, parserVersion })).snapshot;
   beforeAll(async () => {
     await db!.unsafe(`CREATE SCHEMA ${schema}`);
     for (const migration of readMigrationFiles({ migrationsFolder: resolve("drizzle") }))
@@ -71,6 +79,135 @@ describe.skipIf(!url)("Position PostgreSQL persistence and fencing", () => {
     expect(queries.at(-1)).toMatch(/^commit/i);
     expect(queries.length).toBeLessThanOrEqual(6);
     await store!.request({ op: "release", lease: warm.lease! });
+  });
+
+  it("reads a consistent receipt-free snapshot in one statement without acquiring or changing a busy lease", async () => {
+    const c = context("R".repeat(32));
+    const missing = await store!.request({ op: "read", context: c, parserVersion: 1 });
+    expect(missing.snapshot).toBeNull();
+    expect(Number.isFinite(Date.parse(missing.readAt))).toBe(true);
+    expect(await db!`SELECT position_mint FROM position_history_state WHERE position_mint=${c.positionMint}`).toEqual([]);
+    const first = await claim(c), transaction = opening(c, "r");
+    await store!.request({ op: "commit", lease: first.lease!, state: { ...first.state,
+      complete: true, headSignature: transaction.signature }, transactions: [transaction] });
+    const busy = await claim(c);
+    const [before] = await db!`SELECT lease_owner,lease_epoch,lease_expires_at,revision,updated_at
+      FROM position_history_state WHERE position_mint=${c.positionMint}`;
+    const queries: string[] = [], debug = db!.options.debug;
+    db!.options.debug = (_connection, query) => { queries.push(query); };
+    let read;
+    try { read = await readSnapshot(c, 2); }
+    finally { db!.options.debug = debug; }
+    expect(queries).toHaveLength(1);
+    expect(queries[0]).not.toMatch(/FOR UPDATE|\b(?:INSERT|UPDATE|BEGIN|COMMIT)\b/i);
+    expect(read).toMatchObject({ lease: null, syncing: true,
+      state: { complete: true, parserVersion: 1, revision: 1 },
+      transactions: [{ ...transaction, receipt: null }] });
+    expect(Number.isFinite(Date.parse(read!.updatedAt))).toBe(true);
+    const [after] = await db!`SELECT lease_owner,lease_epoch,lease_expires_at,revision,updated_at
+      FROM position_history_state WHERE position_mint=${c.positionMint}`;
+    expect(after).toEqual(before);
+    await expect(store!.request({ op: "read", context: { ...c, mintA: "S".repeat(32) }, parserVersion: 1 }))
+      .rejects.toMatchObject({ code: "CONTEXT_MISMATCH" });
+    await store!.request({ op: "release", lease: busy.lease! });
+    expect((await readSnapshot(c))!.syncing).toBe(false);
+  });
+
+  it("does not certify a new claim or an unchecked commit as fresh", async () => {
+    const c = context("V".repeat(32)), first = await claim(c), transaction = opening(c, "v");
+    expect((await readSnapshot(c))!.updatedAt).toBe(UNVERIFIED_POSITION_HISTORY_UPDATED_AT);
+    await store!.request({ op: "commit", lease: first.lease!, checked: true, state: { ...first.state,
+      complete: true, headSignature: transaction.signature }, transactions: [transaction] });
+    expect((await readSnapshot(c))!.updatedAt).not.toBe(UNVERIFIED_POSITION_HISTORY_UPDATED_AT);
+    const next = await claim(c);
+    await store!.request({ op: "commit", lease: next.lease!, state: next.state, transactions: [] });
+    expect((await readSnapshot(c))!.updatedAt).toBe(UNVERIFIED_POSITION_HISTORY_UPDATED_AT);
+  });
+
+  it("keeps persisted resumed-delta progress unverified until a newer head is synchronized", async () => {
+    const key = (byte: number) => new PublicKey(Buffer.alloc(32, byte)).toBase58();
+    const c: PositionContext = { positionMint: key(31), positionAccount: key(32), poolId: key(33),
+      mintA: key(34), mintB: key(35), vaultA: key(36), vaultB: key(37) };
+    const sig = (id: number) => bs58.encode(Buffer.alloc(64, id));
+    const first = await claim(c), transaction = { ...opening(c), signature: sig(1), slot: 1 };
+    await store!.request({ op: "commit", lease: first.lease!, state: { ...first.state,
+      complete: true, headSignature: sig(1), backfillBefore: sig(1), deltaBefore: sig(3), deltaHead: sig(3) },
+    transactions: [transaction, { ...transaction, signature: sig(3), slot: 3, events: [] }] });
+    const refreshAfter = (await store!.request({ op: "read", context: c, parserVersion: 1 })).readAt;
+    const connection: HistoryConnection = {
+      getSignaturesForAddress: async (_address, options) =>
+        (options?.before === sig(3) ? [2, 1] : [4, 3, 2, 1]).slice(0, options?.limit ?? 500)
+          .map((id) => ({ signature: sig(id), slot: id, blockTime: 1000 + id, err: null, memo: null })),
+      getParsedTransaction: async (signature) => {
+        const id = signature === sig(2) ? 2 : 4;
+        const payload = Buffer.alloc(88);
+        INCREASE_LIQUIDITY_DISC.copy(payload);
+        new PublicKey(c.positionMint).toBuffer().copy(payload, 8);
+        return { slot: id, blockTime: 1000 + id,
+          transaction: { signatures: [signature], message: { accountKeys: [], instructions: [], recentBlockhash: key(38) } },
+          meta: { err: null, fee: 0, preBalances: [], postBalances: [],
+            logMessages: [`Program data: ${payload.toString("base64")}`] } } as ParsedTransactionWithMeta;
+      },
+    };
+    const run = () => syncPositionHistory({ context: c, store: store!, connection, maxSignatures: 1 });
+    const previousWindow = await run();
+    expect(previousWindow.truncated).toBe(true);
+    const saved = await readSnapshot(c);
+    expect(saved!.state).toMatchObject({ headSignature: sig(3), complete: true, deltaBefore: null, deltaHead: null });
+    expect(saved!.updatedAt).toBe(UNVERIFIED_POSITION_HISTORY_UPDATED_AT);
+    expect(await readPortfolioHistory({ context: c, store: store!, refreshAfter }))
+      .toMatchObject({ historyStatus: "updating", historyRefreshResolved: false, needsSync: true });
+
+    expect((await run()).truncated).toBe(false);
+    expect((await readSnapshot(c))!.state.headSignature).toBe(sig(4));
+    expect(await readPortfolioHistory({ context: c, store: store!, refreshAfter }))
+      .toMatchObject({ historyStatus: "fresh", historyRefreshResolved: true, needsSync: false });
+  });
+
+  it("updates successful-check freshness only under the current unexpired lease and revision", async () => {
+    const c = context("S".repeat(32)), first = await claim(c);
+    const oldTimestamp = "2026-01-01T00:00:00.000Z";
+    await db!`UPDATE position_history_state SET updated_at=${oldTimestamp} WHERE position_mint=${c.positionMint}`;
+    expect(await store!.request({ op: "release", lease: { ...first.lease!, revision: first.lease!.revision + 1 }, checked: true })).toBe(false);
+    expect((await readSnapshot(c))!.updatedAt).toBe(oldTimestamp);
+    expect(await store!.request({ op: "release", lease: first.lease! })).toBe(true);
+    expect((await readSnapshot(c))!.updatedAt).toBe(oldTimestamp);
+    const replacement = await claim(c);
+    expect(await store!.request({ op: "release", lease: first.lease!, checked: true })).toBe(false);
+    expect(await store!.request({ op: "release", lease: replacement.lease!, checked: true })).toBe(true);
+    expect(Date.parse((await readSnapshot(c))!.updatedAt))
+      .toBeGreaterThan(Date.parse(oldTimestamp));
+
+    const expired = await claim(c);
+    await db!`UPDATE position_history_state SET updated_at=${oldTimestamp},lease_expires_at=clock_timestamp()-interval '1 second'
+      WHERE position_mint=${c.positionMint}`;
+    expect(await store!.request({ op: "release", lease: expired.lease!, checked: true })).toBe(false);
+    const afterExpiry = await readSnapshot(c);
+    expect(afterExpiry).toMatchObject({ updatedAt: oldTimestamp, syncing: false });
+    // An ordinary cleanup may still clear its own expired lease, without claiming freshness.
+    expect(await store!.request({ op: "release", lease: expired.lease! })).toBe(true);
+  });
+
+  it("records sync start rather than completion so old in-flight work cannot acknowledge a later refresh", async () => {
+    for (const [mint, finish] of [["T", "release"], ["U", "commit"]] as const) {
+      const c = context(mint.repeat(32)), first = await claim(c);
+      // Represent a worker that began a minute before the new refresh barrier,
+      // while retaining a valid lease. No wall-clock sleep is needed.
+      await db!`UPDATE position_history_state SET lease_expires_at=clock_timestamp()+interval '60 seconds'
+        WHERE position_mint=${c.positionMint}`;
+      const barrier = (await store!.request({ op: "read", context: c, parserVersion: 1 }))!.readAt;
+      if (finish === "release") {
+        expect(await store!.request({ op: "release", lease: first.lease!, checked: true })).toBe(true);
+      } else {
+        const transaction = opening(c, "t");
+        await store!.request({ op: "commit", lease: first.lease!, state: { ...first.state,
+          complete: true, headSignature: transaction.signature }, transactions: [transaction], checked: true });
+      }
+      const completed = await store!.request({ op: "read", context: c, parserVersion: 1 });
+      expect(completed.snapshot!.syncing).toBe(false);
+      expect(Date.parse(completed.snapshot!.updatedAt)).toBeLessThan(Date.parse(barrier));
+      expect(Date.parse(completed!.readAt)).toBeGreaterThanOrEqual(Date.parse(barrier));
+    }
   });
 
   it("keeps an available row unchanged when a caller supplies a different position context", async () => {
@@ -233,6 +370,10 @@ describe.skipIf(!url)("Position PostgreSQL persistence and fencing", () => {
     await db!`INSERT INTO position_history_transactions(position_mint,signature,slot,block_time,status,receipt,events,parser_version)
       VALUES(${c.positionMint},${giantSignature},0,1000,'parsed',
         jsonb_build_object('padding',repeat('x',${MAX_POSITION_HISTORY_RESPONSE_BYTES + 1000})),'[]'::jsonb,1)`;
+    const read = await readSnapshot(c, 2);
+    expect(read!.transactions).toHaveLength(501);
+    expect(read!.transactions.every((transaction) => transaction.receipt === null)).toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(read))).toBeLessThan(MAX_POSITION_HISTORY_RESPONSE_BYTES);
     const upgrade = await claim(c, 2);
     expect(upgrade.transactions).toHaveLength(501);
     expect(upgrade.transactions.find((transaction) => transaction.signature === giantSignature)!.receipt).toBeNull();
@@ -262,6 +403,8 @@ describe.skipIf(!url)("Position PostgreSQL persistence and fencing", () => {
       SELECT ${c.positionMint},lpad(translate(i::text,'0123456789','ABCDEFGHJK'),64,'1'),i,1000,'parsed',
         NULL,${JSON.stringify(events)}::jsonb,1 FROM generate_series(1,140) i`;
     await expect(claim(c)).rejects.toMatchObject({ code: "POSITION_HISTORY_RESPONSE_TOO_LARGE" });
+    await expect(store!.request({ op: "read", context: c, parserVersion: 1 }))
+      .rejects.toMatchObject({ code: "POSITION_HISTORY_RESPONSE_TOO_LARGE" });
     const [unchanged] = await db!`SELECT lease_owner,lease_epoch,revision FROM position_history_state WHERE position_mint=${c.positionMint}`;
     expect(unchanged!.lease_owner).toBeNull();
     expect(Number(unchanged!.lease_epoch)).toBe(first.lease!.epoch);
@@ -286,6 +429,8 @@ describe.skipIf(!url)("Position PostgreSQL persistence and fencing", () => {
     await db!`INSERT INTO position_history_transactions(position_mint,signature,slot,block_time,status,receipt,events,parser_version)
       VALUES(${c.positionMint},${addition.signature},${addition.slot},1000,'parsed',NULL,'[]'::jsonb,1)`;
     await expect(claim(c)).rejects.toMatchObject({ code: "POSITION_HISTORY_TOO_LARGE" });
+    await expect(store!.request({ op: "read", context: c, parserVersion: 1 }))
+      .rejects.toMatchObject({ code: "POSITION_HISTORY_TOO_LARGE" });
     const [unchanged] = await db!`SELECT lease_owner,lease_epoch,revision FROM position_history_state WHERE position_mint=${c.positionMint}`;
     expect(unchanged!.lease_owner).toBeNull();
     expect(Number(unchanged!.lease_epoch)).toBe(first.lease!.epoch);

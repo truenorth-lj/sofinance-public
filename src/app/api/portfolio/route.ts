@@ -2,6 +2,8 @@ import { readPortfolio } from "@/lib/dex";
 import { portfolioRequestSchema } from "@/lib/portfolio/model";
 import { NO_STORE_HEADERS } from "@/lib/http/no-store";
 import { dexRouteRateLimited } from "@/lib/dex-route-rate-limit";
+import { after } from "next/server";
+import { createPortfolioHistoryBackground } from "@/lib/portfolio/history-background";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -25,6 +27,7 @@ async function readBody(request: Request): Promise<string | null> {
 
 /** Compact figures for the wallet's discovered Solana positions. No transaction is prepared, signed or sent. */
 export async function POST(request: Request) {
+  const background = createPortfolioHistoryBackground(Date.now() + 55_000);
   const json = (body: unknown, status = 200) => Response.json(body, { status, headers: NO_STORE_HEADERS });
   if (dexRouteRateLimited(request, "performance")) return Response.json({ error: "Too many requests. Please wait a minute." }, {
     status: 429, headers: { ...NO_STORE_HEADERS, "Retry-After": "60" },
@@ -38,7 +41,9 @@ export async function POST(request: Request) {
   }
   catch { return json({ error: "Invalid portfolio request." }, 400); }
   try {
-    return json(await readPortfolio(input, AbortSignal.any([request.signal, AbortSignal.timeout(45_000)])));
+    const result = await readPortfolio({ ...input, scheduleHistoryRefresh: background.schedule }, AbortSignal.any([request.signal, AbortSignal.timeout(45_000)]));
+    after(background.run);
+    return json(result);
   } catch {
     return json({ error: "Portfolio is temporarily unavailable. Please try again shortly." }, 503);
   }

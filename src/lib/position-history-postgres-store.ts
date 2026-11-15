@@ -6,8 +6,8 @@ import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import * as schema from "../db/schema";
 import {
-  MAX_POSITION_HISTORY_TRANSACTIONS, POSITION_HISTORY_LEASE_MS, PositionHistoryStoreError, positionStoreRequestSchema,
-  type PositionContext, type PositionHistoryLease, type PositionHistorySnapshot,
+  MAX_POSITION_HISTORY_TRANSACTIONS, POSITION_HISTORY_LEASE_MS, UNVERIFIED_POSITION_HISTORY_UPDATED_AT, PositionHistoryStoreError, positionStoreRequestSchema,
+  type PositionContext, type PositionHistoryLease, type PositionHistorySnapshot, type PositionHistoryReadSnapshot, type PositionHistoryReadResult,
   type PositionHistoryStore, type PositionStoreRequest, type PositionStoreOperation, type PositionStoreResultMap, type PositionStoreHandlers, type StoredPositionTransaction,
 } from "./position-history-store-types";
 
@@ -16,6 +16,7 @@ type Database = PostgresJsDatabase<typeof schema>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 export const MAX_POSITION_HISTORY_RESPONSE_BYTES = 3_500_000;
 const now = sql`clock_timestamp()`;
+const leaseStartedAt = sql`${state.leaseExpiresAt}-(${POSITION_HISTORY_LEASE_MS}::integer * interval '1 millisecond')`;
 const identity = (mint: string) => eq(state.positionMint, mint);
 const leaseWhere = (lease: PositionHistoryLease) => and(identity(lease.positionMint),
   eq(state.leaseOwner, lease.owner), eq(state.leaseEpoch, lease.epoch), eq(state.revision, lease.revision),
@@ -34,16 +35,70 @@ export class PostgresPositionHistoryStore implements PositionHistoryStore {
   }
 
   private readonly handlers: PositionStoreHandlers = {
+    read: input => this.read(input.context),
     claim: input => this.claim(input.context, input.parserVersion),
     release: async input => {
       // A stale owner must never release the replacement lease; release is idempotent.
-      const released = await this.orm.update(state).set({ leaseOwner: null, leaseExpiresAt: null })
-        .where(and(identity(input.lease.positionMint), eq(state.leaseOwner, input.lease.owner),
-          eq(state.leaseEpoch, input.lease.epoch))).returning({ mint: state.positionMint });
+      // Only a completed check may refresh the persisted timestamp. A late or
+      // replaced worker cannot claim freshness after losing its revision/lease.
+      const released = await this.orm.update(state).set({ leaseOwner: null, leaseExpiresAt: null,
+        ...(input.checked ? { updatedAt: leaseStartedAt } : {}) })
+        .where(input.checked ? leaseWhere(input.lease) : and(identity(input.lease.positionMint),
+          eq(state.leaseOwner, input.lease.owner), eq(state.leaseEpoch, input.lease.epoch)))
+        .returning({ mint: state.positionMint });
       return released.length > 0;
     },
     commit: input => this.commit(input),
   };
+
+  private async read(context: PositionContext): Promise<PositionHistoryReadResult> {
+    // One statement supplies a consistent MVCC view of state and transactions.
+    // Count/byte guards run before the scalar aggregate is evaluated, so an
+    // oversized event ledger never crosses the database transport. Receipts are
+    // excluded even when a newer parser would need them for background replay.
+    const [row] = await this.orm.execute<{ context: PositionContext | null; count: number; readAt: string;
+      snapshot: PositionHistoryReadSnapshot | null }>(sql`
+      WITH bounded AS MATERIALIZED (
+        SELECT slot,signature,jsonb_build_object('signature',signature,'slot',slot,
+          'blockTime',block_time,'status',status,'events',events,
+          'parserVersion',parser_version,'receipt',NULL) AS payload
+        FROM ${history} WHERE position_mint=${context.positionMint}
+        ORDER BY slot,signature LIMIT ${MAX_POSITION_HISTORY_TRANSACTIONS + 1}
+      ), size AS (
+        SELECT count(*)::integer AS count,COALESCE(SUM(octet_length(payload::text)),0)::bigint AS bytes
+        FROM bounded
+      ), target AS (
+        SELECT context,jsonb_build_object('lease',NULL,'state',jsonb_build_object(
+          'headSignature',head_signature,'backfillBefore',backfill_before,
+          'deltaBefore',delta_before,'deltaHead',delta_head,'complete',complete,
+          'revision',revision,'parserVersion',parser_version),
+          'updatedAt',updated_at,
+          'syncing',COALESCE(lease_owner IS NOT NULL AND lease_expires_at>${now},false),
+          'transactions','[]'::jsonb) AS metadata
+        FROM ${state} WHERE position_mint=${context.positionMint}
+      )
+      SELECT target.context,size.count,statement_timestamp()::text AS "readAt",
+        CASE WHEN target.context IS NOT NULL AND size.count<=${MAX_POSITION_HISTORY_TRANSACTIONS}
+        AND size.bytes+octet_length(target.metadata::text)+GREATEST(size.count-1,0)+128<=${MAX_POSITION_HISTORY_RESPONSE_BYTES}
+        THEN target.metadata||jsonb_build_object('transactions',COALESCE(
+          (SELECT jsonb_agg(payload ORDER BY slot,signature) FROM bounded),'[]'::jsonb))
+        ELSE NULL END AS snapshot
+      FROM size LEFT JOIN target ON true`);
+    if (!row) throw new PositionHistoryStoreError("POSITION_STORE_UNAVAILABLE");
+    const readAt = new Date(row.readAt).toISOString();
+    const storedContext = row.context;
+    if (!storedContext) return { readAt, snapshot: null };
+    if (Object.entries(context).some(([key, value]) => storedContext[key as keyof PositionContext] !== value))
+      throw new PositionHistoryStoreError("CONTEXT_MISMATCH");
+    if (row.count > MAX_POSITION_HISTORY_TRANSACTIONS)
+      throw new PositionHistoryStoreError("POSITION_HISTORY_TOO_LARGE");
+    if (!row.snapshot || Buffer.byteLength(JSON.stringify(row.snapshot)) > MAX_POSITION_HISTORY_RESPONSE_BYTES)
+      throw new PositionHistoryStoreError("POSITION_HISTORY_RESPONSE_TOO_LARGE");
+    const result = { readAt, snapshot: { ...row.snapshot, updatedAt: new Date(row.snapshot.updatedAt).toISOString() } };
+    if (Buffer.byteLength(JSON.stringify(result)) > MAX_POSITION_HISTORY_RESPONSE_BYTES)
+      throw new PositionHistoryStoreError("POSITION_HISTORY_RESPONSE_TOO_LARGE");
+    return result;
+  }
 
   private async snapshot(tx: Transaction, row: typeof state.$inferSelect, parserVersion: number,
     lease: PositionHistoryLease | null): Promise<PositionHistorySnapshot> {
@@ -113,7 +168,7 @@ export class PostgresPositionHistoryStore implements PositionHistoryStore {
       // The upsert locks an existing row before testing its lease. Concurrent
       // first readers therefore follow the same acquisition path as warm ones.
       const [claimed] = await tx.insert(state).values({ positionMint: context.positionMint, context, parserVersion,
-        leaseOwner: owner, leaseEpoch: 1, leaseExpiresAt: expiresAt }).onConflictDoUpdate({
+        leaseOwner: owner, leaseEpoch: 1, leaseExpiresAt: expiresAt, updatedAt: UNVERIFIED_POSITION_HISTORY_UPDATED_AT }).onConflictDoUpdate({
         target: state.positionMint,
         set: { leaseOwner: owner, leaseEpoch: sql`${state.leaseEpoch}+1`, leaseExpiresAt: expiresAt },
         setWhere: and(sql`${state.context} @> ${JSON.stringify(context)}::jsonb`,
@@ -185,7 +240,10 @@ export class PostgresPositionHistoryStore implements PositionHistoryStore {
         if (!opening) throw new PositionHistoryStoreError("MISSING_OPENING_EVENT");
       }
       // Fence after every transaction write; failures roll all of them back.
-      const [updated] = await tx.update(state).set({ ...input.state, revision: sql`${state.revision}+1`, updatedAt: now })
+      // Freshness describes when this worker started checking the chain. Its
+      // later completion must not acknowledge a refresh requested in between.
+      const [updated] = await tx.update(state).set({ ...input.state, revision: sql`${state.revision}+1`,
+        updatedAt: input.checked ? leaseStartedAt : UNVERIFIED_POSITION_HISTORY_UPDATED_AT })
         .where(leaseWhere(input.lease)).returning();
       if (!updated) throw new PositionHistoryStoreError("LEASE_LOST");
       const result = await this.snapshot(tx, updated, input.state.parserVersion, null);

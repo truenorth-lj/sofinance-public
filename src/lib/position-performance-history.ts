@@ -6,7 +6,7 @@ import type { RpcProvider } from "@sofinance/engine/rpc/types";
 
 export const HISTORY_BATCH_SIZE = 8;
 
-export type HistoryFetchSource = "getParsedTransactionBatch" | "databaseIncremental";
+export type HistoryFetchSource = "getParsedTransactionBatch" | "databaseIncremental" | "databaseSnapshot";
 
 export type HistoryProvider = "default" | "unknown";
 

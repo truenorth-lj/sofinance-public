@@ -9,12 +9,14 @@ const signature = z.string().max(88).refine((value) => {
   try { return bs58.decode(value).length === 64; } catch { return false; }
 });
 export const MAX_PORTFOLIO_POSITIONS = 50;
+export const PORTFOLIO_POLL_MS = 8_000;
 export const portfolioRequestSchema = z.object({
   wallet: pubkey,
   positions: z.array(z.object({
     key: z.string().max(100).regex(/^[a-z0-9-]+:[1-9A-HJ-NP-Za-km-z]{32,44}$/)
       .refine((key) => pubkey.safeParse(key.split(":")[1]).success),
     afterSignatures: z.array(signature).max(8).optional(),
+    refreshAfter: z.iso.datetime().optional(),
   }).strict()).max(MAX_PORTFOLIO_POSITIONS),
   fresh: z.boolean().optional(),
 }).strict();
@@ -24,6 +26,9 @@ export const portfolioPositionSchema = z.object({
   key: z.string(), status: z.enum(["ready", "partial", "failed"]),
   figures: z.object({ stock: z.string().nullable(), shares: usd, valueUsd: usd, unclaimedFeesUsd: usd, cumulativeFeesUsd: usd }),
   evaluatedAt: z.string().nullable(), historyComplete: z.boolean(), historyRefreshResolved: z.boolean(),
+  historyUpdatedAt: z.iso.datetime().nullable().optional(),
+  historyStatus: z.enum(["fresh", "updating", "stale", "unavailable"]).optional(),
+  historyRefreshAfter: z.iso.datetime().optional(),
 });
 export type PortfolioPosition = z.infer<typeof portfolioPositionSchema>;
 export type PortfolioResponse = {
@@ -36,3 +41,5 @@ export type PortfolioResponse = {
 /** Prepared per-source reads share request-local inputs; only compact figures leave the source. */
 export type PortfolioRead = Omit<PortfolioPosition, "key" | "status"> & { timings?: unknown };
 export type PortfolioReader = (position: PortfolioRequest["positions"][number], signal: AbortSignal) => Promise<PortfolioRead>;
+export type PortfolioHistoryScheduler = (key: string, work: (signal: AbortSignal) => Promise<void>) => void;
+export type PortfolioInput = PortfolioRequest & { scheduleHistoryRefresh?: PortfolioHistoryScheduler };

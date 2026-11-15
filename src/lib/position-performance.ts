@@ -215,6 +215,7 @@ export async function getPositionFigures(positionMint: string, options: Position
 }
 
 type PositionValuationOptions = GetPositionPerformanceOptions & {
+  historyResult?: import("./position-history-sync").SyncedPositionHistory;
   snapshot?: ClmmPositionAccounts;
   prices?: ReadonlyMap<string, TokenPriceQuote>;
   symbols?: { symbolA: string | null; symbolB: string | null };
@@ -242,7 +243,7 @@ async function readPositionValuation(positionMint: string, options: PositionValu
   const fallbackConnection = options.fallbackConnection;
   const historyStore = options.historyStore !== undefined ? options.historyStore
     : !options.connection && getRwaConfig().positionHistoryEnabled ? getPositionHistoryStore() : null;
-  const [fetched, uncollected, ownsNft] = await Promise.all([loadPerformanceHistory({
+  const [fetched, uncollected, ownsNft] = await Promise.all([options.historyResult ?? loadPerformanceHistory({
     address: positionPda,
     maxSignatures,
     maxDetailRequests: options.historyDetailBudget ?? (options.connection ? undefined : MAX_PACED_HISTORY_DETAILS),
