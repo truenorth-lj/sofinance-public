@@ -56,26 +56,28 @@ const coinCentre = () => {
   return [Math.round(parseFloat(coin.style.left) + parseFloat(coin.style.width) / 2), Math.round(parseFloat(coin.style.top) + parseFloat(coin.style.height) / 2)];
 };
 
-it("Meteora row: a confirmed compound plays the coins from the open popup's Done (the xStock by mint, not a shortened label), and Done closes at once", async () => {
+it("Meteora row: a confirmed compound plays nothing until its Done is clicked, then the coins pop out of Done (the xStock by mint, not a shortened label) and the popup closes", async () => {
   await act(async () => root.render(createElement(Row, { startOpen: true })));
   expect(burst()).toBeNull();
   await land("success");
-  expect(popup().querySelector('[data-testid="compound-submit-done"]')?.textContent).toBe("Done");
+  const done = popup().querySelector<HTMLButtonElement>('[data-testid="compound-submit-done"]')!;
+  expect(done.textContent).toBe("Done");
+  expect(done.className).toContain("motion-safe:active:scale-[0.94]");
+  // The confirmed landing alone plays nothing.
+  expect(burst()).toBeNull();
+  await act(async () => done.click());
+  expect(popup().dataset.open).toBe("false");
   expect(burst()).not.toBeNull();
   expect(coinCentre()).toEqual([660, 520]);
-  const logos = [...burst()!.querySelectorAll("[data-coin] img")].map((img) => img.getAttribute("src"));
+  const logos = [...burst()!.querySelectorAll("[data-coin]")].map((coin) => coin.getAttribute("data-logo"));
   expect(logos.filter((logo) => logo === STOCK_COIN_LOGOS.TSLA).length).toBeGreaterThanOrEqual(logos.length / 2 - 1);
-  const played = burst();
-  await act(async () => popup().querySelector<HTMLButtonElement>('[data-testid="compound-submit-done"]')!.click());
-  expect(popup().dataset.open).toBe("false");
-  expect(burst()).toBe(played);
 });
 
-it("Meteora row: with the popup closed the coins leave from the row's Compound button; a failed compound plays none", async () => {
+it("Meteora row: closing the result without Done, or a failed compound, plays nothing", async () => {
   await act(async () => root.render(createElement(Row, { startOpen: false })));
   await land("failed");
   expect(burst()).toBeNull();
+  // Landed while the popup was closed: there is no Done to click, so nothing plays.
   await land("success");
-  expect(burst()).not.toBeNull();
-  expect(coinCentre()).toEqual([60, 720]);
+  expect(burst()).toBeNull();
 });

@@ -29,8 +29,31 @@ export const REDUCED_COINS = 3;
 /** How many coins pop out, and how many of them are the position's own stock (when it has an xStock logo). */
 export const COIN_COUNT = { wide: 14, narrow: 9 } as const;
 export const OWN_SHARE = 0.5;
-/** Coin diameter in CSS px from the far plane (depth 0) to the near plane (depth 1). */
-export const COIN_SIZE = { far: 34, near: 70 } as const;
+/**
+ * Pixel-art coins, in the character's 2D game style: a COIN_GRID × COIN_GRID sprite (outline, gold rim with a highlight
+ * and a shade, and a face where the stock logo is drawn at about 10 × 10 pixels). Each sprite pixel is a whole number of
+ * CSS px so edges stay crisp: far coins 2 px a pixel, near ones 4 (3 on phones).
+ */
+export const COIN_GRID = 16;
+export const COIN_PIXEL = { wide: { far: 2, near: 4 }, narrow: { far: 2, near: 3 } } as const;
+/** Coin diameter in CSS px from the far plane (depth 0) to the near plane (depth 1), on a wide screen. */
+export const COIN_SIZE = { far: COIN_GRID * COIN_PIXEL.wide.far, near: COIN_GRID * COIN_PIXEL.wide.near } as const;
+
+/** Whole CSS px per sprite pixel for a coin at `depth` (0 far … 1 near). */
+export function coinPixel(depth: number, narrow: boolean): number {
+  const range = narrow ? COIN_PIXEL.narrow : COIN_PIXEL.wide;
+  return range.far + Math.round((range.near - range.far) * Math.min(1, Math.max(0, depth)));
+}
+
+/** O outline, G gold, H highlight (upper left), D shade (lower right), F the face (the stock logo), "." empty. */
+export const COIN_COLORS: Readonly<Record<string, string>> = Object.freeze({ O: "#3d2b05", G: "#f2c230", H: "#fff1a6", D: "#b7861a" });
+export const COIN_SPRITE: readonly string[] = Object.freeze(Array.from({ length: COIN_GRID }, (_, y) => Array.from({ length: COIN_GRID }, (_, x) => {
+  const dx = x + 0.5 - COIN_GRID / 2, dy = y + 0.5 - COIN_GRID / 2;
+  const r = Math.hypot(dx, dy);
+  return r > 8 ? "." : r > 7 ? "O" : r > 5.2 ? (dx + dy < -3 ? "H" : dx + dy > 3 ? "D" : "G") : "F";
+}).join("")));
+/** The face's bounding box in sprite pixels (where the logo is drawn, clipped to the face pixels). */
+export const COIN_FACE = { x: 3, y: 3, size: 10 } as const;
 
 export type Rand = () => number;
 export type Point = { x: number; y: number };
@@ -132,8 +155,9 @@ export function beadFlights(count: number, origin: Point, viewport: Viewport, ra
     const slot = (index + 0.15 + rand() * 0.7) / count;
     const angle = (-158 + slot * 136) * (Math.PI / 180);
     const depth = rand();
-    const size = COIN_SIZE.far + (COIN_SIZE.near - COIN_SIZE.far) * depth;
-    const blur = depth > 0.82 ? Math.round((depth - 0.82) * 90) / 10 : depth < 0.12 ? 0.6 : 0;
+    // Pixel art stays crisp: a whole number of CSS px per sprite pixel, and no depth blur.
+    const size = COIN_GRID * coinPixel(depth, viewport.width < 640);
+    const blur = 0;
     const speed = (620 + 420 * rand()) * (0.85 + 0.3 * depth) * power;
     let vx = Math.cos(angle) * speed * spread * 1.15;
     let vy = Math.sin(angle) * speed;
@@ -195,7 +219,8 @@ export function beadKeyframes(flight: Pick<BeadFlight, "frames" | "catchAt">, or
         transform: `translate3d(${(where.x - origin.x).toFixed(1)}px, ${(where.y - origin.y).toFixed(1)}px, 0) scale(${(gone ? 0.4 : frame.scale).toFixed(3)})` };
     }),
     turn: flight.frames.map((frame) => ({ offset: offset(frame.t),
-      transform: `rotateY(${frame.tiltY.toFixed(1)}deg) rotateZ(${frame.roll.toFixed(1)}deg)` })),
+      // A 2D game coin's spin: it narrows and widens (the wobble's cosine), never rotated off the pixel grid or flipped.
+      transform: `scaleX(${Math.max(0.2, Math.cos((frame.tiltY * Math.PI) / 180)).toFixed(3)})` })),
   };
 }
 
@@ -208,17 +233,17 @@ export function reducedSpots(origin: Point, count = REDUCED_COINS): { size: numb
 }
 
 /**
- * The signature to celebrate now: a confirmed success not played yet (once per signature). Submitting, confirming,
- * failed and nothing never play.
+ * The confirmed success waiting for its Done (once per signature): the coins are chosen and preloaded for it, and they
+ * play only when Done is clicked. Submitting, confirming, failed and nothing are never armed.
  */
 export function celebrationToPlay(feedback: { phase: string; signature: string } | null, lastPlayed: string | null): string | null {
   const signature = feedback?.signature || null;
   return feedback?.phase === "success" && signature && signature !== lastPlayed ? signature : null;
 }
 
-/** The little pixel character: 12 × 14 sprite pixels, drawn at 4 px a pixel (3 on phones). */
+/** The little pixel character: 12 × 14 sprite pixels, drawn at 6 px a pixel (4 on phones). */
 export const CATCHER = Object.freeze({
-  grid: { width: 12, height: 14 }, pixel: { wide: 4, narrow: 3 },
+  grid: { width: 12, height: 14 }, pixel: { wide: 6, narrow: 4 },
   /** Sprite pixels per second, scaled with the screen width like the coins' spread. */
   runSpeed: 540, appearMs: 150, maxCatches: 3, stepMs: 100,
   /** It is hit no earlier than this, and at least `afterCatchMs` after its last catch. */
@@ -227,7 +252,7 @@ export const CATCHER = Object.freeze({
   feetMargin: 6,
 });
 /** The big coin that knocks it over: the position's own stock, about 1.5× a near coin. */
-export const KNOCK_COIN_SIZE = { wide: 96, narrow: 72 } as const;
+export const KNOCK_COIN_SIZE = { wide: COIN_GRID * 6, narrow: COIN_GRID * 5 } as const;
 
 export type CatcherPose = "stand" | "runA" | "runB";
 export type CatcherFrame = { t: number; x: number; pose: CatcherPose; facing: 1 | -1; tilt: number; scale: number; opacity: number };
@@ -365,7 +390,7 @@ export const CATCHER_SPRITES: Readonly<Record<CatcherPose, readonly string[]>> =
 });
 
 /** Sprite rows as runs of same-coloured pixels (fewer SVG rects than one per pixel). */
-export function spriteRuns(rows: readonly string[]): { x: number; y: number; width: number; color: string }[] {
+export function spriteRuns(rows: readonly string[], colors: Readonly<Record<string, string>> = CATCHER_COLORS): { x: number; y: number; width: number; color: string }[] {
   const runs: { x: number; y: number; width: number; color: string }[] = [];
   rows.forEach((row, y) => {
     let x = 0;
@@ -373,7 +398,7 @@ export function spriteRuns(rows: readonly string[]): { x: number; y: number; wid
       const key = row[x]!;
       let end = x + 1;
       while (end < row.length && row[end] === key) end++;
-      const color = CATCHER_COLORS[key];
+      const color = colors[key];
       if (color) runs.push({ x, y, width: end - x, color });
       x = end;
     }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  CATCHER, CATCHER_SPRITES, coinSymbol, CELEBRATION_MS, COIN_COUNT, COIN_SIZE, FALL_MS, KNOCK_COIN_SIZE,
+  CATCHER, CATCHER_SPRITES, coinSymbol, CELEBRATION_MS, COIN_COLORS, COIN_COUNT, COIN_FACE, COIN_GRID, COIN_SIZE, COIN_SPRITE, FALL_MS, KNOCK_COIN_SIZE, coinPixel,
   PHYSICS, REDUCED_COINS, SAMPLE_MS, STAGGER_MS, STOCK_COIN_LOGOS, beadFlights, beadKeyframes, catcherKeyframes, celebrationToPlay,
   pickCoinLogos, planCatcher, reducedSpots, seedFrom, seededRandom, spriteRuns, stockTicker, type BeadFlight,
 } from "./coins";
@@ -101,7 +101,9 @@ describe("beads falling to the floor", () => {
     for (const flight of flights) {
       expect(flight.size).toBeGreaterThanOrEqual(COIN_SIZE.far);
       expect(flight.size).toBeLessThanOrEqual(COIN_SIZE.near);
-      expect(flight.blur).toBeLessThanOrEqual(1.7);
+      // Pixel art: a whole number of CSS px per sprite pixel, and no depth blur.
+      expect(flight.size % COIN_GRID).toBe(0);
+      expect(flight.blur).toBe(0);
     }
   });
   it("stays on screen (bounces off the sides), spreads to both sides, wobbles without flipping, and fades out", () => {
@@ -133,7 +135,9 @@ describe("beads falling to the floor", () => {
     expect(move.at(-1)!.opacity).toBe(0);
     expect(move.map((frame) => frame.offset)).toEqual([...move.map((frame) => frame.offset)].sort((a, b) => a - b));
     expect(turn).toHaveLength(move.length);
-    expect(turn[0]!.transform).toMatch(/^rotateY\(-?\d+\.\ddeg\) rotateZ\(0\.0deg\)$/);
+    // A 2D game coin's spin: it narrows and widens (never rotated off the pixel grid, never flipped).
+    expect(turn[0]!.transform).toMatch(/^scaleX\((0\.\d{3}|1\.000)\)$/);
+    for (const frame of turn) expect(Number(/scaleX\(([\d.]+)\)/.exec(frame.transform)![1])).toBeGreaterThanOrEqual(0.2);
   });
   it("is over in about 2.9 s, a whole number of samples", () => {
     expect(CELEBRATION_MS).toBe(STAGGER_MS + FALL_MS);
@@ -148,6 +152,34 @@ describe("beads falling to the floor", () => {
       expect(Math.hypot(spot.x - origin.x, spot.y - origin.y)).toBeLessThanOrEqual(85);
       expect(spot.y).toBeLessThan(origin.y);
     }
+  });
+});
+
+describe("pixel coins", () => {
+  it("are a 16 × 16 sprite: an outline, a gold rim lit from the upper left, and a 10 × 10 face for the logo", () => {
+    expect(COIN_SPRITE).toHaveLength(COIN_GRID);
+    for (const row of COIN_SPRITE) expect(row).toHaveLength(COIN_GRID);
+    const at = (x: number, y: number) => COIN_SPRITE[y]![x]!;
+    expect(at(0, 0)).toBe(".");
+    expect(at(7, 0)).toBe("O");
+    expect(at(4, 2)).toBe("H");
+    expect(at(14, 14)).toBe(".");
+    expect(at(12, 12)).toBe("D");
+    expect(at(8, 8)).toBe("F");
+    // The face fits the box the logo is drawn into, and touches all four of its sides.
+    const face: [number, number][] = [];
+    COIN_SPRITE.forEach((row, y) => [...row].forEach((key, x) => { if (key === "F") face.push([x, y]); }));
+    expect(Math.min(...face.map(([x]) => x))).toBe(COIN_FACE.x);
+    expect(Math.max(...face.map(([x]) => x))).toBe(COIN_FACE.x + COIN_FACE.size - 1);
+    expect(Math.min(...face.map(([, y]) => y))).toBe(COIN_FACE.y);
+    expect(Math.max(...face.map(([, y]) => y))).toBe(COIN_FACE.y + COIN_FACE.size - 1);
+    expect(Object.keys(COIN_COLORS).sort()).toEqual(["D", "G", "H", "O"]);
+  });
+  it("are drawn at whole CSS px a pixel: 2 far to 4 near (3 on phones)", () => {
+    expect([coinPixel(0, false), coinPixel(0.5, false), coinPixel(1, false)]).toEqual([2, 3, 4]);
+    expect([coinPixel(0, true), coinPixel(1, true)]).toEqual([2, 3]);
+    expect(COIN_SIZE).toEqual({ far: 32, near: 64 });
+    expect(KNOCK_COIN_SIZE).toEqual({ wide: 96, narrow: 80 });
   });
 });
 
@@ -173,7 +205,7 @@ describe("the little character", () => {
       const { flights, plan } = setup(seed);
       expect(plan.startX).toBe(origin.x);
       expect(plan.feetY).toBe(viewport.height - CATCHER.feetMargin);
-      expect(plan.pixel).toBe(4);
+      expect(plan.pixel).toBe(6);
       expect(plan.catches.length).toBeGreaterThanOrEqual(1);
       expect(plan.catches.length).toBeLessThanOrEqual(CATCHER.maxCatches);
       let x = plan.startX, t = CATCHER.appearMs / 1000;
@@ -245,7 +277,7 @@ describe("the little character", () => {
   });
   it("is smaller on a phone and keeps inside a 390 px screen", () => {
     const { plan } = setup(5, { width: 390, height: 844 }, { x: 195, y: 545 });
-    expect(plan.pixel).toBe(3);
+    expect(plan.pixel).toBe(4);
     expect(plan.knock.size).toBe(KNOCK_COIN_SIZE.narrow);
     for (const frame of plan.frames) {
       expect(frame.x).toBeGreaterThanOrEqual(plan.width / 2);

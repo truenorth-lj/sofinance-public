@@ -63,8 +63,9 @@ export function RaydiumRowCompound({ controller: c, positionMint, positionKey, s
       title: feedback.phase === "success" ? "Compound confirmed" : feedback.phase === "failed" ? "Compound failed" : "Compound confirming",
       detail: feedback.phase === "failed" ? feedback.message || "The transaction did not complete." : undefined });
   }, [feedback, positionKey]);
-  // Coins for a confirmed compound, once per signature: from the popup's Done while it is open, else from the row button.
-  // Each pool token's coin is its xStock ticker by mint (a shortened mint never matches one), else its display symbol.
+  // Coins for a confirmed compound, once per signature, only when its Done is clicked (from that button); closing the popup
+  // another way plays nothing. Each pool token's coin is its xStock ticker by mint (a shortened mint never matches one),
+  // else its display symbol.
   const coinMints = state ? [state.mintA, state.mintB] : [];
   const celebration = useCompoundCelebration(feedback, coinMints.map((mint) => coinSymbol(mint, tokenLabel(mint))));
   const rowButton = useRef<HTMLButtonElement>(null);
@@ -81,7 +82,7 @@ export function RaydiumRowCompound({ controller: c, positionMint, positionKey, s
     </RowActionsBar>
     <ActionDialog open={slot.open} onClose={close} title="Compound fees" testId="compound-popup" size="sm" dismissible={!settling || c.feedbackSlow}>
       {/* The automatic cleanup that follows a confirmed compound shows under its result, in the same popup. */}
-      {feedback ? <><CompoundSubmitStatus feedback={feedback} slow={c.feedbackSlow} onDone={close} doneRef={doneButton} /><CleanupProgress controller={c} /></>
+      {feedback ? <><CompoundSubmitStatus feedback={feedback} slow={c.feedbackSlow} onDone={() => { celebration.celebrateFrom(doneButton.current?.getBoundingClientRect()); close(); }} doneRef={doneButton} /><CleanupProgress controller={c} /></>
         : running ? <div data-testid="compound-progress">
           <p role="status" className="mt-4 flex items-center gap-2 text-sm text-cream/80"><LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />{action}</p>
           {/* Stated before signing: the simulation's protocol fee shows while the wallet asks for the signature. */}
@@ -101,7 +102,7 @@ export function RaydiumRowCompound({ controller: c, positionMint, positionKey, s
           </div>}
         </>}
     </ActionDialog>
-    <CompoundTokenBurst play={celebration.play} originRef={slot.open ? doneButton : rowButton} />
+    <CompoundTokenBurst play={celebration.play} originRef={rowButton} />
   </>;
 }
 
