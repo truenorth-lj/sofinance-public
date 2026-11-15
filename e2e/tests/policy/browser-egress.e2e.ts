@@ -91,6 +91,43 @@ local("disabled guard control: sink and zero-egress assertion detect getBalance"
   } finally { await context.close(); }
 });
 
+local("Portfolio logo and footer reads are explicit GETs; POST and unknown paths remain blocked", async ({ browser, servers: { app } }) => {
+  const context = await browser.newContext({ serviceWorkers: "block" });
+  const policy = await installReadonlyPolicy(context, app.origin);
+  const paths = ["/api/protocol-pools", "/navbar-mark-squircle-cream.svg", "/faq", "/learn", "/fees", "/docs/risks", "/terms"];
+  try {
+    const page = await context.newPage(); await page.goto(app.origin);
+    const outcomes = await page.evaluate(async (paths) => {
+      const reads = await Promise.all(paths.map(async (path) => (await fetch(path)).ok));
+      await fetch(paths[0]!, { method: "POST" }).catch(() => undefined);
+      await fetch("/unlisted-smoke-path").catch(() => undefined);
+      return reads;
+    }, paths);
+    expect(outcomes).toEqual(paths.map(() => true));
+    expect(app.hits.filter((hit) => paths.includes(hit.path)).sort((a, b) => a.path.localeCompare(b.path)))
+      .toEqual(paths.map((path) => ({ method: "GET", path })).sort((a, b) => a.path.localeCompare(b.path)));
+    expect(app.hits.some((hit) => hit.path === "/unlisted-smoke-path")).toBe(false);
+    expect(policy.failures()).toEqual(["Operation outside readonly browser scope was attempted", "Operation outside readonly browser scope was attempted"]);
+  } finally { await context.close(); }
+});
+
+local("Meteora position discovery is an empty stub; transaction operations remain blocked", async ({ browser, servers: { app } }) => {
+  const context = await browser.newContext({ serviceWorkers: "block" });
+  const policy = await installReadonlyPolicy(context, app.origin);
+  try {
+    const page = await context.newPage(); await page.goto(app.origin);
+    const positions = await page.evaluate(async () => {
+      const response = await fetch("/api/dex/meteora-dlmm/positions", { method: "POST", body: JSON.stringify({ owner: "synthetic" }) });
+      await fetch("/api/dex/meteora-dlmm/open", { method: "POST", body: "{}" }).catch(() => undefined);
+      return response.json();
+    });
+    expect(positions).toEqual({ positions: [] });
+    expect(app.hits.filter((hit) => hit.path.startsWith("/api/dex/"))).toEqual([]);
+    expect(policy.events.filter((event) => event.scope === "wallet-stub")).toHaveLength(1);
+    expect(policy.failures()).toEqual(["Operation outside readonly browser scope was attempted"]);
+  } finally { await context.close(); }
+});
+
 local("GET POST beacon and popup blocked; healthy origin and wallet stubs work", async ({ browser, servers: { app, sink } }) => {
   const context = await browser.newContext({ serviceWorkers: "block" });
   const policy = await installReadonlyPolicy(context, app.origin);
