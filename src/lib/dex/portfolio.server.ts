@@ -20,7 +20,8 @@ export async function readPortfolio(input: PortfolioRequest, signal: AbortSignal
   }));
   const timings: Record<string, unknown> = {};
   const results = await mapPortfolioPositions(positions, async (item): Promise<PortfolioPosition> => {
-    const rowSignal = AbortSignal.any([signal, AbortSignal.timeout(PORTFOLIO_POSITION_DEADLINE_MS)]);
+    const rowController = new AbortController();
+    const rowSignal = AbortSignal.any([signal, rowController.signal, AbortSignal.timeout(PORTFOLIO_POSITION_DEADLINE_MS)]);
     const reader: PortfolioReader | null | undefined = readers.get(item.key.split(":")[0]!);
     try {
       rowSignal.throwIfAborted();
@@ -32,6 +33,9 @@ export async function readPortfolio(input: PortfolioRequest, signal: AbortSignal
       return { key: item.key, status: complete ? "ready" : "partial", figures, evaluatedAt, historyComplete, historyRefreshResolved };
     } catch {
       return { key: item.key, status: "failed", figures: positionFigures(null), evaluatedAt: null, historyComplete: false, historyRefreshResolved: false };
+    } finally {
+      // Promise.all rejection does not cancel siblings; abort them before refilling the worker slot.
+      rowController.abort();
     }
   });
   return { wallet: input.wallet, positions: results, totals: portfolioTotals(results.map((result) => result.status === "failed"

@@ -84,4 +84,17 @@ describe("Portfolio aggregation", () => {
     } finally { vi.restoreAllMocks(); vi.useRealTimers(); }
   });
 
+  it("cancels a slow fee sibling before reusing a slot after a fast history failure", async () => {
+    let active = 0, max = 0;
+    mocks.figures.mockImplementation(async (_mint: string, options: { signal: AbortSignal }) => {
+      active++; max = Math.max(max, active);
+      options.signal.addEventListener("abort", () => { active--; }, { once: true });
+      throw new Error("History store unavailable while fee RPC is still active");
+    });
+    const result = await readPortfolio({ wallet: mint(7), positions: [1, 2, 3, 4, 5].map((n) => ({ key: key(n) })) }, signal());
+    expect(result.positions.every((row) => row.status === "failed")).toBe(true);
+    expect(max).toBeLessThanOrEqual(2); expect(active).toBe(0);
+    expect(mocks.figures).toHaveBeenCalledTimes(5);
+  });
+
 });

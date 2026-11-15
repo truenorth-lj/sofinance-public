@@ -271,6 +271,8 @@ describe("Raydium position performance characterization", () => {
       fetcher: vi.fn(async () => Response.json({ data: [{ mintA: { symbol: "HOODx" }, mintB: { symbol: "HOOD" } }] })) });
     expect(compact.figures).toEqual(positionFigures(full));
     expect(compact.historyComplete).toBe(true);
+    const compactRead = vi.mocked(loadPerformanceHistory).mock.calls.at(-2)![0];
+    expect(compactRead.maxDetailRequests).toBe(8);
     expect(compact).not.toHaveProperty("history"); expect(compact).not.toHaveProperty("realizedFeeAprSeries");
     expect(options.fetcher).not.toHaveBeenCalled();
   });

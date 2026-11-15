@@ -43,6 +43,8 @@ import { createHistoryRpcConnections } from "./position-history-rpc";
 // At four public-RPC starts/second, 500 details cannot finish within the shared
 // fifty-second deadline. Durable reads checkpoint in bounded chunks instead.
 const MAX_PACED_HISTORY_DETAILS = 100;
+// Two Portfolio readers share a public RPC pacer; small checkpoints fit the 12-second row deadline.
+const PORTFOLIO_HISTORY_DETAILS = 8;
 export { DEFAULT_MAX_SIGNATURES, MAX_PERFORMANCE_SIGNATURES, PERFORMANCE_READ_TIMEOUT_MS, describePositionPricing } from "./position-performance-assemble";
 export { JUPITER_PRICE_V3 };
 export const RAYDIUM_POOL_IDS = "https://api-v3.raydium.io/pools/info/ids";
@@ -194,7 +196,7 @@ export async function getPositionPerformance(
 /** Reuse the valuation and history contracts without building entry prices, APR series or a detail report. */
 export async function getPositionFigures(positionMint: string, options: PositionValuationOptions = {}) {
   // Public valuation does not need the NFT-owner read; transaction endpoints still verify ownership.
-  const data = await readPositionValuation(positionMint, { ...options, wallet: undefined });
+  const data = await readPositionValuation(positionMint, { ...options, wallet: undefined, historyDetailBudget: PORTFOLIO_HISTORY_DETAILS });
   const equivalent = data.tokenNative.tokenEquivalent;
   const finite = (value: number | null | undefined) => typeof value === "number" && Number.isFinite(value) ? value : null;
   const historyComplete = !data.stockIncomplete;
@@ -217,6 +219,7 @@ type PositionValuationOptions = GetPositionPerformanceOptions & {
   prices?: ReadonlyMap<string, TokenPriceQuote>;
   symbols?: { symbolA: string | null; symbolB: string | null };
   accountConnection?: Connection;
+  historyDetailBudget?: number;
 };
 
 async function readPositionValuation(positionMint: string, options: PositionValuationOptions): Promise<Parameters<typeof assemblePerformanceResult>[0]> {
@@ -242,7 +245,7 @@ async function readPositionValuation(positionMint: string, options: PositionValu
   const [fetched, uncollected, ownsNft] = await Promise.all([loadPerformanceHistory({
     address: positionPda,
     maxSignatures,
-    maxDetailRequests: options.connection ? undefined : MAX_PACED_HISTORY_DETAILS,
+    maxDetailRequests: options.historyDetailBudget ?? (options.connection ? undefined : MAX_PACED_HISTORY_DETAILS),
     connection,
     provider,
     fallbackConnection,
