@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
-// Compound lives only on the position row (LJ 11/14): the row button drives the real controller, also from a row that is
-// not selected yet (it selects it, waits for its latest fees, then starts once), and there is no Compound fees tab.
+// Compound lives only on the position row (LJ 11/14): the row button opens its Compound popup (static facts, no new
+// simulation), and Confirm drives the real controller, also for a row that was not selected yet (opening it selects it
+// and reads its latest fees first). Nothing expands under a row and there is no tab.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -8,6 +9,7 @@ import { SelectedApp } from "./selected-app";
 import { WalletConnectionContext, type WalletConnection } from "./wallet-connection";
 import { testKeypair } from "@/lib/test-support/send-fixtures";
 import { USDC_MINT } from "@sofinance/engine/ids";
+import { compoundConfirmButton, openPopup } from "./test-support/portfolio-popups";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/app" }));
 const wallet = testKeypair(171).publicKey.toBase58();
@@ -60,27 +62,34 @@ async function mount() {
   await settle();
 }
 
-it("opens on Add to position with no Compound fees tab; every Raydium row has its own Compound", async () => {
+it("has no tabs and nothing under a row; every Raydium row has Compound, Add, Withdraw and Activity", async () => {
   await mount();
-  const tabs = [...container.querySelectorAll("nav[aria-label='Position operations'] button")].map((b) => b.textContent);
-  expect(tabs).toEqual(["Performance", "Add to position", "Withdraw"]);
-  expect(container.querySelector<HTMLElement>("#deposit-view")?.hidden).toBe(false);
+  expect(container.querySelector("nav[aria-label='Position operations']")).toBeNull();
+  expect(container.querySelector("#deposit-view")).toBeNull();
   expect(container.querySelector("#compound-view")).toBeNull();
+  expect(container.querySelector('[data-testid="selected-position-detail"]')).toBeNull();
   expect(container.textContent).not.toContain("One-click compound");
-  expect(compoundOf(FIRST).textContent).toBe("Compound");
-  expect(compoundOf(SECOND).textContent).toBe("Compound");
+  for (const mint of [FIRST, SECOND]) {
+    expect([...rowOf(mint).querySelectorAll('[data-testid="position-row-action"]')].map((b) => b.textContent)).toEqual(["Compound", "Add", "Withdraw", "Activity"]);
+  }
 });
 
-it("the selected row's Compound starts the compound for that position", async () => {
+it("the row's Compound opens its popup with static facts; Confirm starts the compound for that position", async () => {
   await mount();
   await act(async () => compoundOf(FIRST).click());
   await settle();
+  expect(prepares()).toEqual([]); // opening only shows the facts
+  const popup = openPopup(rowOf(FIRST), "compound-popup")!;
+  expect(popup.textContent).toContain("Adds this position's fees back into the same range.");
+  expect(popup.querySelector('[data-testid="compound-confirm-fee"]')?.textContent).toBe("0.10%");
+  await act(async () => compoundConfirmButton(rowOf(FIRST))!.click());
+  await settle();
   expect(prepares().map((call) => call.body?.positionMint)).toEqual([FIRST]);
-  expect(compoundOf(FIRST).disabled).toBe(true);
+  expect(compoundOf(FIRST).disabled).toBe(false); // reopens its own popup
   expect(compoundOf(SECOND).disabled).toBe(true); // one operation at a time
 });
 
-it("another row's Compound selects that position, waits for its latest fees, then starts once for it", async () => {
+it("another row's Compound selects that position and waits for its latest fees before Confirm can start it once", async () => {
   await mount();
   let release!: () => void;
   holdState = new Promise<void>((resolve) => { release = resolve; });
@@ -88,13 +97,19 @@ it("another row's Compound selects that position, waits for its latest fees, the
   await settle();
   expect(new URL(window.location.href).searchParams.get("position")).toBe(`raydium-clmm:${SECOND}`);
   expect(prepares()).toEqual([]);
-  expect(compoundOf(SECOND).textContent).toBe("Loading latest fees…");
-  expect(compoundOf(SECOND).disabled).toBe(true);
+  const confirm = () => compoundConfirmButton(rowOf(SECOND))!;
+  expect(confirm().textContent).toBe("Loading latest fees…");
+  expect(confirm().disabled).toBe(true);
   holdState = null;
   await act(async () => release());
   await settle();
+  expect(prepares()).toEqual([]);
+  expect(confirm().disabled).toBe(false);
+  await act(async () => confirm().click());
+  await settle();
   expect(prepares().map((call) => call.body?.positionMint)).toEqual([SECOND]);
-  // Clicking again while it runs starts nothing new.
+  // The popup now shows progress; there is no second Confirm while it runs.
+  expect(compoundConfirmButton(rowOf(SECOND))).toBeNull();
   await act(async () => compoundOf(SECOND).click());
   await settle();
   expect(prepares()).toHaveLength(1);

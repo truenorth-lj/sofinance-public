@@ -10,6 +10,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "../fixtures";
 import { ConnectModal } from "../../pages/connect-modal";
+import { openRowTool } from "../../pages/all-positions";
 import { randomAddress, buildSingleSignerTx } from "../../support/tx";
 import type { Page } from "@playwright/test";
 import type { FakeWallet } from "../../fake-wallet/node-signer";
@@ -72,6 +73,7 @@ async function setup(page: Page, wallet: FakeWallet, lookup: { outcome: "landed"
   });
   await page.goto("/app?view=deposit");
   await new ConnectModal(page, wallet).connect();
+  await openRowTool(page, null, "deposit"); // Add is the row's popup (LJ 11/14)
   await expect(page.getByRole("button", { name: "MAX", exact: true })).toBeEnabled();
   await page.getByRole("textbox", { name: "Input limit" }).fill("1");
   const add = page.getByRole("button", { name: "Add liquidity", exact: true });

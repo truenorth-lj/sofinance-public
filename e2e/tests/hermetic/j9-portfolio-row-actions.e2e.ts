@@ -1,21 +1,24 @@
-// J9: the All positions row actions (Compound, Add, Withdraw) stay on one line at common widths, idle and while a
-// compound waits for the wallet; on a phone the sticky Add liquidity bar never covers the positions list.
+// J9: the All positions row actions (Compound, Add, Withdraw, Activity) stay on one line on desktop widths, idle and while
+// a compound waits for the wallet; on narrower screens Compound takes its own line above the other three. Each button
+// opens a popup: a centered modal on desktop, a bottom sheet on a phone (LJ 11/14).
 // Hermetic: API answers come from e2e/support/layout-mocks.ts (plus a synthetic compound prepare); every other host is
 // blocked. The wallet prompt is held open and the context closes before anything could be signed; nothing is sent.
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
+import { VersionedTransaction } from "@solana/web3.js";
+import bs58 from "bs58";
 import { installFakeWallet } from "../../fake-wallet/install";
 import { FakeWallet } from "../../fake-wallet/node-signer";
 import { ConnectModal } from "../../pages/connect-modal";
-import { selectPosition } from "../../pages/all-positions";
 import { installLayoutMocks } from "../../support/layout-mocks";
 import { buildSingleSignerTx, randomAddress } from "../../support/tx";
 
-async function setup(browser: Browser, baseURL: string | undefined, width: number) {
+async function setup(browser: Browser, baseURL: string | undefined, width: number, signing: "held" | "normal" = "held") {
   const phone = width < 640;
   const context = await browser.newContext({ baseURL, viewport: { width, height: 800 }, isMobile: phone, hasTouch: phone, reducedMotion: "reduce" });
   const origin = new URL(baseURL ?? "http://localhost").origin;
   await context.route((url) => url.origin !== origin, (route) => route.abort());
-  const wallet = new FakeWallet({ mode: "slow", slowMs: 600_000 }); // the prompt stays open for the whole test
+  // Held: the prompt stays open for the whole test. Normal: the fake wallet signs; tx-send is answered below, never broadcast.
+  const wallet = new FakeWallet(signing === "held" ? { mode: "slow", slowMs: 600_000 } : { mode: "normal" });
   await installFakeWallet(context, wallet);
   await installLayoutMocks(context, wallet.address);
   let position: Record<string, unknown> | null = null;
@@ -34,7 +37,16 @@ async function setup(browser: Browser, baseURL: string | undefined, width: numbe
       swaps: [{ inputMint: s.mintB, outputMint: s.mintA, inputAmount: "45000", minOutputAmount: "440", quotedOutputAmount: "449", inputDecimals: 8, outputDecimals: 6,
         poolId: s.poolId, sqrtPriceAfterX64: "1", feeAmount: "45", feeBps: 10 }], feeAmount: "45", feeBps: 10, feeWallet: randomAddress(), sizeBytes: 1000 } } });
   });
-  await context.route("**/api/tx-send", (route) => route.abort());
+  if (signing === "held") await context.route("**/api/tx-send", (route) => route.abort());
+  else {
+    await context.route("**/api/tx-send", (route) => {
+      const tx = VersionedTransaction.deserialize(Buffer.from(route.request().postDataJSON().signedTransaction, "base64"));
+      return route.fulfill({ json: { signature: bs58.encode(tx.signatures[0]!) } });
+    });
+    await context.route("**/api/compound-confirm", (route) => route.fulfill({ json: {
+      signature: route.request().postDataJSON().attempt.signature, status: "success", chainStatus: "success", state: null } }));
+    await context.route("**/api/compound-recover-prepare", (route) => route.fulfill({ status: 400, json: { error: "Nothing to clean up in this test" } }));
+  }
   const page = await context.newPage();
   await page.goto("/app/portfolio", { waitUntil: "domcontentloaded" });
   await new ConnectModal(page, wallet).connect();
@@ -42,34 +54,55 @@ async function setup(browser: Browser, baseURL: string | undefined, width: numbe
   return { context, wallet, page };
 }
 
-/** Every row's action buttons share one line (same vertical middle), and no button's label wraps (one text line tall). */
-async function expectOneLine(page: Page, label: string) {
-  const rows = await page.getByTestId("row-actions").evaluateAll((bars) => bars.map((bar) => Array.from(bar.querySelectorAll("button")).map((button) => {
+type Box = { text: string | null; top: number; middle: number; height: number; right: number; barRight: number };
+async function rowButtons(page: Page): Promise<Box[][]> {
+  return page.getByTestId("row-actions").evaluateAll((bars) => bars.map((bar) => Array.from(bar.querySelectorAll("button")).map((button) => {
     const box = button.getBoundingClientRect();
-    return { text: button.textContent, middle: Math.round(box.top + box.height / 2), height: Math.round(box.height), right: Math.round(box.right),
-      barRight: Math.round(bar.getBoundingClientRect().right) };
+    return { text: button.textContent, top: Math.round(box.top), middle: Math.round(box.top + box.height / 2), height: Math.round(box.height),
+      right: Math.round(box.right), barRight: Math.round(bar.getBoundingClientRect().right) };
   })));
+}
+const sameLine = (buttons: Box[]) => Math.max(...buttons.map((b) => b.middle)) - Math.min(...buttons.map((b) => b.middle));
+
+/**
+ * Desktop (from 1024 px): every row's four buttons share one line. Narrower: Compound has its own line and Add, Withdraw
+ * and Activity share the next. Never a wrapped label (one text line tall) or a button outside its bar.
+ */
+async function expectRowLayout(page: Page, label: string, desktop: boolean) {
+  const rows = await rowButtons(page);
   expect(rows.length, label).toBeGreaterThan(0);
   for (const buttons of rows) {
-    expect(buttons.map((b) => b.text), label).toEqual([expect.any(String), "Add", "Withdraw"]);
-    const middles = buttons.map((b) => b.middle);
-    expect(Math.max(...middles) - Math.min(...middles), `${label}: ${JSON.stringify(buttons)}`).toBeLessThanOrEqual(1);
-    for (const b of buttons) expect(b.height, `${label}: ${b.text} on one text line`).toBeLessThanOrEqual(40);
+    expect(buttons.map((b) => b.text), label).toEqual([expect.any(String), "Add", "Withdraw", "Activity"]);
+    if (desktop) expect(sameLine(buttons), `${label}: ${JSON.stringify(buttons)}`).toBeLessThanOrEqual(1);
+    else {
+      expect(sameLine(buttons.slice(1)), `${label}: ${JSON.stringify(buttons)}`).toBeLessThanOrEqual(1);
+      expect(buttons[0]!.top + buttons[0]!.height, `${label}: Compound above the others`).toBeLessThanOrEqual(buttons[1]!.top);
+    }
+    for (const b of buttons) expect(b.height, `${label}: ${b.text} on one text line`).toBeLessThanOrEqual(44);
     for (const b of buttons) expect(b.right, `${label}: ${b.text} inside its bar`).toBeLessThanOrEqual(b.barRight + 1);
   }
 }
 const raydiumRow = (page: Page) => page.getByTestId("position-row").filter({ has: page.locator('[data-position-key^="raydium-clmm:"]') });
 
 for (const width of [1024, 1280, 1440, 768, 390, 375]) {
-  test(`row actions stay on one line at ${width}px, idle and while confirming in the wallet`, async ({ browser, baseURL }) => {
+  test(`row actions keep their layout at ${width}px, idle and while confirming in the wallet`, async ({ browser, baseURL }) => {
+    const desktop = width >= 1024;
     const { context, page } = await setup(browser, baseURL, width);
-    await expectOneLine(page, `idle ${width}`);
+    await expectRowLayout(page, `idle ${width}`, desktop);
     const row = raydiumRow(page);
-    await selectPosition(page, (await row.getByTestId("position-fallback-select").getAttribute("data-position-key"))!);
     await row.locator('[data-tool="compound"]').click();
+    const popup = page.locator('dialog[data-testid="compound-popup"][data-open="true"]');
+    await expect(popup).toBeVisible();
+    await expect(popup.getByTestId("compound-confirm-fee")).toHaveText("0.10%");
+    const confirm = popup.getByTestId("compound-confirm-button");
+    await expect(confirm).toBeEnabled({ timeout: 15_000 });
+    await confirm.click();
     await expect(row.locator('[data-tool="compound"]')).toHaveText("Confirming in wallet…");
-    await expect(row.getByTestId("compound-protocol-fee")).toBeVisible();
-    await expectOneLine(page, `confirming ${width}`);
+    await expect(popup.getByTestId("compound-protocol-fee")).toBeVisible();
+    // Closing the popup leaves the compound running; the row keeps its stage label.
+    await popup.locator('button[aria-label="Close"]').first().click();
+    await expect(popup).toHaveCount(0);
+    await expectRowLayout(page, `confirming ${width}`, desktop);
     // From 1280 px the longest status label fits in full; narrower screens truncate it (the button's title keeps it).
     const label = row.locator('[data-tool="compound"] span');
     if (width >= 1280) expect(await label.evaluate((span) => span.scrollWidth <= span.clientWidth)).toBe(true);
@@ -78,25 +111,73 @@ for (const width of [1024, 1280, 1440, 768, 390, 375]) {
   });
 }
 
-for (const width of [375, 390]) {
-  test(`the sticky Add liquidity bar never covers the positions list at ${width}px`, async ({ browser, baseURL }) => {
+for (const width of [375, 1280]) {
+  test(`popups are a ${width < 640 ? "bottom sheet" : "centered modal"} at ${width}px, and the row click opens the detail`, async ({ browser, baseURL }) => {
     const { context, page } = await setup(browser, baseURL, width);
-    const bar = page.getByTestId("mobile-action-bar");
-    const list = page.getByRole("region", { name: "All positions", exact: true }).getByTestId("position-fallback-select").first();
-    await page.waitForTimeout(500);
-    await expect(bar).toHaveCount(0); // on load: Add to position is the default tab, but the form is below the list
-    await page.getByRole("combobox", { name: "Position operations", exact: true }).selectOption("deposit");
-    await page.locator("#deposit-view").scrollIntoViewIfNeeded();
-    await page.evaluate(() => window.scrollBy(0, 200));
-    await expect(bar).toBeVisible();
-    // Showing, it sits over the Add form only.
-    const barTop = (await bar.boundingBox())!.y;
-    const listBox = await list.boundingBox();
-    if (listBox) expect(listBox.y + listBox.height).toBeLessThanOrEqual(barTop);
-    expect((await page.locator("#deposit-view").boundingBox())!.y).toBeLessThan(barTop);
-    // Back up to the list: the bar goes away again.
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await expect(bar).toHaveCount(0);
+    const row = raydiumRow(page);
+    await row.locator('[data-tool="deposit"]').click();
+    const add = page.locator('dialog[data-testid="deposit-popup"][data-open="true"]');
+    await expect(add).toBeVisible();
+    const box = (await add.boundingBox())!;
+    const viewport = page.viewportSize()!;
+    if (width < 640) {
+      expect(Math.round(box.x)).toBe(0);
+      expect(Math.round(box.width)).toBe(viewport.width);
+      expect(Math.round(box.y + box.height)).toBe(viewport.height);
+    } else {
+      expect(Math.abs(box.x + box.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(2);
+      expect(box.y).toBeGreaterThan(0);
+    }
+    await page.keyboard.press("Escape");
+    await expect(add).toHaveCount(0);
+    // The row itself (outside its buttons) opens the Performance detail; keyboard reaches it through its title button.
+    await row.getByTestId("position-row-title").click();
+    await expect(page.locator('dialog[data-testid="performance-popup"][data-open="true"]')).toBeVisible();
+    await expect(page).toHaveURL(/view=performance/);
+    await page.keyboard.press("Escape");
+    await row.getByTestId("position-fallback-select").focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator('dialog[data-testid="performance-popup"][data-open="true"]')).toBeVisible();
+    await context.close();
+  });
+}
+
+/** No visible transaction notice overlaps any of `targets` (each must be on screen and fully clear of every notice). */
+async function expectClearOfNotices(page: Page, targets: Locator[], label: string) {
+  const notices = await page.locator("[data-tx-notice]").evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().toJSON() as DOMRect));
+  expect(notices.length, `${label}: a notice is showing`).toBeGreaterThan(0);
+  const viewport = page.viewportSize()!;
+  for (const target of targets) {
+    await target.scrollIntoViewIfNeeded();
+    const box = (await target.boundingBox())!;
+    expect(box.y, `${label}: on screen`).toBeGreaterThanOrEqual(0);
+    expect(box.y + box.height, `${label}: on screen`).toBeLessThanOrEqual(viewport.height + 1);
+    for (const n of notices) {
+      const overlaps = box.x < n.right && box.x + box.width > n.left && box.y < n.bottom && box.y + box.height > n.top;
+      expect(overlaps, `${label}: ${JSON.stringify({ box, notice: n })}`).toBe(false);
+    }
+  }
+}
+
+for (const width of [375, 1280]) {
+  test(`transaction notices never cover a popup's actions at ${width}px`, async ({ browser, baseURL }) => {
+    test.setTimeout(120_000);
+    const { context, page } = await setup(browser, baseURL, width, "normal");
+    const row = raydiumRow(page);
+    await row.locator('[data-tool="compound"]').click();
+    const popup = page.locator('dialog[data-testid="compound-popup"][data-open="true"]');
+    await expect(popup.getByTestId("compound-confirm-button")).toBeEnabled({ timeout: 15_000 });
+    await popup.getByTestId("compound-confirm-button").click();
+    // A notice appears for the send and stays after success; the result's Done stays clear of it.
+    await expect(popup.getByRole("heading", { name: "Compound confirmed" })).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator("[data-tx-notice]").first()).toBeVisible();
+    await expectClearOfNotices(page, [popup.getByTestId("compound-submit-done")], `${width} done`);
+    await popup.getByTestId("compound-submit-done").click();
+    // Another sheet opened while the notice shows: its fee line and Confirm stay clear.
+    const meteora = page.getByTestId("position-row").filter({ has: page.locator('[data-position-key^="meteora-dlmm:"]') });
+    await meteora.locator('[data-tool="compound"]').click();
+    await expect(popup.getByTestId("compound-confirm-button")).toBeVisible();
+    await expectClearOfNotices(page, [popup.getByTestId("compound-confirm-fee"), popup.getByTestId("compound-confirm-button")], `${width} confirm`);
     await context.close();
   });
 }

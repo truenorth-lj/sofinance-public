@@ -104,3 +104,18 @@ button:disabled { cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) {
   .border-beam::before { animation: none; opacity: 0; }
 }
+
+/* Mobile Portfolio sheets and notices never overlap, even when notices wrap or stack. Notices scroll in their own
+   top area; the sheet keeps the rest of the viewport, including space to scroll its actions fully into view. */
+@media (width < 40rem) {
+  html[data-portfolio-popup-open] .portfolio-tx-notices {
+    top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
+    bottom: auto;
+    max-height: 25dvh;
+    overflow-y: auto;
+    pointer-events: auto;
+  }
+  html[data-portfolio-popup-open] .portfolio-action-dialog {
+    max-height: calc(100dvh - max(2.5rem, calc(var(--portfolio-toast-height, 0px) + env(safe-area-inset-top, 0px) + 1.5rem)));
+  }
+}

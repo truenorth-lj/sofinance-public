@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
-import { act, createElement, type FunctionComponent } from "react";
+import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { OK_RELEASE_MS } from "@/lib/compound-celebration/coins";
 import { SelectedApp } from "./selected-app";
+import { openRowTool } from "./test-support/portfolio-popups";
 import { RecoveryPage } from "./portfolio/recovery-page";
 import { useCompoundController, type CompoundConfirmation } from "./use-compound-controller";
 import { compoundAttemptKey, compoundReceiptsKey, persistCompoundAttempt } from "@sofinance/engine/compound-attempt";
@@ -53,12 +53,15 @@ async function renderRecovery() {
   await act(async () => root.render(createElement(RecoveryPage, { positionKey: `raydium-clmm:${selectedMint}` })));
   await advance(1); await advance(1);
 }
-async function render(initialView: "compound" | "deposit" = "deposit") {
-  await act(async () => root.render(createElement(SelectedApp as FunctionComponent<{ initialView: "compound" | "deposit" }>, { initialView })));
+// Operations are the position row's popups (LJ 11/14): "deposit" opens the row's Add popup, "compound" its Compound
+// popup, "activity" its Activity popup. Three timer ticks pass before the test continues.
+async function render(view: "compound" | "deposit" | "activity" = "deposit") {
+  await act(async () => root.render(createElement(SelectedApp)));
   await advance(1); await advance(1);
+  if (withRow) { await openRowTool(container, view); await advance(1); }
 }
 beforeEach(() => {
-  vi.useFakeTimers(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); window.localStorage.clear(); withRow = false;
+  vi.useFakeTimers(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); window.localStorage.clear(); withRow = true;
   fixture = compoundHistoryFixture(); activeWallet = fixture.wallet;
   selectedMint = testKeypair(80).publicKey.toBase58(); // The old compound belongs to another NFT.
   mocks.add.mockReset(); mocks.sign.mockReset(); mocks.refresh.mockReset();
@@ -93,7 +96,7 @@ describe("compound history warnings in the real SelectedApp", () => {
   it("warns about old pending transactions without blocking after 30 seconds or sending automatically", async () => {
     await render(); expect(addButton().disabled).toBe(false);
     expect(controller.historyWarning).toContain("unresolved"); expect(controller.canCompound).toBe(true);
-    await advance(29_997); expect(controller.confirmationSlow).toBe(false);
+    await advance(29_996); expect(controller.confirmationSlow).toBe(false);
     const before = confirmCalls(); await advance(1);
     expect(controller.confirmationSlow).toBe(true); expect(confirmCalls()).toBe(before + 1);
     expect(addButton().disabled).toBe(false); expect(controller.walletBlocked).toBe(false);
@@ -149,9 +152,9 @@ describe("compound history warnings in the real SelectedApp", () => {
     expect(view.textContent).toContain("Other positions (1 records)");
     expect(controller.canCompound).toBe(true);
     selectedMint = fixture.attempt.positionMint; withRow = true;
-    // The selected position's own transaction shows open under its row on the Portfolio screen (no Compound panel)…
-    await render("compound");
-    const selectedSuccess = [...container.querySelectorAll('[data-testid="row-compound-status"] [role="status"]')].find(node => node.textContent === "Compound confirmed on-chain")!;
+    // The selected position's own transaction shows open in its row's Activity popup (no Compound panel)…
+    await render("activity");
+    const selectedSuccess = [...container.querySelectorAll('dialog[data-testid="activity-popup"] [role="status"]')].find(node => node.textContent === "Compound confirmed on-chain")!;
     expect(selectedSuccess.closest("details")).toBeNull();
     // …and its records are scoped to it on the recovery page.
     await renderRecovery();
@@ -379,25 +382,25 @@ describe("one-click compound submit dialog", () => {
     await act(async () => controller.compound()); await advance(1);
     return { signature: () => newSignature, broadcast };
   }
-  const dialog = () => container.querySelector<HTMLDialogElement>("dialog[aria-labelledby='compound-submit-title']");
+  // The Compound popup shows the submit progress and result in place (merged CompoundSubmitDialog).
+  const dialog = () => container.querySelector<HTMLElement>('dialog[data-testid="compound-popup"] [data-testid="compound-submit-status"]');
   const button = (label: string) => [...dialog()!.querySelectorAll("button")].find(b => b.textContent === label);
 
-  it("shows confirming → confirmed with Solscan, and OK refreshes the position", async () => {
+  it("shows confirming → confirmed with Solscan, and Done refreshes the position", async () => {
     let status: "pending" | "success" = "pending"; let sig = "";
     const run = await submitWith(() => Response.json({ signature: sig, status, chainStatus: status, state: null }));
     sig = run.signature();
     // The record is written once the send returns a signature, so the dialog opens at "Confirming".
     expect(controller.feedback).toBeNull();
     await act(async () => run.broadcast.resolve(Response.json({ signature: sig }))); await advance(1);
-    expect(dialog()?.textContent).toContain("Confirming…"); expect(button("OK")).toBeUndefined();
+    expect(dialog()?.textContent).toContain("Confirming…"); expect(button("Done")).toBeUndefined();
     expect(dialog()!.querySelector("a")!.getAttribute("href")).toBe(`https://solscan.io/tx/${sig}`); expect(controller.busy).toBe(false);
     status = "success"; await advance(4_000);
     expect(controller.feedback?.phase).toBe("success");
     expect(dialog()?.textContent).toContain("Compound confirmed");
     const statesBefore = fetchMock.mock.calls.filter(([url]) => url === "/api/compound-state").length;
     const refreshBefore = mocks.refresh.mock.calls.length;
-    // OK pops back on release (the coins leave from it), then the dialog closes OK_RELEASE_MS later.
-    await act(async () => button("OK")!.click()); await advance(OK_RELEASE_MS);
+    await act(async () => button("Done")!.click()); await advance(1);
     expect(controller.feedback).toBeNull(); expect(dialog()).toBeNull();
     expect(fetchMock.mock.calls.filter(([url]) => url === "/api/compound-state").length).toBeGreaterThan(statesBefore);
     expect(mocks.refresh.mock.calls.length).toBeGreaterThan(refreshBefore);

@@ -4,6 +4,7 @@ import { act, createElement, useLayoutEffect, type FunctionComponent } from "rea
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SelectedApp } from "./selected-app";
+import { openRowTool } from "./test-support/portfolio-popups";
 import { RecoveryPage } from "./portfolio/recovery-page";
 import { WalletConnectionContext, type WalletConnection } from "./wallet-connection";
 import type { CompoundController } from "./use-compound-controller";
@@ -100,12 +101,14 @@ describe("All positions wallet-wide leftover recovery", () => {
     expect(probe.current?.canCompound).toBe(false);
     expect(probe.current?.canCleanup).toBe(true);
     expect(probe.current?.ready).toBe(true);
-    // Harvest account management is off the Portfolio main screen (LJ 11/14); a Raydium position's details link to it.
+    // Harvest account management is off the Portfolio main screen (LJ 11/14); a Raydium position's Activity popup links to it.
     expect(harvestOnScreen()).toBe(false);
+    expect(container.querySelector('[data-testid="harvest-recovery-link"]')).toBeNull();
     if (hasPosition) {
       // The row's Compound is the only Compound entry (LJ 11/14); nothing runs until it is clicked.
       expect(container.querySelector('[data-testid="position-row-action"][data-tool="compound"]')).not.toBeNull();
       expect(container.textContent).not.toContain("One-click compound");
+      await openRowTool(container, "activity", `raydium-clmm:${otherMint}`); await settle();
       expect(container.querySelector<HTMLAnchorElement>('[data-testid="harvest-recovery-link"]')?.getAttribute("href"))
         .toBe(`/app/portfolio/recovery?position=${encodeURIComponent(`raydium-clmm:${otherMint}`)}`);
     } else expect(container.querySelector('[data-testid="harvest-recovery-link"]')).toBeNull();
@@ -142,13 +145,11 @@ describe("All positions wallet-wide leftover recovery", () => {
   it("keeps position compound fenced during read-only B to eligible-input reconciliation", async () => {
     positions = [fixture.state.positionMint, otherMint];
     await mount();
-    // All positions is always shown: pick B from its row while on Compound fees.
-    await act(async () => container.querySelector<HTMLButtonElement>(`[data-testid="position-fallback-select"][data-position-key="raydium-clmm:${otherMint}"]`)!.click());
-    await settle();
+    // Opening B's Add popup selects B.
+    await openRowTool(container, "deposit", `raydium-clmm:${otherMint}`); await settle();
     const before = probe.commits.length;
     eligible = true;
-    // The page's one Refresh rescans the wallet; the Compound controller stays mounted across tabs.
-    await act(async () => button("Add to position").click()); await settle();
+    // The page's one Refresh rescans the wallet; the Compound controller stays mounted across popups.
     await act(async () => button("Refresh").click()); await settle();
     const transition = probe.commits.slice(before);
     expect(transition.some(c => c.mint === undefined)).toBe(true);

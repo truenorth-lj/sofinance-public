@@ -5,6 +5,7 @@ import { act, useSyncExternalStore } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SelectedApp } from "./selected-app";
+import { openRowTool } from "./test-support/portfolio-popups";
 import { withdrawCheckpoint, withdrawKey, withdrawPosition, withdrawPrepared, withdrawWallet } from "@/lib/test-support/withdraw-checkpoint-fixtures";
 
 const mocks = vi.hoisted(() => {
@@ -25,7 +26,13 @@ vi.mock("@/lib/position-history-refresh", () => ({ notifyPositionHistoryChange: 
 vi.mock("./wallet-connection", () => ({ useWalletConnection: () => ({ address: withdrawWallet, connected: true, signTransaction: mocks.sign, connect: vi.fn() }) }));
 vi.mock("./use-selected-controller", () => ({ useSelectedController: () => {
   const { state, selection } = useSyncExternalStore(mocks.subscribe, mocks.getSnapshot);
-  return { connected: true, wallet: withdrawWallet, connect: vi.fn(), disconnect: vi.fn(), discovery: null, state, selection,
+  // The wallet scan still lists the position (its row and Withdraw popup) while its state refreshes.
+  const discovery = selection ? { wallet: withdrawWallet, assets: [], positions: [{ positionMint: withdrawPosition, positionAccount: "acct", poolId: "pool",
+    mintA: "mint-a", mintB: "mint-b", symbolA: "A", symbolB: "B", decimalsA: 6, decimalsB: 6, feeTierBps: 1, tickLower: 0, tickUpper: 1,
+    tickCurrent: 0, rangeSide: "inside", liquidity: "1" }, { positionMint: "position-b", positionAccount: "acct-b", poolId: "pool",
+    mintA: "mint-a", mintB: "mint-b", symbolA: "A", symbolB: "B", decimalsA: 6, decimalsB: 6, feeTierBps: 1, tickLower: 0, tickUpper: 1,
+    tickCurrent: 0, rangeSide: "inside", liquidity: "1" }] } : null;
+  return { connected: true, wallet: withdrawWallet, connect: vi.fn(), disconnect: vi.fn(), discovery, state, selection,
     quote: null, fresh: true, now: Date.now(), amount: "", tolerancePercent: "1", busy: false, calculating: false,
     status: "", actionLabel: "Add liquidity", actionDisabled: true, primaryAction: vi.fn(), choosePosition: vi.fn(),
     refreshState: vi.fn(), refreshDiscovery: vi.fn(), error: "", connectionError: "" };
@@ -51,7 +58,14 @@ afterEach(async () => { await act(async () => root.unmount()); container.remove(
 // Mocks answer by URL, never by call order: the page also reads the registry DEX positions (Meteora, on by default) while
 // the Raydium withdrawal runs, and that read must not consume or trigger a Raydium response.
 const DEX_POSITIONS = "/api/dex/meteora-dlmm/positions";
+// Rows read their performance reports for their values; that read is not part of the withdrawal.
+const REPORTS = "/api/position-performance";
 const urlOf = (input: unknown) => new URL(String(input), "http://x").pathname;
+// Withdraw is the position row's popup (LJ 11/14).
+async function renderWithdraw() {
+  await act(async () => root.render(<SelectedApp />));
+  await openRowTool(container, "withdraw");
+}
 const click = async (text: string, scope: Element = container) => {
   const b = Array.from(scope.querySelectorAll("button")).find((x) => x.textContent?.trim() === text);
   expect(b, text).toBeDefined(); await act(async () => b!.click());
@@ -75,12 +89,12 @@ it("prepares and prompts step 2 after step 1 confirms, even though the closed po
     return Response.json({ error: `unexpected ${path}` }, { status: 500 });
   }));
   mocks.sign.mockRejectedValue(new Error("User rejected the request."));
-  await act(async () => root.render(<SelectedApp initialView="withdraw" />));
+  await renderWithdraw();
   const view = container.querySelector("#withdraw-view")!;
   await click("Resume withdrawal", view);
   await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
 
-  expect(calls.filter((path) => path !== DEX_POSITIONS)).toEqual(["/api/withdraw-status", "/api/withdraw-quote", "/api/withdraw-prepare"]);
+  expect(calls.filter((path) => path !== DEX_POSITIONS && path !== REPORTS)).toEqual(["/api/withdraw-status", "/api/withdraw-quote", "/api/withdraw-prepare"]);
   expect(calls).toContain(DEX_POSITIONS);
   // Step 2 reached the wallet.
   expect(mocks.sign).toHaveBeenCalledOnce();
@@ -93,8 +107,9 @@ it("prepares and prompts step 2 after step 1 confirms, even though the closed po
 
 it("shows no Withdraw tool when no position was ever selected", async () => {
   mocks.select({ state: null, selection: null });
-  await act(async () => root.render(<SelectedApp initialView="withdraw" />));
+  await act(async () => root.render(<SelectedApp />));
   expect(container.querySelector("#withdraw-view")).toBeNull();
+  expect(container.querySelector('[data-testid="position-row-action"]')).toBeNull();
   expect(container.querySelector('nav[aria-label="Position operations"]')).toBeNull();
 });
 
@@ -102,13 +117,13 @@ it("does not keep the old position's Withdraw panel when another position is sel
   // Position A has a withdrawal in progress (step 1 sent, Resume pending): the panel is pinned to A.
   localStorage.setItem(withdrawKey, JSON.stringify(withdrawCheckpoint("withdraw")));
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ status: "pending" })));
-  await act(async () => root.render(<SelectedApp initialView="withdraw" />));
+  await renderWithdraw();
   const view = container.querySelector("#withdraw-view")!;
   expect(view.querySelector('section[aria-label="Withdraw from position"]')).not.toBeNull();
   // Switch to position B: its state is still loading (null).
   await act(async () => mocks.select({ state: null, selection: { positionMint: "position-b", inputMint: "mint-a", inputKind: "token" } }));
-  expect(view.querySelector('section[aria-label="Withdraw from position"]')).toBeNull();
-  expect(view.textContent).toContain("Connect your wallet and choose a position to withdraw");
+  expect(container.querySelector('section[aria-label="Withdraw from position"]')).toBeNull();
+  expect(container.querySelector('[data-testid="withdraw-popup"]')?.textContent).toContain("Loading position…");
 });
 
 it("releases the pinned panel once the withdrawal finishes", async () => {
@@ -122,7 +137,7 @@ it("releases the pinned panel once the withdrawal finishes", async () => {
     if (path === "/api/withdraw-status") { mocks.setState(null); return Response.json({ status: "success" }); }
     return Response.json({ error: `unexpected ${path}` }, { status: 500 });
   }));
-  await act(async () => root.render(<SelectedApp initialView="withdraw" />));
+  await renderWithdraw();
   const view = container.querySelector("#withdraw-view")!;
   // The Meteora read already happened, and Resume withdrawal (#297) is still offered.
   expect(calls).toContain(DEX_POSITIONS);
@@ -148,11 +163,11 @@ it.each([["hangs", () => new Promise<Response>(() => {})], ["fails (500)", () =>
       return Response.json({ error: `unexpected ${path}` }, { status: 500 });
     }));
     mocks.sign.mockRejectedValue(new Error("User rejected the request."));
-    await act(async () => root.render(<SelectedApp initialView="withdraw" />));
+    await renderWithdraw();
     const view = container.querySelector("#withdraw-view")!;
     expect(calls).toContain(DEX_POSITIONS);
     await click("Resume withdrawal", view);
     await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
-    expect(calls.filter((path) => path !== DEX_POSITIONS)).toEqual(["/api/withdraw-status", "/api/withdraw-quote", "/api/withdraw-prepare"]);
+    expect(calls.filter((path) => path !== DEX_POSITIONS && path !== REPORTS)).toEqual(["/api/withdraw-status", "/api/withdraw-quote", "/api/withdraw-prepare"]);
     expect(mocks.sign).toHaveBeenCalledOnce();
   });

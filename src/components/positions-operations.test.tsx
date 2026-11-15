@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SelectedApp } from "./selected-app";
+import { openRowTool } from "./test-support/portfolio-popups";
 
 const mocks = vi.hoisted(() => ({ connect: vi.fn(), deposit: vi.fn(), compound: vi.fn(), depositQuote: false, connected: false }));
 const WALLET = "11111111111111111111111111111112", POSITION = "So11111111111111111111111111111111111111112";
@@ -11,7 +12,9 @@ vi.mock("next/navigation", () => ({ usePathname: () => "/app" }));
 vi.mock("./use-token-metadata", () => ({ useTokenMetadata: () => ({}) }));
 vi.mock("./wallet-connection", () => ({ useWalletConnection: () => ({ connected: false, connect: mocks.connect }) }));
 vi.mock("./use-selected-controller", () => ({ useSelectedController: () => ({
-  connected: mocks.connected, wallet: mocks.connected ? WALLET : "", connect: mocks.connect, disconnect: vi.fn(), discovery: null, state: null,
+  connected: mocks.connected, wallet: mocks.connected ? WALLET : "", connect: mocks.connect, disconnect: vi.fn(), state: null,
+  discovery: mocks.connected ? { wallet: WALLET, assets: [], positions: [{ positionMint: POSITION, positionAccount: WALLET, poolId: WALLET, mintA: POSITION, mintB: WALLET,
+    symbolA: "A", symbolB: "B", decimalsA: 9, decimalsB: 9, feeTierBps: 1, tickLower: 0, tickUpper: 1, tickCurrent: 0, rangeSide: "inside", liquidity: "1" }] } : null,
   selection: mocks.connected ? { positionMint: POSITION, inputMint: POSITION, inputKind: "token" } : null,
   quote: mocks.depositQuote ? { requested: "10000000", roundtripCostInput: "137000",
     resaleInput: "9863000", passesFloor: false, inputDecimals: 9, spendA: "0", spendB: "0",
@@ -66,24 +69,18 @@ describe("Positions while disconnected", () => {
   });
 });
 
-describe("Positions operations for a selected position", () => {
-  it("orders the tool tabs inside the selected position's detail: no Compound fees tab, Add to position open by default", async () => {
+describe("Positions operations", () => {
+  it("has no tool tabs, details section or sticky Add bar: operations are row popups (LJ 11/14)", async () => {
     mocks.connected = true;
     await act(async () => root.render(createElement(SelectedApp)));
-    const detail = container.querySelector('[data-testid="selected-position-detail"]')!;
-    expect(Array.from(detail.querySelectorAll('nav[aria-label="Position operations"] button')).map((b) => b.textContent?.trim()))
-      .toEqual(["Performance", "Add to position", "Withdraw"]);
-    expect(Array.from(detail.querySelectorAll<HTMLOptionElement>("select#position-action option")).map((o) => [o.textContent, o.disabled]))
-      .toEqual([["Performance", false], ["Add to position", false], ["Withdraw", true]]);
-    expect(container.querySelector<HTMLElement>("#deposit-view")?.hidden).toBe(false);
-    expect(container.querySelector("#compound-view")).toBeNull();
+    expect(container.querySelector('nav[aria-label="Position operations"]')).toBeNull();
+    expect(container.querySelector("select#position-action")).toBeNull();
+    expect(container.querySelector('[data-testid="selected-position-detail"]')).toBeNull();
+    expect(container.querySelector('[data-testid="mobile-action-bar"]')).toBeNull();
+    expect(container.querySelector("#deposit-view")).toBeNull();
+    expect(container.querySelector("#performance-view")).toBeNull();
+    expect(container.textContent).not.toContain("Learn more details");
     expect(container.textContent).not.toContain("One-click compound");
-    await act(async () => button("Performance").click());
-    expect(container.querySelector<HTMLElement>("#performance-view")?.hidden).toBe(false);
-    expect(container.querySelector("#compound-view")).toBeNull();
-    expect(container.querySelector("#perf-position")).toBeNull();
-    expect(container.querySelector("#perf-heading")).toBeNull();
-    expect(container.textContent).not.toContain("Compute performance");
     expect(container.textContent).not.toContain("Auto Copilot");
   });
 });
@@ -91,6 +88,8 @@ describe("Positions operations for a selected position", () => {
 it("shows Total cost as a reminder without a resale threshold setting", async () => {
   mocks.depositQuote = true; mocks.connected = true;
   await act(async () => root.render(createElement(SelectedApp)));
+  // Add to existing position is the row's Add popup (LJ 11/14).
+  await openRowTool(container, "deposit");
   const deposit = container.querySelector("#deposit-view")!;
   expect(deposit.textContent).toContain("Total cost");
   expect(deposit.textContent).toContain("~1.37%");
