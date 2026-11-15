@@ -8,13 +8,13 @@ import { DEFAULT_ADD_TOLERANCE_BPS, DEFAULT_RESALE_FLOOR_BPS, NATIVE_SOL_MINT } 
 import { isJupiterUpstreamError, asJupiterUserError } from "@sofinance/engine/jupiter";
 import { readSelectedPositionState, type PositionSelection } from "@sofinance/engine/selected-state";
 import { readSwapFeeConfig } from "@sofinance/engine/swap/fee";
-import { buildAndSimulateSelectedZap } from "@/lib/selected-atomic";
 import type { PositionKey } from "@/lib/unified-positions/model";
 import type { DexDepositInput, StepContext, StepResult } from "../adapter";
 import { DexError } from "../errors";
 import { assertFeeWalletConfigured } from "../fee-wallet.server";
 import { feeRuleBps } from "../types";
 import { raydiumClmmDescriptor } from "./descriptor";
+import { buildRaydiumAdd } from "./build-add.server";
 
 const KEY_PREFIX = `${raydiumClmmDescriptor.id}:`;
 const NOT_OWNER = "Wallet does not currently hold this Raydium CLMM position NFT";
@@ -78,8 +78,8 @@ export async function prepareRaydiumAdd(key: PositionKey, owner: string, input: 
     }
     const amount = formatAmount(input.amountRaw, state.inputDecimals, state.inputDecimals);
     // Same terms as the dedicated app prepare: fixed swap slippage and add tolerance; no resale probe.
-    const { transaction, summary } = await buildAndSimulateSelectedZap(wallet, selection, amount,
-      DEFAULT_RESALE_FLOOR_BPS, DEFAULT_ADD_TOLERANCE_BPS, { enforceResaleFloor: false });
+    const { transaction, summary } = await buildRaydiumAdd({ wallet, selection, amount,
+      floorBps: DEFAULT_RESALE_FLOOR_BPS, toleranceBps: DEFAULT_ADD_TOLERANCE_BPS }, { enforceResaleFloor: false });
     if (summary.quote.feeBps !== expectedBps || summary.quote.feeWallet !== fee.wallet?.toBase58()) {
       throw new DexError("MISCONFIGURED", "The platform fee settings changed while preparing the deposit. Please try again.");
     }
