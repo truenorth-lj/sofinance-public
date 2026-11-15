@@ -2,7 +2,7 @@
 import { act, createElement, useLayoutEffect, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CELEBRATION_MS, COIN_GRID, FALL_MS, REDUCED_COINS, REDUCED_MS, STAGGER_MS, STOCK_COIN_LOGOS } from "@/lib/compound-celebration/coins";
+import { CELEBRATION_MS, COIN_GRID, FALL_MS, SCENE_PIXEL, REDUCED_COINS, REDUCED_MS, STAGGER_MS, STOCK_COIN_LOGOS } from "@/lib/compound-celebration/coins";
 import { CELEBRATION_PREVIEW_EVENT, CompoundTokenBurst, celebrationPreviewEnabled, useCompoundCelebration } from "./compound-celebration";
 
 type Feedback = { phase: "submitting" | "confirming" | "success" | "failed"; signature: string } | null;
@@ -158,16 +158,19 @@ describe("compound success coins", () => {
     expect(falls.every((animation) => animation.keyframes.at(-1)!.opacity === 0)).toBe(true);
   });
 
-  it("draws each coin as a 16 × 16 pixel sprite scaled up by whole pixels, with crisp edges", async () => {
+  it("draws each coin as a pixel sprite at the character's pixel size: 14–18 pixels across, the knock coin 24, crisp", async () => {
     await act(async () => root.render(createElement(Harness)));
     await confirmAndDone();
     const all = [...document.querySelectorAll<HTMLElement>("[data-coin]")];
     expect(all).toHaveLength(15);
     for (const coin of all) {
       const canvas = coin.querySelector("canvas")!;
-      expect([canvas.width, canvas.height]).toEqual([COIN_GRID, COIN_GRID]);
+      expect(canvas.width).toBe(canvas.height);
+      if (coin.hasAttribute("data-coin-knock")) expect(canvas.width).toBe(COIN_GRID.knock);
+      else { expect(canvas.width).toBeGreaterThanOrEqual(COIN_GRID.far); expect(canvas.width).toBeLessThanOrEqual(COIN_GRID.near); }
+      // Each sprite pixel is exactly the scene's (the character's) pixel: 4 CSS px here.
+      expect(parseFloat(coin.style.width)).toBe(canvas.width * SCENE_PIXEL.wide);
       expect(canvas.style.imageRendering).toBe("pixelated");
-      expect(parseFloat(coin.style.width) % COIN_GRID).toBe(0);
       expect(coin.style.filter).toBe("");
     }
   });

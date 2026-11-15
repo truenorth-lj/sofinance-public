@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  CATCHER, CATCHER_COLORS, CATCHER_SPRITES, coinSymbol, CELEBRATION_MS, COIN_COLORS, COIN_COUNT, COIN_FACE, COIN_GRID, COIN_SIZE, COIN_SPRITE, FALL_MS, KNOCK_COIN_SIZE, coinPixel,
+  CATCHER, CATCHER_COLORS, CATCHER_SPRITES, coinSymbol, CELEBRATION_MS, COIN_COLORS, COIN_COUNT, COIN_GRID, COIN_SIZE, FALL_MS, KNOCK_COIN_SIZE, SCENE_PIXEL,
+  coinFace, coinGrid, coinSprite, scenePixel,
   PHYSICS, REDUCED_COINS, SAMPLE_MS, STAGGER_MS, STOCK_COIN_LOGOS, beadFlights, beadKeyframes, catcherKeyframes, celebrationToPlay,
   pickCoinLogos, planCatcher, reducedSpots, seedFrom, seededRandom, spriteRuns, stockTicker, type BeadFlight,
 } from "./coins";
@@ -102,7 +103,8 @@ describe("beads falling to the floor", () => {
       expect(flight.size).toBeGreaterThanOrEqual(COIN_SIZE.far);
       expect(flight.size).toBeLessThanOrEqual(COIN_SIZE.near);
       // Pixel art: a whole number of CSS px per sprite pixel, and no depth blur.
-      expect(flight.size % COIN_GRID).toBe(0);
+      expect(flight.size).toBe(flight.grid * SCENE_PIXEL.wide);
+      expect(flight.grid).toBe(coinGrid(flight.depth));
       expect(flight.blur).toBe(0);
     }
   });
@@ -156,30 +158,47 @@ describe("beads falling to the floor", () => {
 });
 
 describe("pixel coins", () => {
-  it("are a 16 × 16 sprite: an outline, a gold rim lit from the upper left, and a 10 × 10 face for the logo", () => {
-    expect(COIN_SPRITE).toHaveLength(COIN_GRID);
-    for (const row of COIN_SPRITE) expect(row).toHaveLength(COIN_GRID);
-    const at = (x: number, y: number) => COIN_SPRITE[y]![x]!;
-    expect(at(0, 0)).toBe(".");
-    expect(at(7, 0)).toBe("O");
-    expect(at(4, 2)).toBe("H");
-    expect(at(14, 14)).toBe(".");
-    expect(at(12, 12)).toBe("D");
-    expect(at(8, 8)).toBe("F");
-    // The face fits the box the logo is drawn into, and touches all four of its sides.
+  const facePixels = (grid: number) => {
     const face: [number, number][] = [];
-    COIN_SPRITE.forEach((row, y) => [...row].forEach((key, x) => { if (key === "F") face.push([x, y]); }));
-    expect(Math.min(...face.map(([x]) => x))).toBe(COIN_FACE.x);
-    expect(Math.max(...face.map(([x]) => x))).toBe(COIN_FACE.x + COIN_FACE.size - 1);
-    expect(Math.min(...face.map(([, y]) => y))).toBe(COIN_FACE.y);
-    expect(Math.max(...face.map(([, y]) => y))).toBe(COIN_FACE.y + COIN_FACE.size - 1);
+    coinSprite(grid).forEach((row, y) => [...row].forEach((key, x) => { if (key === "F") face.push([x, y]); }));
+    return face;
+  };
+  it("are round sprites of any size: an outline, a gold rim lit from the upper left, and a face for the logo", () => {
+    for (const grid of [14, 16, 18, 24]) {
+      const sprite = coinSprite(grid);
+      expect(sprite).toHaveLength(grid);
+      for (const row of sprite) expect(row).toHaveLength(grid);
+      const at = (x: number, y: number) => sprite[y]![x]!;
+      expect(at(0, 0)).toBe(".");
+      expect(at(grid - 1, grid - 1)).toBe(".");
+      expect(at(Math.floor(grid / 2), 0)).toBe("O");
+      expect(at(Math.floor(grid / 2), Math.floor(grid / 2))).toBe("F");
+      const keys = sprite.join("");
+      for (const key of ["O", "G", "H", "D", "F"]) expect(keys).toContain(key);
+      // Lit at the upper left, shaded at the lower right.
+      expect(sprite.slice(0, grid / 2).join("").split("H").length).toBeGreaterThan(sprite.slice(grid / 2).join("").split("H").length);
+      expect(sprite.slice(grid / 2).join("").split("D").length).toBeGreaterThan(sprite.slice(0, grid / 2).join("").split("D").length);
+      // The face fits the box the logo is drawn into, and touches all four of its sides.
+      const face = facePixels(grid), box = coinFace(grid);
+      expect(Math.min(...face.map(([x]) => x))).toBe(box.x);
+      expect(Math.max(...face.map(([x]) => x))).toBe(box.x + box.size - 1);
+      expect(Math.min(...face.map(([, y]) => y))).toBe(box.y);
+      expect(Math.max(...face.map(([, y]) => y))).toBe(box.y + box.size - 1);
+    }
+    // More pixels, more logo: the big knock coin's face is about twice the far coin's.
+    expect(coinFace(24).size).toBeGreaterThanOrEqual(16);
+    expect(coinFace(14).size).toBeGreaterThanOrEqual(8);
+    expect(coinSprite(18)).toBe(coinSprite(18));
     expect(Object.keys(COIN_COLORS).sort()).toEqual(["D", "G", "H", "O"]);
   });
-  it("are drawn at whole CSS px a pixel: 2 far to 4 near (3 on phones)", () => {
-    expect([coinPixel(0, false), coinPixel(0.5, false), coinPixel(1, false)]).toEqual([2, 3, 4]);
-    expect([coinPixel(0, true), coinPixel(1, true)]).toEqual([2, 3]);
-    expect(COIN_SIZE).toEqual({ far: 32, near: 64 });
-    expect(KNOCK_COIN_SIZE).toEqual({ wide: 96, narrow: 80 });
+  it("share the character's pixel size (4 CSS px, 3 on phones); depth changes how many pixels they have, 14 to 18", () => {
+    expect(SCENE_PIXEL).toEqual({ wide: 4, narrow: 3 });
+    expect(CATCHER.pixel).toBe(SCENE_PIXEL);
+    expect([scenePixel(false), scenePixel(true)]).toEqual([4, 3]);
+    expect([coinGrid(0), coinGrid(0.5), coinGrid(1)]).toEqual([14, 16, 18]);
+    expect(COIN_GRID).toEqual({ far: 14, near: 18, knock: 24 });
+    expect(COIN_SIZE).toEqual({ far: 56, near: 72 });
+    expect(KNOCK_COIN_SIZE).toEqual({ wide: 96, narrow: 72 });
   });
 });
 

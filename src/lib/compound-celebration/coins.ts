@@ -30,30 +30,52 @@ export const REDUCED_COINS = 3;
 export const COIN_COUNT = { wide: 14, narrow: 9 } as const;
 export const OWN_SHARE = 0.5;
 /**
- * Pixel-art coins, in the character's 2D game style: a COIN_GRID × COIN_GRID sprite (outline, gold rim with a highlight
- * and a shade, and a face where the stock logo is drawn at about 10 × 10 pixels). Each sprite pixel is a whole number of
- * CSS px so edges stay crisp: far coins 2 px a pixel, near ones 4 (3 on phones).
+ * One pixel size for the whole scene, so the coins line up with the character's pixels: every sprite pixel is this many
+ * CSS px (4 on a wide screen, 3 on a phone).
  */
-export const COIN_GRID = 16;
-export const COIN_PIXEL = { wide: { far: 2, near: 4 }, narrow: { far: 2, near: 3 } } as const;
-/** Coin diameter in CSS px from the far plane (depth 0) to the near plane (depth 1), on a wide screen. */
-export const COIN_SIZE = { far: COIN_GRID * COIN_PIXEL.wide.far, near: COIN_GRID * COIN_PIXEL.wide.near } as const;
+export const SCENE_PIXEL = { wide: 4, narrow: 3 } as const;
+export const scenePixel = (narrow: boolean): number => (narrow ? SCENE_PIXEL.narrow : SCENE_PIXEL.wide);
 
-/** Whole CSS px per sprite pixel for a coin at `depth` (0 far … 1 near). */
-export function coinPixel(depth: number, narrow: boolean): number {
-  const range = narrow ? COIN_PIXEL.narrow : COIN_PIXEL.wide;
-  return range.far + Math.round((range.near - range.far) * Math.min(1, Math.max(0, depth)));
+/**
+ * Pixel-art coins, in the character's 2D game style and at its pixel size: a round sprite `grid` sprite pixels across
+ * (outline, gold rim lit from the upper left and shaded at the lower right, and a dark face where the stock logo is
+ * drawn). Depth changes how many pixels a coin has (far 14, near 18), not how big its pixels are; the coin that knocks
+ * the character over is 24 across.
+ */
+export const COIN_GRID = { far: 14, near: 18, knock: 24 } as const;
+/** Sprite pixels across for a coin at `depth` (0 far … 1 near). */
+export function coinGrid(depth: number): number {
+  return COIN_GRID.far + Math.round((COIN_GRID.near - COIN_GRID.far) * Math.min(1, Math.max(0, depth)));
 }
+/** Coin diameter in CSS px from the far plane (depth 0) to the near plane (depth 1), on a wide screen. */
+export const COIN_SIZE = { far: COIN_GRID.far * SCENE_PIXEL.wide, near: COIN_GRID.near * SCENE_PIXEL.wide } as const;
 
 /** O outline, G gold, H highlight (upper left), D shade (lower right), F the face (the stock logo), "." empty. */
 export const COIN_COLORS: Readonly<Record<string, string>> = Object.freeze({ O: "#3d2b05", G: "#f2c230", H: "#fff1a6", D: "#b7861a" });
-export const COIN_SPRITE: readonly string[] = Object.freeze(Array.from({ length: COIN_GRID }, (_, y) => Array.from({ length: COIN_GRID }, (_, x) => {
-  const dx = x + 0.5 - COIN_GRID / 2, dy = y + 0.5 - COIN_GRID / 2;
-  const r = Math.hypot(dx, dy);
-  return r > 8 ? "." : r > 7 ? "O" : r > 5.2 ? (dx + dy < -3 ? "H" : dx + dy > 3 ? "D" : "G") : "F";
-}).join("")));
+const coinSprites = new Map<number, readonly string[]>();
+/** The coin sprite `grid` pixels across: a 1 px outline, a rim max(2, 14% of it) wide, the face inside. */
+export function coinSprite(grid: number): readonly string[] {
+  const cached = coinSprites.get(grid);
+  if (cached) return cached;
+  const half = grid / 2, rim = Math.max(2, Math.round(grid * 0.14));
+  const rows = Object.freeze(Array.from({ length: grid }, (_, y) => Array.from({ length: grid }, (_, x) => {
+    const dx = x + 0.5 - half, dy = y + 0.5 - half;
+    const r = Math.hypot(dx, dy);
+    if (r > half) return ".";
+    if (r > half - 1) return "O";
+    if (r > half - 1 - rim) { const light = (dx + dy) / grid; return light < -0.19 ? "H" : light > 0.19 ? "D" : "G"; }
+    return "F";
+  }).join("")));
+  coinSprites.set(grid, rows);
+  return rows;
+}
 /** The face's bounding box in sprite pixels (where the logo is drawn, clipped to the face pixels). */
-export const COIN_FACE = { x: 3, y: 3, size: 10 } as const;
+export function coinFace(grid: number): { x: number; y: number; size: number } {
+  const rows = coinSprite(grid);
+  const top = rows.findIndex((row) => row.includes("F"));
+  const left = Math.min(...rows.filter((row) => row.includes("F")).map((row) => row.indexOf("F")));
+  return { x: left, y: top, size: grid - left * 2 };
+}
 
 export type Rand = () => number;
 export type Point = { x: number; y: number };
@@ -122,8 +144,10 @@ export function pickCoinLogos(symbols: readonly (string | null | undefined)[], c
 /** One sampled moment of a coin's path, in viewport px (x, y is the coin centre). */
 export type BeadFrame = { t: number; x: number; y: number; tiltY: number; roll: number; scale: number; opacity: number };
 export type BeadFlight = {
-  /** 0 = far (small, lands higher), 1 = near (large, lands lowest, slightly out of focus). */
+  /** 0 = far (small, lands higher), 1 = near (large, lands lowest). */
   depth: number;
+  /** Sprite pixels across (coinGrid) and CSS px across (that × the scene pixel). */
+  grid: number;
   size: number;
   blur: number;
   delay: number;
@@ -156,7 +180,8 @@ export function beadFlights(count: number, origin: Point, viewport: Viewport, ra
     const angle = (-158 + slot * 136) * (Math.PI / 180);
     const depth = rand();
     // Pixel art stays crisp: a whole number of CSS px per sprite pixel, and no depth blur.
-    const size = COIN_GRID * coinPixel(depth, viewport.width < 640);
+    const grid = coinGrid(depth);
+    const size = grid * scenePixel(viewport.width < 640);
     const blur = 0;
     const speed = (620 + 420 * rand()) * (0.85 + 0.3 * depth) * power;
     let vx = Math.cos(angle) * speed * spread * 1.15;
@@ -194,7 +219,7 @@ export function beadFlights(count: number, origin: Point, viewport: Viewport, ra
       if (x < half) { x = half; vx = Math.abs(vx) * PHYSICS.wallBounce; }
       if (x > viewport.width - half) { x = viewport.width - half; vx = -Math.abs(vx) * PHYSICS.wallBounce; }
     }
-    return { depth, size, blur, delay: Math.round(rand() * STAGGER_MS), floorY, bounces, frames };
+    return { depth, grid, size, blur, delay: Math.round(rand() * STAGGER_MS), floorY, bounces, frames };
   });
 }
 
@@ -243,7 +268,7 @@ export function celebrationToPlay(feedback: { phase: string; signature: string }
 
 /** The little pixel character: 24 × 28 sprite pixels, drawn at 4 px a pixel (3 on phones): 96 × 112 (72 × 84). */
 export const CATCHER = Object.freeze({
-  grid: { width: 24, height: 28 }, pixel: { wide: 4, narrow: 3 },
+  grid: { width: 24, height: 28 }, pixel: SCENE_PIXEL,
   /** Sprite pixels per second, scaled with the screen width like the coins' spread. */
   runSpeed: 540, appearMs: 150, maxCatches: 3, stepMs: 100,
   /** It is hit no earlier than this, and at least `afterCatchMs` after its last catch. */
@@ -252,7 +277,7 @@ export const CATCHER = Object.freeze({
   feetMargin: 6,
 });
 /** The big coin that knocks it over: the position's own stock, about 1.5× a near coin. */
-export const KNOCK_COIN_SIZE = { wide: COIN_GRID * 6, narrow: COIN_GRID * 5 } as const;
+export const KNOCK_COIN_SIZE = { wide: COIN_GRID.knock * SCENE_PIXEL.wide, narrow: COIN_GRID.knock * SCENE_PIXEL.narrow } as const;
 
 export type CatcherPose = "stand" | "runA" | "runB";
 export type CatcherFrame = { t: number; x: number; pose: CatcherPose; facing: 1 | -1; tilt: number; scale: number; opacity: number };
@@ -265,7 +290,7 @@ export type CatcherPlan = {
   hitT: number;
   frames: CatcherFrame[];
   /** The coin that hits it: drops from above the screen onto its head, bounces off, lands, fades. */
-  knock: { size: number; frames: BeadFrame[] };
+  knock: { grid: number; size: number; frames: BeadFrame[] };
 };
 
 /**
@@ -353,7 +378,7 @@ export function planCatcher(flights: BeadFlight[], origin: Point, viewport: View
       scale: Math.round(easeOutCubic(t / appear) * 1000) / 1000,
       opacity: i === sampleCount ? 0 : Math.round(Math.min(1, t / (appear / 2)) * fadeOut(t) * 1000) / 1000 });
   }
-  return { pixel, width, height, feetY, startX, catches, hitT, frames, knock: { size, frames: knockFrames } };
+  return { pixel, width, height, feetY, startX, catches, hitT, frames, knock: { grid: COIN_GRID.knock, size, frames: knockFrames } };
 }
 
 /** Web Animations keyframes for the character (relative to where it first appears). */

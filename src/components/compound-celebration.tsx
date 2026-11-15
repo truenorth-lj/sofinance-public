@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import {
-  CATCHER, CATCHER_SPRITES, COIN_COLORS, COIN_FACE, COIN_GRID, COIN_SPRITE, CELEBRATION_MS, COIN_COUNT, FALL_MS, REDUCED_MS, beadFlights, beadKeyframes, catcherKeyframes, celebrationToPlay,
+  CATCHER, CATCHER_SPRITES, COIN_COLORS, coinFace, coinGrid, coinSprite, scenePixel, CELEBRATION_MS, COIN_COUNT, FALL_MS, REDUCED_MS, beadFlights, beadKeyframes, catcherKeyframes, celebrationToPlay,
   pickCoinLogos, planCatcher, reducedSpots, seedFrom, seededRandom, spriteRuns,
   type CatcherPlan, type CatcherPose, type Point,
 } from "@/lib/compound-celebration/coins";
@@ -79,7 +79,7 @@ export function useCompoundCelebration(feedback: Feedback, symbols: readonly (st
   return { play, celebrateFrom };
 }
 
-type Coin = { size: number; blur: number; depth: number; delay: number; logo: string;
+type Coin = { grid: number; size: number; blur: number; depth: number; delay: number; logo: string;
   move: Keyframe[] | null; turn: Keyframe[] | null; at: Point; duration: number; knock?: boolean };
 type Run = { id: number; reduced: boolean; origin: Point; coins: Coin[]; catcher: CatcherPlan | null };
 
@@ -106,28 +106,29 @@ function CatcherView({ plan }: { plan: CatcherPlan }) {
 }
 
 /**
- * Draws a pixel-art coin into a COIN_GRID × COIN_GRID canvas: the rim from COIN_SPRITE, then the stock logo shrunk into
- * the face pixels (its outer tenth trimmed, where xStock tiles carry their pattern). Shown scaled up with crisp pixels.
+ * Draws a pixel-art coin into a `grid` × `grid` canvas: the rim from its sprite, then the stock logo shrunk into the
+ * face pixels (its outer tenth trimmed, where xStock tiles carry their pattern). Shown scaled up with crisp pixels.
  */
-function drawCoin(canvas: HTMLCanvasElement, logo: HTMLImageElement | null) {
+function drawCoin(canvas: HTMLCanvasElement, grid: number, logo: HTMLImageElement | null) {
   const context = canvas.getContext("2d");
   if (!context) return;
-  context.clearRect(0, 0, COIN_GRID, COIN_GRID);
-  COIN_SPRITE.forEach((row, y) => [...row].forEach((key, x) => {
+  const sprite = coinSprite(grid), face = coinFace(grid);
+  context.clearRect(0, 0, grid, grid);
+  sprite.forEach((row, y) => [...row].forEach((key, x) => {
     const color = COIN_COLORS[key];
     if (color) { context.fillStyle = color; context.fillRect(x, y, 1, 1); }
   }));
   context.save();
   context.beginPath();
-  COIN_SPRITE.forEach((row, y) => [...row].forEach((key, x) => { if (key === "F") context.rect(x, y, 1, 1); }));
+  sprite.forEach((row, y) => [...row].forEach((key, x) => { if (key === "F") context.rect(x, y, 1, 1); }));
   context.clip();
   context.fillStyle = "#1b1a17";
-  context.fillRect(COIN_FACE.x, COIN_FACE.y, COIN_FACE.size, COIN_FACE.size);
+  context.fillRect(face.x, face.y, face.size, face.size);
   if (logo && logo.naturalWidth) {
     context.imageSmoothingEnabled = true;
     context.imageSmoothingQuality = "high";
     const trim = logo.naturalWidth * 0.1;
-    context.drawImage(logo, trim, trim, logo.naturalWidth - trim * 2, logo.naturalHeight - trim * 2, COIN_FACE.x, COIN_FACE.y, COIN_FACE.size, COIN_FACE.size);
+    context.drawImage(logo, trim, trim, logo.naturalWidth - trim * 2, logo.naturalHeight - trim * 2, face.x, face.y, face.size, face.size);
   }
   context.restore();
 }
@@ -139,19 +140,19 @@ function CoinView({ coin }: { coin: Coin }) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    drawCoin(canvas, null);
+    drawCoin(canvas, coin.grid, null);
     if (typeof Image === "undefined") return;
     let live = true;
     const logo = new Image();
     logo.decoding = "async";
     logo.src = coin.logo;
-    logo.decode?.().then(() => { if (live) drawCoin(canvas, logo); }, () => { /* the gold coin stays, without a logo */ });
+    logo.decode?.().then(() => { if (live) drawCoin(canvas, coin.grid, logo); }, () => { /* the gold coin stays, without a logo */ });
     return () => { live = false; };
-  }, [coin.logo]);
+  }, [coin.logo, coin.grid]);
   return <div data-coin="" data-coin-knock={coin.knock ? "" : undefined} data-logo={coin.logo} style={{ position: "absolute", left: coin.at.x - size / 2, top: coin.at.y - size / 2,
     width: size, height: size, opacity: 0, zIndex: Math.round(coin.depth * 10), willChange: "transform, opacity" }}>
     <div data-coin-turn="" style={{ position: "absolute", inset: 0, willChange: "transform" }}>
-      <canvas ref={canvasRef} width={COIN_GRID} height={COIN_GRID} style={{ display: "block", width: size, height: size, imageRendering: "pixelated" }} />
+      <canvas ref={canvasRef} width={coin.grid} height={coin.grid} style={{ display: "block", width: size, height: size, imageRendering: "pixelated" }} />
     </div>
   </div>;
 }
@@ -174,7 +175,9 @@ export function CompoundTokenBurst({ play, originRef }: { play: CelebrationPlay;
     const origin = play.origin ?? (buttonOnScreen ? centre(button) : { x: viewport.width / 2, y: viewport.height * 0.6 });
     const reduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduced) {
-      setRun({ id: play.id, reduced, origin, catcher: null, coins: reducedSpots(origin).map((spot, index) => ({ size: spot.size, blur: 0, depth: 0.5,
+      // Mid-depth coins at the scene's pixel size.
+      const grid = coinGrid(0.5), size = grid * scenePixel(viewport.width < 640);
+      setRun({ id: play.id, reduced, origin, catcher: null, coins: reducedSpots(origin).map((spot, index) => ({ grid, size, blur: 0, depth: 0.5,
         delay: 0, logo: play.logos[index % play.logos.length]!, move: null, turn: null, at: { x: spot.x, y: spot.y }, duration: REDUCED_MS })) });
       return;
     }
@@ -184,11 +187,11 @@ export function CompoundTokenBurst({ play, originRef }: { play: CelebrationPlay;
     const catcher = planCatcher(flights, origin, viewport, rand);
     const coins: Coin[] = flights.map((flight, index) => {
       const { move, turn } = beadKeyframes(flight, origin);
-      return { size: flight.size, blur: flight.blur, depth: flight.depth, delay: flight.delay, logo: play.logos[index]!, move, turn, at: origin, duration: FALL_MS };
+      return { grid: flight.grid, size: flight.size, blur: flight.blur, depth: flight.depth, delay: flight.delay, logo: play.logos[index]!, move, turn, at: origin, duration: FALL_MS };
     });
     const knockStart = { x: catcher.knock.frames[0]!.x, y: catcher.knock.frames[0]!.y };
     const knock = beadKeyframes({ frames: catcher.knock.frames }, knockStart, CELEBRATION_MS / 1000);
-    coins.push({ size: catcher.knock.size, blur: 0, depth: 1, delay: 0, logo: mostCommon(play.logos), move: knock.move, turn: knock.turn,
+    coins.push({ grid: catcher.knock.grid, size: catcher.knock.size, blur: 0, depth: 1, delay: 0, logo: mostCommon(play.logos), move: knock.move, turn: knock.turn,
       at: knockStart, duration: CELEBRATION_MS, knock: true });
     setRun({ id: play.id, reduced, origin, coins, catcher });
   }, [play, originRef]);
