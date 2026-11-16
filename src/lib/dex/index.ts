@@ -6,6 +6,10 @@ import "server-only";
 import { dexRegistry } from "./registry-instance";
 
 export { dexRegistry };
+export const readCompoundState: typeof dexRegistry.readCompoundState = (id, ...args) => dexRegistry.readCompoundState(id, ...args);
+export const confirmCompound: typeof dexRegistry.confirmCompound = (id, ...args) => dexRegistry.confirmCompound(id, ...args);
+export const importCompoundReceipt: typeof dexRegistry.importCompoundReceipt = (id, ...args) => dexRegistry.importCompoundReceipt(id, ...args);
+export type { CompoundReadCommand, CompoundConfirmCommand, CompoundImportCommand, CompoundConfirmationResult } from "./compound-read";
 export const validateSignedAdd: typeof dexRegistry.validateSignedAdd = (id, ...args) => dexRegistry.validateSignedAdd(id, ...args);
 export { APP_SELECTED_SUBMIT, MCP_SELECTED_SUBMIT } from "./add-submit";
 export type { AddValidationCommand, SelectedSubmitCommand, SelectedSubmitProfile } from "./add-submit";

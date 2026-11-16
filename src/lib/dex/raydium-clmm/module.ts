@@ -21,6 +21,9 @@ export const raydiumClmmModule: DexModule = Object.freeze({
   quoteAdd: async (command, context) => (await import("./quote-add.server")).quoteRaydiumAdd(command, context),
   readAddState: async command => (await import("./read-add-state.server")).readRaydiumAddState(command),
   validateSignedAdd: async (command, connection, profile) => (await import("./validate-add.server")).validateRaydiumSignedAdd(command, connection, profile),
+  readCompoundState: async (command, connection) => (await import("./read-compound-state.server")).readRaydiumCompoundState(command, connection),
+  confirmCompound: async (command, connection) => (await import("./confirm-compound.server")).confirmRaydiumCompound(command, connection),
+  importCompoundReceipt: async (command, connection) => (await import("./import-compound.server")).importRaydiumCompoundReceipt(command, connection),
   enabled: () => false,
   preparePortfolio: async (input, signal) => (await import("./portfolio.server")).prepareRaydiumPortfolio(input, signal),
 });
