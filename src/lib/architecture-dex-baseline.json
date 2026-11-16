@@ -16,7 +16,6 @@
     "src/app/api/selected-quote/route.ts": 1,
     "src/app/api/selected-state/route.ts": 1,
     "src/app/api/wallet/route.ts": 1,
-    "src/app/api/withdraw-quote/route.ts": 1,
     "src/app/api/withdraw-status/route.ts": 1,
     "src/app/app/page.tsx": 1,
     "src/app/app/rhc/page.tsx": 1,
@@ -41,8 +40,7 @@
     "src/mcp/tools/quotes.ts": 1,
     "src/server/transactions/compound-prepare.ts": 1,
     "src/server/transactions/open-prepare.ts": 3,
-    "src/server/transactions/selected-submit.ts": 2,
-    "src/server/transactions/withdraw-prepare.ts": 1
+    "src/server/transactions/selected-submit.ts": 2
   },
   "branches": {
     "src/app/api/protocol-pools/range-apr/route.ts": 3,

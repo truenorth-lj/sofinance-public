@@ -6,6 +6,7 @@ import { positionFigures } from "@/lib/portfolio/figures";
 import type { PositionKey, UnifiedPosition } from "@/lib/unified-positions/model";
 import type { DexAdapter } from "./adapter";
 import type { BuildAdd } from "./add-prepare";
+import type { BuildWithdrawal } from "./withdraw-prepare";
 import { DexUnsupportedError } from "./errors";
 import { feePolicyProblems } from "./fees";
 import { normalizeDexId, type DexCapabilities, type DexDescriptor, type DexId } from "./types";
@@ -16,6 +17,8 @@ export type DexModule = {
   adapter?: () => Promise<DexAdapter>;
   /** Full add simulation for existing transports; independent of generic HTTP rollout. */
   buildAdd?: BuildAdd;
+  /** Existing withdrawal transports, including signed recovery; independent of generic HTTP rollout. */
+  buildWithdrawal?: BuildWithdrawal;
   /** Compact Portfolio reader; a dedicated binding does not enable generic trading routes. */
   preparePortfolio?: (input: PortfolioInput, signal: AbortSignal) => Promise<PortfolioReader>;
   poolSource?: PoolSource;
@@ -66,6 +69,7 @@ export type DexDescriptorRegistry = {
 export type DexRegistry = DexDescriptorRegistry & {
   adapterFor(id: string): Promise<DexAdapter | null>;
   buildAdd(id: string, ...args: Parameters<BuildAdd>): ReturnType<BuildAdd>;
+  buildWithdrawal(id: string, ...args: Parameters<BuildWithdrawal>): ReturnType<BuildWithdrawal>;
   preparePortfolio(id: string, input: PortfolioInput, signal: AbortSignal): Promise<PortfolioReader | null>;
   /**
    * True only when this id is a registered module whose `enabled(op)` hook returned false.
@@ -156,6 +160,14 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
       const [command, options] = args;
       // A module may lazy-load before reading these values; retain the initiating preview/build terms.
       return entry.buildAdd({ ...command, selection: { ...command.selection } }, options ? { ...options } : undefined);
+    },
+    async buildWithdrawal(id: string, input: Parameters<BuildWithdrawal>[0], preview?: boolean) {
+      const canonical = normalizeDexId(id);
+      const entry = canonical ? byId.get(canonical) : undefined;
+      // A dedicated binding supports existing transports without claiming the generic
+      // StepResult/planToken contract (which has no signed recovery implementation here).
+      if (!entry?.buildWithdrawal) throw new DexUnsupportedError();
+      return entry.buildWithdrawal(structuredClone(input), preview);
     },
     async preparePortfolio(id: string, input: PortfolioInput, signal: AbortSignal): Promise<PortfolioReader | null> {
       const canonical = normalizeDexId(id);
