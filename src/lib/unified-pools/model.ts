@@ -64,14 +64,6 @@ export function samePairKey(pool: Pick<UnifiedPool, "chain" | "protocol" | "mint
   return `${pool.chain}:${pool.protocol}:${a}|${b}`;
 }
 
-/** Shown (on a greyed Open button) where the list cannot open a position in the pool's protocol. */
-const METEORA_OPEN_UNAVAILABLE = "Opening Meteora positions isn't available yet";
-
-/** Why the list cannot open this pool, or null when it can (Meteora DLMM: not from the list, PM 2026-11-01). */
-export function openUnavailableReason(pool: Pick<UnifiedPool, "protocol">): string | null {
-  return pool.protocol === "meteora-dlmm" ? METEORA_OPEN_UNAVAILABLE : null;
-}
-
 const finite = (value: number | null | undefined): value is number => typeof value === "number" && Number.isFinite(value);
 
 /** Pools under this TVL (USD) show a "Low TVL" tag and rank below every bigger pool by APR (also the homepage floor). */

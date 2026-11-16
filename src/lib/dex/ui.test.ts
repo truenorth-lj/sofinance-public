@@ -25,7 +25,16 @@ describe("uiFor (E-move registry UI)", () => {
     expect(uiFor("raydium-clmm").externalPoolUrl?.("pool1")).toBe("https://raydium.io/clmm/create-position/?pool_id=pool1");
     expect(uiFor("meteora-dlmm").externalPoolUrl).toBeUndefined();
     expect(uiFor("meteora-dlmm").planFallback).toBeUndefined();
-    expect(meteoraDlmmDescriptor.ui).toEqual({ rangeApr: { route: "protocol", cacheScope: "protocol", rwaListRoute: "pool" }, openUi: "registry", useDescriptorPlanTerms: true });
+    expect(meteoraDlmmDescriptor.ui).toEqual({ rangeApr: { route: "protocol", cacheScope: "protocol", rwaListRoute: "pool" },
+      openUi: "registry", useDescriptorPlanTerms: true, planOpenUnavailableReason: "Opening Meteora positions isn't available yet" });
+  });
+
+  it("keeps the existing Plan restriction separate from the generic open capability", () => {
+    expect(uiFor("meteora-dlmm").planOpenUnavailableReason).toBe("Opening Meteora positions isn't available yet");
+    expect(meteoraDlmmDescriptor.capabilities.open.supported).toBe(true);
+    for (const id of ["raydium-clmm", "orca-whirlpool", "uniswap-v4-rhc", "unknown", "rhc-uniswap-v4"]) {
+      expect(uiFor(id).planOpenUnavailableReason).toBeUndefined();
+    }
   });
 
   it("unknown ids default to none / legacy plan terms", () => {

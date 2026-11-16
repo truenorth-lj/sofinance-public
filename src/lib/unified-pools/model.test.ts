@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_FILTERS, DEFAULT_SORT, TVL_FILTER_PRESETS, compareDuplicateRank, filterPools, hideDuplicatePools, isLowTvl, LOW_TVL_USD, meetsMinTvl, openUnavailableReason,
+  DEFAULT_FILTERS, DEFAULT_SORT, TVL_FILTER_PRESETS, compareDuplicateRank, filterPools, hideDuplicatePools, isLowTvl, LOW_TVL_USD, meetsMinTvl,
   poolRankGroup, poolRankGroupOf, samePairKey, selectPools, sortPools, unsupportedTokenReason,
   type UnifiedPool,
 } from "./model";
@@ -33,10 +33,6 @@ describe("same-protocol duplicates (PM 2026-11-01)", () => {
     expect(hideDuplicatePools([ray, met], aprs({ ray: 1, met: 2 })).map((p) => p.poolAddress)).toEqual(["ray", "met"]);
     expect(hideDuplicatePools([met, pool({ poolAddress: "met2", protocol: "meteora-dlmm" })], aprs({ met: 1, met2: 2 }))
       .map((p) => p.poolAddress)).toEqual(["met2"]);
-  });
-  it("Meteora pools cannot be opened from the list, with the reason shown", () => {
-    expect(openUnavailableReason({ protocol: "meteora-dlmm" })).toBe("Opening Meteora positions isn't available yet");
-    for (const protocol of ["raydium-clmm", "orca-whirlpool", "uniswap-v4-rhc"] as const) expect(openUnavailableReason({ protocol })).toBeNull();
   });
 });
 
