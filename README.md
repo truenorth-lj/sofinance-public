@@ -366,8 +366,12 @@ Optional. Local dev, forks, and tests stay a no-op until the PostHog key is set.
 |-------|------|------------|
 | `$pageview` | App Router route changes (including `/` and `/app/rwa-pairs`) | `$pathname`, `$current_url` |
 | `rwa_pairs_view` | Landing on `/app/rwa-pairs` | `ref` if present on that URL |
-| `wallet_connect_clicked` | User opens the wallet picker (any Connect wallet button) | none |
-| `wallet_connected` | Wallet connects (also on auto-reconnect after a hard load) | none (identify uses `wallet:<sha256>`, not the address) |
+| `wallet_connect_clicked` | User opens the Solana wallet picker or the mobile no-wallet sheet (after terms) | none |
+| `wallet_connect_started` | User selects a specific wallet, or taps a Phantom/Solflare deeplink | `wallet_name`, `chain` (`solana` or `rhc`), `device` (`mobile` or `desktop`), `wallet_extension_detected` |
+| `wallet_connected` | Wallet connects (also on auto-reconnect after a hard load). Solana identify/register uses the public address as `wallet_address` only; connect context is event-only. Robinhood Chain events include context but not an address. | `wallet_address` (Solana only), `wallet_name`, `chain`, `device`, `wallet_extension_detected` |
+| `wallet_connect_failed` | Connect attempt failed or was rejected | same context, plus `error_type` (`user_rejected` \| `not_installed` \| `timeout` \| `other`) and `error_message` (redacted, truncated to ~120 characters) |
+| `wallet_connect_abandoned` | User closed the picker or sheet without connecting. Does not fire after success or failure, and does not fire twice. | `wallet_name` if a wallet was already selected, plus `chain`, `device`, `wallet_extension_detected` |
+| `wallet_deeplink_clicked` | User tapped Open in Phantom or Open in Solflare on the mobile no-wallet sheet | `wallet_name`, plus the same connect context |
 | `performance_view` | Performance tab shown in `/app` (tab click or `?view=performance` deep link); the URL doesn't change, so `$pageview` can't see it | none |
 | `open_position_started` | User starts an open (prepare/sign) | `pool`, `pair` when known |
 | `open_position_success` | Open confirmed on-chain (shared tx pipeline signature polling) | `pool`, `pair` |

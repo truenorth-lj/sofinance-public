@@ -19,14 +19,14 @@ vi.mock("@solana/wallet-adapter-react", () => ({
   WalletProvider: ({ children }: { children: ReactNode }) => children,
   useConnection: () => ({ connection: mocks.connection }),
   useWallet: () => ({
-    publicKey: undefined, connected: false, disconnect: vi.fn(), wallets: [],
+    publicKey: undefined, connected: false, connecting: false, disconnect: vi.fn(), wallets: [],
     signTransaction: mocks.signTransaction, signAllTransactions: mocks.signAllTransactions,
     sendTransaction: mocks.sendTransaction, wallet: { adapter: { wallet: { features: mocks.features } } },
   }),
 }));
 vi.mock("@solana/wallet-adapter-react-ui", () => ({
   WalletModalProvider: ({ children }: { children: ReactNode }) => children,
-  useWalletModal: () => ({ setVisible: vi.fn() }),
+  useWalletModal: () => ({ setVisible: vi.fn(), visible: false }),
 }));
 vi.mock("next/dynamic", () => ({ default: () => () => null }));
 
