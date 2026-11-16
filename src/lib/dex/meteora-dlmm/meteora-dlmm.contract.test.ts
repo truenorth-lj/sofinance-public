@@ -644,7 +644,8 @@ describe("Meteora DLMM adapter specifics", () => {
     const ABOVE = { kind: "units", lower: 46063, upper: 46090 } as const;
     const ABOVE_POSITION = Keypair.fromSeed(new Uint8Array(32).fill(25)).publicKey.toBase58();
 
-    it.each([1000n, 1598n, 1599n, 2000n])("open: builds Micro setup when the swapped-input fee floors at the one-unit boundary (%s raw TSLA)", async (amount) => {
+    it.each([1000n, 1598n, 1599n, 2000n])("open: builds both Micro steps at the one-unit swap-fee boundary (%s raw TSLA)", async (amount) => {
+      chain.current = createFakeChain({ autoLand: true, depositRaw: amount });
       const adapter = createMeteoraDlmmAdapter();
       const smallRequest: OpenRequest = { ...base, input: { token: TSLA, amountRaw: amount.toString() }, range: { kind: "preset", presetId: "micro" } };
       const ranges = await adapter.openRanges!(TSLA_POOL);
@@ -660,6 +661,12 @@ describe("Meteora DLMM adapter specifics", () => {
         const step = await adapter.prepareOpen(smallRequest, first);
         expect(step).toMatchObject({ step: 1, of: 2, done: false });
         expect(chain.current.simulations).toContain("initialize_position");
+        const deposit = await adapter.prepareOpen(smallRequest, { step: 2, priorSignatures: ["setup"], planToken: step.planToken });
+        expect(deposit).toMatchObject({ step: 2, of: 2, done: true });
+        const instructions = compiledInstructions(deposit.prepared);
+        const feeAta = ata(TSLA, FEE_WALLET);
+        expect(instructions.filter((ix) => ix.program === JUPITER_PROGRAM).some((ix) => ix.accounts.includes(feeAta))).toBe(true);
+        expect(instructions.filter((ix) => ix.program === ATA_PROGRAM).every((ix) => !ix.accounts.includes(feeAta) && !ix.accounts.includes(FEE_WALLET))).toBe(true);
         for (const q of quotes) expect(q).toMatchObject({ inputMint: TSLA, outputMint: TSLAX, amount: swapped, platformFeeBps: 10 });
       } finally { restore(); }
     });
