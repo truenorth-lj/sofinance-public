@@ -1,5 +1,5 @@
-import type { SelectedQuote } from "@/lib/selected-quote";
-import type { PositionSelection, SelectedPositionState } from "@sofinance/engine/selected-state";
+import type { SelectedQuote } from "@/lib/selected-quote-types";
+import type { PositionSelection, SelectedPositionState } from "@sofinance/engine/selected-types";
 
 /**
  * Client deadline for a preview/prepare. Each server round keeps its own 8 s

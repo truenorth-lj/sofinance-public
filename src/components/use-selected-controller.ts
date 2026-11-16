@@ -4,7 +4,7 @@ import "@/lib/engine-host";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatAmount, parseTokenAmount, toleranceFromPercent } from "@sofinance/engine/amount";
 import { addAmountGuidance, CLOSED_POSITION_ADD_MESSAGE } from "@/lib/selected-amount-guidance";
-import type { PositionSelection, SelectedPositionState } from "@sofinance/engine/selected-state";
+import type { PositionSelection, SelectedPositionState } from "@sofinance/engine/selected-types";
 import type { WalletDiscovery } from "@sofinance/engine/wallet-discovery";
 import { DEFAULT_RESALE_FLOOR_BPS, USDC_MINT } from "@sofinance/engine/ids";
 import { INPUT_ASSET_NOT_HELD_CODE, INPUT_ASSET_NOT_HELD_MESSAGE } from "@/lib/selected-input-asset-not-held";

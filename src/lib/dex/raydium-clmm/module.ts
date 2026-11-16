@@ -18,6 +18,8 @@ export const raydiumClmmModule: DexModule = Object.freeze({
   quoteOpen: async (command, profile) => (await import("./quote-open.server")).quoteRaydiumOpen(command, profile),
   buildSolSwapStep: async command => (await import("./sol-swap-step.server")).buildRaydiumSolSwapStep(command),
   readSolSwapDelivery: async command => (await import("./sol-swap-step.server")).readRaydiumSolSwapDelivery(command),
+  quoteAdd: async (command, context) => (await import("./quote-add.server")).quoteRaydiumAdd(command, context),
+  readAddState: async command => (await import("./read-add-state.server")).readRaydiumAddState(command),
   enabled: () => false,
   preparePortfolio: async (input, signal) => (await import("./portfolio.server")).prepareRaydiumPortfolio(input, signal),
 });

@@ -1,8 +1,7 @@
 import "@/lib/engine-host";
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
-import { searchSelectedQuoteBundle } from "../../lib/selected-quote";
 import { submitSelected } from "@/server/transactions/selected-submit";
-import { prepareAdd, MCP_ADD_PREPARE } from "@/lib/dex";
+import { quoteAdd, prepareAdd, MCP_ADD_PREPARE } from "@/lib/dex";
 import { MCP_SELECTED_SUBMIT } from "@/server/transactions/surface-policy";
 import { verifySelectedPermit } from "../../lib/selected-permit";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
@@ -31,14 +30,8 @@ export async function quoteAddLiquidity(input: QuoteAddLiquidityInput) {
     inputKind: input.inputKind,
   };
   
-  const { quote } = await searchSelectedQuoteBundle(
-    input.wallet,
-    selection,
-    input.amount,
-    input.resaleFloorBps,
-    input.slippageToleranceBps,
-    { buildTransactions: false, includeResale: false },
-  );
+  const quote = await quoteAdd("raydium-clmm", { wallet: input.wallet, selection, amount: input.amount,
+    floorBps: input.resaleFloorBps, toleranceBps: input.slippageToleranceBps });
   
   // Return only essential quote data, omit internal state
   return {

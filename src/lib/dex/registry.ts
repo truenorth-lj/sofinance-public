@@ -6,6 +6,7 @@ import { positionFigures } from "@/lib/portfolio/figures";
 import type { PositionKey, UnifiedPosition } from "@/lib/unified-positions/model";
 import type { DexAdapter } from "./adapter";
 import type { BuildAdd } from "./add-prepare";
+import type { QuoteAdd, ReadAddState } from "./selected-read";
 import type { BuildWithdrawal } from "./withdraw-prepare";
 import type { BuildCompound, BuildCompoundRecovery } from "./compound-prepare";
 import type { BuildOpen, QuoteOpen } from "./open-prepare";
@@ -20,6 +21,9 @@ export type DexModule = {
   adapter?: () => Promise<DexAdapter>;
   /** Full add simulation for existing transports; independent of generic HTTP rollout. */
   buildAdd?: BuildAdd;
+  /** Existing native quote/state DTOs; independent of the generic adapter's read contracts. */
+  quoteAdd?: QuoteAdd;
+  readAddState?: ReadAddState;
   /** Existing withdrawal transports, including signed recovery; independent of generic HTTP rollout. */
   buildWithdrawal?: BuildWithdrawal;
   buildCompound?: BuildCompound;
@@ -78,6 +82,8 @@ export type DexDescriptorRegistry = {
 export type DexRegistry = DexDescriptorRegistry & {
   adapterFor(id: string): Promise<DexAdapter | null>;
   buildAdd(id: string, ...args: Parameters<BuildAdd>): ReturnType<BuildAdd>;
+  quoteAdd(id: string, ...args: Parameters<QuoteAdd>): ReturnType<QuoteAdd>;
+  readAddState(id: string, ...args: Parameters<ReadAddState>): ReturnType<ReadAddState>;
   buildWithdrawal(id: string, ...args: Parameters<BuildWithdrawal>): ReturnType<BuildWithdrawal>;
   buildCompound(id: string, ...args: Parameters<BuildCompound>): ReturnType<BuildCompound>;
   buildCompoundRecovery(id: string, ...args: Parameters<BuildCompoundRecovery>): ReturnType<BuildCompoundRecovery>;
@@ -183,6 +189,25 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
       const [command, options] = args;
       // A module may lazy-load before reading these values; retain the initiating preview/build terms.
       return entry.buildAdd({ ...command, selection: { ...command.selection } }, options ? { ...options } : undefined);
+    },
+    async quoteAdd(id: string, command: Parameters<QuoteAdd>[0], context?: Parameters<QuoteAdd>[1]) {
+      const canonical = normalizeDexId(id);
+      const entry = canonical ? byId.get(canonical) : undefined;
+      if (!entry || !nativePositionCapabilities(entry).deposit.supported || !entry.quoteAdd) throw new DexUnsupportedError();
+      // Keep request identity stable while retaining the shared signal, budget and connection.
+      const input = { ...command, selection: { ...command.selection } };
+      const scope = context ? { ...context } : undefined;
+      scope?.signal.throwIfAborted();
+      const quote = await entry.quoteAdd(input, scope);
+      scope?.signal.throwIfAborted();
+      return quote;
+    },
+    async readAddState(id: string, command: Parameters<ReadAddState>[0]) {
+      const canonical = normalizeDexId(id);
+      const entry = canonical ? byId.get(canonical) : undefined;
+      // State remains readable for diagnostics and recovery when new deposits are unavailable.
+      if (!entry?.readAddState) throw new DexUnsupportedError();
+      return entry.readAddState({ ...command, selection: { ...command.selection } });
     },
     async buildWithdrawal(id: string, input: Parameters<BuildWithdrawal>[0], preview?: boolean) {
       const canonical = normalizeDexId(id);

@@ -6,6 +6,9 @@ import "server-only";
 import { dexRegistry } from "./registry-instance";
 
 export { dexRegistry };
+export const quoteAdd: typeof dexRegistry.quoteAdd = (id, ...args) => dexRegistry.quoteAdd(id, ...args);
+export const readAddState: typeof dexRegistry.readAddState = (id, ...args) => dexRegistry.readAddState(id, ...args);
+export type { AddReadCommand, AddQuoteContext } from "./selected-read";
 export { prepareOpen, quoteOpen } from "./prepare-open.server";
 export { prepareSolSwapStep, readSolSwapStepStatus } from "./prepare-sol-swap.server";
 export { APP_OPEN_PREPARE, MCP_OPEN_PREPARE, APP_OPEN_QUOTE, MCP_OPEN_QUOTE, SINGLE_TX_SOL_OPEN_MESSAGE } from "./open-prepare";

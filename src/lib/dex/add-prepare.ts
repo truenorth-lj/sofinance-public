@@ -1,4 +1,5 @@
 /** Server-side compatibility contract for the existing app / MCP add transports. */
+import type { PositionSelection } from "@sofinance/engine/selected-types";
 import type { JupiterRetryBudget } from "@sofinance/engine/jupiter/client";
 import type { SelectedPermitInput } from "@/lib/selected-permit";
 import type { buildAndSimulateSelectedZap } from "@/lib/selected-atomic";
@@ -8,7 +9,7 @@ export const APP_ADD_PREPARE = "app-selected";
 export const MCP_ADD_PREPARE = "mcp-selected";
 export type AddPrepareCommand = {
   wallet: string;
-  selection: { positionMint: string; inputMint: string; inputKind: "native" | "token" };
+  selection: PositionSelection;
   amount: string;
   floorBps: number;
   toleranceBps?: number;

@@ -1,6 +1,6 @@
 "use client";
 
-import type { PositionSelection, SelectedPositionState } from "@sofinance/engine/selected-state";
+import type { PositionSelection, SelectedPositionState } from "@sofinance/engine/selected-types";
 import { postWithJupiterRelay, type JupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { TxNotSentError, type PreparedTx, type TxAdapter } from "@/lib/tx-pipeline";
 import { RELAY_DEADLINE_MS, selectionKey, type Preflight } from "../selected/selected-preview-model";
