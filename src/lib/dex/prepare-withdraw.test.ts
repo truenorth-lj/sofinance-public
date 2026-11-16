@@ -70,7 +70,8 @@ it("requires an explicit native binding independently of generic rollout, and cl
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
   let received: unknown;
-  const registry = createDexRegistry([{ ...fakeSolanaModule, enabled: () => false,
+  const registry = createDexRegistry([{ ...fakeSolanaModule, descriptor: { ...fakeSolanaModule.descriptor,
+    capabilities: { ...fakeSolanaModule.descriptor.capabilities, withdraw: { supported: false, reason: "Generic recovery unavailable" } } }, enabled: () => false,
     buildWithdrawal: async input => { await gate; received = input; return prepared; } }]);
   const input = { ...request(), previous: structuredClone(prepared) };
   const original = structuredClone(input);

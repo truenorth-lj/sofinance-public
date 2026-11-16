@@ -7,11 +7,14 @@ remain unchanged. The full shared-usecases phase is not complete.
 
 ## Ownership
 
-`src/server/transactions/*-prepare.ts` owns builder → existing permit → serialization,
-or the existing withdraw build/retry/refresh sequence. Results contain the complete summary,
-permit and serialized transaction. No common permit serializer or recalculation is introduced.
-`surface-policy.ts` exposes operation-specific named HTTP/MCP profiles, selected by adapters;
-there are no request-controlled policy flags or arbitrary Boolean combinations.
+Add, withdraw and compound prepare orchestration now lives in `src/lib/dex/prepare-*.server.ts`,
+with lazy native builders registered by each DEX module. Open remains in
+`src/server/transactions/open-prepare.ts`. Results preserve complete summaries, existing permits
+and serialized transactions; withdraw retains its app build/retry/refresh sequence.
+Operation-specific HTTP/MCP profiles live beside the corresponding DEX compatibility contract;
+`surface-policy.ts` retains the open and selected-submit profiles. Trusted transports select them,
+never request bodies. Compound and harvest recovery share their existing permit domain while
+binding the complete operation-specific summary.
 
 HTTP retains parsing, relay AsyncLocalStorage, selected deadline and retry budget, status,
 headers, error handling and response projection. MCP retains its existing projection,
@@ -24,7 +27,7 @@ abort checks after build and permit and final response checks in the original wr
 MCP still calls the builder with its original five arguments/default enforcement.
 Open HTTP still uses withFeeEstimateRetry and enforce:false; MCP has no outer retry.
 Withdraw HTTP still passes raw JSON to the engine parser, retries only the existing allowlist,
-then refreshes/restamps/reissues the permit. MCP loads its use case lazily, builds once and
+then refreshes/restamps/reissues the permit. MCP builds once through the lazy native binding and
 never adds HTTP refresh. The existing WithdrawPrepared/previous object is not reconstructed.
 
 The three non-withdraw use cases accept a narrow signing-key reader supplied by their adapter.

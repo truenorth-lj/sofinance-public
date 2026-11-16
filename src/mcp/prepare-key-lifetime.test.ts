@@ -42,3 +42,21 @@ for (const [index, prepare] of operations.entries()) {
     await expect(prepare()).rejects.toThrow("builder rejected"); expect(backend.secret).not.toHaveBeenCalled();
   });
 }
+
+it("keeps compound sign-token identity and source receipts bound before the build await", async () => {
+  let release!: () => void;
+  const built = await backend.build(); backend.build.mockClear();
+  backend.build.mockImplementationOnce(() => new Promise(resolve => { release = () => resolve(built); }));
+  const input = quoteCompoundSchema.parse(VALID_ARGS.prepare_compound_transaction);
+  input.sourceSignatures = ["original-source"];
+  const originalWallet = input.wallet;
+  const pending = prepareCompoundTransaction(input);
+  input.wallet = testKeypair(9).publicKey.toBase58(); input.sourceSignatures[0] = "replacement";
+  // The module binding is lazy, so the registry must already have captured the original command.
+  await vi.waitFor(() => expect(backend.build).toHaveBeenCalledOnce());
+  release();
+  const prepared = await pending;
+  expect(backend.build).toHaveBeenCalledWith(originalWallet, input.positionMint, ["original-source"]);
+  expect(await verifySignToken(prepared.signToken, SIGNING_SECRET)).toMatchObject({ wallet: originalWallet,
+    submitArgs: { wallet: originalWallet } });
+});

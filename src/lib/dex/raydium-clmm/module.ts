@@ -12,6 +12,8 @@ export const raydiumClmmModule: DexModule = Object.freeze({
   adapter: async () => (await import("./adapter.server")).createRaydiumClmmAdapter(),
   buildAdd: async (command, options) => (await import("./build-add.server")).buildRaydiumAdd(command, options),
   buildWithdrawal: async (command, preview) => (await import("./build-withdraw.server")).buildRaydiumWithdrawal(command, preview),
+  buildCompound: async command => (await import("./build-compound.server")).buildRaydiumCompound(command),
+  buildCompoundRecovery: async command => (await import("./build-compound-recovery.server")).buildRaydiumCompoundRecovery(command),
   enabled: () => false,
   preparePortfolio: async (input, signal) => (await import("./portfolio.server")).prepareRaydiumPortfolio(input, signal),
 });

@@ -6,6 +6,8 @@ import "server-only";
 import { dexRegistry } from "./registry-instance";
 
 export { dexRegistry };
+export { prepareCompound, simulateCompound, prepareCompoundRecovery } from "./prepare-compound.server";
+export { APP_COMPOUND_PREPARE, MCP_COMPOUND_PREPARE } from "./compound-prepare";
 export { prepareWithdrawal, quoteWithdrawal } from "./prepare-withdraw.server";
 export { APP_WITHDRAW_PREPARE, MCP_WITHDRAW_PREPARE } from "./withdraw-prepare";
 export type { WithdrawalPreparation } from "./withdraw-prepare";
