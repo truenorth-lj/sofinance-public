@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
+import { rhcPairLabel, rhcPool, rhcPoolView } from "./pool-presentation";
 import { OPEN_FEE_BPS } from "@sofinance/engine/protocols/uniswap-v4/open-constants";
 import { NO_FEE } from "../types";
 import { bpsFeeStrategy, feePolicyProblems } from "../fees";
@@ -34,12 +35,14 @@ describe("uniswap-v4-rhc descriptor (E2-alias)", () => {
     expect(uniswapV4RhcDescriptor.chain).toBe("robinhood-chain");
     expect(uniswapV4RhcDescriptor.displayName).toBe("Uniswap v4");
     expect(uniswapV4RhcDescriptor.ui).toEqual({
+      nativePoolPresentation: { pairLabel: rhcPairLabel, pool: rhcPool, openView: rhcPoolView },
       defaultOpenPoolId: UNIV4_RHC_ALLOWLISTED_POOLS[0]!.poolId,
       openUi: "rhc-dialog",
       useDescriptorPlanTerms: false,
       listPositions: true,
     });
     const expectedUi = {
+      nativePoolPresentation: { pairLabel: rhcPairLabel, pool: rhcPool, openView: rhcPoolView },
       defaultOpenPoolId: UNIV4_RHC_ALLOWLISTED_POOLS[0]!.poolId,
       openUi: "rhc-dialog" as const,
       useDescriptorPlanTerms: false,

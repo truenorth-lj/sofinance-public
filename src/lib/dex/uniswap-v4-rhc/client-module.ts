@@ -1,5 +1,5 @@
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
-import { rhcPairLabel } from "@/lib/unified-pools/rows";
+import { rhcPairLabel } from "./pool-presentation";
 import { rhcPositionSource } from "@/lib/unified-positions/sources/rhc";
 import type { NativeEvmClientModule } from "../evm-client-module";
 import { uniswapV4RhcDescriptor } from "./descriptor";

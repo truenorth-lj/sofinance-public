@@ -51,5 +51,10 @@ describe("rhcPool", () => {
   });
   it("builds the open panel view from the reviewed allowlist tokens", () => {
     expect(rhcPoolView(summary())).toMatchObject({ poolId: spec.poolId, tick: 10, token0: { address: spec.currency0.address, decimals: spec.currency0.decimals } });
+    expect(rhcPoolView(summary({ poolId: "0xdead" }))).toBeNull();
+    // A known delisted pool still has a view so the existing panel can explain its status.
+    expect(rhcPoolView(summary({ status: "delisted" }))).toMatchObject({ status: "delisted" });
+    const upper = `0x${spec.poolId.slice(2).toUpperCase()}` as RhcPoolSummary["poolId"];
+    expect(rhcPool(summary({ poolId: upper }))).toEqual(rhcPool(summary()));
   });
 });
