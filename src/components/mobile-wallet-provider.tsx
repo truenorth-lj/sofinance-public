@@ -86,6 +86,6 @@ export function MobileWalletProvider({ children }: { children: React.ReactNode }
     signMessage: appKitSignMessage(walletProvider),
   }}><WalletGrowthAnalytics walletName={typeof walletName === "string" ? walletName : undefined} />
     <AppKitConnectAnalytics />
-    <WalletDeeplinkSheet open={flow.sheetOpen} pageUrl={flow.pageUrl} origin={flow.origin} onOpenWallet={flow.openWallet} onClose={flow.closeSheet} />
+    <WalletDeeplinkSheet open={flow.sheetOpen} pageUrl={flow.pageUrl} origin={flow.origin} onOpenWallet={flow.openWallet} onChooseWalletHere={flow.chooseWalletHere} onClose={flow.closeSheet} />
     {children}<TxNoticeHost wallet={account.address} /></WalletConnectionContext.Provider>;
 }

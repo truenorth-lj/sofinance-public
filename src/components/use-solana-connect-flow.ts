@@ -33,12 +33,19 @@ export function useSolanaConnectFlow(openModal: () => void) {
     captureWalletDeeplinkClicked(wallet, { chain: "solana" });
   }, []);
 
+  /** Continue the same attempt in the existing picker; do not mark the sheet close as abandoned. */
+  const chooseWalletHere = useCallback(() => {
+    setSheetOpen(false);
+    openModal();
+  }, [openModal]);
+
   const target = currentBrowseTarget();
   return {
     connect,
     sheetOpen,
     closeSheet,
     openWallet,
+    chooseWalletHere,
     pageUrl: target?.pageUrl ?? "",
     origin: target?.origin ?? "",
   };

@@ -65,7 +65,7 @@ function BrowserWalletConnection({ children }: { children: React.ReactNode }) {
       return signature;
     } : undefined,
   }}><WalletGrowthAnalytics walletName={walletName} /><AdapterConnectAnalytics />
-    <WalletDeeplinkSheet open={flow.sheetOpen} pageUrl={flow.pageUrl} origin={flow.origin} onOpenWallet={flow.openWallet} onClose={flow.closeSheet} />
+    <WalletDeeplinkSheet open={flow.sheetOpen} pageUrl={flow.pageUrl} origin={flow.origin} onOpenWallet={flow.openWallet} onChooseWalletHere={flow.chooseWalletHere} onClose={flow.closeSheet} />
     {children}<TxNoticeHost wallet={address} /></WalletConnectionContext.Provider>;
 }
 

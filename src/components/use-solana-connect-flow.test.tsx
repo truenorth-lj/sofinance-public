@@ -92,6 +92,19 @@ describe("useSolanaConnectFlow", () => {
     expect(abandoned[0]![1]).toMatchObject({ chain: "solana", device: "mobile", wallet_extension_detected: false });
   });
 
+  it("opens the existing modal from the sheet without firing abandoned", async () => {
+    Object.defineProperty(window.navigator, "userAgent", { configurable: true, value: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)" });
+    Object.defineProperty(window.navigator, "userAgentData", { configurable: true, value: { mobile: true } });
+    const openModal = vi.fn();
+    await render(openModal);
+    await act(async () => { live.flow.connect(); });
+    expect(container.querySelector("[data-testid=sheet]")).not.toBeNull();
+    await act(async () => { live.flow.chooseWalletHere(); });
+    expect(openModal).toHaveBeenCalledOnce();
+    expect(container.querySelector("[data-testid=sheet]")).toBeNull();
+    expect(capture.mock.calls.map((call) => call[0])).not.toContain(GROWTH_EVENTS.walletConnectAbandoned);
+  });
+
   it("records started and wallet_deeplink_clicked when a wallet link is opened", async () => {
     Object.defineProperty(window.navigator, "userAgent", { configurable: true, value: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)" });
     Object.defineProperty(window.navigator, "userAgentData", { configurable: true, value: { mobile: true } });

@@ -7,11 +7,12 @@ import { phantomBrowseUrl, solflareBrowseUrl } from "@/lib/analytics/wallet-conn
  * Mobile-only: when no injected Solana wallet is present, offer official Phantom and Solflare
  * browse deeplinks so this page opens in the wallet's in-app browser.
  */
-export function WalletDeeplinkSheet({ open, pageUrl, origin, onOpenWallet, onClose }: {
+export function WalletDeeplinkSheet({ open, pageUrl, origin, onOpenWallet, onChooseWalletHere, onClose }: {
   open: boolean;
   pageUrl: string;
   origin: string;
   onOpenWallet: (wallet: "Phantom" | "Solflare") => void;
+  onChooseWalletHere: () => void;
   onClose: () => void;
 }) {
   if (!open) return null;
@@ -39,6 +40,10 @@ export function WalletDeeplinkSheet({ open, pageUrl, origin, onOpenWallet, onClo
             Open in {wallet.name}
           </a>
         ))}
+        <button type="button" data-testid="wallet-deeplink-choose-here" onClick={onChooseWalletHere}
+          className="inline-flex h-12 items-center justify-center rounded-full border border-white/25 px-5 text-sm font-semibold text-cream/90 transition-colors hover:border-white/70 focus-visible:border-lemon">
+          Choose a wallet here
+        </button>
       </div>
     </div>
   </div>;
