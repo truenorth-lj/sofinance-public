@@ -1,3 +1,4 @@
+import type { PublicPoolReads } from "../public-pool-read";
 import { isMeteoraDlmmDiscoveryEnabled } from "@/lib/protocol-flags";
 import type { DexModule } from "../registry";
 import { meteoraDlmmDescriptor } from "./descriptor";
@@ -8,6 +9,17 @@ import { meteoraDlmmDescriptor } from "./descriptor";
  */
 export const meteoraDlmmModule: DexModule = Object.freeze({
   descriptor: meteoraDlmmDescriptor,
+  publicPoolReads: Object.freeze({
+    snapshotBacked: false, rangeAprUnavailableMessage: "Meteora range APR unavailable",
+    discovery: Object.freeze({ enabled: () => isMeteoraDlmmDiscoveryEnabled(), read: async () => (await import("@/lib/meteora-pairs")).discoverMeteoraPairs() }),
+    rangeApr: Object.freeze({
+      enabled: () => isMeteoraDlmmDiscoveryEnabled(),
+      read: async (poolId: string) => {
+        const reader = await import("@/lib/meteora-range-apr");
+        return reader.isAllowlistedMeteoraPool(poolId) ? reader.fetchMeteoraRangeApr(poolId) : null;
+      },
+    }),
+  } satisfies PublicPoolReads),
   positionReads: Object.freeze({
     source: "meteora" as const, order: 1, protocol: meteoraDlmmDescriptor.id,
     listing: Object.freeze({
