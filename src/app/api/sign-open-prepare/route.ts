@@ -3,8 +3,7 @@ import { PublicKey } from "@solana/web3.js";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { apiError } from "@/lib/api-response";
 import { verifySignToken } from "@/lib/pending-sign-token";
-import { prepareOpen } from "@/server/transactions/open-prepare";
-import { MCP_OPEN_PREPARE } from "@/server/transactions/surface-policy";
+import { prepareOpen, MCP_OPEN_PREPARE } from "@/lib/dex";
 import { sendPermitFor } from "@/lib/tx-send/permit";
 
 /**
@@ -26,7 +25,7 @@ export async function POST(request: Request) {
     }
     if (nftMint === payload.wallet) throw new Error("Invalid position NFT mint");
     const { selection, amount, range, floorBps, toleranceBps } = payload.openRequest;
-    const prepared = await prepareOpen({ wallet: payload.wallet, selection, amount, range, floorBps, toleranceBps, nftMint },
+    const prepared = await prepareOpen("raydium-clmm", { wallet: payload.wallet, selection, amount, range, floorBps, toleranceBps, nftMint },
       getSigningSecret, MCP_OPEN_PREPARE);
     const sendPermit = sendPermitFor(payload.wallet, prepared.unsignedTransaction, secret);
     return Response.json({ ...prepared, sendPermit }, { headers: { "Cache-Control": "no-store" } });

@@ -7,20 +7,20 @@ remain unchanged. The full shared-usecases phase is not complete.
 
 ## Ownership
 
-Add, withdraw and compound prepare orchestration now lives in `src/lib/dex/prepare-*.server.ts`,
-with lazy native builders registered by each DEX module. Open remains in
-`src/server/transactions/open-prepare.ts`. Results preserve complete summaries, existing permits
+Add, withdraw, compound, open and SOL swap-step prepare orchestration now lives in
+`src/lib/dex/prepare-*.server.ts`, with lazy native builders registered by each DEX module.
+Results preserve complete summaries, existing permits
 and serialized transactions; withdraw retains its app build/retry/refresh sequence.
 Operation-specific HTTP/MCP profiles live beside the corresponding DEX compatibility contract;
-`surface-policy.ts` retains the open and selected-submit profiles. Trusted transports select them,
+`surface-policy.ts` retains the selected-submit profiles. Trusted transports select them,
 never request bodies. Compound and harvest recovery share their existing permit domain while
 binding the complete operation-specific summary.
 
 HTTP retains parsing, relay AsyncLocalStorage, selected deadline and retry budget, status,
 headers, error handling and response projection. MCP retains its existing projection,
 submitArgs, full authenticated sign-token payload, URL and instructions. Compound quote
-still calls the builder without permit/sign-token requirements. Open NFT partial signatures
-remain engine-owned. All broadcast and unknown-send behavior stays in the existing owners.
+still calls the builder without permit/sign-token requirements. Open wallet/NFT mint signatures
+remain client-owned; prepare never signs either slot. All broadcast and unknown-send behavior stays in the existing owners.
 
 Selected HTTP still passes enforceResaleFloor:false, signal and budget (retriesLeft1), with
 abort checks after build and permit and final response checks in the original wrapper.

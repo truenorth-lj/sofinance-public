@@ -3,7 +3,7 @@ import { PublicKey } from "@solana/web3.js";
 import { parseWallet } from "@sofinance/engine/api-input";
 import { withJupiterRelay } from "@/lib/jupiter-relay-route";
 import { apiError } from "@/lib/api-response";
-import { prepareSolSwapStep } from "@/server/transactions/sol-swap-step";
+import { prepareSolSwapStep } from "@/lib/dex";
 
 /** Step 1/2 of a SOL deposit: SOL -> pool token swap (fee inside the swap). */
 export async function POST(request: Request) {
@@ -16,7 +16,7 @@ export async function POST(request: Request) {
       }
       let poolId: string;
       try { poolId = new PublicKey(body.poolId).toBase58(); } catch { throw new Error("Invalid pool or input amount"); }
-      const prepared = await prepareSolSwapStep(wallet, poolId, body.amount);
+      const prepared = await prepareSolSwapStep("raydium-clmm", wallet, poolId, body.amount);
       return Response.json(prepared, { headers: { "Cache-Control": "no-store" } });
     } catch (error) {
       return apiError(error, "SOL swap preparation failed");

@@ -1,14 +1,11 @@
 import "@/lib/engine-host";
 import { PublicKey } from "@solana/web3.js";
 import { randomBytes } from "crypto";
-import { MCP_OPEN_PREPARE } from "@/server/transactions/surface-policy";
+import { prepareOpen, quoteOpen, MCP_OPEN_PREPARE, MCP_OPEN_QUOTE } from "@/lib/dex";
 import { CompoundSendError, notSentRetryMessage, sanitizePublicError } from "../../lib/public-error";
 import { createSignToken } from "../../lib/pending-sign-token";
 import { buildSignUrl } from "../../lib/public-urls";
-import { rangeInputFromFields } from "@sofinance/engine/open-range";
-import { getOpenPositionQuoteBundle } from "@sofinance/engine/open-quote";
-import { prepareOpen } from "@/server/transactions/open-prepare";
-import { assertSolInputAllowed } from "@/lib/sol-input-policy";
+import { rangeInputFromFields } from "@sofinance/engine/open-range-input";
 import { submitOpenPositionFromParts } from "../../lib/open-send";
 import type { OpenPositionSummary } from "@sofinance/engine/open-types";
 import type { PrepareOpenPositionInput, QuoteOpenPositionInput, SubmitOpenPositionInput } from "../schemas";
@@ -28,11 +25,8 @@ export async function quoteOpenPosition(input: QuoteOpenPositionInput) {
     inputMint: input.inputMint,
     inputKind: input.inputKind,
   };
-  assertSolInputAllowed(selection);
-  const { quote } = await getOpenPositionQuoteBundle(
-    input.wallet, selection, input.amount, openRangeFromInput(input),
-    input.resaleFloorBps, input.slippageToleranceBps,
-  );
+  const quote = await quoteOpen("raydium-clmm", { wallet: input.wallet, selection, amount: input.amount,
+    range: openRangeFromInput(input), floorBps: input.resaleFloorBps, toleranceBps: input.slippageToleranceBps }, MCP_OPEN_QUOTE);
   return quote;
 }
 
@@ -57,31 +51,32 @@ export function previewOnlyMintAddress(): string {
  * Without `nftMint`, use signUrl: the sign page creates the mint in the browser.
  */
 export async function prepareOpenPosition(input: PrepareOpenPositionInput) {
+  const command = structuredClone(input);
   const signingSecret = capturePrepareSigningSecret();
   const selection = {
-    poolId: input.poolId,
-    inputMint: input.inputMint,
-    inputKind: input.inputKind,
+    poolId: command.poolId,
+    inputMint: command.inputMint,
+    inputKind: command.inputKind,
   };
-  const range = openRangeFromInput(input);
-  const browserMint = !input.nftMint;
-  const { summary, permit, unsignedTransaction } = await prepareOpen({
-    wallet: input.wallet, selection, amount: input.amount, range,
-    floorBps: input.resaleFloorBps, toleranceBps: input.slippageToleranceBps,
-    nftMint: input.nftMint ?? previewOnlyMintAddress(),
+  const range = openRangeFromInput(command);
+  const browserMint = !command.nftMint;
+  const { summary, permit, unsignedTransaction } = await prepareOpen("raydium-clmm", {
+    wallet: command.wallet, selection, amount: command.amount, range,
+    floorBps: command.resaleFloorBps, toleranceBps: command.slippageToleranceBps,
+    nftMint: command.nftMint ?? previewOnlyMintAddress(),
   }, signingSecret, MCP_OPEN_PREPARE);
-  const submitArgs = { permit, wallet: input.wallet, summary };
+  const submitArgs = { permit, wallet: command.wallet, summary };
   const signToken = await createSignToken(
     {
       kind: "open-position",
-      wallet: input.wallet,
+      wallet: command.wallet,
       unsignedTransaction,
       permit,
       submitArgs,
       expiresAt: summary.expiresAt,
       ...(browserMint ? { openRequest: {
-        selection, amount: input.amount, range, floorBps: input.resaleFloorBps,
-        ...(input.slippageToleranceBps === undefined ? {} : { toleranceBps: input.slippageToleranceBps }),
+        selection, amount: command.amount, range, floorBps: command.resaleFloorBps,
+        ...(command.slippageToleranceBps === undefined ? {} : { toleranceBps: command.slippageToleranceBps }),
       } } : {}),
     },
     signingSecret(),

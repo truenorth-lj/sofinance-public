@@ -60,3 +60,20 @@ it("keeps compound sign-token identity and source receipts bound before the buil
   expect(await verifySignToken(prepared.signToken, SIGNING_SECRET)).toMatchObject({ wallet: originalWallet,
     submitArgs: { wallet: originalWallet } });
 });
+
+it("keeps browser-mint openRequest and sign-token wallet bound before the build await", async () => {
+  let release!: () => void;
+  const built = await backend.build(); backend.build.mockClear();
+  backend.build.mockImplementationOnce(() => new Promise(resolve => { release = () => resolve(built); }));
+  const input = prepareOpenPositionSchema.parse(VALID_ARGS.prepare_open_position);
+  delete input.nftMint;
+  const original = structuredClone(input);
+  const pending = prepareOpenPosition(input);
+  input.wallet = testKeypair(9).publicKey.toBase58(); input.poolId = testKeypair(10).publicKey.toBase58();
+  input.amount = "999"; input.rangePreset = "wide"; input.resaleFloorBps = 0;
+  await vi.waitFor(() => expect(backend.build).toHaveBeenCalledOnce()); release();
+  const prepared = await pending;
+  expect(await verifySignToken(prepared.signToken, SIGNING_SECRET)).toMatchObject({ wallet: original.wallet,
+    submitArgs: { wallet: original.wallet }, openRequest: { selection: { poolId: original.poolId }, amount: original.amount,
+      range: { preset: original.rangePreset }, floorBps: original.resaleFloorBps } });
+});

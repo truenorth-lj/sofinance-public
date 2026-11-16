@@ -3,7 +3,7 @@ import bs58 from "bs58";
 import { PublicKey } from "@solana/web3.js";
 import { parseWallet } from "@sofinance/engine/api-input";
 import { apiError } from "@/lib/api-response";
-import { readSolSwapStepStatus } from "@/server/transactions/sol-swap-step";
+import { readSolSwapStepStatus } from "@/lib/dex";
 
 /** Step 1/2 result: what the swap actually delivered (tx meta), never the quote. */
 export async function POST(request: Request) {
@@ -16,7 +16,7 @@ export async function POST(request: Request) {
       throw new Error("Invalid SOL swap status input");
     }
     const mint = new PublicKey(outputMint).toBase58();
-    const result = await readSolSwapStepStatus(wallet, signature, mint, lastValidBlockHeight as number);
+    const result = await readSolSwapStepStatus("raydium-clmm", wallet, signature, mint, lastValidBlockHeight as number);
     return Response.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiError(error, "SOL swap status check failed");

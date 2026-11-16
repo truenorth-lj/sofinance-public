@@ -8,6 +8,8 @@ import type { DexAdapter } from "./adapter";
 import type { BuildAdd } from "./add-prepare";
 import type { BuildWithdrawal } from "./withdraw-prepare";
 import type { BuildCompound, BuildCompoundRecovery } from "./compound-prepare";
+import type { BuildOpen, QuoteOpen } from "./open-prepare";
+import type { BuildSolSwapStep, ReadSolSwapDelivery } from "./sol-swap-step";
 import { DexUnsupportedError } from "./errors";
 import { feePolicyProblems } from "./fees";
 import { normalizeDexId, type DexCapabilities, type DexDescriptor, type DexId } from "./types";
@@ -22,6 +24,10 @@ export type DexModule = {
   buildWithdrawal?: BuildWithdrawal;
   buildCompound?: BuildCompound;
   buildCompoundRecovery?: BuildCompoundRecovery;
+  buildOpen?: BuildOpen;
+  quoteOpen?: QuoteOpen;
+  buildSolSwapStep?: BuildSolSwapStep;
+  readSolSwapDelivery?: ReadSolSwapDelivery;
   /** Compact Portfolio reader; a dedicated binding does not enable generic trading routes. */
   preparePortfolio?: (input: PortfolioInput, signal: AbortSignal) => Promise<PortfolioReader>;
   poolSource?: PoolSource;
@@ -75,6 +81,10 @@ export type DexRegistry = DexDescriptorRegistry & {
   buildWithdrawal(id: string, ...args: Parameters<BuildWithdrawal>): ReturnType<BuildWithdrawal>;
   buildCompound(id: string, ...args: Parameters<BuildCompound>): ReturnType<BuildCompound>;
   buildCompoundRecovery(id: string, ...args: Parameters<BuildCompoundRecovery>): ReturnType<BuildCompoundRecovery>;
+  buildOpen(id: string, ...args: Parameters<BuildOpen>): ReturnType<BuildOpen>;
+  quoteOpen(id: string, ...args: Parameters<QuoteOpen>): ReturnType<QuoteOpen>;
+  buildSolSwapStep(id: string, ...args: Parameters<BuildSolSwapStep>): ReturnType<BuildSolSwapStep>;
+  readSolSwapDelivery(id: string, ...args: Parameters<ReadSolSwapDelivery>): ReturnType<ReadSolSwapDelivery>;
   preparePortfolio(id: string, input: PortfolioInput, signal: AbortSignal): Promise<PortfolioReader | null>;
   /**
    * True only when this id is a registered module whose `enabled(op)` hook returned false.
@@ -188,6 +198,30 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
       const entry = canonical ? byId.get(canonical) : undefined;
       if (!entry?.buildCompoundRecovery) throw new DexUnsupportedError();
       return entry.buildCompoundRecovery(structuredClone(command));
+    },
+    async buildOpen(id: string, command: Parameters<BuildOpen>[0], options?: Parameters<BuildOpen>[1]) {
+      const canonical = normalizeDexId(id);
+      const entry = canonical ? byId.get(canonical) : undefined;
+      if (!entry?.buildOpen) throw new DexUnsupportedError();
+      return entry.buildOpen(structuredClone(command), options ? { ...options } : undefined);
+    },
+    async quoteOpen(id: string, command: Parameters<QuoteOpen>[0], profile: Parameters<QuoteOpen>[1]) {
+      const canonical = normalizeDexId(id);
+      const entry = canonical ? byId.get(canonical) : undefined;
+      if (!entry?.quoteOpen) throw new DexUnsupportedError();
+      return entry.quoteOpen(structuredClone(command), profile);
+    },
+    async buildSolSwapStep(id: string, command: Parameters<BuildSolSwapStep>[0]) {
+      const canonical = normalizeDexId(id);
+      const entry = canonical ? byId.get(canonical) : undefined;
+      if (!entry?.buildSolSwapStep) throw new DexUnsupportedError();
+      return entry.buildSolSwapStep({ ...command });
+    },
+    async readSolSwapDelivery(id: string, command: Parameters<ReadSolSwapDelivery>[0]) {
+      const canonical = normalizeDexId(id);
+      const entry = canonical ? byId.get(canonical) : undefined;
+      if (!entry?.readSolSwapDelivery) throw new DexUnsupportedError();
+      return entry.readSolSwapDelivery({ ...command });
     },
     async preparePortfolio(id: string, input: PortfolioInput, signal: AbortSignal): Promise<PortfolioReader | null> {
       const canonical = normalizeDexId(id);
