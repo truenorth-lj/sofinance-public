@@ -101,7 +101,7 @@ const encoded = (info: Account | null | undefined) => info
 export type FakeChain = ReturnType<typeof createFakeChain>;
 
 /** `autoLand`: a simulated `initialize_position` lands right away (the contract suite walks step 2 straight after 1). */
-export function createFakeChain(options: { autoLand?: boolean } = {}) {
+export function createFakeChain(options: { autoLand?: boolean; depositRaw?: bigint } = {}) {
   tokenAccountRentSkew = 0;
   const accounts = new Map<string, Account>();
   for (const pool of Object.entries(capture.pools)) {
@@ -155,7 +155,7 @@ export function createFakeChain(options: { autoLand?: boolean } = {}) {
           next.set(ata(mintY, payer), tokenAccount(mintY, payer, held(next, ata(mintY, payer)) - data.readBigUInt64LE(16)));
         } else {
           const input = ata(TSLA, payer);
-          next.set(input, tokenAccount(TSLA, payer, held(next, input) - BigInt(DEPOSIT_RAW)));
+          next.set(input, tokenAccount(TSLA, payer, held(next, input) - (options.depositRaw ?? BigInt(DEPOSIT_RAW))));
         }
         next.set(payer, { ...next.get(payer)!, lamports: next.get(payer)!.lamports - 5_000 });
       } else if (tag === METEORA_LIQUIDITY_IX_DISCRIMINATOR.removeLiquidityByRange2) {
