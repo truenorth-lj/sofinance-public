@@ -101,7 +101,13 @@ export type OpenRangePreset = {
 };
 
 /** The preset ranges of a pool for opening, plus the pool tokens' decimals (keyed by mint). */
-export type OpenRanges = { poolId: string; decimals: Record<string, number>; presets: OpenRangePreset[] };
+export type OpenRanges = {
+  poolId: string;
+  decimals: Record<string, number>;
+  presets: OpenRangePreset[];
+  /** Nearest protocol unit to UI price 1:1, when the adapter offers parity centering. */
+  parityUnit?: number;
+};
 
 export type ExitPreview = { outputs: { token: string; amountRaw: string }[]; platformFeeRaw: string };
 

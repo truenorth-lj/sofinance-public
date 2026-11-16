@@ -308,7 +308,9 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
     // On-chain only (pool + both mints): works when the volume / APR feed is down, so opening never depends on it.
     openRanges: (poolId: string) => guarded(async (): Promise<OpenRanges> => {
       const pool = await readMeteoraPool(deps(), poolId);
-      return { poolId, decimals: { [pool.lbPair.tokenXMint]: pool.decimalsX, [pool.lbPair.tokenYMint]: pool.decimalsY }, presets: meteoraOpenPresets(pool) };
+      // UI Y/X = (1 + binStep / 10_000)^binId * 10^(decimalsX - decimalsY).
+      const parityUnit = Math.round((pool.decimalsY - pool.decimalsX) * Math.LN10 / Math.log1p(pool.lbPair.binStep / 10_000));
+      return { poolId, decimals: { [pool.lbPair.tokenXMint]: pool.decimalsX, [pool.lbPair.tokenYMint]: pool.decimalsY }, presets: meteoraOpenPresets(pool), parityUnit };
     }),
     previewWithdraw: async () => { throw notYet(descriptor.capabilities.exitPreview); },
     prepareOpen: (request: OpenRequest, context: StepContext) => guarded(() => open(request, context)),
