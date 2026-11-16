@@ -1,3 +1,4 @@
+import type { SolSwapStepSummary, SolSwapDelivery } from "./sol-swap-types";
 // Two-transaction native SOL open, step 1/2: a pure SOL -> pool-token Jupiter
 // swap. Wallets (Phantom) block SOL-input opens that combine wrap + swap +
 // Raydium open, but pass a plain wrap / swap / close and a token-input open.
@@ -29,34 +30,7 @@ import { atomicComputeUnitLimitInstruction, measuredComputeUnitLimit } from "./t
 
 export const SOL_POOL_INPUT_MESSAGE = "SOL input is not available for pools that contain SOL yet. Please use another token.";
 
-export type SolSwapStepSummary = {
-  operation: "sol-swap-step";
-  wallet: string;
-  poolId: string;
-  inputMint: typeof NATIVE_SOL_MINT;
-  /** Pool token the swap delivers; step 2/2 opens with it as a token input. */
-  outputMint: string;
-  outputDecimals: number;
-  outputSymbol: string | null;
-  outputAccount: string;
-  /** Gross lamports wrapped and swapped (fee included, charged by Jupiter). */
-  requested: string;
-  feeBps: number;
-  feeAmount: string;
-  feeWallet: string | null;
-  quotedOut: string;
-  minOut: string;
-  /** Output-account increase in the server-side simulation. */
-  simulatedOut: string;
-  simulatedSolDebitLamports: string;
-  feeLamports: number;
-  sizeBytes: number;
-  unitsConsumed: number;
-  blockhash: string;
-  lastValidBlockHeight: number;
-  simulatedAt: number;
-  expiresAt: number;
-};
+export type { SolSwapStepSummary, SolSwapDelivery } from "./sol-swap-types";
 
 async function buildForOutput(connection: Connection, walletAddress: string, state: Awaited<ReturnType<typeof readOpenPoolState>>,
   outputMint: string, requested: bigint) {
@@ -178,13 +152,6 @@ export async function buildAndSimulateSolSwapStep(walletAddress: string, poolId:
   };
   return { summary, transaction: restamped };
 }
-
-export type SolSwapDelivery =
-  | { status: "pending" | "expired" | "failed" }
-  | {
-    status: "confirmed"; delivered: string; decimals: number; blockTime: number | null;
-    slot: number;
-  };
 
 /**
  * What a confirmed step-1 swap ACTUALLY delivered to the wallet: the wallet's

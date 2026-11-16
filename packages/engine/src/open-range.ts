@@ -1,4 +1,5 @@
 import Decimal from "decimal.js";
+import type { OpenRangeInput } from "./open-range-input";
 import { TickUtil } from "@raydium-io/raydium-sdk-v2";
 import { positionSide } from "./quote-math";
 import { uiPriceBPerAFromTick } from "./position-performance-math";
@@ -23,9 +24,8 @@ const NARROW_RANGE_MAX_TICKS = 10;
 const MIN_TICK = -443636;
 const MAX_TICK = 443636;
 
-export type OpenRangeInput =
-  | { preset: Exclude<OpenRangePreset, "custom"> }
-  | { preset: "custom"; minPrice: string; maxPrice: string };
+export type { OpenRangeInput } from "./open-range-input";
+export { rangeInputFromFields } from "./open-range-input";
 
 export type ResolvedOpenRange = {
   preset: OpenRangePreset;
@@ -98,18 +98,6 @@ export function ticksFromUiPriceBand(
     throw new Error("Aligned ticks collapsed; choose a wider price range");
   }
   return { tickLower, tickUpper };
-}
-
-export function rangeInputFromFields(
-  preset: OpenRangePreset = DEFAULT_OPEN_RANGE_PRESET,
-  minPrice?: string,
-  maxPrice?: string,
-): OpenRangeInput {
-  if (preset === "custom") {
-    if (!minPrice || !maxPrice) throw new Error("Custom range requires minPrice and maxPrice (B per 1 A)");
-    return { preset: "custom", minPrice, maxPrice };
-  }
-  return { preset };
 }
 
 export function resolveOpenRange(input: {

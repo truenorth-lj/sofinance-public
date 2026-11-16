@@ -14,6 +14,10 @@ export const raydiumClmmModule: DexModule = Object.freeze({
   buildWithdrawal: async (command, preview) => (await import("./build-withdraw.server")).buildRaydiumWithdrawal(command, preview),
   buildCompound: async command => (await import("./build-compound.server")).buildRaydiumCompound(command),
   buildCompoundRecovery: async command => (await import("./build-compound-recovery.server")).buildRaydiumCompoundRecovery(command),
+  buildOpen: async (command, options) => (await import("./build-open.server")).buildRaydiumOpen(command, options),
+  quoteOpen: async (command, profile) => (await import("./quote-open.server")).quoteRaydiumOpen(command, profile),
+  buildSolSwapStep: async command => (await import("./sol-swap-step.server")).buildRaydiumSolSwapStep(command),
+  readSolSwapDelivery: async command => (await import("./sol-swap-step.server")).readRaydiumSolSwapDelivery(command),
   enabled: () => false,
   preparePortfolio: async (input, signal) => (await import("./portfolio.server")).prepareRaydiumPortfolio(input, signal),
 });

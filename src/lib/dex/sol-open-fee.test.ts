@@ -11,8 +11,9 @@ vi.mock("@/lib/rpc-fee-estimate", () => ({ withFeeEstimateRetry: (fn: () => unkn
 import bs58 from "bs58";
 import { Keypair } from "@solana/web3.js";
 import { readSwapFeeConfig } from "@sofinance/engine/swap/fee";
-import { prepareOpen, SINGLE_TX_SOL_OPEN_MESSAGE } from "./open-prepare";
-import { APP_OPEN_PREPARE, MCP_OPEN_PREPARE } from "./surface-policy";
+import { prepareOpen as prepareNativeOpen, SINGLE_TX_SOL_OPEN_MESSAGE, APP_OPEN_PREPARE, MCP_OPEN_PREPARE } from "@/lib/dex";
+const prepareOpen = (command: Parameters<typeof prepareNativeOpen>[1], secret: () => string,
+  profile: Parameters<typeof prepareNativeOpen>[3]) => prepareNativeOpen("raydium-clmm", command, secret, profile);
 
 const wallet = Keypair.generate().publicKey.toBase58();
 const mint = Keypair.generate().publicKey.toBase58();

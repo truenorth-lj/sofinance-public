@@ -1,15 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
-vi.mock("@/server/transactions/open-prepare", () => ({ prepareOpen: vi.fn() }));
+vi.mock("@/lib/dex", async original => ({ ...await original<typeof import("@/lib/dex")>(), prepareOpen: vi.fn() }));
 vi.mock("@sofinance/engine/config/server-env", async original => ({
   ...await original<typeof import("@sofinance/engine/config/server-env")>(), getSigningSecret: vi.fn(),
 }));
 
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
-import { prepareOpen } from "@/server/transactions/open-prepare";
+import { prepareOpen, MCP_OPEN_PREPARE } from "@/lib/dex";
 import { createSignToken, type PendingSignPayload } from "@/lib/pending-sign-token";
-import { MCP_OPEN_PREPARE } from "@/server/transactions/surface-policy";
 import { jsonRequest, SIGNING_SECRET, testKeypair } from "@/lib/test-support/send-fixtures";
 import { verifyTxSendPermit } from "@/lib/tx-send/permit";
 import { POST } from "./route";
@@ -35,7 +34,7 @@ describe("POST /api/sign-open-prepare", () => {
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json).toMatchObject({ summary: { nftMint }, permit: "fresh", unsignedTransaction: preparedTx });
-    expect(prepareOpen).toHaveBeenCalledWith({ wallet, ...openRequest, nftMint }, expect.any(Function), MCP_OPEN_PREPARE);
+    expect(prepareOpen).toHaveBeenCalledWith("raydium-clmm", { wallet, ...openRequest, nftMint }, expect.any(Function), MCP_OPEN_PREPARE);
   });
 
   it("adds a /api/tx-send permit for the re-prepared transaction even though the MCP profile issues none", async () => {
