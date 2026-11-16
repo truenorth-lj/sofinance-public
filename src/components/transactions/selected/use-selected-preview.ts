@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { PositionSelection } from "@sofinance/engine/selected-state";
-import type { SelectedQuote } from "@/lib/selected-quote";
+import type { PositionSelection } from "@sofinance/engine/selected-types";
+import type { SelectedQuote } from "@/lib/selected-quote-types";
 import { postWithJupiterRelay, type JupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { quoteErrorHidesRecalculate } from "@/lib/selected-amount-error";
 import { RELAY_DEADLINE_MS, selectionKey, type Preflight, type Preview } from "./selected-preview-model";

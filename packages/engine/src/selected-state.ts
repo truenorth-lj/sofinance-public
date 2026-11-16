@@ -1,3 +1,4 @@
+import type { PositionSelection } from "./selected-types";
 import { createHash } from "node:crypto";
 import { CLMM_PROGRAM_ID, getPdaPersonalPositionAddress, LiquidityMathUtil, PersonalPositionLayout, PoolInfoLayout, TickUtil } from "@raydium-io/raydium-sdk-v2";
 import {
@@ -13,7 +14,8 @@ import { fetchJupiterPricesUsd, fetchRaydiumPoolUsdPrices } from "./token-prices
 import { getJupiterApiKey } from "./config/server-env";
 import { withContextSlotRetry } from "./rpc/context-slot";
 
-export type PositionSelection = { positionMint: string; inputMint: string; inputKind: "native" | "token" };
+export type { PositionSelection, SelectedPositionState } from "./selected-types";
+
 const tokenPrograms = [TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58()];
 
 function checkedMint(key: PublicKey, info: AccountInfo<Buffer> | null) {
@@ -158,5 +160,3 @@ export async function readSelectedPositionState(
       : undefined,
   };
 }
-
-export type SelectedPositionState = Awaited<ReturnType<typeof readSelectedPositionState>>;

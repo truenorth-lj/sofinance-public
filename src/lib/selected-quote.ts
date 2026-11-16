@@ -359,4 +359,4 @@ export async function searchSelectedQuoteBundle(
   }
 }
 
-export type SelectedQuote = Awaited<ReturnType<typeof getSelectedQuoteBundle>>["quote"];
+export type { SelectedQuote } from "./selected-quote-types";

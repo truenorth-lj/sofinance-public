@@ -23,6 +23,12 @@ A native capability refusal stops new preparation before loading a binding. With
 conversion, harvest recovery and SOL receipt reconciliation remain available independently of
 new-operation availability; the withdrawal engine still verifies the first-stage permit and receipt.
 
+Native selected quote and state reads now use registry bindings as well. Quote keeps the App's
+connection/signal/retry-budget references and the MCP call's original quote-only options. State
+keeps its read RPC and engine defaults; raw errors return to the transport for its existing codes.
+Shared state/quote DTO entrypoints are type-only, preserve the previous type exports and infer
+fields from the unchanged reader/builders rather than maintaining copied response definitions.
+
 HTTP retains parsing, relay AsyncLocalStorage, selected deadline and retry budget, status,
 headers, error handling and response projection. MCP retains its existing projection,
 submitArgs, full authenticated sign-token payload, URL and instructions. Compound quote
