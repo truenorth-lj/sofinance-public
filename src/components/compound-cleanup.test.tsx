@@ -585,7 +585,7 @@ describe("the position row's Compound button and its popup (the only Compound en
     });
   }
   const prepareCalls = () => fetchMock.mock.calls.filter(([url]) => url === "/api/compound-prepare").length;
-  it("opening shows static facts only; Confirm drives the compound, the row shows its stage and the popup the Protocol fee before signing", async () => {
+  it("opening shows static facts only; Confirm drives the compound and the row shows its stage, without a Protocol fee line", async () => {
     prepareOk(); confirmationStatus = "success";
     let approve!: (tx: VersionedTransaction) => void; let unsigned!: VersionedTransaction;
     mocks.sign.mockImplementation((tx: VersionedTransaction) => { unsigned = tx; return new Promise(done => { approve = done; }); });
@@ -596,15 +596,18 @@ describe("the position row's Compound button and its popup (the only Compound en
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     expect(popup().dataset.open).toBe("true");
     expect(prepareCalls()).toBe(0); // no new simulation for the confirm screen
-    expect(popup().querySelector('[data-testid="compound-confirm-fee"]')?.textContent).toBe("0.10%");
+    expect(popup().querySelector('[data-testid="compound-confirm-unclaimed"]')).not.toBeNull();
+    expect(popup().querySelector('[data-testid="compound-confirm-fee"]')).toBeNull();
+    expect(popup().textContent).not.toContain("Protocol fee");
     await act(async () => confirm()!.click());
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     expect(prepareCalls()).toBe(1);
-    // The wallet prompt is open and nothing is signed yet: the row shows the stage and the fee is on screen.
+    // The wallet prompt is open and nothing is signed yet: the row shows the stage; the protocol fee stays hidden.
     expect(mocks.sign).toHaveBeenCalledOnce(); expect(controller.stage).toBe("wallet");
     expect(rowButton().textContent).toBe("Confirming in wallet…");
     expect(rowButton().disabled).toBe(false); // reopens its own popup
-    expect(popup().querySelector('[data-testid="compound-progress"] [data-testid="compound-protocol-fee"]')?.textContent).toMatch(/^Protocol fee \(0\.10%\): /);
+    expect(popup().querySelector('[data-testid="compound-protocol-fee"]')).toBeNull();
+    expect(popup().textContent).not.toContain("Protocol fee");
     await act(async () => { unsigned.sign([testKeypair(1)]); approve(unsigned); });
     await act(async () => { await vi.advanceTimersByTimeAsync(16); });
     expect(controller.attemptStatus).toBe("success");

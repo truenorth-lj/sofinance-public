@@ -81,7 +81,9 @@ it("the row's Compound opens its popup with static facts; Confirm starts the com
   expect(prepares()).toEqual([]); // opening only shows the facts
   const popup = openPopup(rowOf(FIRST), "compound-popup")!;
   expect(popup.textContent).toContain("Adds this position's fees back into the same range.");
-  expect(popup.querySelector('[data-testid="compound-confirm-fee"]')?.textContent).toBe("0.10%");
+  expect(popup.querySelector('[data-testid="compound-confirm-unclaimed"]')).not.toBeNull();
+  expect(popup.querySelector('[data-testid="compound-confirm-fee"]')).toBeNull();
+  expect(popup.textContent).not.toContain("Protocol fee");
   await act(async () => compoundConfirmButton(rowOf(FIRST))!.click());
   await settle();
   expect(prepares().map((call) => call.body?.positionMint)).toEqual([FIRST]);

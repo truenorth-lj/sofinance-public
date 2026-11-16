@@ -319,17 +319,22 @@ describe("/app My positions with registry DEXes", () => {
     expect(rowCompound().disabled).toBe(false);
     await openTool("compound");
     expect(compoundPopup().dataset.open).toBe("true");
-    expect(compoundPopup().querySelector("[data-testid=compound-confirm-fee]")?.textContent).toBe("Free");
+    expect(compoundPopup().querySelector("[data-testid=compound-confirm-unclaimed]")).not.toBeNull();
+    expect(compoundPopup().querySelector("[data-testid=compound-confirm-fee]")).toBeNull();
+    expect(compoundPopup().textContent).not.toContain("Protocol fee");
+    expect(compoundPopup().textContent).not.toContain("Free");
     expect((state.dexCalls as [string, unknown][]).filter(([path]) => path.endsWith("/compound"))).toEqual([]);
     await act(async () => compoundConfirmButton(container)!.click());
     await settle();
     expect(state.dexCalls.at(-1)).toEqual(["/api/dex/meteora-dlmm/compound", { owner: WALLET, positionKey: KEY, step: 1, priorSignatures: [] }]);
-    // Before anything can be signed (prepare in flight): the row shows it, the popup states the fee rule and pool fee.
+    // Before anything can be signed (prepare in flight): the row shows it, the popup states the pool fee, not the protocol fee.
     expect(rowCompound().textContent).toBe("Compounding…");
     expect(rowCompound().disabled).toBe(false); // reopens its own popup
-    expect(compoundPopup().querySelector("[data-testid=registry-compound-fee]")?.textContent).toBe("No platform fee.");
+    expect(compoundPopup().querySelector("[data-testid=registry-compound-fee]")).toBeNull();
     expect(compoundPopup().querySelector("[data-testid=registry-compound-range]")).toBeNull(); // in range
     expect(compoundPopup().querySelector("[data-testid=registry-compound-pool-fee]")?.textContent).toContain("composition fee");
+    expect(compoundPopup().textContent).not.toContain("No platform fee.");
+    expect(compoundPopup().textContent).not.toContain("Protocol fee");
     // While preparing / signing / sending, the popup cannot be closed (same as Raydium's in-flight state).
     expect(compoundPopup().querySelector('button[aria-label="Close"]')).toBeNull();
     await act(async () => compoundPopup().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));

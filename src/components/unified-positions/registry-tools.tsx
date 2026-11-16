@@ -421,9 +421,9 @@ export function compoundBlockedReason(position: UnifiedPosition, symbolOf: (toke
 
 /**
  * A Meteora (registry DEX) row's Compound (LJ 11/14: the only Compound entry). The button opens the row's Compound popup:
- * static facts first (the row's unclaimed fees and the descriptor's fee rate), then Confirm sends through this DEX's
+ * static facts first (the row's unclaimed fees; the protocol fee is not shown), then Confirm sends through this DEX's
  * existing compound flow (prepare + simulate → wallet → confirm, unchanged; same lock as every other op on the position).
- * Progress (with the pre-sign fee rule, range and pool fee notes and the rent line) and the result show in the same popup.
+ * Progress (with the pre-sign range and pool fee notes and the rent line) and the result show in the same popup.
  */
 export function RegistryRowCompound({ position, descriptor, symbolOf, onConfirmed, slot }: {
   position: UnifiedPosition; descriptor: DexDescriptor; symbolOf: (token: TokenRef) => string; onConfirmed: () => void; slot: RowCompoundSlot;
@@ -459,9 +459,8 @@ export function RegistryRowCompound({ position, descriptor, symbolOf, onConfirme
     </RowActionsBar>
     <ActionDialog open={slot.open} onClose={close} title="Compound fees" testId="compound-popup" size="sm" dismissible={!tx.locked}>
       {tx.locked || settled ? <div data-testid="compound-progress">
-        {/* Stated before signing (shown from Confirm until the wallet answers): fee rule, range and pool fee notes. */}
-        {signing ? <div data-testid="registry-compound-disclosure" className="mt-4 space-y-1 text-xs leading-5 text-cream/80">
-          <p data-testid="registry-compound-fee">{feeLine(descriptor.meta.feePolicy.compound, "")}</p>
+        {/* Stated before signing (shown from Confirm until the wallet answers): range and pool fee notes. The protocol fee is not shown (LJ 11/16). */}
+        {signing && (rangeLine || poolFeeLine) ? <div data-testid="registry-compound-disclosure" className="mt-4 space-y-1 text-xs leading-5 text-cream/80">
           {rangeLine ? <p data-testid="registry-compound-range">{rangeLine}</p> : null}
           {poolFeeLine ? <p data-testid="registry-compound-pool-fee" className="text-smoke">{poolFeeLine}</p> : null}
         </div> : null}
@@ -470,7 +469,7 @@ export function RegistryRowCompound({ position, descriptor, symbolOf, onConfirme
           onClick={() => { celebration.celebrateFrom(doneButton.current?.getBoundingClientRect()); close(); }}
           className="mt-5 inline-flex w-full items-center justify-center rounded-full bg-lemon px-5 py-3.5 text-sm font-semibold text-ink transition-transform duration-75 hover:bg-[#fff27f] motion-safe:active:scale-[0.94]">Done</button> : null}
       </div> : <>
-        <CompoundConfirm unclaimedUsd={slot.unclaimedUsd} feeRule={descriptor.meta.feePolicy.compound} blocked={blocked}
+        <CompoundConfirm unclaimedUsd={slot.unclaimedUsd} blocked={blocked}
           loading={false} disabled={locked || blocked !== null} onConfirm={submit} />
         <LockNote lock={op} />
       </>}
