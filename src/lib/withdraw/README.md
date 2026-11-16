@@ -31,7 +31,9 @@ If stage 2 cannot fit, the received tokens remain in the wallet; preparation
 fails without sending. No server private wallet keys are used.
 
 `withdraw-status` accepts {signature, prepared}, validates the permit, and reports
-success only after finalization and a complete message match. UI checkpoints
+success only after finalization, matching the queried receipt signature and a complete
+message match. A mismatched history-provider signature stays in manual review and does
+not release the pending operation. UI checkpoints
 persist before submission so an interrupted broadcast is reconciled before
 another operation. MCP prepare_withdraw returns the existing compressed sign
 link and submit_withdraw handles signed submissions; a two-stage sign link needs

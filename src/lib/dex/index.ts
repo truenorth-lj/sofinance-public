@@ -6,6 +6,8 @@ import "server-only";
 import { dexRegistry } from "./registry-instance";
 
 export { dexRegistry };
+export const readWithdrawalStatus: typeof dexRegistry.readWithdrawalStatus = (id, ...args) => dexRegistry.readWithdrawalStatus(id, ...args);
+export type { WithdrawalStatusCommand, WithdrawalStatusResult } from "./withdraw-status";
 export const discoverNativeWallet: typeof dexRegistry.discoverNativeWallet = (id, ...args) => dexRegistry.discoverNativeWallet(id, ...args);
 // Keep optional listing/error dependencies out of unrelated registry consumers; capture identity before import.
 export const listNativeWalletPositions: typeof import("./wallet-reads.server").listNativeWalletPositions =

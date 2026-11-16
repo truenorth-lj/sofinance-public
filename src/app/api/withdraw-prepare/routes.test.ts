@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({ build: vi.fn(), send: vi.fn(), status: vi.fn()
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: () => ({}) }));
 vi.mock("@sofinance/engine/withdraw/build", () => ({ buildWithdraw: mocks.build }));
 vi.mock("@/lib/withdraw/send", () => ({ submitWithdraw: mocks.send }));
-vi.mock("@/lib/withdraw/status", () => ({ withdrawStatus: mocks.status }));
+vi.mock("@/lib/dex", async original => ({ ...await original<typeof import("@/lib/dex")>(), readWithdrawalStatus: mocks.status }));
 import { POST as quote } from "../withdraw-quote/route";
 import { POST as prepare } from "./route";
 import { POST as status } from "../withdraw-status/route";
@@ -27,7 +27,10 @@ describe("withdraw routes", () => {
     });
     it("delegates status verification", async () => {
         mocks.status.mockResolvedValue({ status: "pending" });
-        expect(await (await status(request({ signature: "signature" }))).json()).toEqual({ status: "pending" });
+        const response = await status(request({ signature: "signature" }));
+        expect(await response.json()).toEqual({ status: "pending" });
+        expect(response.headers.get("Cache-Control")).toBe("no-store");
+        expect(mocks.status).toHaveBeenCalledExactlyOnceWith("raydium-clmm", { signature: "signature" });
     });
     it("fails closed on high impact preparation", async () => {
         mocks.build.mockRejectedValue(new Error("Confirm the high price impact before continuing"));

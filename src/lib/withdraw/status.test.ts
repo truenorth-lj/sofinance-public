@@ -3,7 +3,9 @@ vi.mock("server-only",()=>({}));
 const mocks=vi.hoisted(()=>({status:vi.fn(),height:vi.fn(),receipt:vi.fn(),balances:vi.fn(),invalidate:vi.fn(),reset:vi.fn()}));
 vi.mock("@sofinance/engine/rpc",()=>({resetRpcCache:mocks.reset,rpcConnection:()=>({getSignatureStatuses:mocks.status,getBlockHeight:mocks.height,getTransaction:mocks.receipt,getMultipleAccountsInfo:mocks.balances})}));
 vi.mock("../position-history-cache",()=>({invalidatePositionHistoryCache:mocks.invalidate}));
-import {withdrawStatus} from "./status";
+import {readWithdrawalStatus,type WithdrawalStatusCommand} from "@/lib/dex";
+import type {VersionedTransaction} from "@solana/web3.js";
+const withdrawStatus=(command:WithdrawalStatusCommand)=>readWithdrawalStatus("raydium-clmm",command);
 import {withdrawPermit} from "@sofinance/engine/withdraw/permit";
 import type {WithdrawPrepared,WithdrawSummary} from "@sofinance/engine/withdraw/types";
 import {SIGNING_SECRET,appendWalletExtraInstruction,buildTransaction,messageBase64,phantomRewriteTransaction,signatureOf,testKeypair,toBase64} from "../test-support/send-fixtures";
@@ -13,6 +15,8 @@ function input(){
  const prepared:WithdrawPrepared={summary,unsignedTransaction:toBase64(transaction),permit:withdrawPermit.issue(SIGNING_SECRET,{wallet:summary.wallet,message:messageBase64(transaction),summary})};
  return {signature:signatureOf(transaction),prepared};
 }
+function receiptFor(landed:VersionedTransaction){return {meta:{err:null},transaction:{message:landed.message,signatures:[signatureOf(landed)]}};}
+function inputFor(landed:VersionedTransaction){return {...input(),signature:signatureOf(landed)};}
 beforeEach(()=>{vi.resetAllMocks();vi.stubEnv("JUPITER_API_KEY",SIGNING_SECRET);mocks.status.mockResolvedValue({value:[null]});mocks.height.mockResolvedValue(100);mocks.receipt.mockResolvedValue(null);mocks.balances.mockResolvedValue([null]);});
 it("keeps confirmed transactions pending until finalization",async()=>{
  mocks.status.mockResolvedValue({value:[{confirmationStatus:"confirmed",err:null}]});
@@ -21,25 +25,25 @@ it("keeps confirmed transactions pending until finalization",async()=>{
 });
 it("accepts the prepared message or a wallet-appended extra instruction, and reviews a changed core message",async()=>{
  mocks.status.mockResolvedValue({value:[{confirmationStatus:"finalized",err:null}]});
- mocks.receipt.mockResolvedValue({meta:{err:null},transaction:{message:transaction.message}});
+ mocks.receipt.mockResolvedValue(receiptFor(transaction));
  expect(await withdrawStatus(input())).toHaveProperty("status","success");
  expect(mocks.invalidate).toHaveBeenCalledWith(input().prepared.summary.positionMint);expect(mocks.reset).toHaveBeenCalledOnce();
  const extra=appendWalletExtraInstruction(transaction);
  extra.sign([payer]);
- mocks.receipt.mockResolvedValue({meta:{err:null},transaction:{message:extra.message}});
- expect(await withdrawStatus(input())).toHaveProperty("status","success");
+ mocks.receipt.mockResolvedValue(receiptFor(extra));
+ expect(await withdrawStatus(inputFor(extra))).toHaveProperty("status","success");
  expect(mocks.invalidate).toHaveBeenCalledTimes(2);expect(mocks.reset).toHaveBeenCalledTimes(2);
  const changed=buildTransaction({payer,blockhash:testKeypair(3).publicKey.toBase58()});
- mocks.receipt.mockResolvedValue({meta:{err:null},transaction:{message:changed.message}});
- expect(await withdrawStatus(input())).toHaveProperty("status","manual-review");
+ mocks.receipt.mockResolvedValue(receiptFor(changed));
+ expect(await withdrawStatus(inputFor(changed))).toHaveProperty("status","manual-review");
  expect(mocks.invalidate).toHaveBeenCalledTimes(2);expect(mocks.reset).toHaveBeenCalledTimes(2);
- const rewritten=phantomRewriteTransaction(transaction);
- mocks.receipt.mockResolvedValue({meta:{err:null,loadedAddresses:{writable:[],readonly:[]}},transaction:{message:rewritten.message}});
- expect(await withdrawStatus(input())).toHaveProperty("status","success");
+ const rewritten=phantomRewriteTransaction(transaction);rewritten.sign([payer]);
+ mocks.receipt.mockResolvedValue({...receiptFor(rewritten),meta:{err:null,loadedAddresses:{writable:[],readonly:[]}}});
+ expect(await withdrawStatus(inputFor(rewritten))).toHaveProperty("status","success");
  expect(mocks.invalidate).toHaveBeenCalledTimes(3);expect(mocks.reset).toHaveBeenCalledTimes(3);
 });
 it("recognizes a finalized receipt even when the signature index is missing",async()=>{
- mocks.height.mockResolvedValue(151);mocks.receipt.mockResolvedValue({meta:{err:null},transaction:{message:transaction.message}});
+ mocks.height.mockResolvedValue(151);mocks.receipt.mockResolvedValue(receiptFor(transaction));
  expect(await withdrawStatus(input())).toHaveProperty("status","success");
  expect(mocks.invalidate).toHaveBeenCalledWith(input().prepared.summary.positionMint);expect(mocks.reset).toHaveBeenCalledOnce();
 });
@@ -52,14 +56,26 @@ it("rejects unauthorized prepared data and failed transactions",async()=>{
 it("accepts a landed withdraw with an extra instruction from any program (relaxed post-landing match), but not a reordered one",async()=>{
  const {TransactionInstruction,TransactionMessage,VersionedTransaction}=await import("@solana/web3.js");
  mocks.status.mockResolvedValue({value:[{confirmationStatus:"finalized",err:null}]});
- const extra=appendWalletExtraInstruction(transaction,new TransactionInstruction({programId:testKeypair(9).publicKey,keys:[],data:Buffer.from([7])}));
- mocks.receipt.mockResolvedValue({meta:{err:null},transaction:{message:extra.message}});
- expect(await withdrawStatus(input())).toHaveProperty("status","success");
+ const extra=appendWalletExtraInstruction(transaction,new TransactionInstruction({programId:testKeypair(9).publicKey,keys:[],data:Buffer.from([7])}));extra.sign([payer]);
+ mocks.receipt.mockResolvedValue(receiptFor(extra));
+ expect(await withdrawStatus(inputFor(extra))).toHaveProperty("status","success");
  const two=buildTransaction({payer,extraSigners:[testKeypair(8)],signWith:[]});
  const decompiled=TransactionMessage.decompile(two.message);
  const reordered=new VersionedTransaction(new TransactionMessage({payerKey:decompiled.payerKey,recentBlockhash:decompiled.recentBlockhash,instructions:[...decompiled.instructions].reverse()}).compileToV0Message());
- const body=input();
+ reordered.sign([payer,testKeypair(8)]);
+ const body=inputFor(reordered);
  body.prepared={...body.prepared,unsignedTransaction:toBase64(two),permit:withdrawPermit.issue(SIGNING_SECRET,{wallet:body.prepared.summary.wallet,message:messageBase64(two),summary:body.prepared.summary})};
- mocks.receipt.mockResolvedValue({meta:{err:null},transaction:{message:reordered.message}});
+ mocks.receipt.mockResolvedValue(receiptFor(reordered));
  expect(await withdrawStatus(body)).toHaveProperty("status","manual-review");
+});
+it.each([true,false])("does not trust a different receipt signature (indexed=%s)",async indexed=>{
+ mocks.status.mockResolvedValue({value:[indexed?{confirmationStatus:"finalized",err:null}:null]});
+ mocks.height.mockResolvedValue(151);
+ const alternate=appendWalletExtraInstruction(transaction);alternate.sign([payer]);
+ const wrong=signatureOf(alternate);
+ for(const err of [null,{InstructionError:[0,"failed"]}]){
+  mocks.receipt.mockResolvedValue({meta:{err},transaction:{message:alternate.message,signatures:[wrong]}});
+  expect(await withdrawStatus(input())).toHaveProperty("status","manual-review");
+ }
+ expect(mocks.invalidate).not.toHaveBeenCalled();expect(mocks.reset).not.toHaveBeenCalled();expect(mocks.balances).not.toHaveBeenCalled();
 });
