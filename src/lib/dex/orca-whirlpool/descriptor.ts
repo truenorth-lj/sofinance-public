@@ -47,6 +47,7 @@ export const orcaWhirlpoolDescriptor: DexDescriptor = Object.freeze({
     signer: "solana-wallet" as const,
   }),
   ui: Object.freeze({
+    rangeApr: Object.freeze({ route: "protocol" as const, cacheScope: "protocol" as const }),
     openUi: "none" as const,
     useDescriptorPlanTerms: false,
     /** E1 must not list Orca in the unified positions UI, including preview. */

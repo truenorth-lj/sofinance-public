@@ -39,14 +39,22 @@ describe("loadPoolRangeApr cache", () => {
 });
 
 describe("loadPoolRangeApr protocols", () => {
-  it("asks the protocol-pools range APR route for Orca / Meteora and keeps their cache apart from Raydium", async () => {
-    payloads = [payloadFixture(), payloadFixture()];
+  it("keeps each protocol route and cache separate from Raydium", async () => {
+    payloads = [payloadFixture(), payloadFixture(), payloadFixture(), payloadFixture()];
     await loadPoolRangeApr("pool");
     await loadPoolRangeApr("pool", "meteora-dlmm");
+    await loadPoolRangeApr("pool", "orca-whirlpool");
+    await loadPoolRangeApr("pool", "uniswap-v4-rhc");
+    await loadPoolRangeApr("pool", "raydium-clmm", { rwaList: true });
+    await loadPoolRangeApr("pool", "orca-whirlpool", { rwaList: true });
+    await loadPoolRangeApr("pool", "uniswap-v4-rhc", { rwaList: true });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     const urls = (fetchMock.mock.calls as unknown as [string][]).map(([url]) => url);
     expect(urls[0]).toContain("/api/pool-range-apr");
     expect(urls[1]).toContain("/api/protocol-pools/range-apr");
     expect(urls[1]).toContain("protocol=meteora-dlmm");
+    expect(urls[2]).toBe("/api/protocol-pools/range-apr?protocol=orca-whirlpool&poolId=pool");
+    expect(urls[3]).toBe("/api/protocol-pools/range-apr?protocol=uniswap-v4-rhc&poolId=pool");
   });
 });
 
@@ -80,4 +88,25 @@ describe("rangeAprUrl (Meteora pools of the RWA list)", () => {
       `/api/pool-range-apr?poolId=${raydium}`,
     ]);
   });
+});
+
+// A queued read must keep the same source as the cache entry that owns it.
+it("retains the initiating APR source while waiting for a concurrency slot", async () => {
+  type Reply = Awaited<ReturnType<typeof fetchMock>>;
+  let releaseA!: (reply: Reply) => void, releaseB!: (reply: Reply) => void;
+  fetchMock.mockImplementationOnce(() => new Promise(resolve => { releaseA = resolve; }))
+    .mockImplementationOnce(() => new Promise(resolve => { releaseB = resolve; }));
+  payloads = [payloadFixture()];
+  const a = loadPoolRangeApr("hold-a"), b = loadPoolRangeApr("hold-b");
+  const options = { rwaList: true };
+  const pending = loadPoolRangeApr("queued", "meteora-dlmm", options);
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  options.rwaList = false;
+  const reply = { ok: true, json: async () => payloadFixture() };
+  releaseA(reply); releaseB(reply);
+  await Promise.all([a, b, pending]);
+  const urls = (fetchMock.mock.calls as unknown as [string][]).map(([url]) => url);
+  expect(urls[2]).toBe("/api/pool-range-apr?poolId=queued");
+  await loadPoolRangeApr("queued", "meteora-dlmm", { rwaList: true });
+  expect(fetchMock).toHaveBeenCalledTimes(3);
 });

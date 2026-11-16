@@ -25,7 +25,7 @@ describe("uiFor (E-move registry UI)", () => {
     expect(uiFor("raydium-clmm").externalPoolUrl?.("pool1")).toBe("https://raydium.io/clmm/create-position/?pool_id=pool1");
     expect(uiFor("meteora-dlmm").externalPoolUrl).toBeUndefined();
     expect(uiFor("meteora-dlmm").planFallback).toBeUndefined();
-    expect(meteoraDlmmDescriptor.ui).toEqual({ openUi: "registry", useDescriptorPlanTerms: true });
+    expect(meteoraDlmmDescriptor.ui).toEqual({ rangeApr: { route: "protocol", cacheScope: "protocol", rwaListRoute: "pool" }, openUi: "registry", useDescriptorPlanTerms: true });
   });
 
   it("unknown ids default to none / legacy plan terms", () => {
@@ -56,11 +56,13 @@ describe("uiFor (E-move registry UI)", () => {
 
   it("Orca stays none / legacy plan terms, with listPositions opted out, and uses NO_FEE_POLICY", () => {
     expect(uiFor("orca-whirlpool")).toEqual({
+      rangeApr: { route: "protocol", cacheScope: "protocol" },
       openUi: "none",
       useDescriptorPlanTerms: false,
       listPositions: false,
     });
     expect(orcaWhirlpoolDescriptor.ui).toEqual({
+      rangeApr: { route: "protocol", cacheScope: "protocol" },
       openUi: "none",
       useDescriptorPlanTerms: false,
       listPositions: false,

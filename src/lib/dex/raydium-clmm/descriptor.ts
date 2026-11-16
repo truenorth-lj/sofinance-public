@@ -76,6 +76,7 @@ export const raydiumClmmDescriptor: DexDescriptor = Object.freeze({
     exitPreview: unsupported(NOT_YET),
   }),
   ui: Object.freeze({
+    rangeApr: Object.freeze({ route: "pool" as const, cacheScope: "pool" as const }),
     openUi: "native-modal" as const,
     planFallback: SUPPORTED,
     externalPoolUrl: (poolId: string) => `https://raydium.io/clmm/create-position/?pool_id=${poolId}`,
