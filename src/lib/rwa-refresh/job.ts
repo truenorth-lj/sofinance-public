@@ -6,11 +6,8 @@ import type { ThrottleGate } from "../range-apr/throttle-gate";
 import { createCronGeckoGate } from "../pool-metrics/gecko";
 import { sanitizePublicError } from "../public-error";
 import { getRwaStore } from "../rwa-store";
-import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
-import { raydiumPoolSource } from "../pool-sources/raydium";
-import { rhcStateClient } from "../rhc-range-apr";
 import type { DailyTvlStats, DexId } from "@/lib/dex";
-import { resolveTokenIcons, rhcCronIconSources } from "../token-icons/resolve";
+import { poolSourceFor, readCronTokenIcons } from "@/lib/dex";
 import type { RwaPairRow } from "../rwa-pairs";
 import {
   type DiscoveryWrite,
@@ -101,13 +98,16 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
   try {
     if (job === "rwa-discovery") {
       // Raydium first (the feed the site lists today), then Meteora into its own feed (SCAN_DESIGN.md §3).
-      const result = await raydiumPoolSource.discover({
+      const scanOptions = {
         minTvl: 0,
         maxPages: config.maxPages,
-        sortBy: "estimatedFeeApr",
+        sortBy: "estimatedFeeApr" as const,
         fetcher: options.fetcher,
         signal,
-      });
+      };
+      const source = await poolSourceFor("raydium-clmm");
+      if (!source) throw new Error("Primary discovery source is not registered");
+      const result = await source.discover(scanOptions);
       signal.throwIfAborted();
       if (!result.discovery)
         throw new Error("Discovery coverage metadata missing");
@@ -126,7 +126,7 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
         issues.push("Token icons not saved");
       });
       // Best effort, state reads only (one multicall): reported here and to Sentry, never published.
-      rhcDiscovery = await discoverRhcLane(options.rhcClient ?? rhcStateClient());
+      rhcDiscovery = await discoverRhcLane(options.rhcClient);
     } else {
       const result = await refreshAprPools({ store, lease, options, signal, clock, jobDeadline });
       processed = result.processed;
@@ -186,11 +186,12 @@ export async function refreshRwaSnapshots(options: Options = {}) {
 
 export async function refreshTokenIcons(store: RwaStore, lease: Lease, pairs: readonly Pick<RwaPairRow, "mintA" | "mintB">[],
   fetcher: typeof fetch | undefined, signal: AbortSignal) {
-  const solana = await resolveTokenIcons("solana", pairs.flatMap((pair) => [pair.mintA, pair.mintB]), raydiumPoolSource.iconSources(fetcher), { signal });
-  const rhc = await resolveTokenIcons("robinhood",
-    UNIV4_RHC_ALLOWLISTED_POOLS.flatMap((pool) => [pool.currency0.address, pool.currency1.address]), rhcCronIconSources(fetcher), { signal, manual: [] });
+  const authority = { ...lease };
+  const input = { mints: pairs.flatMap((pair) => [pair.mintA, pair.mintB]), fetcher, signal };
+  const solana = await readCronTokenIcons("raydium-clmm", input);
+  const rhc = await readCronTokenIcons("uniswap-v4-rhc", input);
   signal.throwIfAborted();
-  await store.request({ op: "renew", lease });
-  return store.request({ op: "saveTokenIcons", lease, data: [...solana, ...rhc] });
+  await store.request({ op: "renew", lease: authority });
+  return store.request({ op: "saveTokenIcons", lease: authority, data: [...solana, ...rhc] });
 }
 

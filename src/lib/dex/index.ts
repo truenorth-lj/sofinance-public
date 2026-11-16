@@ -6,6 +6,9 @@ import "server-only";
 import { dexRegistry } from "./registry-instance";
 
 export { dexRegistry };
+export const readCronTokenIcons: typeof dexRegistry.readCronTokenIcons = (id, input) => dexRegistry.readCronTokenIcons(id, input);
+export const inspectCronPools: typeof dexRegistry.inspectCronPools = (id, ...args) => dexRegistry.inspectCronPools(id, ...args);
+export type { CronIconInput, CronPoolInspectionResult } from "./cron-discovery";
 export const poolCronPolicyFor: typeof dexRegistry.poolCronPolicyFor = id => dexRegistry.poolCronPolicyFor(id);
 export const publishPoolCron: typeof dexRegistry.publishPoolCron = (id, input) => dexRegistry.publishPoolCron(id, input);
 export const refreshPoolCron: typeof dexRegistry.refreshPoolCron = (id, input) => dexRegistry.refreshPoolCron(id, input);
