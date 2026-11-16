@@ -7,7 +7,6 @@
     "src/lib/homepage-pools-snapshot.ts": 1,
     "src/lib/rwa-store-types.ts": 2,
     "src/lib/token-icons/map.ts": 1,
-    "src/lib/unified-pools/model.ts": 1,
     "src/lib/unified-positions/rows.ts": 1
   }
 }

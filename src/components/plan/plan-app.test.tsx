@@ -360,7 +360,7 @@ describe("PlanApp", () => {
     expect(text()).not.toContain("around 1%");
     expect(text()).not.toContain("(about 1%)"); // not the legacy Raydium label
     expect(text()).toContain("covers the opening cost: about 1% to swap the deposit into the pool tokens plus the 0.1% platform fee on the swapped part (all of a USDC deposit); about 0.0419 SOL of position rent is set aside on top and refunded when you fully withdraw, so it is not subtracted, plus the closing cost of the exit you chose.");
-    // Open: the pools list cannot open Meteora pools, so the CTA is greyed with the same reason as the card.
+    // Plan keeps its own existing disabled CTA, independently of the generic open capability.
     const cta = node.querySelector('[data-testid="plan-open-unavailable"]');
     expect(cta?.getAttribute("aria-disabled")).toBe("true");
     expect(cta?.getAttribute("title")).toBe("Opening Meteora positions isn't available yet");

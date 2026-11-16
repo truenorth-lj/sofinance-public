@@ -12,7 +12,6 @@ import { parsePairLabel, parseSolanaAddress, resolvePlanSelection } from "@/lib/
 import { effectiveExit, planPoolTerms, projectPoolPlan } from "@/lib/lp-plan-pool-terms";
 import { lowPlanApr, pairLabelSymbols, planShareSymbol } from "@/lib/lp-plan-shares";
 import { dexDescriptors, uiFor } from "@/lib/dex/client";
-import { openUnavailableReason, type UnifiedProtocol } from "@/lib/unified-pools/model";
 import { APP_ROUTES } from "@/lib/public-urls";
 import { InkNav } from "@/components/ink";
 import { useWalletConnection } from "@/components/wallet-connection";
@@ -78,7 +77,7 @@ export function PlanApp() {
     descriptor: protocol ? dexDescriptors.descriptorFor(protocol) : null,
     useDescriptorPlanTerms: protocol ? uiFor(protocol).useDescriptorPlanTerms : false,
     listOpenReason: row
-      ? (row.protocol ? openUnavailableReason({ protocol: row.protocol as UnifiedProtocol }) : null)
+      ? (row.protocol ? uiFor(row.protocol).planOpenUnavailableReason ?? null : null)
       : pairs.status === "loading"
         ? "Reading the SoFinance pool list."
         : pairs.status === "ready"

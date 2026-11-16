@@ -142,6 +142,8 @@ export type DexUi = {
    * Explicit data: true only on Meteora's `descriptor.ui`; unregistered venues are false.
    */
   useDescriptorPlanTerms: boolean;
+  /** Existing Plan-page CTA restriction; independent of generic/native open capabilities and other pages. */
+  planOpenUnavailableReason?: string;
   /** Plan link when this venue has no descriptor yet (Raydium). Ignored when `capabilities.plan` exists. */
   planFallback?: Capability;
   /**

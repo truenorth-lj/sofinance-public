@@ -135,7 +135,7 @@ export function planPoolTerms(input: {
    * so a later descriptor cannot flip Plan numbers just by being registered.
    */
   useDescriptorPlanTerms?: boolean;
-  /** The pool list's own reason it cannot open this pool (`openUnavailableReason`), or null. */
+  /** The caller's pool-list/page admission reason, or null. */
   listOpenReason: string | null;
   symbols?: readonly [string, string];
 }): PlanPoolTerms {
