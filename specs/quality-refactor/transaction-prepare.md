@@ -50,8 +50,14 @@ Native position performance/range readers are registered per venue with the exis
 and Orca → Meteora → Raydium precedence. MCP keeps null-reader fallback, probe/read error
 propagation and its response projection; the App performance endpoint remains fixed to Raydium
 and retains request cancellation/history-refresh options. Snapshot input terms before source probes
-and lazy reads, retaining live signal/connection references. Wallet-list aggregation remains in MCP.
+and lazy reads, retaining live signal/connection references.
 These readers neither enable generic HTTP nor change any discovery/signing flag.
+
+Wallet-list aggregation now uses registered optional listings alongside the required Raydium
+discovery binding. Optional scans start together, preserve deterministic row/error ordering and
+sanitized partial failures; required discovery errors remain fatal. App keeps its full native DTO
+and read connection, while MCP keeps the scanner default connection and original projection.
+Wallet DTO entrypoints are type-only re-exports; scanner and token/ownership policy are unchanged.
 
 HTTP retains parsing, relay AsyncLocalStorage, selected deadline and retry budget, status,
 headers, error handling and response projection. MCP retains its existing projection,

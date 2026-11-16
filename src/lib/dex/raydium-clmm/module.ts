@@ -9,6 +9,7 @@ import { raydiumClmmDescriptor } from "./descriptor";
  */
 export const raydiumClmmModule: DexModule = Object.freeze({
   descriptor: raydiumClmmDescriptor,
+  discoverWallet: async (...args: Parameters<NonNullable<DexModule["discoverWallet"]>>) => (await import("./wallet-read.server")).discoverRaydiumWallet(...args),
   positionReads: Object.freeze({
     source: "raydium" as const, order: 2,
     enabled: () => true,

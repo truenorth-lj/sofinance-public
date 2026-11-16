@@ -10,6 +10,10 @@ export const meteoraDlmmModule: DexModule = Object.freeze({
   descriptor: meteoraDlmmDescriptor,
   positionReads: Object.freeze({
     source: "meteora" as const, order: 1, protocol: meteoraDlmmDescriptor.id,
+    listing: Object.freeze({
+      read: async (wallet: string) => (await import("./position-reads.server")).listMeteoraWalletPositions(wallet),
+      unavailableMessage: "Meteora positions are unavailable right now.",
+    }),
     enabled: isMeteoraDlmmDiscoveryEnabled,
     matches: async (positionMint: string) => (await import("./position-reads.server")).matchesMeteoraPosition(positionMint),
     performance: async (...args: Parameters<NonNullable<DexModule["positionReads"]>["performance"]>) => (await import("./position-reads.server")).readMeteoraPerformance(...args),

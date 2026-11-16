@@ -6,6 +6,11 @@ import "server-only";
 import { dexRegistry } from "./registry-instance";
 
 export { dexRegistry };
+export const discoverNativeWallet: typeof dexRegistry.discoverNativeWallet = (id, ...args) => dexRegistry.discoverNativeWallet(id, ...args);
+// Keep optional listing/error dependencies out of unrelated registry consumers; capture identity before import.
+export const listNativeWalletPositions: typeof import("./wallet-reads.server").listNativeWalletPositions =
+  async ({ wallet }) => (await import("./wallet-reads.server")).listNativeWalletPositions({ wallet });
+export type { DiscoverNativeWallet, NativeWalletListing, NativeListedPosition } from "./wallet-read";
 export const readPositionPerformance: typeof dexRegistry.readPositionPerformance = (id, ...args) => dexRegistry.readPositionPerformance(id, ...args);
 export { nativePositionSourceFor, nativePositionPerformance, nativePositionRangeStatus } from "./position-reads.server";
 export type { NativePositionSource, NativePositionReader, PositionPerformanceCommand, PositionRangeCommand } from "./position-read";

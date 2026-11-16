@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Search, ShieldCheck, X } from "lucide-react";
 import { formatAmount } from "@sofinance/engine/amount";
 import type { TokenMetadata } from "@sofinance/engine/token-metadata";
-import type { WalletAsset } from "@sofinance/engine/wallet-discovery";
+import type { WalletAsset } from "@sofinance/engine/wallet-types";
 import { TokenIcon } from "./token-icon";
 import { shortAddress } from "@/lib/format/address";
 

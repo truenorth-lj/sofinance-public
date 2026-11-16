@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import type { OpenPositionQuote } from "@sofinance/engine/open-types";
 import type { OpenRangePreset } from "@sofinance/engine/open-range-presets";
-import type { WalletAsset } from "@sofinance/engine/wallet-discovery";
+import type { WalletAsset } from "@sofinance/engine/wallet-types";
 import { jupiterRelayEnabled, jupiterRelayFailureMessage, postWithJupiterRelay, type JupiterRelayStore } from "@/lib/jupiter/browser-relay";
 
 type ApiError = { error: string };

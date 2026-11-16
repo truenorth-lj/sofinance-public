@@ -1,16 +1,5 @@
 import "@/lib/engine-host";
-import { discoverWallet } from "@sofinance/engine/wallet-discovery";
-import { sanitizePublicError } from "../../lib/public-error";
-import { isMeteoraDlmmDiscoveryEnabled, isOrcaPositionsEnabled } from "../../lib/protocol-flags";
-import {
-  listOrcaPositions,
-  ORCA_PROTOCOL,
-} from "../../lib/orca-positions";
-import {
-  listMeteoraPositions,
-  METEORA_PROTOCOL,
-} from "../../lib/meteora-positions";
-import { nativePositionPerformance, nativePositionRangeStatus } from "@/lib/dex";
+import { listNativeWalletPositions, nativePositionPerformance, nativePositionRangeStatus } from "@/lib/dex";
 export { nativePositionSourceFor as performanceSourceFor } from "@/lib/dex";
 export type { NativePositionSource as PerformanceSource } from "@/lib/dex";
 import type {
@@ -27,52 +16,7 @@ import type {
  * Safety: Read-only operation, no private keys required.
  */
 export async function listPositions(input: ListPositionsInput) {
-  const orca = isOrcaPositionsEnabled() ? listOrcaPositions(input.wallet).then(
-    (positions) => ({ positions, error: null }),
-    (error: unknown) => ({ positions: [], error: sanitizePublicError(error, "Orca positions are unavailable right now.") }),
-  ) : null;
-  // Meteora DLMM positions (flagged off in production): read-only, every wallet-owned position in allowlisted pools.
-  const meteora = isMeteoraDlmmDiscoveryEnabled() ? listMeteoraPositions(input.wallet).then(
-    (positions) => ({ positions, error: null }),
-    (error: unknown) => ({ positions: [], error: sanitizePublicError(error, "Meteora positions are unavailable right now.") }),
-  ) : null;
-  const discovery = await discoverWallet(input.wallet);
-  const orcaResult = orca ? await orca : null;
-  const meteoraResult = meteora ? await meteora : null;
-  const protocolErrors = [
-    ...(orcaResult?.error ? [{ protocol: ORCA_PROTOCOL, error: orcaResult.error }] : []),
-    ...(meteoraResult?.error ? [{ protocol: METEORA_PROTOCOL, error: meteoraResult.error }] : []),
-  ];
-
-  return {
-    wallet: discovery.wallet,
-    slot: discovery.slot,
-    fetchedAt: discovery.fetchedAt,
-    positions: [...discovery.positions.map(pos => ({
-      positionMint: pos.positionMint,
-      positionAccount: pos.positionAccount,
-      poolId: pos.poolId,
-      mintA: pos.mintA,
-      mintB: pos.mintB,
-      tickLower: pos.tickLower,
-      tickUpper: pos.tickUpper,
-      tickCurrent: pos.tickCurrent,
-      rangeSide: pos.rangeSide,
-      liquidity: pos.liquidity,
-    })), ...(orcaResult?.positions ?? []), ...(meteoraResult?.positions ?? [])],
-    ...(protocolErrors.length ? { protocolErrors } : {}),
-    assets: discovery.assets.map(asset => ({
-      kind: asset.kind,
-      mint: asset.mint,
-      tokenProgram: asset.tokenProgram,
-      decimals: asset.decimals,
-      balance: asset.balance,
-      totalBalance: asset.totalBalance,
-      account: asset.account,
-      eligible: asset.eligible,
-      reason: asset.reason,
-    })),
-  };
+  return listNativeWalletPositions(input);
 }
 
 
