@@ -8,8 +8,8 @@ vi.mock("@/lib/protocol-flags", async (importOriginal) => {
 const storeRequest = vi.hoisted(() => vi.fn());
 const storeEnabled = vi.hoisted(() => ({ value: false }));
 const fakeScanClient = vi.hoisted(() => ({ value: null as unknown }));
-vi.mock("@/lib/rhc-position-scan", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/rhc-position-scan")>();
+vi.mock("@/lib/dex/uniswap-v4-rhc/position-scan.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/dex/uniswap-v4-rhc/position-scan.server")>();
   return { ...actual, createScanClient: (...args: Parameters<typeof actual.createScanClient>) => (fakeScanClient.value ?? actual.createScanClient(...args)) as never };
 });
 vi.mock("@/lib/rwa-store", () => ({ getRwaStore: () => ({ request: storeRequest }) }));
@@ -19,8 +19,9 @@ vi.mock("@/lib/config/rwa-env", async (importOriginal) => {
 });
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import { isRhcUniv4TradingEnabled } from "@/lib/protocol-flags";
-import { resetRhcScanCache, RHC_SCAN_USER_AGENT } from "@/lib/rhc-position-scan";
-import { parsePositionIds, resetRhcPositionValuesCache, rhcPositionValues } from "@/lib/rhc-position-values";
+import { resetRhcScanCache, RHC_SCAN_USER_AGENT } from "@/lib/dex/uniswap-v4-rhc/position-scan.server";
+import { parsePositionIds } from "@/lib/dex/uniswap-v4-rhc/position-input";
+import { resetRhcPositionValuesCache, rhcPositionValues } from "@/lib/dex/uniswap-v4-rhc/position-values.server";
 import { GET } from "./route";
 
 const POOL = UNIV4_RHC_ALLOWLISTED_POOLS[0]!;

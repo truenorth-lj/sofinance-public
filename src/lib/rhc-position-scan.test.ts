@@ -7,7 +7,7 @@ vi.mock("server-only", () => ({}));
 import {
   createScanClient, FAILURE_TTL_MS, FRESH_MIN_AGE_MS, REQUESTS_PER_IP_PER_MINUTE, resetRhcScanCache, RESULT_TTL_MS, rhcScanRateLimited,
   RhcScanBusyError, scanRhcPositions,
-} from "./rhc-position-scan";
+} from "./dex/uniswap-v4-rhc/position-scan.server";
 
 const USER = "0xB95b77e9429643cbaFdE865Fa2a9F687e8d21b04" as const;
 const HEAD = 101_764_305n;

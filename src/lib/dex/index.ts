@@ -6,6 +6,10 @@ import "server-only";
 import { dexRegistry } from "./registry-instance";
 
 export { dexRegistry };
+export const evmPositionReadPolicyFor: typeof dexRegistry.evmPositionReadPolicyFor = (id) => dexRegistry.evmPositionReadPolicyFor(id);
+export const readEvmPositions: typeof dexRegistry.readEvmPositions = (id, ...args) => dexRegistry.readEvmPositions(id, ...args);
+export const readEvmPositionValues: typeof dexRegistry.readEvmPositionValues = (id, ids) => dexRegistry.readEvmPositionValues(id, ids);
+export { PositionReadBusyError } from "./evm-position-read";
 export const evmLiquiditySchemasFor: typeof dexRegistry.evmLiquiditySchemasFor = (id) => dexRegistry.evmLiquiditySchemasFor(id);
 export const runEvmOpen: typeof dexRegistry.runEvmOpen = (id, command) => dexRegistry.runEvmOpen(id, command);
 export const runEvmExit: typeof dexRegistry.runEvmExit = (id, command) => dexRegistry.runEvmExit(id, command);

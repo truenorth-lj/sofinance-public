@@ -6,8 +6,9 @@ vi.mock("@/lib/protocol-flags", async (importOriginal) => {
   return { ...actual, isRhcUniv4TradingEnabled: vi.fn(actual.isRhcUniv4TradingEnabled) };
 });
 import { isRhcUniv4TradingEnabled } from "@/lib/protocol-flags";
-import { REQUESTS_PER_IP_PER_MINUTE, resetRhcScanCache, RHC_SCAN_FAILED_MESSAGE, RHC_SCAN_USER_AGENT } from "@/lib/rhc-position-scan";
+import { REQUESTS_PER_IP_PER_MINUTE, resetRhcScanCache, RHC_SCAN_FAILED_MESSAGE, RHC_SCAN_USER_AGENT } from "@/lib/dex/uniswap-v4-rhc/position-scan.server";
 import { GET } from "./route";
+import { POST as genericPost } from "@/app/api/dex/[dex]/[op]/route";
 
 const USER = "0xb95b77e9429643cbafde865fa2a9f687e8d21b04";
 const get = (qs: string, ip = "203.0.113.7") => GET(new Request(`https://example.test/api/rhc-univ4-positions${qs}`, { headers: { "x-real-ip": ip } }));
@@ -44,6 +45,18 @@ describe("GET /api/rhc-univ4-positions", () => {
     expect(JSON.stringify(body)).not.toContain("paid-rpc");
     const again = await (await get(`?wallet=${USER}`)).json();
     expect(again.rpcCalls).toBe(0);
+    expect(fetchMock).toHaveBeenCalledTimes(12);
+  });
+
+  it("reuses one scan cache across native and generic holdings routes", async () => {
+    const fetchMock = stubRpc();
+    expect((await get(`?wallet=${USER}`)).status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(12);
+    const response = await genericPost(new Request("https://example.test/api/dex/uniswap-v4-rhc/positions", {
+      method: "POST", headers: { "content-type": "application/json", "x-real-ip": "203.0.113.7" },
+      body: JSON.stringify({ owner: USER }),
+    }), { params: Promise.resolve({ dex: "uniswap-v4-rhc", op: "positions" }) });
+    expect(response.status).toBe(200); expect(await response.json()).toEqual({ positions: [] });
     expect(fetchMock).toHaveBeenCalledTimes(12);
   });
 

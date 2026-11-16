@@ -5,6 +5,7 @@ import type { PortfolioInput, PortfolioReader } from "@/lib/portfolio/model";
 import { positionFigures } from "@/lib/portfolio/figures";
 import type { PositionKey, UnifiedPosition } from "@/lib/unified-positions/model";
 import type { DexAdapter } from "./adapter";
+import type { NativeEvmPositionReads, EvmPositionReadPolicy } from "./evm-position-read";
 import type { NativeEvmLiquidity } from "./evm-liquidity";
 import type { BuildAdd } from "./add-prepare";
 import type { ValidateSignedAdd } from "./add-submit";
@@ -26,6 +27,7 @@ export type DexModule = {
   descriptor: DexDescriptor;
   /** Existing native EVM validation/builds; independent of generic HTTP capabilities. */
   evmLiquidity?: NativeEvmLiquidity;
+  evmPositionReads?: NativeEvmPositionReads;
   /** Legacy native position-read policy; distinct from generic adapter/HTTP capabilities. */
   positionReads?: NativePositionReader;
   discoverWallet?: DiscoverNativeWallet;
@@ -98,6 +100,9 @@ export type DexDescriptorRegistry = {
 };
 
 export type DexRegistry = DexDescriptorRegistry & {
+  evmPositionReadPolicyFor(id: string): EvmPositionReadPolicy;
+  readEvmPositions(id: string, wallet: `0x${string}`, options?: { fresh?: boolean }): ReturnType<NativeEvmPositionReads["scan"]>;
+  readEvmPositionValues(id: string, ids: bigint[]): ReturnType<NativeEvmPositionReads["values"]>;
   evmLiquiditySchemasFor(id: string): NativeEvmLiquidity["schemas"];
   runEvmOpen(id: string, command: Parameters<NativeEvmLiquidity["open"]>[0]): ReturnType<NativeEvmLiquidity["open"]>;
   runEvmExit(id: string, command: Parameters<NativeEvmLiquidity["exit"]>[0]): ReturnType<NativeEvmLiquidity["exit"]>;
@@ -214,6 +219,24 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
       const canonical = normalizeDexId(id);
       const entry = canonical ? byId.get(canonical) : undefined;
       return entry?.adapter ? entry.adapter() : null;
+    },
+    evmPositionReadPolicyFor(id: string) {
+      const canonical = normalizeDexId(id);
+      const binding = canonical ? byId.get(canonical)?.evmPositionReads : undefined;
+      if (!binding) throw new DexUnsupportedError();
+      return { parseIds: binding.parseIds, scanFailedMessage: binding.scanFailedMessage };
+    },
+    async readEvmPositions(id: string, wallet: `0x${string}`, options: { fresh?: boolean } = {}) {
+      const canonical = normalizeDexId(id);
+      const binding = canonical ? byId.get(canonical)?.evmPositionReads : undefined;
+      if (!binding?.enabled()) throw new DexUnsupportedError();
+      return binding.scan(wallet, { ...options });
+    },
+    async readEvmPositionValues(id: string, ids: bigint[]) {
+      const canonical = normalizeDexId(id);
+      const binding = canonical ? byId.get(canonical)?.evmPositionReads : undefined;
+      if (!binding?.enabled()) throw new DexUnsupportedError();
+      return binding.values([...ids]);
     },
     evmLiquiditySchemasFor(id: string) {
       const canonical = normalizeDexId(id);

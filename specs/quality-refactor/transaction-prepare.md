@@ -65,6 +65,12 @@ The registry captures the wallet, range, decimal amounts, Permit2 signature/term
 before lazy loading. Existing tx-build flags, 400/422/503 responses, fee policy and unsigned
 calldata stay unchanged; generic RHC writes remain disabled.
 
+RHC native holdings and position amounts also resolve through lazy registry bindings. Native
+and generic holdings keep one scan cache, and both native read routes use the generic module's
+existing per-IP limiter. Decimal-id parsing shares the engine limit without loading readers.
+Official public RPC spacing/cooldown, saved-price freshness/nulls, 503 busy/error responses and
+all cache TTLs are preserved; this does not enable generic performance or writes.
+
 Withdrawal status now uses a lazy native read binding, independent of new-withdrawal capability.
 It snapshots the signature and complete prepared authorization before awaits, retaining HMAC
 verification before RPC, existing finality/history/account read rules, message matching and cache

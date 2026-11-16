@@ -1,13 +1,13 @@
 import "@/lib/engine-host";
 import "server-only";
 
-import { MAX_POSITION_VALUES, readPositionValues, type RhcPositionValueRow } from "@sofinance/engine/protocols/uniswap-v4/position-value";
+import { readPositionValues, type RhcPositionValueRow } from "@sofinance/engine/protocols/uniswap-v4/position-value";
 import type { PublicClient } from "viem";
-import { AsyncCache } from "./async-cache";
-import { getRwaConfig } from "./config/rwa-env";
-import { createScanClient } from "./rhc-position-scan";
-import { getRwaStore } from "./rwa-store";
-import type { SnapshotRhcPools } from "./rwa-store-types";
+import { AsyncCache } from "@/lib/async-cache";
+import { getRwaConfig } from "@/lib/config/rwa-env";
+import { createScanClient } from "./position-scan.server";
+import { getRwaStore } from "@/lib/rwa-store";
+import type { SnapshotRhcPools } from "@/lib/rwa-store-types";
 
 /**
  * Liquidity amounts and unclaimed fees of Robinhood Chain Uniswap v4 position NFTs (public data, by NFT id), plus
@@ -50,13 +50,6 @@ function storedTokenPrices(snapshot: SnapshotRhcPools | null, now = Date.now()):
     if (p && positive(p.token0) && positive(p.token1)) out.set(pool.poolId.toLowerCase(), { token0: p.token0, token1: p.token1 });
   }
   return out;
-}
-
-/** Parses `ids=1,2,3` (decimal NFT ids, deduplicated, at most `MAX_POSITION_VALUES`); null when malformed or empty. */
-export function parsePositionIds(raw: string | null): bigint[] | null {
-  const parts = (raw ?? "").split(",").map(s => s.trim()).filter(Boolean);
-  if (!parts.length || parts.length > MAX_POSITION_VALUES || parts.some(p => !/^[0-9]{1,30}$/.test(p))) return null;
-  return [...new Set(parts.map(p => BigInt(p).toString()))].map(BigInt);
 }
 
 export async function rhcPositionValues(ids: bigint[], deps: { client?: PublicClient; storedPools?: StoredRhcPools; now?: () => number } = {}): Promise<RhcPositionValuesResult> {

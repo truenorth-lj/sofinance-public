@@ -7,6 +7,7 @@ import {
 } from "@sofinance/engine/protocols/uniswap-v4/position-scan";
 import { type Address, createPublicClient, http, type PublicClient, type Transport } from "viem";
 import { ThrottleGate } from "@/lib/range-apr/throttle-gate";
+import { PositionReadBusyError } from "../evm-position-read";
 import { resetRhcScanRateLimit } from "@/lib/rhc-scan-rate-limit";
 
 export { REQUESTS_PER_IP_PER_MINUTE, rhcScanClientIp, rhcScanRateLimited, resetRhcScanRateLimit } from "@/lib/rhc-scan-rate-limit";
@@ -42,8 +43,8 @@ export type RhcScanResult = {
   rpcCalls: number;
 };
 
-export class RhcScanBusyError extends Error {
-  constructor(readonly retryAfterMs: number) { super("Robinhood Chain is busy right now"); this.name = "RhcScanBusyError"; }
+export class RhcScanBusyError extends PositionReadBusyError {
+  constructor(retryAfterMs: number) { super(retryAfterMs, "Robinhood Chain is busy right now"); this.name = "RhcScanBusyError"; }
 }
 
 type Entry = { holdings: HoldingsState | null; result: RhcScanResult | null; at: number; failure: { at: number; error: unknown } | null };
@@ -126,7 +127,7 @@ export async function scanRhcPositions(wallet: Address, options: { fresh?: boole
   try { return await task; } finally { inflight.delete(key); }
 }
 
-export const RHC_SCAN_FAILED_MESSAGE = "Couldn't check this wallet's Robinhood Chain positions right now. Positions saved in this browser and added by number are still shown.";
+export { RHC_SCAN_FAILED_MESSAGE } from "./position-input";
 
 /** Test hook. */
 export function resetRhcScanCache(gateOptions: ConstructorParameters<typeof ThrottleGate>[0] = { minSpacingMs: SCAN_CALL_SPACING_MS, defaultCooldownMs: 30_000 }): void {

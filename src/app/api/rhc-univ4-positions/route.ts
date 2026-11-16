@@ -1,6 +1,6 @@
 import { getAddress, isAddress } from "viem";
 import { isRhcUniv4TradingEnabled } from "@/lib/protocol-flags";
-import { RHC_SCAN_FAILED_MESSAGE, rhcScanClientIp, rhcScanRateLimited, RhcScanBusyError, scanRhcPositions } from "@/lib/rhc-position-scan";
+import { dexRegistry, evmPositionReadPolicyFor, PositionReadBusyError, readEvmPositions } from "@/lib/dex";
 import { logSafeError } from "@/lib/safe-error-log";
 import { gated, json } from "@/lib/api/route";
 
@@ -17,17 +17,17 @@ export const GET = gated(isRhcUniv4TradingEnabled, async (request) => {
   if (raw.length !== 42 || !isAddress(raw, { strict: false })) {
     return json({ error: "Invalid wallet address" }, 400);
   }
-  if (rhcScanRateLimited(rhcScanClientIp(request))) {
+  if (dexRegistry.isRateLimited("uniswap-v4-rhc", "positions", request)) {
     return json({ error: "Too many requests. Please wait a minute." }, 429, { "Retry-After": "60" });
   }
   const fresh = url.searchParams.get("fresh") === "1";
   try {
-    const result = await scanRhcPositions(getAddress(raw), { fresh });
+    const result = await readEvmPositions("uniswap-v4-rhc", getAddress(raw), { fresh });
     return json(result, 200);
   } catch (error) {
-    const busy = error instanceof RhcScanBusyError;
+    const busy = error instanceof PositionReadBusyError;
     if (!busy) logSafeError("Robinhood Chain position scan failed", error);
-    return json({ error: RHC_SCAN_FAILED_MESSAGE, code: busy ? "rpc_busy" : "rpc_unavailable" }, 503,
+    return json({ error: evmPositionReadPolicyFor("uniswap-v4-rhc").scanFailedMessage, code: busy ? "rpc_busy" : "rpc_unavailable" }, 503,
       busy ? { "Retry-After": String(Math.max(1, Math.ceil(error.retryAfterMs / 1000))) } : {});
   }
 });

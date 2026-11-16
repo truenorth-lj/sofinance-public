@@ -1,3 +1,4 @@
+import { MAX_POSITION_VALUES } from "./position-value-limits";
 import { type Address, type Hex, numberToHex, parseAbi, type PublicClient } from "viem";
 import { UNIV4_RHC } from "./constants";
 import { decodePositionInfo, isRevert, poolFor } from "./exit-flow";
@@ -16,7 +17,7 @@ export const STATE_VIEW_POSITION_ABI = parseAbi([
   "function getPositionInfo(bytes32 poolId, address owner, int24 tickLower, int24 tickUpper, bytes32 salt) view returns (uint128 liquidity, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128)",
 ]);
 
-export const MAX_POSITION_VALUES = 10;
+export { MAX_POSITION_VALUES } from "./position-value-limits";
 const Q128 = 1n << 128n;
 const U256 = 1n << 256n;
 
