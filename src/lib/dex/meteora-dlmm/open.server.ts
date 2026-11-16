@@ -390,13 +390,12 @@ function setupInstructions(plan: MeteoraOpenPlan, state: WalletState, owner: str
 async function swapLegs(plan: MeteoraOpenPlan, owner: string, constraints: JupiterRouteConstraints) {
   const legs = await Promise.all(plan.sides.map(async (side) => {
     if (!side.swapped) return { side: side.side, minOut: side.spend, route: null as BuildRoute | null };
+    // buildRoute validates the requested fee rate and writable fee recipient.
+    // A valid input-mint fee can floor to zero raw units on small swap legs.
     const leg = await feeSwapLeg({
       wallet: owner, inputMint: plan.inputMint, outputMint: side.mint, spend: side.spend, feeBps: plan.legBps,
       inputFee: plan.legBps > 0, build: true, constraints,
     });
-    if (plan.legBps > 0 && (!leg.feeInRoute || leg.feeAmount <= 0n)) {
-      throw new DexError("UPSTREAM", "The platform fee could not be collected inside the Jupiter swap, so nothing was built.");
-    }
     return { side: side.side, minOut: leg.minOut, route: leg.route as BuildRoute | null };
   }));
   return {

@@ -226,7 +226,7 @@ export function RangePresetPicker({
           </button> : null}
         </div>
         {Object.entries(unavailable).map(([id, reason]) => reason
-          ? <p key={id} className="mt-2 text-xs leading-5 text-cream/80">{reason}</p> : null)}
+          ? <p key={id} className="mt-2 text-xs leading-5 text-cream/80">{presets.find((item) => item.id === id)?.shortLabel ?? id}: {reason}</p> : null)}
       </div>
       {showCustom && selected === "custom" && (
         <div className="mt-2 grid grid-cols-2 gap-2">

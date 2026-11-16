@@ -45,6 +45,16 @@ const labels = () => buttons().map((button) => button.querySelector("span")?.tex
 const readyWith = (aprs: Parameters<typeof payloadWithAprs>[0]): PoolRangeAprState => ({ status: "ready", data: cardPayloadWithAprs(aprs) });
 
 describe("RangePresetPicker", () => {
+  it("names the unavailable range while an available Micro range is selected", () => {
+    const reason = "Not available to open yet: this range spans 200 bins, and one position holds at most 70.";
+    render(ready(), { selected: "micro", showCustom: false, unavailable: { wide: reason } });
+    expect(container.textContent).toContain(`Wide: ${reason}`);
+    const wide = container.querySelector<HTMLButtonElement>("[data-testid='preset-wide']")!;
+    expect(wide.disabled).toBe(true);
+    expect(wide.title).toBe(reason);
+    expect(container.querySelector("[data-testid='preset-best']")?.getAttribute("aria-pressed")).toBe("true");
+  });
+
   it("puts Best first, resolved to the highest-APR candidate, then the rest narrow to wide, then Custom", () => {
     render(readyWith({ micro: 10, tight: 38, standard: 20, wide: 5 }));
     expect(labels()).toEqual(["Best", "Micro", "Standard", "Wide", "Custom"]);
