@@ -161,6 +161,20 @@ describe("wallet send", () => {
     expect(error).toBeInstanceOf(TxNotLandedError); expect(error.message).toContain("safe to retry");
     expect(wallet.signTransaction).not.toHaveBeenCalled();
   });
+  it.each(["add", "compound"] as const)("%s does not ask for a second signature when signAndSend returns undefined after landing", async (flow) => {
+    const wallet = { ...signingWallet(), signAndSendTransaction: vi.fn(async () => undefined as unknown as string) };
+    const sendRaw = vi.fn<SendRaw>(async () => { throw Object.assign(new Error("Transaction simulation failed: insufficient funds"), { sent: false }); });
+    const findLanded = vi.fn<FindLanded>(async () => ({ status: "landed", signature: SIG }));
+    const adapter: TxAdapter<Record<string, never>> = {
+      flow, successTitle: "Confirmed", prepare: async () => ({ transaction: unsigned(), lastValidBlockHeight: 77, landedPermit: "check" }),
+    };
+    const result = await runTx(adapter, {}, { wallet, sendRaw, findLanded });
+    expect(result.signature).toBe(SIG);
+    expect(wallet.signAndSendTransaction).toHaveBeenCalledTimes(1);
+    expect(wallet.signTransaction).not.toHaveBeenCalled();
+    expect(sendRaw).not.toHaveBeenCalled();
+    expect(findLanded).toHaveBeenCalledTimes(1);
+  });
   it("refuses a transaction prepared for another wallet before the wallet is asked", async () => {
     const wallet = { ...signingWallet({ signAndSend: true }), address: testKeypair(99).publicKey.toBase58() };
     await expect(sendWithWallet(wallet, unsigned())).rejects.toThrow("different wallet");

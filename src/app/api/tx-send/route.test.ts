@@ -21,6 +21,7 @@ import {
 } from "@solana/web3.js";
 import { POST } from "./route";
 import { sendWithWallet, type TxWallet } from "@/lib/tx-pipeline/wallet-send";
+import { findTxNotice, resetTxNotices, runTx, watchTxNotice, type TxAdapter } from "@/lib/tx-pipeline";
 import { LIGHTHOUSE_PROGRAM_ID, phantomMainnetReturn } from "@/lib/test-support/send-fixtures";
 
 const payer = testKeypair(21);
@@ -111,10 +112,39 @@ describe("POST /api/tx-send", () => {
     expect((await call({}, "198.51.100.2")).status).toBe(400);
     expect(connection.sendRawTransaction).not.toHaveBeenCalled();
   });
-  it("marks a preflight refusal as not sent (plain 4xx)", async () => {
+  it("keeps a post-broadcast preflight refusal undecided (plain 4xx)", async () => {
     connection.sendRawTransaction.mockRejectedValue(new Error("Transaction simulation failed: Blockhash not found"));
     const { status, json } = await call(signedBody().body);
-    expect(status).toBe(400); expect(json.sent).toBe(false);
+    expect(status).toBe(400); expect(json.sent).toBeUndefined();
+  });
+  it.each(["add", "compound"] as const)("%s reconciles the signed transaction when a later preflight fails after an earlier send landed", async (flow) => {
+    resetTxNotices();
+    const { prepared, signed } = signedBody();
+    const signature = signatureOf(signed);
+    // A wallet may already have sent its signed bytes, or the RPC pool may have accepted them before retry/failover.
+    let landed = false;
+    const wallet: TxWallet = { address: payer.publicKey.toBase58(), signTransaction: vi.fn(async () => { landed = true; return signed; }) };
+    connection.sendRawTransaction.mockImplementation(async () => {
+      expect(landed).toBe(true);
+      throw new Error("Transaction simulation failed: insufficient funds");
+    });
+    vi.stubGlobal("fetch", vi.fn(async (_url: unknown, init?: RequestInit) => POST(new Request("http://localhost/api/tx-send", init))));
+    try {
+      const adapter: TxAdapter<Record<string, never>> = { flow, successTitle: "Confirmed", prepare: async () => ({
+        transaction: prepared, lastValidBlockHeight: 77, sendPermit: permitOf(prepared),
+      }) };
+      const result = await runTx(adapter, {}, { wallet });
+      expect(result.signature).toBe(signature);
+      expect(result.uncertain).toBeTruthy();
+      expect(findTxNotice(result.noticeId)?.retry).toBeUndefined();
+      await expect(watchTxNotice(result.noticeId, { fetchImpl: async () => Response.json({ status: "confirmed" }) })).resolves.toBe("confirmed");
+      expect(findTxNotice(result.noticeId)?.state).toBe("success");
+      expect(wallet.signTransaction).toHaveBeenCalledTimes(1);
+      expect(connection.sendRawTransaction).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+      resetTxNotices();
+    }
   });
   it("does not claim not-sent for an RPC failure that may have reached the network", async () => {
     connection.sendRawTransaction.mockRejectedValue(new Error("socket hang up"));
