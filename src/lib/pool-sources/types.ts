@@ -11,7 +11,7 @@ import type { IconSources } from "../token-icons/resolve";
 /**
  * One concentrated-liquidity protocol the RWA pool scan reads (SCAN_DESIGN.md §2). The cron's discovery and APR jobs
  * only talk to a pool through its source, so another protocol plugs in by adding one module beside `raydium.ts` and
- * registering it in `registry.ts`. Robinhood Chain keeps its own roster path (`rhc-apr-refresh.ts`).
+ * registering it in `registry.ts`. Robinhood Chain keeps its own roster behind the native APR registry binding.
  */
 export interface PoolSource {
   id: PoolProtocolId;

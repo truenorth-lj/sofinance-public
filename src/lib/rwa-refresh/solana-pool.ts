@@ -23,7 +23,7 @@ import {
 } from "../rwa-store-types";
 
 /** fresh: today's price history; stale: computed from saved history; degraded/error: no estimate saved; throttled: 429, nothing saved. */
-export type PoolOutcome = "fresh" | "stale" | "degraded" | "error" | "throttled";
+export type PoolOutcome = import("@/lib/dex/apr-refresh").AprPoolOutcome;
 
 /**
  * Profile timestamps survive instance recycling; new UTC windows cannot reuse yesterday's volume sample. The pool's
