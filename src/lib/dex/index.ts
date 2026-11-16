@@ -6,6 +6,10 @@ import "server-only";
 import { dexRegistry } from "./registry-instance";
 
 export { dexRegistry };
+export const evmLiquiditySchemasFor: typeof dexRegistry.evmLiquiditySchemasFor = (id) => dexRegistry.evmLiquiditySchemasFor(id);
+export const runEvmOpen: typeof dexRegistry.runEvmOpen = (id, command) => dexRegistry.runEvmOpen(id, command);
+export const runEvmExit: typeof dexRegistry.runEvmExit = (id, command) => dexRegistry.runEvmExit(id, command);
+export { EvmLiquidityInputError } from "./evm-liquidity";
 export const readWithdrawalStatus: typeof dexRegistry.readWithdrawalStatus = (id, ...args) => dexRegistry.readWithdrawalStatus(id, ...args);
 export type { WithdrawalStatusCommand, WithdrawalStatusResult } from "./withdraw-status";
 export const discoverNativeWallet: typeof dexRegistry.discoverNativeWallet = (id, ...args) => dexRegistry.discoverNativeWallet(id, ...args);

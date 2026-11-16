@@ -1,3 +1,4 @@
+import { MAX_POSITION_LOOKUP } from "./exit-limits";
 import { type Address, getAddress, isAddressEqual, type PublicClient } from "viem";
 import { UNIV4_RHC, UNIV4_RHC_ALLOWLISTED_POOLS, type Univ4AllowlistedPool } from "./constants";
 import { POSITION_MANAGER_READ_ABI, TRANSFER_TOPIC } from "./open-abi";
@@ -16,7 +17,7 @@ import { shortAddress } from "../../address";
  * A delisted pool can still exit (design §9 risk 1): only the allowlisted pool key is required.
  */
 
-export const MAX_POSITION_LOOKUP = 10;
+export { MAX_POSITION_LOOKUP } from "./exit-limits";
 
 export type RhcPositionView = {
   tokenId: string;

@@ -5,6 +5,7 @@ import type { PortfolioInput, PortfolioReader } from "@/lib/portfolio/model";
 import { positionFigures } from "@/lib/portfolio/figures";
 import type { PositionKey, UnifiedPosition } from "@/lib/unified-positions/model";
 import type { DexAdapter } from "./adapter";
+import type { NativeEvmLiquidity } from "./evm-liquidity";
 import type { BuildAdd } from "./add-prepare";
 import type { ValidateSignedAdd } from "./add-submit";
 import type { QuoteAdd, ReadAddState } from "./selected-read";
@@ -23,6 +24,8 @@ import { normalizeDexId, type DexCapabilities, type DexDescriptor, type DexId } 
 /** One DEX as registered server-side: its descriptor, a lazy adapter (keeps SDKs out of other routes), its pool scan. */
 export type DexModule = {
   descriptor: DexDescriptor;
+  /** Existing native EVM validation/builds; independent of generic HTTP capabilities. */
+  evmLiquidity?: NativeEvmLiquidity;
   /** Legacy native position-read policy; distinct from generic adapter/HTTP capabilities. */
   positionReads?: NativePositionReader;
   discoverWallet?: DiscoverNativeWallet;
@@ -95,6 +98,9 @@ export type DexDescriptorRegistry = {
 };
 
 export type DexRegistry = DexDescriptorRegistry & {
+  evmLiquiditySchemasFor(id: string): NativeEvmLiquidity["schemas"];
+  runEvmOpen(id: string, command: Parameters<NativeEvmLiquidity["open"]>[0]): ReturnType<NativeEvmLiquidity["open"]>;
+  runEvmExit(id: string, command: Parameters<NativeEvmLiquidity["exit"]>[0]): ReturnType<NativeEvmLiquidity["exit"]>;
   adapterFor(id: string): Promise<DexAdapter | null>;
   nativePositionReaders(): readonly RegisteredPositionReader[];
   discoverNativeWallet(id: string, ...args: Parameters<DiscoverNativeWallet>): ReturnType<DiscoverNativeWallet>;
@@ -208,6 +214,25 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
       const canonical = normalizeDexId(id);
       const entry = canonical ? byId.get(canonical) : undefined;
       return entry?.adapter ? entry.adapter() : null;
+    },
+    evmLiquiditySchemasFor(id: string) {
+      const canonical = normalizeDexId(id);
+      const binding = canonical ? byId.get(canonical)?.evmLiquidity : undefined;
+      if (!binding) throw new DexUnsupportedError();
+      return binding.schemas;
+    },
+    async runEvmOpen(id: string, command: Parameters<NativeEvmLiquidity["open"]>[0]) {
+      const canonical = normalizeDexId(id);
+      const binding = canonical ? byId.get(canonical)?.evmLiquidity : undefined;
+      if (!binding?.enabled()) throw new DexUnsupportedError();
+      // Retain the initiating wallet, amount, range and signed Permit2 terms across lazy loading.
+      return binding.open(structuredClone(command));
+    },
+    async runEvmExit(id: string, command: Parameters<NativeEvmLiquidity["exit"]>[0]) {
+      const canonical = normalizeDexId(id);
+      const binding = canonical ? byId.get(canonical)?.evmLiquidity : undefined;
+      if (!binding?.enabled()) throw new DexUnsupportedError();
+      return binding.exit(structuredClone(command));
     },
     nativePositionReaders: () => positionReaders,
     async discoverNativeWallet(id: string, ...args: Parameters<DiscoverNativeWallet>) {

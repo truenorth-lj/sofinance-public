@@ -1,7 +1,9 @@
 import type { DexModule } from "../registry";
-import { isRhcUniv4TradingEnabled } from "@/lib/protocol-flags";
+import type { NativeEvmLiquidity } from "../evm-liquidity";
+import { isRhcUniv4TradingEnabled, isRhcUniv4TxBuildEnabled } from "@/lib/protocol-flags";
 import { rhcScanClientIp, rhcScanRateLimited } from "@/lib/rhc-scan-rate-limit";
 import { uniswapV4RhcDescriptor } from "./descriptor";
+import { RhcOpenRequestSchema, RhcExitRequestSchema } from "./liquidity-input";
 
 /**
  * Server registration of Uniswap v4 on Robinhood Chain (E2-alias). Lazy adapter so other routes
@@ -15,6 +17,12 @@ import { uniswapV4RhcDescriptor } from "./descriptor";
  */
 export const uniswapV4RhcModule: DexModule = Object.freeze({
   descriptor: uniswapV4RhcDescriptor,
+  evmLiquidity: Object.freeze({
+    enabled: isRhcUniv4TxBuildEnabled,
+    schemas: Object.freeze({ open: RhcOpenRequestSchema, exit: RhcExitRequestSchema }),
+    open: async (command) => (await import("./open.server")).runRhcUniv4Open(command),
+    exit: async (command) => (await import("./exit.server")).runRhcUniv4Exit(command),
+  } satisfies NativeEvmLiquidity),
   adapter: async () => (await import("./adapter.server")).createUniswapV4RhcAdapter(),
   enabled: (op) => op === "positions" && isRhcUniv4TradingEnabled(),
   rateLimited: (op, request) => op === "positions" && rhcScanRateLimited(rhcScanClientIp(request)),
