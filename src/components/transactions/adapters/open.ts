@@ -14,6 +14,7 @@ export const OPEN_PREPARE_TIMEOUT_MS = 45_000;
 export type OpenInput = {
   poolId: string; inputMint: string; inputKind: "native" | "token"; amount: string; requested: string;
   rangePreset: OpenRangePreset; minPrice: string; maxPrice: string; relayStore: JupiterRelayStore;
+  centerOnParity?: boolean;
   /** Step 2/2 of a SOL deposit: the landed step-1 swap whose delivered tokens this open spends. */
   solSwapSignature?: string;
   /** Last-moment gate (e.g. a pending SOL swap appeared in another tab). Throw to stop before the wallet. */
@@ -37,7 +38,7 @@ export const openPositionAdapter: TxAdapter<OpenInput, OpenPrepared> = {
       const nftMint = mint.publicKey.toBase58();
       const response = await postWithJupiterRelay("/api/open-prepare", {
         wallet, poolId: input.poolId, inputMint: input.inputMint, inputKind: input.inputKind, amount: input.amount,
-        rangePreset: input.rangePreset, minPrice: input.minPrice, maxPrice: input.maxPrice, nftMint,
+        rangePreset: input.rangePreset, centerOnParity: input.centerOnParity, minPrice: input.minPrice, maxPrice: input.maxPrice, nftMint,
         ...(input.solSwapSignature ? { solSwapSignature: input.solSwapSignature } : {}),
       }, { store: input.relayStore, signal: AbortSignal.timeout(OPEN_PREPARE_TIMEOUT_MS) });
       const data = await response.json() as { unsignedTransaction?: string; sendPermit?: string; landedPermit?: string; summary?: OpenPositionSummary; error?: string; code?: string };

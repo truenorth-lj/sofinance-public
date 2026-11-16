@@ -112,6 +112,22 @@ const settle = async (status: "confirmed" | "failed" | "expired") => {
   await act(async () => { settleTxNotice(noticeIdFor(controller.signature), status); }); await advance(1);
 };
 describe("open-position transaction lifecycle (shared pipeline)", () => {
+  it("revokes a saved submit command on a parity change and passes the new setting to prepare", async () => {
+    await mount();
+    expect(controller.centerOnParity).toBe(true);
+    const oldSubmit = controller.signAndSend;
+    await act(async () => controller.changeCenterOnParity(false));
+    await act(async () => oldSubmit());
+    expect(calls("/api/open-prepare")).toHaveLength(0);
+    expect(mocks.sign).not.toHaveBeenCalled();
+    await advance(450);
+    const quoteRequest = calls("/api/open-quote").at(-1)!;
+    expect(JSON.parse(String(quoteRequest[1]?.body))).toMatchObject({ centerOnParity: false });
+    await act(async () => controller.signAndSend());
+    const prepareRequest = calls("/api/open-prepare").at(-1)!;
+    expect(JSON.parse(String(prepareRequest[1]?.body))).toMatchObject({ centerOnParity: false });
+  });
+
   it("signs, relays once with the mint co-signature, and stays pending until the signature confirms", async () => {
     await mount(); expect(controller.actionDisabled).toBe(false);
     await act(async () => controller.signAndSend()); await advance(1);

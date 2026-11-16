@@ -12,6 +12,7 @@ import { assertSolInputAllowed } from "./sol-input-policy";
 const PRESETS = new Set<OpenRangePreset>(["micro", "tight", "standard", "wide", "custom"]);
 
 export function parseOpenRange(fields: Record<string, unknown>): OpenRangeInput {
+  if (fields.centerOnParity !== undefined && typeof fields.centerOnParity !== "boolean") throw new Error("centerOnParity must be a boolean");
   const preset = (typeof fields.rangePreset === "string" ? fields.rangePreset : DEFAULT_OPEN_RANGE_PRESET) as OpenRangePreset;
   if (!PRESETS.has(preset)) throw new Error("Range preset must be micro, tight, standard, wide, or custom");
   if (preset === "custom") {
@@ -20,7 +21,7 @@ export function parseOpenRange(fields: Record<string, unknown>): OpenRangeInput 
     }
     return { preset: "custom", minPrice: fields.minPrice, maxPrice: fields.maxPrice };
   }
-  return { preset };
+  return { preset, ...(typeof fields.centerOnParity === "boolean" ? { centerOnParity: fields.centerOnParity } : {}) };
 }
 
 function parseOpenFields(fields: Record<string, unknown>) {

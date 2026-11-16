@@ -14,6 +14,7 @@ type OpenPreviewOptions = {
   inputKind: "native" | "token";
   amount: string;
   rangePreset: OpenRangePreset;
+  centerOnParity?: boolean;
   minPrice: string;
   maxPrice: string;
   selectedAsset: WalletAsset | null;
@@ -50,7 +51,7 @@ export function useOpenPreview() {
   const invalidateQuote = useCallback(() => { quoteRequestRef.current += 1; }, []);
 
   const start = useCallback(({ pair, wallet, inputMint, selectedAsset, busy, submitStage,
-    parsedAmount, formError, inputKind, amount, rangePreset, minPrice, maxPrice,
+    parsedAmount, formError, inputKind, amount, rangePreset, centerOnParity, minPrice, maxPrice,
     walletRef, jupiterStoreRef, setNow }: OpenPreviewOptions) => {
     if (!pair || !wallet || !inputMint || !selectedAsset?.eligible || busy || submitStage === "confirmed") return;
     if (parsedAmount === null || formError) return;
@@ -76,7 +77,7 @@ export function useOpenPreview() {
           const signal = typeof AbortSignal.any === "function" ? AbortSignal.any([aborter.signal, timeout]) : aborter.signal;
           const response = await postWithJupiterRelay("/api/open-quote", {
             wallet, poolId: pair.poolAddress, inputMint, inputKind, amount,
-            rangePreset, minPrice, maxPrice,
+            rangePreset, centerOnParity, minPrice, maxPrice,
           }, { store: jupiterStoreRef.current, signal });
           const data = await response.json() as OpenPositionQuote | ApiError;
           if (!currentRequest()) return;
@@ -122,11 +123,11 @@ export function useOpenPreview() {
 /** Register after the facade clock and wallet discovery, at the original quote effect site. */
 export function useOpenPreviewEffect(
   { amount, busy, formError, inputKind, inputMint, maxPrice, minPrice, pair, parsedAmount,
-    rangePreset, selectedAsset, submitStage, wallet, walletRef, jupiterStoreRef, setNow }: OpenPreviewOptions,
+    rangePreset, centerOnParity, selectedAsset, submitStage, wallet, walletRef, jupiterStoreRef, setNow }: OpenPreviewOptions,
   { start, quoteRevision }: Pick<ReturnType<typeof useOpenPreview>, "start" | "quoteRevision">,
 ) {
   useEffect(() => start({ amount, busy, formError, inputKind, inputMint, maxPrice, minPrice,
-    pair, parsedAmount, rangePreset, selectedAsset, submitStage, wallet, walletRef, jupiterStoreRef, setNow }),
+    pair, parsedAmount, rangePreset, centerOnParity, selectedAsset, submitStage, wallet, walletRef, jupiterStoreRef, setNow }),
   [amount, busy, formError, inputKind, inputMint, maxPrice, minPrice, pair, parsedAmount,
-    quoteRevision, rangePreset, selectedAsset, submitStage, wallet, walletRef, jupiterStoreRef, setNow, start]);
+    quoteRevision, rangePreset, centerOnParity, selectedAsset, submitStage, wallet, walletRef, jupiterStoreRef, setNow, start]);
 }

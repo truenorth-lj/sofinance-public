@@ -142,6 +142,19 @@ afterEach(async () => {
 });
 
 describe("range presets and estimated APR", () => {
+  it("defaults to parity centering and refreshes the quote when unchecked", async () => {
+    await mount();
+    const checkbox = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    expect(checkbox.checked).toBe(true);
+    expect(quoteBodies.at(-1)).toMatchObject({ centerOnParity: true });
+    await act(async () => { checkbox.click(); });
+    expect(mocks.controller!.quote).toBeNull();
+    await advance(450);
+    expect(quoteBodies.at(-1)).toMatchObject({ centerOnParity: false });
+    await act(async () => { mocks.controller!.choosePreset("custom"); });
+    expect(checkbox.disabled).toBe(true);
+  });
+
   const presetButton = (label: string) =>
     [...container.querySelectorAll<HTMLButtonElement>("[aria-label='Price range presets'] button")]
       .find((button) => button.querySelector("span")?.textContent === label)!;

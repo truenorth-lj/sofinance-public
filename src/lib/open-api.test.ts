@@ -18,6 +18,15 @@ const nftMint = testKeypair(6).publicKey.toBase58();
 const quoteBody = { wallet, poolId, inputMint, inputKind: "token" as const, amount: "0.12", rangePreset: "standard" };
 
 describe("parseOpenRange (web quote API)", () => {
+  it("carries either parity setting for presets, keeps custom bounds explicit, and rejects non-booleans", () => {
+    for (const centerOnParity of [true, false]) {
+      expect(parseOpenRange({ rangePreset: "micro", centerOnParity })).toEqual({ preset: "micro", centerOnParity });
+    }
+    expect(parseOpenRange({ rangePreset: "custom", minPrice: "0.99", maxPrice: "1.01", centerOnParity: true }))
+      .toEqual({ preset: "custom", minPrice: "0.99", maxPrice: "1.01" });
+    expect(() => parseOpenRange({ centerOnParity: "false" })).toThrow("centerOnParity must be a boolean");
+  });
+
   it("accepts the micro preset", () => {
     expect(parseOpenRange({ rangePreset: "micro" })).toEqual({ preset: "micro" });
   });

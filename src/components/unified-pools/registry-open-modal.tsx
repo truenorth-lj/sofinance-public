@@ -301,15 +301,10 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
         showCustom: false,
         unavailable,
       }}
-      rangeHint={<>
-        {canCenterOnParity ? <label className="mt-3 flex min-h-11 cursor-pointer items-center gap-2 text-xs text-cream/80">
-          <input type="checkbox" checked={centerOnParity} disabled={tx.locked} onChange={(event) => setCenterOnParity(event.target.checked)} className="size-4 accent-lemon" />
-          Center range on 1:1
-        </label> : null}
-        {!rangesError && payload && presets.length > 0 && !presets.some((item) => item.available)
+      parityCenter={canCenterOnParity ? { checked: centerOnParity, onChange: setCenterOnParity, disabled: tx.locked } : undefined}
+      rangeHint={!rangesError && payload && presets.length > 0 && !presets.some((item) => item.available)
         ? <p role="alert" className="mt-2 text-sm text-cream/80">{NO_RANGE_FITS_COPY}</p>
         : null}
-      </>}
       notes={<>
         {rangesError ? <p role="alert" data-testid="registry-open-ranges-error" className="mt-4 text-sm text-cream/80">{rangesError}</p> : null}
         {!rangesError && !payload ? <p role="status" className="mt-4 flex items-center gap-2 text-sm text-cream/80"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />Loading this pool&apos;s ranges…</p> : null}

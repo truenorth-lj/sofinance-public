@@ -3,7 +3,8 @@ import type { OpenRangeInput } from "./open-range-input";
 import { TickUtil } from "@raydium-io/raydium-sdk-v2";
 import { positionSide } from "./quote-math";
 import { uiPriceBPerAFromTick } from "./position-performance-math";
-import { microRange } from "./range-apr/micro-range";
+import { microRange, nearestBoundary } from "./range-apr/micro-range";
+import { exactTickFromUiPrice, usableTickBounds } from "./range-apr/tick-math";
 import {
   DEFAULT_OPEN_RANGE_PRESET,
   OPEN_RANGE_PRESETS,
@@ -142,6 +143,15 @@ export function resolveOpenRange(input: {
     ({ tickLower, tickUpper } = ticksFromUiPriceBand(
       requestedMinPrice, requestedMaxPrice, decimalsA, decimalsB, tickSpacing,
     ));
+  }
+  if (input.range.preset !== "custom" && input.range.centerOnParity) {
+    const width = tickUpper - tickLower;
+    const center = nearestBoundary(exactTickFromUiPrice(1, decimalsA, decimalsB), tickSpacing);
+    const bounds = usableTickBounds(tickSpacing);
+    tickLower = Math.max(bounds.min, Math.min(center - Math.floor(width / tickSpacing / 2) * tickSpacing, bounds.max - width));
+    tickUpper = tickLower + width;
+    requestedMinPrice = uiPriceBPerAFromTick(tickLower, decimalsA, decimalsB);
+    requestedMaxPrice = uiPriceBPerAFromTick(tickUpper, decimalsA, decimalsB);
   }
   const priceLower = uiPriceBPerAFromTick(tickLower, decimalsA, decimalsB);
   const priceUpper = uiPriceBPerAFromTick(tickUpper, decimalsA, decimalsB);
