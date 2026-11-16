@@ -6,3 +6,4 @@ export { positionMintLooksLikeOrca as matchesOrcaPosition, readOrcaPositionRange
 /** Retain this native transport's three-option call; Raydium history refresh does not apply here. */
 export const readOrcaPerformance: NativePositionReader["performance"] = (positionMint, { wallet, maxSignatures, skipPricing }) =>
   getOrcaPositionPerformance(positionMint, { wallet, maxSignatures, skipPricing });
+export { listOrcaPositions as listOrcaWalletPositions } from "@/lib/orca-positions";

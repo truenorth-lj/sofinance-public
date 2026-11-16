@@ -9,6 +9,7 @@ import type { BuildAdd } from "./add-prepare";
 import type { ValidateSignedAdd } from "./add-submit";
 import type { QuoteAdd, ReadAddState } from "./selected-read";
 import type { NativePositionReader, RegisteredPositionReader } from "./position-read";
+import type { DiscoverNativeWallet, NativeWalletListing } from "./wallet-read";
 import type { BuildWithdrawal } from "./withdraw-prepare";
 import type { BuildCompound, BuildCompoundRecovery } from "./compound-prepare";
 import type { ReadCompoundState, ConfirmCompound, ImportCompoundReceipt } from "./compound-read";
@@ -23,6 +24,7 @@ export type DexModule = {
   descriptor: DexDescriptor;
   /** Legacy native position-read policy; distinct from generic adapter/HTTP capabilities. */
   positionReads?: NativePositionReader;
+  discoverWallet?: DiscoverNativeWallet;
   adapter?: () => Promise<DexAdapter>;
   /** Full add simulation for existing transports; independent of generic HTTP rollout. */
   buildAdd?: BuildAdd;
@@ -93,6 +95,8 @@ export type DexDescriptorRegistry = {
 export type DexRegistry = DexDescriptorRegistry & {
   adapterFor(id: string): Promise<DexAdapter | null>;
   nativePositionReaders(): readonly RegisteredPositionReader[];
+  discoverNativeWallet(id: string, ...args: Parameters<DiscoverNativeWallet>): ReturnType<DiscoverNativeWallet>;
+  listNativePositionRows(id: string, ...args: Parameters<NativeWalletListing["read"]>): ReturnType<NativeWalletListing["read"]>;
   readPositionPerformance(id: string, ...args: Parameters<NativePositionReader["performance"]>): ReturnType<NativePositionReader["performance"]>;
   readPositionRange(id: string, ...args: Parameters<NativePositionReader["range"]>): ReturnType<NativePositionReader["range"]>;
   buildAdd(id: string, ...args: Parameters<BuildAdd>): ReturnType<BuildAdd>;
@@ -203,6 +207,19 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
       return entry?.adapter ? entry.adapter() : null;
     },
     nativePositionReaders: () => positionReaders,
+    async discoverNativeWallet(id: string, ...args: Parameters<DiscoverNativeWallet>) {
+      const canonical = normalizeDexId(id);
+      const entry = canonical ? byId.get(canonical) : undefined;
+      // Account discovery remains available independently of new-operation rollout.
+      if (!entry?.discoverWallet) throw new DexUnsupportedError();
+      return entry.discoverWallet(...args);
+    },
+    async listNativePositionRows(id: string, wallet: string) {
+      const canonical = normalizeDexId(id);
+      const reader = canonical ? byId.get(canonical)?.positionReads : undefined;
+      if (!reader?.enabled() || !reader.listing) throw new DexUnsupportedError();
+      return reader.listing.read(wallet);
+    },
     async readPositionPerformance(id: string, positionMint: string, options: Parameters<NativePositionReader["performance"]>[1]) {
       const canonical = normalizeDexId(id);
       const reader = canonical ? byId.get(canonical)?.positionReads : undefined;

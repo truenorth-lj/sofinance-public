@@ -7,7 +7,7 @@ import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import { quoteIsFresh } from "@sofinance/engine/quote-math";
 import { OPEN_RANGE_UI_PRESETS, type OpenRangePreset } from "@sofinance/engine/open-range-presets";
 import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
-import type { WalletAsset, WalletDiscovery } from "@sofinance/engine/wallet-discovery";
+import type { WalletAsset, WalletDiscovery } from "@sofinance/engine/wallet-types";
 import { useWalletConnection } from "./wallet-connection";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import { BALANCES_REFRESH_EVENT, CANCEL_CHECK_PENDING_COPY, useCancelCheckPending } from "@/lib/tx-pipeline";

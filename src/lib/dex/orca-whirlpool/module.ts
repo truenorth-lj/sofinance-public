@@ -16,6 +16,10 @@ export const orcaWhirlpoolModule: DexModule = Object.freeze({
   descriptor: orcaWhirlpoolDescriptor,
   positionReads: Object.freeze({
     source: "orca" as const, order: 0, protocol: orcaWhirlpoolDescriptor.id,
+    listing: Object.freeze({
+      read: async (wallet: string) => (await import("./position-reads.server")).listOrcaWalletPositions(wallet),
+      unavailableMessage: "Orca positions are unavailable right now.",
+    }),
     enabled: isOrcaPositionsEnabled,
     matches: async (positionMint: string) => (await import("./position-reads.server")).matchesOrcaPosition(positionMint),
     performance: async (...args: Parameters<NonNullable<DexModule["positionReads"]>["performance"]>) => (await import("./position-reads.server")).readOrcaPerformance(...args),
