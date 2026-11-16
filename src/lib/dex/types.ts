@@ -8,6 +8,7 @@
  *
  * Nothing here imports a DEX SDK or a protocol module, so this file is safe in client bundles.
  */
+import type { NativeEvmPoolPresentation } from "./pool-presentation";
 import type { Capability, ChainId, SourceCapabilities, TokenRef, UnifiedPosition } from "@/lib/unified-positions/model";
 
 /** The single canonical spelling of each DEX id (PM decision 8: "uniswap-v4-rhc", matching pool/feed/DB ids). */
@@ -124,6 +125,8 @@ export type DexOpenUi = "registry" | "native-modal" | "rhc-dialog" | "none";
  * No invented `feePolicy`.
  */
 export type DexUi = {
+  /** Existing native pool row/label/view policy; separate from activation and signing. */
+  nativePoolPresentation?: NativeEvmPoolPresentation;
   /** Default pool for existing Open deep links; this hint does not enable an operation or route. */
   defaultOpenPoolId?: string;
   /** Which open shell the pools page / deep link uses. */

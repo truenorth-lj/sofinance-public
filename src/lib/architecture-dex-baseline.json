@@ -1,8 +1,5 @@
 {
-  "imports": {
-    "src/components/homepage-pools-table.tsx": 1,
-    "src/components/unified-pools/unified-pools-panel.tsx": 1
-  },
+  "imports": {},
   "branches": {
     "src/components/homepage-pools-table.tsx": 1,
     "src/components/pair-token-icons.tsx": 1,
@@ -16,7 +13,6 @@
     "src/lib/token-icons/map.ts": 2,
     "src/lib/unified-pools/apr7d.ts": 1,
     "src/lib/unified-pools/model.ts": 2,
-    "src/lib/unified-pools/rows.ts": 2,
     "src/lib/unified-positions/rows.ts": 1
   }
 }

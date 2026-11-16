@@ -1,9 +1,10 @@
+import type { Univ4PoolSummary } from "@sofinance/engine/protocols/uniswap-v4/discovery";
 /** Type-only facade for the existing native wallet contract; no browser/server code is imported at runtime. */
 export type EvmOpenClient = typeof import("./dex/uniswap-v4-rhc/wallet/open-execute");
 export type EvmExitClient = typeof import("./dex/uniswap-v4-rhc/wallet/exit-execute");
 export type EvmOpenAttemptClient = typeof import("./dex/uniswap-v4-rhc/wallet/open-attempt");
 export type EvmOpenStepsClient = typeof import("./dex/uniswap-v4-rhc/wallet/open-steps");
-export type EvmPairLabel = typeof import("./unified-pools/rows").rhcPairLabel;
+export type EvmPairLabel = typeof import("./dex/uniswap-v4-rhc/pool-presentation").rhcPairLabel;
 export type EvmPositionSource = typeof import("./unified-positions/sources/rhc").rhcPositionSource;
 export type { Univ4AllowlistedPool as EvmAllowedPool } from "@sofinance/engine/protocols/uniswap-v4/constants";
 export type { OpenFlowResult, PermitJson } from "@sofinance/engine/protocols/uniswap-v4/open-flow";
@@ -15,3 +16,9 @@ export type { WalletBalances } from "./dex/uniswap-v4-rhc/wallet/exit-execute";
 export type { OpenStepId } from "./dex/uniswap-v4-rhc/wallet/open-steps";
 export type { RhcOpenAttempt } from "./dex/uniswap-v4-rhc/wallet/open-attempt";
 export type { RhcNative } from "./unified-positions/sources/rhc";
+
+/** The subset of `Univ4PoolSummary` the list needs (the client gets it from `/api/protocol-pools?protocol=uniswap-v4-rhc`). */
+export type RhcPoolSummary = Pick<Univ4PoolSummary, "poolId" | "status" | "tick" | "price" | "estimatedApr" | "warnings"> & {
+  token0: Pick<Univ4PoolSummary["token0"], "name" | "symbol">;
+  token1: Pick<Univ4PoolSummary["token1"], "name" | "symbol">;
+};

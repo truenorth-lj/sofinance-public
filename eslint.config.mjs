@@ -8,6 +8,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 // src/lib/architecture-dex-boundaries.test.ts enforces the same rule on relative paths and keeps the baseline shrinking.
 const dexBaseline = JSON.parse(readFileSync(new URL("./src/lib/architecture-dex-baseline.json", import.meta.url), "utf8"));
 const dexBaselineFiles = Object.keys(dexBaseline.imports);
+const baselinedComponentFiles = dexBaselineFiles.filter((file) => file.startsWith("src/components/"));
 const dexRegistryOnlyFiles = ["src/app/**/*.{ts,tsx}", "src/server/**/*.{ts,tsx}", "src/mcp/**/*.{ts,tsx}", "src/lib/rwa-refresh*.ts"];
 const componentFiles = ["src/components/**/*.{ts,tsx}"];
 const dexSdkGroup = ["@raydium-io/*", "@meteora-ag/*", "@orca-so/*", "@uniswap/*"];
@@ -100,12 +101,12 @@ const eslintConfig = defineConfig([
       patterns: [{ group: [...dexModuleGroup, "@/lib/dex/*", "!@/lib/dex/client", "!@/lib/dex/evm-client", "@/lib/dex/*/**"], message: `${dexMessage} ${componentDexEntryMessage}` }],
     }] },
   },
-  {
-    // Baselined components keep their frozen DEX imports but still may not reach past @/lib/dex/client.
-    files: dexBaselineFiles.filter((file) => file.startsWith("src/components/")),
+  // ESLint rejects empty `files`; once the last exception is removed every component uses the strict rule above.
+  ...(baselinedComponentFiles.length ? [{
+    files: baselinedComponentFiles,
     ignores: ["**/*.test.{ts,tsx}"],
     rules: { "no-restricted-imports": ["error", componentDexEntry] },
-  },
+  }] : []),
   ...dexInternalConfigs,
   {
     // Flat config replaces rule options per file, so use-case files carry both restrictions.
