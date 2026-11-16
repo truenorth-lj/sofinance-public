@@ -124,6 +124,8 @@ export type DexOpenUi = "registry" | "native-modal" | "rhc-dialog" | "none";
  * No invented `feePolicy`.
  */
 export type DexUi = {
+  /** Default pool for existing Open deep links; this hint does not enable an operation or route. */
+  defaultOpenPoolId?: string;
   /** Which open shell the pools page / deep link uses. */
   openUi: DexOpenUi;
   /** Off-site venue URL, if any. */

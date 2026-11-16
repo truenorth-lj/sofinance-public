@@ -1,4 +1,4 @@
-import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
+import { uiFor } from "@/lib/dex/ui";
 
 /** The pools page (Solana + Robinhood Chain); `?openPool=<id>` opens that pool. */
 const POOLS_PAGE_PATH = "/app/rwa-pairs";
@@ -9,7 +9,9 @@ function poolsPageOpenPath(poolId: string): string {
 }
 
 /** `/app/rhc` (the old Robinhood Chain page) now redirects here: the pools page opens the SPCX/SPCXon pool's MetaMask flow. */
-export const RHC_DEEP_LINK = poolsPageOpenPath(UNIV4_RHC_ALLOWLISTED_POOLS[0]!.poolId);
+const rhcDefaultPool = uiFor("uniswap-v4-rhc").defaultOpenPoolId;
+if (!rhcDefaultPool) throw new Error("Default RHC pool is not configured");
+export const RHC_DEEP_LINK = poolsPageOpenPath(rhcDefaultPool);
 
 /** Old `/app?openPool=<id>` links (the pool list was on /app): where they now open, or null without a pool. */
 export function openPoolRedirect(openPool: string | null | undefined): string | null {
