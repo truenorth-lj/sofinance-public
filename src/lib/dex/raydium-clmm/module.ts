@@ -9,6 +9,10 @@ import { raydiumClmmDescriptor } from "./descriptor";
  */
 export const raydiumClmmModule: DexModule = Object.freeze({
   descriptor: raydiumClmmDescriptor,
+  lpPlanReads: Object.freeze({
+    observations: async (...args: Parameters<NonNullable<DexModule["lpPlanReads"]>["observations"]>) => (await import("./lp-observations.server")).readDecisionObservations(...args),
+    exitPreview: async (...args: Parameters<NonNullable<DexModule["lpPlanReads"]>["exitPreview"]>) => (await import("./lp-exit-preview.server")).readRaydiumLpExitPreview(...args),
+  }),
   discoverWallet: async (...args: Parameters<NonNullable<DexModule["discoverWallet"]>>) => (await import("./wallet-read.server")).discoverRaydiumWallet(...args),
   positionReads: Object.freeze({
     source: "raydium" as const, order: 2,

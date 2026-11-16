@@ -1,4 +1,4 @@
-import { readDecisionObservations } from "@/lib/lp-decision-data";
+import { readLpObservations } from "@/lib/dex";
 import { buildDecision, decisionRequestSchema } from "@/lib/lp-decision";
 import { NO_STORE_HEADERS } from "@/lib/http/no-store";
 export const dynamic = "force-dynamic";
@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     if (!parsed.success) return Response.json({ error: "Invalid decision input" }, { status: 400 });
     const result = buildDecision(parsed.data);
     if (!parsed.data.demo && (parsed.data.poolId || parsed.data.positionId)) {
-      result.observations = await readDecisionObservations(parsed.data, fetch, request.signal);
+      result.observations = await readLpObservations("raydium-clmm", parsed.data, fetch, request.signal);
       if (result.observations.pool || result.observations.position) result.status = "partial";
       result.sources = result.observations.attempts.map(a => ({source: `${a.source}: ${a.detail}`,asOf:a.observedAt,status:a.status === "error" ? "missing" as const : "fresh" as const}));
       result.warnings.push("Public observations retrieved. Historical USDC valuation, income attribution and full reconciliation are incomplete. Raw events do not necessarily represent attributable external income.");

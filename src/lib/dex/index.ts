@@ -6,6 +6,8 @@ import "server-only";
 import { dexRegistry } from "./registry-instance";
 
 export { dexRegistry };
+export const readLpObservations: typeof dexRegistry.readLpObservations = (id, ...args) => dexRegistry.readLpObservations(id, ...args);
+export const readLpExitPreview: typeof dexRegistry.readLpExitPreview = (id, ...args) => dexRegistry.readLpExitPreview(id, ...args);
 export const protocolPoolReadPolicyFor: typeof dexRegistry.protocolPoolReadPolicyFor = (id) => dexRegistry.protocolPoolReadPolicyFor(id);
 export const readProtocolPools: typeof dexRegistry.readProtocolPools = (id) => dexRegistry.readProtocolPools(id);
 export const readProtocolRangeApr: typeof dexRegistry.readProtocolRangeApr = (id, poolId) => dexRegistry.readProtocolRangeApr(id, poolId);

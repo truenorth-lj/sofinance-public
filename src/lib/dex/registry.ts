@@ -5,6 +5,7 @@ import type { PortfolioInput, PortfolioReader } from "@/lib/portfolio/model";
 import { positionFigures } from "@/lib/portfolio/figures";
 import type { PositionKey, UnifiedPosition } from "@/lib/unified-positions/model";
 import type { PublicPoolReads, PublicPoolReadPolicy } from "./public-pool-read";
+import type { LpPlanReads } from "./lp-plan-read";
 import type { DexAdapter } from "./adapter";
 import type { NativeEvmPositionReads, EvmPositionReadPolicy } from "./evm-position-read";
 import type { NativeEvmLiquidity } from "./evm-liquidity";
@@ -26,6 +27,7 @@ import { normalizeDexId, type DexCapabilities, type DexDescriptor, type DexId } 
 /** One DEX as registered server-side: its descriptor, a lazy adapter (keeps SDKs out of other routes), its pool scan. */
 export type DexModule = {
   descriptor: DexDescriptor;
+  lpPlanReads?: LpPlanReads;
   publicPoolReads?: PublicPoolReads;
   /** Existing native EVM validation/builds; independent of generic HTTP capabilities. */
   evmLiquidity?: NativeEvmLiquidity;
@@ -102,6 +104,8 @@ export type DexDescriptorRegistry = {
 };
 
 export type DexRegistry = DexDescriptorRegistry & {
+  readLpObservations(id: string, ...args: Parameters<LpPlanReads["observations"]>): ReturnType<LpPlanReads["observations"]>;
+  readLpExitPreview(id: string, ...args: Parameters<LpPlanReads["exitPreview"]>): ReturnType<LpPlanReads["exitPreview"]>;
   protocolPoolReadPolicyFor(id: string): PublicPoolReadPolicy | null;
   readProtocolPools(id: string): Promise<Awaited<ReturnType<PublicPoolReads["discovery"]["read"]>> | null>;
   readProtocolRangeApr(id: string, poolId: string): ReturnType<PublicPoolReads["rangeApr"]["read"]>;
@@ -220,6 +224,21 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
     ? [Object.freeze({ ...entry.positionReads, id: entry.descriptor.id })] : []).sort((a, b) => a.order - b.order));
   return Object.freeze({
     ...lookups,
+    async readLpObservations(id: string, ...args: Parameters<LpPlanReads["observations"]>) {
+      const canonical = normalizeDexId(id);
+      const binding = canonical ? byId.get(canonical)?.lpPlanReads : undefined;
+      // These are evidence reads, independent of new-operation/generic plan capabilities.
+      if (!binding) throw new DexUnsupportedError();
+      const [command, ...context] = args;
+      return binding.observations(structuredClone(command), ...context);
+    },
+    async readLpExitPreview(id: string, ...args: Parameters<LpPlanReads["exitPreview"]>) {
+      const canonical = normalizeDexId(id);
+      const binding = canonical ? byId.get(canonical)?.lpPlanReads : undefined;
+      if (!binding) throw new DexUnsupportedError();
+      // Primitive terms are captured at entry; live fetch/cancellation objects retain their identity.
+      return binding.exitPreview(...args);
+    },
     protocolPoolReadPolicyFor(id: string) {
       const canonical = normalizeDexId(id);
       const binding = canonical ? byId.get(canonical)?.publicPoolReads : undefined;

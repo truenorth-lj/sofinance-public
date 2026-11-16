@@ -1,4 +1,4 @@
-import type { DecisionObservations } from "./lp-decision-data";
+import type { DecisionObservations } from "./lp-plan-types";
 import Decimal from "decimal.js";
 import { atomicUnits, unavailable, type Cost, type DecisionRequest, type Metric, DECISION_VERSION } from "./lp-accounting";
 import { evaluateScenario, type Scenario, type StrategyResult } from "./lp-scenario";
