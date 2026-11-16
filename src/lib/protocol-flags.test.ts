@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+vi.mock("server-only", () => ({}));
 import { deployTarget, isOrcaDiscoveryEnabled, isOrcaPositionsEnabled, isRhcUniv4DiscoveryEnabled, isRhcUniv4TxBuildEnabled, ORCA_DISCOVERY_ENABLED, ORCA_POSITIONS_ENABLED, RHC_UNIV4_DISCOVERY_ENABLED, RHC_UNIV4_TX_BUILD_ENABLED, isRhcUniv4TradingEnabled, RHC_UNIV4_TRADING_ENABLED, isRhcUniv4WalletSigningEnabled, RHC_UNIV4_WALLET_SIGNING_ENABLED, isRhcApr7dEnabled, RHC_APR7D_ENABLED, isMeteoraDlmmDiscoveryEnabled, METEORA_DLMM_DISCOVERY_ENABLED, isMeteoraDlmmTxBuildEnabled, METEORA_DLMM_TX_BUILD_ENABLED, isMeteoraDlmmWalletSigningEnabled, METEORA_DLMM_WALLET_SIGNING_ENABLED } from "./protocol-flags";
 
 describe("ORCA_DISCOVERY_ENABLED", () => {
@@ -124,11 +125,25 @@ describe("Raydium, Orca and Robinhood Chain are untouched by Meteora", () => {
     // rwa-postgres-store is shared across protocols after 0003; Meteora snapshots may land there later.
   });
 
-  it("MCP tools reach Meteora position readers only behind METEORA_DLMM_DISCOVERY_ENABLED", () => {
-    const source = readFileSync(join(process.cwd(), "src/mcp/tools/positions.ts"), "utf8");
-    const calls = source.split("\n").filter((line) => /(listMeteoraPositions|readMeteoraPositionRangeFacts|getMeteoraPositionPerformance)\(/.test(line));
-    expect(calls).toHaveLength(3);
-    for (const line of calls) expect(line).toContain("isMeteoraDlmmDiscoveryEnabled()");
+  it("native Meteora performance/range admission retains METEORA_DLMM_DISCOVERY_ENABLED", async () => {
+    const { createDexRegistry } = await import("./dex/registry");
+    const { meteoraDlmmModule } = await import("./dex/meteora-dlmm/module");
+    const performance = vi.fn(async () => null), range = vi.fn(async () => null);
+    const registry = createDexRegistry([{ ...meteoraDlmmModule,
+      positionReads: { ...meteoraDlmmModule.positionReads!, performance, range } }]);
+    try {
+      vi.stubEnv("NEXT_PUBLIC_SOFI_DEPLOY_ENV", "");
+      for (const target of ["production", "staging", "", undefined]) {
+        vi.stubEnv("VERCEL_ENV", target);
+        await expect(registry.readPositionPerformance("meteora-dlmm", "position", {})).rejects.toMatchObject({ code: "UNSUPPORTED" });
+        await expect(registry.readPositionRange("meteora-dlmm", "position")).rejects.toMatchObject({ code: "UNSUPPORTED" });
+      }
+      expect(performance).not.toHaveBeenCalled(); expect(range).not.toHaveBeenCalled();
+      vi.stubEnv("VERCEL_ENV", "preview");
+      await expect(registry.readPositionPerformance("meteora-dlmm", "position", {})).resolves.toBeNull();
+      await expect(registry.readPositionRange("meteora-dlmm", "position")).resolves.toBeNull();
+      expect(performance).toHaveBeenCalledOnce(); expect(range).toHaveBeenCalledOnce();
+    } finally { vi.unstubAllEnvs(); }
   });
 });
 

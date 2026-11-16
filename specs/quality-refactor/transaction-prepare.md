@@ -46,6 +46,13 @@ bounded finalized-history verification. No read binding builds, signs or broadca
 Receipt import also rejects a history provider's mismatched transaction signature before
 calling ledger verification, so a different transaction cannot be labeled as the requested source.
 
+Native position performance/range readers are registered per venue with the existing read flags
+and Orca → Meteora → Raydium precedence. MCP keeps null-reader fallback, probe/read error
+propagation and its response projection; the App performance endpoint remains fixed to Raydium
+and retains request cancellation/history-refresh options. Snapshot input terms before source probes
+and lazy reads, retaining live signal/connection references. Wallet-list aggregation remains in MCP.
+These readers neither enable generic HTTP nor change any discovery/signing flag.
+
 HTTP retains parsing, relay AsyncLocalStorage, selected deadline and retry budget, status,
 headers, error handling and response projection. MCP retains its existing projection,
 submitArgs, full authenticated sign-token payload, URL and instructions. Compound quote
