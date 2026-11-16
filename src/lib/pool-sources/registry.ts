@@ -1,20 +1,13 @@
 import type { PoolProtocolId } from "@sofinance/engine/protocols/types";
-import { meteoraPoolSource } from "./meteora";
-import { raydiumPoolSource } from "./raydium";
+import { poolSourceFor as registeredSourceFor } from "@/lib/dex";
 import type { PoolSource } from "./types";
 
-/** Every Solana pool source the RWA scan knows, in discovery order. Add a protocol here (SCAN_DESIGN.md §9). */
-export const POOL_SOURCES: readonly PoolSource[] = Object.freeze([raydiumPoolSource, meteoraPoolSource]);
+export { scanPoolSources } from "@/lib/dex";
 
-/** Every registered source (Meteora's discovery and APR lane run in the cron). */
-export function scanPoolSources(): readonly PoolSource[] {
-  return POOL_SOURCES;
-}
-
-/**
- * The source that refreshes a stored pool. Rows saved before `protocol` was set (or with a protocol no source
- * handles yet) keep today's behavior: the Raydium path, which is what the cron ran for every Solana pool.
- */
-export function poolSourceFor(protocol: PoolProtocolId | undefined): PoolSource {
-  return POOL_SOURCES.find((source) => source.id === protocol) ?? raydiumPoolSource;
+/** Legacy rows with no registered protocol keep the cron's original Raydium fallback. */
+export async function poolSourceFor(protocol: PoolProtocolId | undefined): Promise<PoolSource> {
+  const source = protocol ? await registeredSourceFor(protocol) : null;
+  const fallback = source ?? await registeredSourceFor("raydium-clmm");
+  if (!fallback) throw new Error("Default pool source is not registered");
+  return fallback;
 }

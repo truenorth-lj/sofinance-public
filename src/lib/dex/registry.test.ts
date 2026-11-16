@@ -10,6 +10,7 @@ import { bpsFeeStrategy, NO_FEE_POLICY } from "./fees";
 import { DEX_MODULES } from "./modules";
 import { createDexDescriptorRegistry, createDexRegistry } from "./registry";
 import { DEX_IDS, normalizeDexId } from "./types";
+import type { PoolSource } from "@/lib/pool-sources/types";
 
 describe("DEX ids", () => {
   it("has one canonical spelling for each DEX id and rejects the retired RHC alias", () => {
@@ -105,7 +106,14 @@ describe("DEX registry", () => {
     expect(registry.capabilitiesFor(position)?.withdraw).toBe(blocked);
     expect(registry.capabilitiesFor({ ...position, nativeId: "8" })).toBe(evm.capabilities);
     expect(registry.capabilitiesFor({ ...position, source: "orca-whirlpool" })).toBeNull();
-    expect(registry.poolSources()).toEqual([]);
+    expect(await registry.poolSources()).toEqual([]);
+  });
+
+  it("propagates source load failures without falling back to another protocol", async () => {
+    const failure = new Error("source load failed");
+    const registry = createDexRegistry([{ ...fakeSolanaModule, poolSource: { order: 1, load: async (): Promise<PoolSource> => { throw failure; } } }]);
+    await expect(registry.poolSourceFor(fakeSolanaDescriptor.id)).rejects.toBe(failure);
+    await expect(registry.poolSources()).rejects.toBe(failure);
   });
 
   it("runs each DEX's daily TVL record and keeps going past one that throws", async () => {
@@ -137,12 +145,15 @@ describe("DEX registry", () => {
     expect(byOp.isDisabled("meteora-dlmm", "performance")).toBe(true);
   });
 
-  it("refuses duplicate ids, invalid fee policies and mismatched pool sources", () => {
+  it("refuses duplicate ids, invalid fee policies and mismatched pool sources", async () => {
     expect(() => createDexDescriptorRegistry([fakeSolanaDescriptor, fakeSolanaDescriptor])).toThrow(/registered twice/);
     const badFees = { ...fakeEvmDescriptor, meta: { ...fakeEvmDescriptor.meta, feePolicy: { ...NO_FEE_POLICY, open: { kind: "swap-input-bps", bps: 101 } } } } as typeof fakeEvmDescriptor;
     expect(() => createDexDescriptorRegistry([badFees])).toThrow(/101 bps/);
-    const poolSource = { id: "raydium-clmm" } as never;
-    expect(() => createDexRegistry([{ ...fakeSolanaModule, poolSource }])).toThrow(/different id/);
+    const poolSource = { order: 0, load: async () => ({ id: "raydium-clmm" } as never) };
+    const registry = createDexRegistry([{ ...fakeSolanaModule, poolSource }]);
+    await expect(registry.poolSources()).rejects.toThrow(/different id/);
+    await expect(registry.poolSourceFor(fakeSolanaDescriptor.id)).rejects.toThrow(/different id/);
+    expect(() => createDexRegistry([{ ...fakeSolanaModule, poolSource: { ...poolSource, order: NaN } }])).toThrow(/order must be finite/);
   });
 });
 

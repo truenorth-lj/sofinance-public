@@ -35,7 +35,7 @@ export async function refreshProfile(
   now: number,
   signal: AbortSignal,
   upstream: { gate?: ThrottleGate } = {},
-  source: PoolSource = poolSourceFor(pool.pair.protocol),
+  source?: PoolSource,
 ): Promise<StoredProfile> {
   const config = getRwaConfig(),
     cached = pool.profile;
@@ -52,7 +52,8 @@ export async function refreshProfile(
     now - Date.parse(cached.observedAt) < config.profileTtlMs
   )
     return cached;
-  const fresh = await source.loadProfile(
+  const resolvedSource = source ?? await poolSourceFor(pool.pair.protocol);
+  const fresh = await resolvedSource.loadProfile(
     pool.pair.poolAddress,
     fetcher,
     Math.floor(now / 1000),
@@ -116,9 +117,9 @@ export async function refreshSolanaPool(input: {
 }): Promise<{ outcome: PoolOutcome; issue: string | null }> {
   const { store, lease, pool, clock, signal } = input;
   const poolId = pool.pair.poolAddress;
-  const source = poolSourceFor(pool.pair.protocol);
   // The job signal, or the job signal plus the per-pool limit (same object when there is no limit).
   const poolSignal = input.poolTimeoutMs ? AbortSignal.any([signal, AbortSignal.timeout(input.poolTimeoutMs)]) : signal;
+  const source = await poolSourceFor(pool.pair.protocol);
   // Saved under its own protocol (rows without one are Raydium CLMM, as before).
   const protocol = source === raydiumPoolSource ? {} : { protocol: source.id };
   try {
