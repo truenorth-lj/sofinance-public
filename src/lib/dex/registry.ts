@@ -6,6 +6,7 @@ import { positionFigures } from "@/lib/portfolio/figures";
 import type { PositionKey, UnifiedPosition } from "@/lib/unified-positions/model";
 import type { DexAdapter } from "./adapter";
 import type { BuildAdd } from "./add-prepare";
+import type { ValidateSignedAdd } from "./add-submit";
 import type { QuoteAdd, ReadAddState } from "./selected-read";
 import type { BuildWithdrawal } from "./withdraw-prepare";
 import type { BuildCompound, BuildCompoundRecovery } from "./compound-prepare";
@@ -21,6 +22,8 @@ export type DexModule = {
   adapter?: () => Promise<DexAdapter>;
   /** Full add simulation for existing transports; independent of generic HTTP rollout. */
   buildAdd?: BuildAdd;
+  /** Checks an already-signed native add; independent of new-operation rollout. */
+  validateSignedAdd?: ValidateSignedAdd;
   /** Existing native quote/state DTOs; independent of the generic adapter's read contracts. */
   quoteAdd?: QuoteAdd;
   readAddState?: ReadAddState;
@@ -82,6 +85,7 @@ export type DexDescriptorRegistry = {
 export type DexRegistry = DexDescriptorRegistry & {
   adapterFor(id: string): Promise<DexAdapter | null>;
   buildAdd(id: string, ...args: Parameters<BuildAdd>): ReturnType<BuildAdd>;
+  validateSignedAdd(id: string, ...args: Parameters<ValidateSignedAdd>): ReturnType<ValidateSignedAdd>;
   quoteAdd(id: string, ...args: Parameters<QuoteAdd>): ReturnType<QuoteAdd>;
   readAddState(id: string, ...args: Parameters<ReadAddState>): ReturnType<ReadAddState>;
   buildWithdrawal(id: string, ...args: Parameters<BuildWithdrawal>): ReturnType<BuildWithdrawal>;
@@ -189,6 +193,15 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
       const [command, options] = args;
       // A module may lazy-load before reading these values; retain the initiating preview/build terms.
       return entry.buildAdd({ ...command, selection: { ...command.selection } }, options ? { ...options } : undefined);
+    },
+    async validateSignedAdd(id: string, command: Parameters<ValidateSignedAdd>[0],
+      connection: Parameters<ValidateSignedAdd>[1], profile: Parameters<ValidateSignedAdd>[2]) {
+      const canonical = normalizeDexId(id);
+      const entry = canonical ? byId.get(canonical) : undefined;
+      // Existing signed operations still require full validation when new deposits are disabled.
+      // This binding is not an authorization bypass: the trusted caller verifies the permit/message first.
+      if (!entry?.validateSignedAdd) throw new DexUnsupportedError();
+      return entry.validateSignedAdd({ ...command, permitInput: structuredClone(command.permitInput) }, connection, profile);
     },
     async quoteAdd(id: string, command: Parameters<QuoteAdd>[0], context?: Parameters<QuoteAdd>[1]) {
       const canonical = normalizeDexId(id);

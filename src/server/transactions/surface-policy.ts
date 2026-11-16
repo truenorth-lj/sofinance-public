@@ -1,4 +1,2 @@
-// Fixed application profiles, selected by adapters, never by request input.
-// Each operation keeps its observed HTTP/MCP behavior; flags are not combinable.
-export const APP_SELECTED_SUBMIT = "app-selected-submit";
-export const MCP_SELECTED_SUBMIT = "mcp-selected-submit";
+// Backward-compatible profile exports; fixed transports choose them, never request input.
+export { APP_SELECTED_SUBMIT, MCP_SELECTED_SUBMIT } from "@/lib/dex";

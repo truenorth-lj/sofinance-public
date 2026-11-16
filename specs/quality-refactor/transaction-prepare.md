@@ -12,7 +12,7 @@ Add, withdraw, compound, open and SOL swap-step prepare orchestration now lives 
 Results preserve complete summaries, existing permits
 and serialized transactions; withdraw retains its app build/retry/refresh sequence.
 Operation-specific HTTP/MCP profiles live beside the corresponding DEX compatibility contract;
-`surface-policy.ts` retains the selected-submit profiles. Trusted transports select them,
+the signed-add contract owns submit profiles (`surface-policy.ts` keeps compatibility exports). Trusted transports select them,
 never request bodies. Compound and harvest recovery share their existing permit domain while
 binding the complete operation-specific summary.
 
@@ -28,6 +28,14 @@ connection/signal/retry-budget references and the MCP call's original quote-only
 keeps its read RPC and engine defaults; raw errors return to the transport for its existing codes.
 Shared state/quote DTO entrypoints are type-only, preserve the previous type exports and infer
 fields from the unchanged reader/builders rather than maintaining copied response definitions.
+
+Signed-add state validation and simulation use a lazy native registry binding, independent of
+new-deposit availability. The MCP transport still verifies the permit and message before calling
+the shared sender; it is the active consumer (App uses the existing tx-send relay). The sender
+keeps one connection, captures authenticated facts and expected signature before lazy awaits,
+and broadcasts the same signed transaction only after validation. Original profile-specific
+read defaults, error precedence and messages, final expiry/height checks, send options and
+unknown-send behavior are preserved. Validation never builds, signs, restamps or sends.
 
 HTTP retains parsing, relay AsyncLocalStorage, selected deadline and retry budget, status,
 headers, error handling and response projection. MCP retains its existing projection,

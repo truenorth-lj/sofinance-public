@@ -28,8 +28,7 @@
     "src/components/use-open-position-controller.ts": 1,
     "src/components/use-selected-controller.ts": 1,
     "src/lib/rwa-refresh.ts": 2,
-    "src/mcp/tools/positions.ts": 5,
-    "src/server/transactions/selected-submit.ts": 2
+    "src/mcp/tools/positions.ts": 5
   },
   "branches": {
     "src/app/api/protocol-pools/range-apr/route.ts": 3,

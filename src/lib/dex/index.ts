@@ -6,6 +6,9 @@ import "server-only";
 import { dexRegistry } from "./registry-instance";
 
 export { dexRegistry };
+export const validateSignedAdd: typeof dexRegistry.validateSignedAdd = (id, ...args) => dexRegistry.validateSignedAdd(id, ...args);
+export { APP_SELECTED_SUBMIT, MCP_SELECTED_SUBMIT } from "./add-submit";
+export type { AddValidationCommand, SelectedSubmitCommand, SelectedSubmitProfile } from "./add-submit";
 export const quoteAdd: typeof dexRegistry.quoteAdd = (id, ...args) => dexRegistry.quoteAdd(id, ...args);
 export const readAddState: typeof dexRegistry.readAddState = (id, ...args) => dexRegistry.readAddState(id, ...args);
 export type { AddReadCommand, AddQuoteContext } from "./selected-read";
