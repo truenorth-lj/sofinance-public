@@ -8,6 +8,7 @@ import type { DexAdapter } from "./adapter";
 import type { BuildAdd } from "./add-prepare";
 import type { ValidateSignedAdd } from "./add-submit";
 import type { QuoteAdd, ReadAddState } from "./selected-read";
+import type { NativePositionReader, RegisteredPositionReader } from "./position-read";
 import type { BuildWithdrawal } from "./withdraw-prepare";
 import type { BuildCompound, BuildCompoundRecovery } from "./compound-prepare";
 import type { ReadCompoundState, ConfirmCompound, ImportCompoundReceipt } from "./compound-read";
@@ -20,6 +21,8 @@ import { normalizeDexId, type DexCapabilities, type DexDescriptor, type DexId } 
 /** One DEX as registered server-side: its descriptor, a lazy adapter (keeps SDKs out of other routes), its pool scan. */
 export type DexModule = {
   descriptor: DexDescriptor;
+  /** Legacy native position-read policy; distinct from generic adapter/HTTP capabilities. */
+  positionReads?: NativePositionReader;
   adapter?: () => Promise<DexAdapter>;
   /** Full add simulation for existing transports; independent of generic HTTP rollout. */
   buildAdd?: BuildAdd;
@@ -89,6 +92,9 @@ export type DexDescriptorRegistry = {
 
 export type DexRegistry = DexDescriptorRegistry & {
   adapterFor(id: string): Promise<DexAdapter | null>;
+  nativePositionReaders(): readonly RegisteredPositionReader[];
+  readPositionPerformance(id: string, ...args: Parameters<NativePositionReader["performance"]>): ReturnType<NativePositionReader["performance"]>;
+  readPositionRange(id: string, ...args: Parameters<NativePositionReader["range"]>): ReturnType<NativePositionReader["range"]>;
   buildAdd(id: string, ...args: Parameters<BuildAdd>): ReturnType<BuildAdd>;
   validateSignedAdd(id: string, ...args: Parameters<ValidateSignedAdd>): ReturnType<ValidateSignedAdd>;
   quoteAdd(id: string, ...args: Parameters<QuoteAdd>): ReturnType<QuoteAdd>;
@@ -187,12 +193,29 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
   const lookups = createDexDescriptorRegistry(modules.map((entry) => entry.descriptor));
   const byId = new Map<DexId, DexModule>(modules.map((entry) => [entry.descriptor.id, entry]));
   const sources = Object.freeze(modules.flatMap((entry) => (entry.poolSource ? [entry.poolSource] : [])));
+  const positionReaders = Object.freeze(modules.flatMap(entry => entry.positionReads
+    ? [Object.freeze({ ...entry.positionReads, id: entry.descriptor.id })] : []).sort((a, b) => a.order - b.order));
   return Object.freeze({
     ...lookups,
     async adapterFor(id: string) {
       const canonical = normalizeDexId(id);
       const entry = canonical ? byId.get(canonical) : undefined;
       return entry?.adapter ? entry.adapter() : null;
+    },
+    nativePositionReaders: () => positionReaders,
+    async readPositionPerformance(id: string, positionMint: string, options: Parameters<NativePositionReader["performance"]>[1]) {
+      const canonical = normalizeDexId(id);
+      const reader = canonical ? byId.get(canonical)?.positionReads : undefined;
+      if (!reader?.enabled()) throw new DexUnsupportedError();
+      // Snapshot terms without cloning live cancellation, connection or provider objects.
+      const input = { ...options, ...(options.historyAfterSignatures ? { historyAfterSignatures: [...options.historyAfterSignatures] } : {}) };
+      return reader.performance(positionMint, input);
+    },
+    async readPositionRange(id: string, positionMint: string) {
+      const canonical = normalizeDexId(id);
+      const reader = canonical ? byId.get(canonical)?.positionReads : undefined;
+      if (!reader?.enabled()) throw new DexUnsupportedError();
+      return reader.range(positionMint);
     },
     async buildAdd(id: string, ...args: Parameters<BuildAdd>) {
       const canonical = normalizeDexId(id);

@@ -1,3 +1,4 @@
+import { isMeteoraDlmmDiscoveryEnabled } from "@/lib/protocol-flags";
 import type { DexModule } from "../registry";
 import { meteoraDlmmDescriptor } from "./descriptor";
 
@@ -7,6 +8,13 @@ import { meteoraDlmmDescriptor } from "./descriptor";
  */
 export const meteoraDlmmModule: DexModule = Object.freeze({
   descriptor: meteoraDlmmDescriptor,
+  positionReads: Object.freeze({
+    source: "meteora" as const, order: 1, protocol: meteoraDlmmDescriptor.id,
+    enabled: isMeteoraDlmmDiscoveryEnabled,
+    matches: async (positionMint: string) => (await import("./position-reads.server")).matchesMeteoraPosition(positionMint),
+    performance: async (...args: Parameters<NonNullable<DexModule["positionReads"]>["performance"]>) => (await import("./position-reads.server")).readMeteoraPerformance(...args),
+    range: async (positionMint: string) => (await import("./position-reads.server")).readMeteoraRange(positionMint),
+  }),
   adapter: async () => (await import("./adapter.server")).createMeteoraDlmmAdapter(),
   poolDailyApr: async (poolId) => (await import("./daily-apr.server")).meteoraPoolDailyApr(poolId),
   recordDailyTvl: async (input) => (await import("./daily-tvl.server")).recordMeteoraDailyTvl(input),

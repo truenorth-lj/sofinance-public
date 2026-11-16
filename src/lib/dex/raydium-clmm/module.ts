@@ -9,6 +9,13 @@ import { raydiumClmmDescriptor } from "./descriptor";
  */
 export const raydiumClmmModule: DexModule = Object.freeze({
   descriptor: raydiumClmmDescriptor,
+  positionReads: Object.freeze({
+    source: "raydium" as const, order: 2,
+    enabled: () => true,
+    matches: async () => true,
+    performance: async (...args: Parameters<NonNullable<DexModule["positionReads"]>["performance"]>) => (await import("./position-reads.server")).readRaydiumPerformance(...args),
+    range: async (positionMint: string) => (await import("./position-reads.server")).readRaydiumRange(positionMint),
+  }),
   adapter: async () => (await import("./adapter.server")).createRaydiumClmmAdapter(),
   buildAdd: async (command, options) => (await import("./build-add.server")).buildRaydiumAdd(command, options),
   buildWithdrawal: async (command, preview) => (await import("./build-withdraw.server")).buildRaydiumWithdrawal(command, preview),

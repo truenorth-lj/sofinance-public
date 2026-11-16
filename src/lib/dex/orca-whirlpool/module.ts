@@ -1,3 +1,4 @@
+import { isOrcaPositionsEnabled } from "@/lib/protocol-flags";
 import type { DexModule } from "../registry";
 import { orcaWhirlpoolDescriptor } from "./descriptor";
 
@@ -13,6 +14,13 @@ import { orcaWhirlpoolDescriptor } from "./descriptor";
  */
 export const orcaWhirlpoolModule: DexModule = Object.freeze({
   descriptor: orcaWhirlpoolDescriptor,
+  positionReads: Object.freeze({
+    source: "orca" as const, order: 0, protocol: orcaWhirlpoolDescriptor.id,
+    enabled: isOrcaPositionsEnabled,
+    matches: async (positionMint: string) => (await import("./position-reads.server")).matchesOrcaPosition(positionMint),
+    performance: async (...args: Parameters<NonNullable<DexModule["positionReads"]>["performance"]>) => (await import("./position-reads.server")).readOrcaPerformance(...args),
+    range: async (positionMint: string) => (await import("./position-reads.server")).readOrcaRange(positionMint),
+  }),
   adapter: async () => (await import("./adapter.server")).createOrcaWhirlpoolAdapter(),
   enabled: () => false,
 });

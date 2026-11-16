@@ -1,43 +1,23 @@
 import "@/lib/engine-host";
 import { discoverWallet } from "@sofinance/engine/wallet-discovery";
 import { sanitizePublicError } from "../../lib/public-error";
-import { getPositionPerformance as readPositionPerformance } from "../../lib/position-performance";
-import { readPositionRangeFacts } from "../../lib/position-range-onchain";
 import { isMeteoraDlmmDiscoveryEnabled, isOrcaPositionsEnabled } from "../../lib/protocol-flags";
 import {
-  getOrcaPositionPerformance,
   listOrcaPositions,
   ORCA_PROTOCOL,
-  positionMintLooksLikeOrca,
-  readOrcaPositionRangeFacts,
 } from "../../lib/orca-positions";
 import {
-  getMeteoraPositionPerformance,
   listMeteoraPositions,
   METEORA_PROTOCOL,
-  positionAccountLooksLikeMeteora,
-  readMeteoraPositionRangeFacts,
 } from "../../lib/meteora-positions";
-import { rangeStatusFromPrice } from "../../lib/position-range-status";
+import { nativePositionPerformance, nativePositionRangeStatus } from "@/lib/dex";
+export { nativePositionSourceFor as performanceSourceFor } from "@/lib/dex";
+export type { NativePositionSource as PerformanceSource } from "@/lib/dex";
 import type {
   GetPositionPerformanceInput,
   GetPositionRangeStatusInput,
   ListPositionsInput,
 } from "../schemas";
-
-export type PerformanceSource = "orca" | "meteora" | "raydium";
-
-/**
- * Resolve which DEX reader should serve a performance or range-status request.
- * Orca (when enabled) is recognised by its position PDA; Meteora (when enabled)
- * by the position account itself. Anything else is Raydium. Flags stay fail-closed:
- * production never looks at or calls the Orca or Meteora readers.
- */
-export async function performanceSourceFor(positionMint: string): Promise<PerformanceSource> {
-  if (isOrcaPositionsEnabled() && await positionMintLooksLikeOrca(positionMint)) return "orca";
-  if (isMeteoraDlmmDiscoveryEnabled() && await positionAccountLooksLikeMeteora(positionMint)) return "meteora";
-  return "raydium";
-}
 
 /**
  * List a wallet's positions and assets: Raydium CLMM position NFTs, plus (behind their
@@ -102,23 +82,10 @@ export async function listPositions(input: ListPositionsInput) {
  * readers are not probed.
  */
 export async function getPositionPerformance(input: GetPositionPerformanceInput) {
-  const source = await performanceSourceFor(input.positionMint);
-  const orca = isOrcaPositionsEnabled() && source === "orca" ? await getOrcaPositionPerformance(input.positionMint, {
-    wallet: input.wallet,
-    maxSignatures: input.maxSignatures,
-    skipPricing: input.skipPricing,
-  }) : null;
-  const meteora = isMeteoraDlmmDiscoveryEnabled() && source === "meteora" ? await getMeteoraPositionPerformance(input.positionMint, { wallet: input.wallet, maxSignatures: input.maxSignatures, skipPricing: input.skipPricing }) : null;
-  const result = orca ?? meteora ?? await readPositionPerformance(input.positionMint, {
-    wallet: input.wallet,
-    maxSignatures: input.maxSignatures,
-    skipPricing: input.skipPricing,
-    refreshHistory: input.refreshHistory,
-    historyAfterSignatures: input.historyAfterSignatures,
-  });
+  const { result, protocol } = await nativePositionPerformance(input);
 
   return {
-    ...(orca ? { protocol: ORCA_PROTOCOL } : meteora ? { protocol: METEORA_PROTOCOL } : {}),
+    ...(protocol ? { protocol } : {}),
     wallet: result.wallet,
     ownsNft: result.ownsNft,
     positionMint: result.positionMint,
@@ -186,24 +153,5 @@ export async function getPositionPerformance(input: GetPositionPerformanceInput)
  * ticks. Read-only.
  */
 export async function getPositionRangeStatus(input: GetPositionRangeStatusInput) {
-  const source = await performanceSourceFor(input.positionMint);
-  const orcaFacts = isOrcaPositionsEnabled() && source === "orca" ? await readOrcaPositionRangeFacts(input.positionMint) : null;
-  const meteoraFacts = isMeteoraDlmmDiscoveryEnabled() && source === "meteora" ? await readMeteoraPositionRangeFacts(input.positionMint) : null;
-  const facts = orcaFacts ?? meteoraFacts ?? await readPositionRangeFacts(input.positionMint);
-  const status = rangeStatusFromPrice({
-    priceBPerA: facts.onChainPriceBPerA,
-    tickLower: facts.tickLower,
-    tickUpper: facts.tickUpper,
-    decimalsA: facts.decimalsA,
-    decimalsB: facts.decimalsB,
-    priceSource: "on-chain",
-  });
-  return {
-    ...(orcaFacts ? { protocol: ORCA_PROTOCOL } : {}),
-    wallet: input.wallet ?? null,
-    ...facts,
-    ...(meteoraFacts ? { protocol: METEORA_PROTOCOL } : {}),
-    poolId: input.poolId ?? facts.poolId,
-    ...status,
-  };
+  return nativePositionRangeStatus(input);
 }

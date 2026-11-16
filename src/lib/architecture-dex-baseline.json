@@ -2,7 +2,6 @@
   "imports": {
     "src/app/api/lp-decision/exit-preview/route.ts": 1,
     "src/app/api/lp-decision/route.ts": 1,
-    "src/app/api/position-performance/route.ts": 1,
     "src/app/api/protocol-pools/range-apr/route.ts": 4,
     "src/app/api/protocol-pools/route.ts": 3,
     "src/app/api/rhc-univ4-exit/route.ts": 1,
@@ -25,7 +24,7 @@
     "src/components/use-open-position-controller.ts": 1,
     "src/components/use-selected-controller.ts": 1,
     "src/lib/rwa-refresh.ts": 2,
-    "src/mcp/tools/positions.ts": 5
+    "src/mcp/tools/positions.ts": 3
   },
   "branches": {
     "src/app/api/protocol-pools/range-apr/route.ts": 3,

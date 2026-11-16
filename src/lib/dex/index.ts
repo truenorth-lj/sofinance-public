@@ -6,6 +6,9 @@ import "server-only";
 import { dexRegistry } from "./registry-instance";
 
 export { dexRegistry };
+export const readPositionPerformance: typeof dexRegistry.readPositionPerformance = (id, ...args) => dexRegistry.readPositionPerformance(id, ...args);
+export { nativePositionSourceFor, nativePositionPerformance, nativePositionRangeStatus } from "./position-reads.server";
+export type { NativePositionSource, NativePositionReader, PositionPerformanceCommand, PositionRangeCommand } from "./position-read";
 export const readCompoundState: typeof dexRegistry.readCompoundState = (id, ...args) => dexRegistry.readCompoundState(id, ...args);
 export const confirmCompound: typeof dexRegistry.confirmCompound = (id, ...args) => dexRegistry.confirmCompound(id, ...args);
 export const importCompoundReceipt: typeof dexRegistry.importCompoundReceipt = (id, ...args) => dexRegistry.importCompoundReceipt(id, ...args);

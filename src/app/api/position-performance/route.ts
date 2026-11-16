@@ -1,5 +1,5 @@
 import { apiError } from "@/lib/api-response";
-import { getPositionPerformance } from "@/lib/position-performance";
+import { readPositionPerformance } from "@/lib/dex";
 import { PositionHistoryStoreError } from "@/lib/position-history-store-types";
 import bs58 from "bs58";
 import { NO_STORE_HEADERS } from "@/lib/http/no-store";
@@ -35,7 +35,7 @@ export async function GET(request: Request) {
       throw new Error("Invalid history signatures");
     }
 
-    const result = await getPositionPerformance(positionMint, {
+    const result = await readPositionPerformance("raydium-clmm", positionMint, {
       wallet,
       maxSignatures,
       skipPricing,
