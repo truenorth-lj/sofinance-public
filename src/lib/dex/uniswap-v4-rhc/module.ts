@@ -20,6 +20,8 @@ import { parsePositionIds, RHC_SCAN_FAILED_MESSAGE } from "./position-input";
  */
 export const uniswapV4RhcModule: DexModule = Object.freeze({
   descriptor: uniswapV4RhcDescriptor,
+  readCronTokenIcons: async input => (await import("./cron-discovery.server")).readRhcCronIcons(input),
+  inspectCronPools: async client => (await import("./cron-discovery.server")).inspectRhcCronPools(client),
   nativeAprRefresh: Object.freeze({
     enabled: () => isRhcApr7dEnabled(),
     prepare: async (input: import("../apr-refresh").NativeAprRunInput) => (await import("./prepare-apr.server")).prepareNativeRhcAprRun(input),

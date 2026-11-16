@@ -9,6 +9,7 @@ import { raydiumClmmDescriptor } from "./descriptor";
  */
 export const raydiumClmmModule: DexModule = Object.freeze({
   descriptor: raydiumClmmDescriptor,
+  readCronTokenIcons: async input => (await import("./cron-icons.server")).readRaydiumCronIcons(input),
   poolSource: Object.freeze({ order: 0, load: async () => (await import("@/lib/pool-sources/raydium")).raydiumPoolSource }),
   lpPlanReads: Object.freeze({
     observations: async (...args: Parameters<NonNullable<DexModule["lpPlanReads"]>["observations"]>) => (await import("./lp-observations.server")).readDecisionObservations(...args),

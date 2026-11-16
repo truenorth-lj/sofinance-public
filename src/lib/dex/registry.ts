@@ -1,3 +1,4 @@
+import type { ReadCronTokenIcons, InspectCronPools, CronIconInput } from "./cron-discovery";
 import type { NativePoolCron, PoolCronPolicy, PoolCronDiscoveryInput, PoolCronLaneInput } from "./pool-cron";
 import type { PoolDailyAprResult } from "@/lib/pool-daily-apr";
 import type { PoolSource } from "@/lib/pool-sources/types";
@@ -31,6 +32,8 @@ export type DexModule = {
   descriptor: DexDescriptor;
   nativeAprRefresh?: NativeAprRefresh;
   poolCron?: NativePoolCron;
+  readCronTokenIcons?: ReadCronTokenIcons;
+  inspectCronPools?: InspectCronPools;
   lpPlanReads?: LpPlanReads;
   publicPoolReads?: PublicPoolReads;
   /** Existing native EVM validation/builds; independent of generic HTTP capabilities. */
@@ -109,6 +112,8 @@ export type DexDescriptorRegistry = {
 };
 
 export type DexRegistry = DexDescriptorRegistry & {
+  readCronTokenIcons(id: string, input: CronIconInput): ReturnType<ReadCronTokenIcons>;
+  inspectCronPools(id: string, ...args: Parameters<InspectCronPools>): ReturnType<InspectCronPools>;
   poolCronPolicyFor(id: string): PoolCronPolicy;
   publishPoolCron(id: string, input: PoolCronDiscoveryInput): ReturnType<NativePoolCron["publish"]>;
   refreshPoolCron(id: string, input: PoolCronLaneInput): ReturnType<NativePoolCron["refresh"]>;
@@ -239,6 +244,18 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
     ? [Object.freeze({ ...entry.positionReads, id: entry.descriptor.id })] : []).sort((a, b) => a.order - b.order));
   return Object.freeze({
     ...lookups,
+    async readCronTokenIcons(id: string, input: CronIconInput) {
+      const canonical = normalizeDexId(id);
+      const binding = canonical ? byId.get(canonical)?.readCronTokenIcons : undefined;
+      if (!binding) throw new DexUnsupportedError();
+      return binding({ ...input, mints: [...input.mints] });
+    },
+    async inspectCronPools(id: string, ...args: Parameters<InspectCronPools>) {
+      const canonical = normalizeDexId(id);
+      const binding = canonical ? byId.get(canonical)?.inspectCronPools : undefined;
+      if (!binding) throw new DexUnsupportedError();
+      return binding(...args);
+    },
     poolCronPolicyFor(id: string) {
       const canonical = normalizeDexId(id);
       const binding = canonical ? byId.get(canonical)?.poolCron : undefined;

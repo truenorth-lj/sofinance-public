@@ -3,16 +3,13 @@ import "server-only";
 import type { PublicClient } from "viem";
 import { sanitizePublicError } from "../public-error";
 import { prepareNativeAprRun, type NativeAprRun as RhcRun, type NativeAprRunStats as RhcAprRunStats } from "@/lib/dex";
-import { discoverRhcRegistryPools, rhcDiscoveryFindings, type RhcDiscoveryResult } from "../pool-metrics/rhc-discovery";
-import { captureRhcDiscoveryFindings } from "../sentry/capture";
+import { inspectCronPools, type CronPoolInspectionResult as RhcDiscoveryResult } from "@/lib/dex";
 import type { Lease, RwaStore } from "../rwa-store-types";
 import type { ThrottleGate } from "../range-apr/throttle-gate";
 
-/** Best-effort Robinhood Chain registry check for the discovery job. Never published. */
-export async function discoverRhcLane(client: PublicClient): Promise<RhcDiscoveryResult | { error: string }> {
-  return discoverRhcRegistryPools(client)
-    .then((result) => { captureRhcDiscoveryFindings(rhcDiscoveryFindings(result)); return result; })
-    .catch((error) => ({ error: sanitizePublicError(error, "RHC discovery failed").slice(0, 200) }));
+/** Best-effort hidden inspection, dispatched to its native module. */
+export async function discoverRhcLane(client?: PublicClient): Promise<RhcDiscoveryResult | { error: string }> {
+  return inspectCronPools("uniswap-v4-rhc", client);
 }
 
 export async function prepareRhcAprLane(input: {
