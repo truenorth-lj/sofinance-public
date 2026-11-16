@@ -124,11 +124,18 @@ describe("RhcUniv4OpenPanel", () => {
     expect(container.querySelector("[data-testid=wallet-address]")!.textContent).toContain("0x2222…2222");
     await act(async () => { button("Preview open (simulated)").click(); await new Promise(r => setTimeout(r, 0)); });
     const [, init] = (fetchMock.mock.calls as unknown as [string, RequestInit][]).find(c => !c[0].startsWith("/api/rhc-univ4-positions"))!;
-    expect(JSON.parse(init.body as string)).toMatchObject({ action: "prepare", user: USER, depositToken: SPCX, amount: "1000000000000000000", tickLower: -11, tickUpper: 9 });
+    expect(JSON.parse(init.body as string)).toMatchObject({ action: "prepare", user: USER, depositToken: SPCX, amount: "1000000000000000000", tickLower: -10, tickUpper: 10 });
     expect(container.querySelector("[data-testid=leftover-note]")).not.toBeNull();
     expect(text()).toContain("Step 1/3");
     expect([...container.querySelectorAll("li[data-step] button")].every(b => (b as HTMLButtonElement).disabled)).toBe(true);
     expect(methods.filter(m => !["eth_requestAccounts", "eth_chainId", "eth_getBalance", "eth_call"].includes(m))).toEqual([]);
+    const checkbox = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    expect(checkbox.checked).toBe(true);
+    await act(async () => { checkbox.click(); });
+    expect(container.querySelector("[data-testid=open-preview]")).toBeNull();
+    await act(async () => { button("Preview open (simulated)").click(); await new Promise(r => setTimeout(r, 0)); });
+    const lastPrepare = (fetchMock.mock.calls as unknown as [string, RequestInit][]).filter(([url]) => url === "/api/rhc-univ4-open").at(-1)!;
+    expect(JSON.parse(lastPrepare[1].body as string)).toMatchObject({ tickLower: -11, tickUpper: 9 });
   });
   it("blocks opening a delisted pool", () => {
     render(createElement(RhcUniv4OpenPanel, { pool: pool({ status: "delisted" }), signingEnabled: false }));
@@ -197,7 +204,7 @@ describe("RhcUniv4OpenPanel signing (preview flag on)", () => {
     expect(sign.params).toEqual([USER, JSON.stringify({ primaryType: "PermitSingle" })]);
     const [prep, fin] = p.bodies();
     expect(fin).toEqual({ ...prep, action: "finalize", attempt: 0, signature: SIG, permit: (prep0 as { permit: unknown }).permit });
-    expect(fin).toMatchObject({ poolId: pool().poolId, user: USER, depositToken: SPCX, amount: "1000000000000000000", tickLower: -11, tickUpper: 9 });
+    expect(fin).toMatchObject({ poolId: pool().poolId, user: USER, depositToken: SPCX, amount: "1000000000000000000", tickLower: -10, tickUpper: 10 });
     expect(p.sends()).toEqual([]);
     expect(p.stepButton("execute").disabled).toBe(false);
     await p.click("execute");

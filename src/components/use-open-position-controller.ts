@@ -81,6 +81,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   const [inputKind, setInputKind] = useState<"native" | "token">("token");
   const [amount, setAmount] = useState("");
   const [rangePreset, setRangePreset] = useState<OpenRangePreset>("standard");
+  const [centerOnParity, setCenterOnParity] = useState(true);
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const preview = useOpenPreview();
@@ -95,7 +96,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   const jupiterStoreRef = useRef(createJupiterRelayStore());
   const activeRef = useRef(false);
   const lifetimeRef = useRef(0);
-  const identityKey = JSON.stringify([wallet, pair?.poolAddress, inputMint, inputKind, amount, rangePreset, minPrice, maxPrice]);
+  const identityKey = JSON.stringify([wallet, pair?.poolAddress, inputMint, inputKind, amount, rangePreset, centerOnParity, minPrice, maxPrice]);
   // Each committed A→B→A has a distinct token; speculative renders never publish it.
   const identity = useMemo(() => ({ key: identityKey, connected }), [identityKey, connected]);
   const identityRef = useRef(identity);
@@ -232,7 +233,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   }, [wallet]);
 
   useOpenPreviewEffect({ amount, busy, formError, inputKind, inputMint, maxPrice, minPrice,
-    pair, parsedAmount, rangePreset, selectedAsset, submitStage, wallet, walletRef, jupiterStoreRef, setNow }, preview);
+    pair, parsedAmount, rangePreset, centerOnParity, selectedAsset, submitStage, wallet, walletRef, jupiterStoreRef, setNow }, preview);
 
   const clearQuote = () => {
     submission.invalidateSubmission();
@@ -262,6 +263,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   };
 
   const changeMinPrice = (value: string) => { clearQuote(); setMinPrice(value); };
+  const changeCenterOnParity = (value: boolean) => { if (!busy) { clearQuote(); setCenterOnParity(value); } };
   const changeMaxPrice = (value: string) => { clearQuote(); setMaxPrice(value); };
   const canRefreshQuote = !busy && submitStage !== "confirmed" && Boolean(pair && wallet && inputMint &&
     selectedAsset?.eligible && parsedAmount !== null && !formError);
@@ -275,7 +277,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
     changeAmount(formatAmount(selectedAsset.balance, selectedAsset.decimals, selectedAsset.decimals));
   };
 
-  const signAndSend = useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, amount, rangePreset,
+  const signAndSend = useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, amount, rangePreset, centerOnParity,
     minPrice, maxPrice, parsedAmount, quote, fresh, busy, identity, open, txWallet, retry: retryOpen,
     activeRef, walletRef, identityRef, lifetimeRef, jupiterStoreRef, setError, setNow, setQuote, setQuoteLoading }, submission);
   useEffect(() => { retryRef.current = () => { void signAndSend(); }; }, [signAndSend]);
@@ -314,7 +316,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
 
   return {
     wallet, connected, connect, inputAssets, selectedAsset, inputMint, inputKind,
-    amount, rangePreset, minPrice, maxPrice, quote, quoteLoading, quoteError: formError || quoteError,
+    amount, rangePreset, centerOnParity, changeCenterOnParity, minPrice, maxPrice, quote, quoteLoading, quoteError: formError || quoteError,
     error: swapRecovery.error || retryError || open.error || (open.status === "confirmed" ? "" : error),
     submitStage, signature, positionMint, openStep, pendingSwap,
     unconfirmedSwap: swapRecovery.attempt, checkingSwap: swapRecovery.checking,

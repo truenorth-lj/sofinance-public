@@ -56,6 +56,7 @@ export function OpenPositionFormFields({
   maxDisabled = false,
   range,
   rangeSlot,
+  parityCenter,
   rangeHint,
   notes,
   connected,
@@ -85,6 +86,7 @@ export function OpenPositionFormFields({
   maxDisabled?: boolean;
   range?: OpenFormRange | null;
   rangeSlot?: ReactNode;
+  parityCenter?: { checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean };
   rangeHint?: ReactNode;
   notes?: ReactNode;
   connected: boolean;
@@ -159,6 +161,11 @@ export function OpenPositionFormFields({
         />
       ) : rangeSlot}
 
+      {parityCenter ? <label className="mt-3 flex min-h-11 cursor-pointer items-center gap-2 text-xs text-cream/80">
+        <input type="checkbox" checked={parityCenter.checked} disabled={parityCenter.disabled}
+          onChange={(event) => parityCenter.onChange(event.target.checked)} className="size-4 accent-lemon" />
+        Center range on 1:1
+      </label> : null}
       {rangeHint}
       {notes}
 

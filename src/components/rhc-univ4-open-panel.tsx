@@ -3,6 +3,7 @@
 import type { OpenFlowResult, PermitJson } from "@sofinance/engine/protocols/uniswap-v4/open-flow";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { formatUnits, parseUnits } from "viem";
+import { exactTickFromUiPrice } from "@sofinance/engine/range-apr/tick-math";
 import {
   connectEvmWallet, discoverEvmWallets, ensureRobinhoodChain, guardedWalletRequest, SIGNING_DISABLED_MESSAGE, WalletRequestError,
 } from "@/lib/rhc-wallet/eip1193";
@@ -133,6 +134,7 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
   const [side, setSide] = useState<0 | 1>(0);
   const [amount, setAmount] = useState("1");
   const [halfWidth, setHalfWidth] = useState<number>(RANGE_PRESETS[0]);
+  const [centerOnParity, setCenterOnParity] = useState(true);
   const [result, setResult] = useState<OpenFlowResult | null>(null);
   const [prepared, setPrepared] = useState<{ request: PrepareRequest } | null>(null);
   const [step, setStep] = useState<OpenStepId | null>(null);
@@ -146,8 +148,8 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
   const [walletChanged, setWalletChanged] = useState(false);
   // Only a command published by the current committed render may start work.
   const command = useMemo(() => ({ wallet, pool, signingEnabled, busy, walletChanged,
-    side, amount, halfWidth, result, prepared, step, signed, exec }), [wallet, pool, signingEnabled, busy, walletChanged,
-    side, amount, halfWidth, result, prepared, step, signed, exec]);
+    side, amount, halfWidth, centerOnParity, result, prepared, step, signed, exec }), [wallet, pool, signingEnabled, busy, walletChanged,
+    side, amount, halfWidth, centerOnParity, result, prepared, step, signed, exec]);
   const committedCommand = useRef<object | null>(null);
   useLayoutEffect(() => {
     committedCommand.current = command;
@@ -261,8 +263,11 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
       let wei: bigint;
       try { wei = parseUnits(amount.trim(), token.decimals); } catch { throw new Error("Enter a valid amount"); }
       if (wei <= 0n) throw new Error("Enter a valid amount");
+      // Listed Robinhood Chain pools use tick spacing 1. Equal UI prices need
+      // decimal normalization before choosing their nearest raw tick.
+      const center = centerOnParity ? Math.round(exactTickFromUiPrice(1, pool.token0.decimals, pool.token1.decimals)) : pool.tick;
       const request: PrepareRequest = { poolId: pool.poolId, user: wallet.address, depositToken: token.address, amount: wei.toString(),
-        tickLower: pool.tick - halfWidth, tickUpper: pool.tick + halfWidth };
+        tickLower: center - halfWidth, tickUpper: center + halfWidth };
       const response = await fetch("/api/rhc-univ4-open", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "prepare", ...request }), signal: AbortSignal.timeout(30_000) });
       const body = await response.json().catch(() => null) as OpenFlowResult | { error?: string } | null;
@@ -425,6 +430,7 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
         reset();
       }}
       rangeSlot={<RhcRangeButtons halfWidth={halfWidth} onChange={(ticks) => { setHalfWidth(ticks); reset(); }} disabled={busy} />}
+      parityCenter={{ checked: centerOnParity, onChange: (checked) => { setCenterOnParity(checked); reset(); }, disabled: busy }}
       notes={<>
         {wallet && !walletChanged ? (
           <div className="mt-3 text-xs text-smoke">

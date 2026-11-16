@@ -35,6 +35,7 @@ type OpenSubmissionOptions = {
   inputKind: "native" | "token";
   amount: string;
   rangePreset: OpenRangePreset;
+  centerOnParity?: boolean;
   minPrice: string;
   maxPrice: string;
   parsedAmount: bigint | null;
@@ -99,7 +100,7 @@ export function useOpenSubmission() {
 }
 
 /** Input revisions revoke captured quotes; committed generations revoke saved commands and in-flight work. */
-export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, amount, rangePreset,
+export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, amount, rangePreset, centerOnParity,
   minPrice, maxPrice, parsedAmount, quote, fresh, busy, identity, open, txWallet, retry,
   activeRef, walletRef, identityRef, lifetimeRef, jupiterStoreRef, setError, setNow, setQuote, setQuoteLoading,
 }: OpenSubmissionOptions, { setSubmitStage, setRetryError, submittingRef, inputRevision, inputRevisionRef,
@@ -184,7 +185,7 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
         inputKind: receipt ? "token" : inputKind,
         amount: receipt ? rawToDecimalString(receipt.delivered, receipt.decimals) : amount,
         requested: (receipt ? receipt.delivered : parsedAmount?.toString()) ?? "",
-        rangePreset, minPrice, maxPrice, relayStore: jupiterStoreRef.current,
+        rangePreset, centerOnParity, minPrice, maxPrice, relayStore: jupiterStoreRef.current,
         solSwapSignature: receipt?.signature, beforeWallet: blockedBeforeWallet,
       }, {
         wallet: txWallet, storage: window.localStorage, isCurrent: current, retry,
@@ -234,7 +235,7 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
         setOpenStep(null);
       }
     }
-  }, [amount, busy, fresh, generation, identity, inputRevision, inputRevisionRef, inputKind, inputMint, maxPrice, minPrice, open, pair, parsedAmount, quote, rangePreset, setQuote, setQuoteLoading, txWallet, retry, wallet, activeRef, identityRef, lifetimeRef, jupiterStoreRef, submittingRef, walletRef, setError, setNow, setRetryError, setSubmitStage,
+  }, [amount, busy, centerOnParity, fresh, generation, identity, inputRevision, inputRevisionRef, inputKind, inputMint, maxPrice, minPrice, open, pair, parsedAmount, quote, rangePreset, setQuote, setQuoteLoading, txWallet, retry, wallet, activeRef, identityRef, lifetimeRef, jupiterStoreRef, submittingRef, walletRef, setError, setNow, setRetryError, setSubmitStage,
     setOpenStep, setSwapReceipt, swapReceiptRef, setReprepare]);
 
 }
