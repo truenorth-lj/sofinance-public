@@ -16,7 +16,7 @@ import {
   type HomepageSourceTime,
 } from "@/lib/homepage-pools";
 import { isRhcUniv4DiscoveryEnabled } from "@/lib/protocol-flags";
-import { dexDescriptors, uiFor } from "@/lib/dex/client";
+import { dexDescriptors, uiFor, openCapabilityFor } from "@/lib/dex/client";
 import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
 import { APP_ROUTES, DOCS_ROUTES } from "@/lib/public-urls";
 import {
@@ -55,18 +55,17 @@ function openPoolHref(pool: Pick<HomepagePool, "poolAddress">) {
 /**
  * Open as on `/app/rwa-pairs`: tokens not supported yet say so; a registry or hidden registry DEX
  * (`openUi: "registry"` or `"none"`, today Meteora and Orca) is disabled when its `open` capability is
- * unsupported; every other pool is a deep link, and the app page uses the same `openUi` path (native
- * modal, RHC dialog, or not available). No DEX-name checks here.
+ * unsupported. Native-modal availability follows the native capability record; other pools keep
+ * their deep links. The app page resolves the same UI contract. No DEX-name checks here.
  */
 const openAction = (pool: UnifiedPool): OpenAction => {
   const unsupported = unsupportedTokenReason(pool);
   if (unsupported) return { kind: "unsupported", reason: unsupported };
-  // Registry-dispatched Open (`openUi: "registry"`) and hidden registry venues (`openUi: "none"`,
-  // today Orca) consult `capabilities.open`. RHC (`rhc-dialog`) and Raydium (`native-modal`) stay
-  // deep links even if a descriptor marks the generic StepResult open path unsupported.
+  // Resolve the capability for the chosen UI contract. A native modal reads its
+  // native declaration; generic StepResult readiness still governs registry shells.
   const openUi = uiFor(pool.protocol).openUi;
-  if (openUi === "registry" || openUi === "none") {
-    const open = dexDescriptors.descriptorFor(pool.protocol)?.capabilities.open;
+  if (openUi === "registry" || openUi === "none" || openUi === "native-modal") {
+    const open = openCapabilityFor(dexDescriptors.descriptorFor(pool.protocol));
     if (open && !open.supported) return { kind: "disabled", reason: open.reason };
   }
   return { kind: "link", href: openPoolHref(pool) };

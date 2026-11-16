@@ -18,6 +18,8 @@ import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-tok
 import { PersonalPositionLayout, PoolInfoLayout } from "@raydium-io/raydium-sdk-v2";
 import { buildWithdraw as engineBuildWithdraw } from "@sofinance/engine/withdraw/build";
 import { dexRegistry } from "@/lib/dex";
+import { createDexRegistry } from "@/lib/dex/registry";
+import { raydiumClmmModule } from "@/lib/dex/raydium-clmm/module";
 import type { WithdrawPrepareRequest } from "@sofinance/engine/withdraw/types";
 // Exercise the real native builder through its lazy registry binding, with the
 // existing synthetic account/simulation seams (this does not execute Raydium).
@@ -31,6 +33,13 @@ function info(data: Buffer, owner = TOKEN_PROGRAM_ID, lamports = 2039280) { retu
 function token(mint: PublicKey, amount: bigint) { const data = Buffer.alloc(165); mint.toBuffer().copy(data); wallet.toBuffer().copy(data, 32); data.writeBigUInt64LE(amount, 64); data[108] = 1; return info(data); }
 function mintInfo() { const data = Buffer.alloc(82); data.writeBigUInt64LE(1000000n, 36); data[44] = 6; data[45] = 1; return info(data); }
 const request = { wallet: wallet.toBase58(), positionMint: positionMint.toBase58(), percent: 100 };
+function withdrawalDisabledRegistry() {
+    const descriptor = raydiumClmmModule.descriptor, native = descriptor.nativeCapabilities!;
+    return createDexRegistry([{ ...raydiumClmmModule, descriptor: { ...descriptor, nativeCapabilities: {
+        ...native, positions: { ...native.positions, withdraw: { supported: false, reason: "New withdrawals unavailable" } },
+    } } }]);
+}
+
 beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv("JUPITER_API_KEY", SIGNING_SECRET);
@@ -121,10 +130,11 @@ it("previews high impact but rejects prepare without explicit confirmation", asy
     await expect(buildWithdraw(request)).rejects.toThrow("Confirm");
     expect((await buildWithdraw({ ...request, confirmHighImpact: true })).summary.requiresSecondConfirmation).toBe(true);
 });
-it("requires the finalized first transaction before any conversion-stage prepare", async () => {
-    await expect(buildWithdraw({ ...request, stage: "swap" })).rejects.toThrow("First transaction authorization");
+it("requires first-stage authorization even when new withdrawals are unavailable", async () => {
+    await expect(withdrawalDisabledRegistry().buildWithdrawal("raydium-clmm", { ...request, stage: "swap" }))
+        .rejects.toThrow("First transaction authorization");
 });
-it("prepares conversion only from a finalized matching receipt and actual token credits", async () => {
+it("recovers conversion with native withdrawal disabled only from a finalized matching receipt and actual credits", async () => {
     mocks.padding = 1100;
     const previous = await buildWithdraw(request);
     const first = VersionedTransaction.deserialize(Buffer.from(previous.unsignedTransaction, "base64"));
@@ -139,7 +149,14 @@ it("prepares conversion only from a finalized matching receipt and actual token 
     mocks.padding = 0;
     mocks.swapStage = true;
     mocks.receivedA = 199n;
-    const second = await buildWithdraw({ ...request, stage: "swap", tx1Signature: "receipt", previous });
+    const disabled = withdrawalDisabledRegistry();
+    const rpcCalls = mocks.rpc.mock.calls.length;
+    await expect(disabled.buildWithdrawal("raydium-clmm", request)).rejects.toMatchObject({ code: "UNSUPPORTED" });
+    expect(mocks.rpc).toHaveBeenCalledTimes(rpcCalls);
+    await expect(disabled.buildWithdrawal("raydium-clmm", { ...request, stage: "swap", tx1Signature: "receipt",
+        previous: { ...previous, permit: "0".repeat(64) } })).rejects.toThrow("Invalid first transaction authorization");
+    expect(getTransaction).not.toHaveBeenCalled();
+    const second = await disabled.buildWithdrawal("raydium-clmm", { ...request, stage: "swap", tx1Signature: "receipt", previous });
     expect(getTransaction).toHaveBeenCalledWith("receipt", { commitment: "finalized", maxSupportedTransactionVersion: 0 });
     expect(second.summary.stage).toBe("swap");
     expect(second.summary.assets.map(a => a.amount)).toEqual(["199", "300"]);
@@ -172,15 +189,16 @@ it("rejects an absent, failed, mismatched, or under-minimum first receipt", asyn
     const first = VersionedTransaction.deserialize(Buffer.from(previous.unsignedTransaction, "base64"));
     const getTransaction = vi.fn();
     Object.assign(mocks.rpc(), { getTransaction });
+    const disabled = withdrawalDisabledRegistry();
     const next = { ...request, stage: "swap" as const, tx1Signature: "receipt", previous };
     getTransaction.mockResolvedValue(null);
-    await expect(buildWithdraw(next)).rejects.toThrow("must be finalized");
+    await expect(disabled.buildWithdrawal("raydium-clmm", next)).rejects.toThrow("must be finalized");
     getTransaction.mockResolvedValue({ transaction: { message: first.message }, meta: { err: "failed" } });
-    await expect(buildWithdraw(next)).rejects.toThrow("must be finalized");
+    await expect(disabled.buildWithdrawal("raydium-clmm", next)).rejects.toThrow("must be finalized");
     getTransaction.mockResolvedValue({ transaction: { message: { serialize: () => new Uint8Array([1]) } }, meta: { err: null } });
-    await expect(buildWithdraw(next)).rejects.toThrow("must be finalized");
+    await expect(disabled.buildWithdrawal("raydium-clmm", next)).rejects.toThrow("must be finalized");
     getTransaction.mockResolvedValue({ transaction: { message: first.message }, meta: { err: null, loadedAddresses: { writable: [], readonly: [] }, preTokenBalances: [], postTokenBalances: [] } });
-    await expect(buildWithdraw(next)).rejects.toThrow("less than minimum");
+    await expect(disabled.buildWithdrawal("raydium-clmm", next)).rejects.toThrow("less than minimum");
 });
 
 it("preserves original-output transaction bytes and authorization through the registry", async () => {

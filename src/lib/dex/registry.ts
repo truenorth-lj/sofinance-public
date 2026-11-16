@@ -155,6 +155,14 @@ export function createDexDescriptorRegistry(descriptors: readonly DexDescriptor[
   });
 }
 
+/** Resolve from the generic descriptor when no separate native contract is declared. */
+function nativePositionCapabilities(entry: DexModule) {
+  return entry.descriptor.nativeCapabilities?.positions ?? entry.descriptor.capabilities;
+}
+function nativeOpenCapability(entry: DexModule) {
+  return entry.descriptor.nativeCapabilities?.open ?? entry.descriptor.capabilities.open;
+}
+
 export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
   const problems = dexModuleProblems(modules);
   if (problems.length) throw new Error(`Invalid DEX registry: ${problems.join("; ")}`);
@@ -171,7 +179,7 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
     async buildAdd(id: string, ...args: Parameters<BuildAdd>) {
       const canonical = normalizeDexId(id);
       const entry = canonical ? byId.get(canonical) : undefined;
-      if (!entry?.descriptor.capabilities.deposit.supported || !entry.buildAdd) throw new DexUnsupportedError();
+      if (!entry || !nativePositionCapabilities(entry).deposit.supported || !entry.buildAdd) throw new DexUnsupportedError();
       const [command, options] = args;
       // A module may lazy-load before reading these values; retain the initiating preview/build terms.
       return entry.buildAdd({ ...command, selection: { ...command.selection } }, options ? { ...options } : undefined);
@@ -179,47 +187,52 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
     async buildWithdrawal(id: string, input: Parameters<BuildWithdrawal>[0], preview?: boolean) {
       const canonical = normalizeDexId(id);
       const entry = canonical ? byId.get(canonical) : undefined;
-      // A dedicated binding supports existing transports without claiming the generic
-      // StepResult/planToken contract (which has no signed recovery implementation here).
-      // Do not gate on capabilities.withdraw: it describes that generic contract, not this native binding.
+      // Native capabilities describe these compatibility contracts; generic capabilities
+      // describe DexAdapter/StepResult. Neither record enables generic HTTP routes.
       if (!entry?.buildWithdrawal) throw new DexUnsupportedError();
-      return entry.buildWithdrawal(structuredClone(input), preview);
+      const command = structuredClone(input);
+      // Stage 2 converts an already-landed withdrawal. The engine still requires
+      // the signed first-stage permit and a matching finalized receipt; the stage
+      // label alone cannot authorize it or remove any more liquidity.
+      if (!nativePositionCapabilities(entry).withdraw.supported && command?.stage !== "swap") throw new DexUnsupportedError();
+      return entry.buildWithdrawal(command, preview);
     },
     async buildCompound(id: string, command: Parameters<BuildCompound>[0]) {
       const canonical = normalizeDexId(id);
       const entry = canonical ? byId.get(canonical) : undefined;
-      // Native bindings are independent of descriptor capabilities, which describe
-      // the generic adapter contract. Checking them here would disable existing transports.
-      if (!entry?.buildCompound) throw new DexUnsupportedError();
+      if (!entry || !nativePositionCapabilities(entry).compound.supported
+        || !entry.buildCompound) throw new DexUnsupportedError();
       return entry.buildCompound(structuredClone(command));
     },
     async buildCompoundRecovery(id: string, command: Parameters<BuildCompoundRecovery>[0]) {
       const canonical = normalizeDexId(id);
       const entry = canonical ? byId.get(canonical) : undefined;
+      // Recovery must remain usable when new compounding is disabled.
       if (!entry?.buildCompoundRecovery) throw new DexUnsupportedError();
       return entry.buildCompoundRecovery(structuredClone(command));
     },
     async buildOpen(id: string, command: Parameters<BuildOpen>[0], options?: Parameters<BuildOpen>[1]) {
       const canonical = normalizeDexId(id);
       const entry = canonical ? byId.get(canonical) : undefined;
-      if (!entry?.buildOpen) throw new DexUnsupportedError();
+      if (!entry || !nativeOpenCapability(entry).supported || !entry.buildOpen) throw new DexUnsupportedError();
       return entry.buildOpen(structuredClone(command), options ? { ...options } : undefined);
     },
     async quoteOpen(id: string, command: Parameters<QuoteOpen>[0], profile: Parameters<QuoteOpen>[1]) {
       const canonical = normalizeDexId(id);
       const entry = canonical ? byId.get(canonical) : undefined;
-      if (!entry?.quoteOpen) throw new DexUnsupportedError();
+      if (!entry || !nativeOpenCapability(entry).supported || !entry.quoteOpen) throw new DexUnsupportedError();
       return entry.quoteOpen(structuredClone(command), profile);
     },
     async buildSolSwapStep(id: string, command: Parameters<BuildSolSwapStep>[0]) {
       const canonical = normalizeDexId(id);
       const entry = canonical ? byId.get(canonical) : undefined;
-      if (!entry?.buildSolSwapStep) throw new DexUnsupportedError();
+      if (!entry || !nativeOpenCapability(entry).supported || !entry.buildSolSwapStep) throw new DexUnsupportedError();
       return entry.buildSolSwapStep({ ...command });
     },
     async readSolSwapDelivery(id: string, command: Parameters<ReadSolSwapDelivery>[0]) {
       const canonical = normalizeDexId(id);
       const entry = canonical ? byId.get(canonical) : undefined;
+      // Receipt reconciliation is readback, independent of whether new opens are available.
       if (!entry?.readSolSwapDelivery) throw new DexUnsupportedError();
       return entry.readSolSwapDelivery({ ...command });
     },

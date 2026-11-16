@@ -8,7 +8,8 @@
  * `normalizeDexId` maps only canonical ids; unknown spellings receive DEFAULT_UI.
  */
 import { DEX_DESCRIPTORS } from "./descriptors";
-import { normalizeDexId, type DexUi } from "./types";
+import type { Capability } from "@/lib/unified-positions/model";
+import { normalizeDexId, type DexDescriptor, type DexUi } from "./types";
 
 export type { DexOpenUi, DexUi } from "./types";
 
@@ -29,4 +30,11 @@ export function uiFor(protocol: string, deps: UiForDeps = {}): DexUi {
   const descriptor = (deps.descriptorFor ?? defaultDescriptorFor)(canonical ?? protocol);
   if (descriptor?.ui) return descriptor.ui;
   return DEFAULT_UI;
+}
+
+/** Capability for the UI's actual open contract; undeclared native/RHC shells retain their existing behavior. */
+export function openCapabilityFor(descriptor: Pick<DexDescriptor, "capabilities" | "nativeCapabilities" | "ui"> | null | undefined): Capability | undefined {
+  if (descriptor?.ui?.openUi === "native-modal") return descriptor.nativeCapabilities?.open;
+  if (descriptor?.ui?.openUi === "rhc-dialog") return undefined;
+  return descriptor?.capabilities.open;
 }
