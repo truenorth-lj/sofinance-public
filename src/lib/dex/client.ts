@@ -8,6 +8,8 @@ import { createDexDescriptorRegistry } from "./registry";
 
 export const dexDescriptors = createDexDescriptorRegistry(DEX_DESCRIPTORS);
 
+export { rangeAprRequestTarget, type RangeAprProtocol, type RangeAprOptions } from "./range-apr-client-policy";
+
 export { uiFor, openCapabilityFor, type UiForDeps } from "./ui";
 
 export type * from "./types";

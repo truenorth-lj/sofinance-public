@@ -78,5 +78,8 @@ export const meteoraDlmmDescriptor: DexDescriptor = Object.freeze({
     signer: "solana-wallet",
   }),
   /** Explicit data: Plan / share-calc use this descriptor's fee/rent terms. */
-  ui: Object.freeze({ openUi: "registry", useDescriptorPlanTerms: true }),
+  ui: Object.freeze({
+    rangeApr: Object.freeze({ route: "protocol" as const, cacheScope: "protocol" as const, rwaListRoute: "pool" as const }),
+    openUi: "registry", useDescriptorPlanTerms: true,
+  }),
 } satisfies DexDescriptor);

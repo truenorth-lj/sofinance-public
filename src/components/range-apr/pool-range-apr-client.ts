@@ -1,3 +1,5 @@
+import { rangeAprRequestTarget, type RangeAprProtocol, type RangeAprOptions } from "@/lib/dex/client";
+export type { RangeAprProtocol, RangeAprOptions } from "@/lib/dex/client";
 import { AsyncCache } from "@/lib/async-cache";
 import { createConcurrencyLimit } from "@/lib/concurrency-limit";
 import type { PoolRangeAprPayload } from "@/lib/range-apr/types";
@@ -20,21 +22,11 @@ const cache = new AsyncCache<PoolRangeAprPayload>({
  * shape). Meteora pools listed by `/api/rwa-pairs` (feed `meteora-dlmm-rwa-v1`) have their APR saved by the RWA cron, so
  * they read that saved snapshot from `/api/pool-range-apr` like Raydium (`rwaList: true`).
  */
-export type RangeAprProtocol = "raydium-clmm" | "orca-whirlpool" | "meteora-dlmm" | "uniswap-v4-rhc";
-export type RangeAprOptions = { rwaList?: boolean };
-
-const savedSnapshot = (protocol: RangeAprProtocol, options?: RangeAprOptions) =>
-  protocol === "meteora-dlmm" && options?.rwaList === true;
-
 export const rangeAprUrl = (poolId: string, protocol: RangeAprProtocol, options?: RangeAprOptions) =>
-  protocol === "raydium-clmm" || savedSnapshot(protocol, options)
-    ? `/api/pool-range-apr?poolId=${encodeURIComponent(poolId)}`
-    : `/api/protocol-pools/range-apr?protocol=${protocol}&poolId=${encodeURIComponent(poolId)}`;
+  rangeAprRequestTarget(poolId, protocol, options).url;
 
-async function request(poolId: string, protocol: RangeAprProtocol, options?: RangeAprOptions): Promise<PoolRangeAprPayload> {
-  const response = await fetch(rangeAprUrl(poolId, protocol, options), {
-    headers: { Accept: "application/json" },
-  });
+async function request(url: string): Promise<PoolRangeAprPayload> {
+  const response = await fetch(url, { headers: { Accept: "application/json" } });
   const body = await response.json() as PoolRangeAprPayload | { error?: string };
   if (!response.ok) throw new Error((body as { error?: string }).error || "Range APR estimate unavailable");
   return body as PoolRangeAprPayload;
@@ -42,9 +34,8 @@ async function request(poolId: string, protocol: RangeAprProtocol, options?: Ran
 
 export function loadPoolRangeApr(poolId: string, protocol: RangeAprProtocol = "raydium-clmm",
   options?: RangeAprOptions): Promise<PoolRangeAprPayload> {
-  const key = protocol === "raydium-clmm" ? `${cacheEpoch}:${poolId}`
-    : `${cacheEpoch}:${protocol}${savedSnapshot(protocol, options) ? "-rwa" : ""}:${poolId}`;
-  return cache.get(key, () => limit(() => request(poolId, protocol, options)));
+  const target = rangeAprRequestTarget(poolId, protocol, options);
+  return cache.get(`${cacheEpoch}:${target.cacheKey}`, () => limit(() => request(target.url)));
 }
 
 export function clearPoolRangeAprClientCache() {
