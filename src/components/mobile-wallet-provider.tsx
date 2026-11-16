@@ -15,12 +15,13 @@ import {
   signAppKitTransaction,
   type AppKitSolanaWalletProvider,
 } from "../lib/appkit-wallet";
-import { captureGrowthEvent } from "@/lib/analytics/client";
-import { GROWTH_EVENTS } from "@/lib/analytics/events";
 import { WalletGrowthAnalytics } from "./wallet-growth-analytics";
 import { WalletConnectionContext } from "./wallet-connection";
 import { TxNoticeHost } from "./transactions/tx-notice-host";
 import { setTxWalletTags } from "@/lib/sentry/client-tx";
+import { AppKitConnectAnalytics } from "./appkit-connect-analytics";
+import { useSolanaConnectFlow } from "./use-solana-connect-flow";
+import { WalletDeeplinkSheet } from "./wallet-deeplink-sheet";
 
 const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID?.trim();
 
@@ -58,13 +59,12 @@ export function MobileWalletProvider({ children }: { children: React.ReactNode }
     setTxWalletTags(typeof walletName === "string" && walletName ? { name: `appkit:${walletName}` } : null);
   }, [walletName]);
 
-  function openWalletModal() {
-    captureGrowthEvent(GROWTH_EVENTS.walletConnectClicked);
+  const flow = useSolanaConnectFlow(() => {
     setConnectionError("");
     void Promise.resolve(open({ view: "Connect", namespace: "solana" })).catch(() => {
       setConnectionError("Wallet connection incomplete, please try again.");
     });
-  }
+  });
 
   function disconnectWallet() {
     void disconnect({ namespace: "solana" }).catch(() => {
@@ -75,7 +75,7 @@ export function MobileWalletProvider({ children }: { children: React.ReactNode }
   return <WalletConnectionContext.Provider value={{
     address: account.address,
     connected: account.isConnected && !!account.address,
-    connect: openWalletModal,
+    connect: flow.connect,
     disconnect: disconnectWallet,
     isMobile: true,
     walletsCount: FEATURED_SOLANA_WALLET_IDS.length,
@@ -84,5 +84,8 @@ export function MobileWalletProvider({ children }: { children: React.ReactNode }
     signAndSendTransaction: appKitSignAndSendTransaction(walletProvider),
     signAllTransactions: appKitSignAllTransactions(walletProvider),
     signMessage: appKitSignMessage(walletProvider),
-  }}><WalletGrowthAnalytics />{children}<TxNoticeHost wallet={account.address} /></WalletConnectionContext.Provider>;
+  }}><WalletGrowthAnalytics walletName={typeof walletName === "string" ? walletName : undefined} />
+    <AppKitConnectAnalytics />
+    <WalletDeeplinkSheet open={flow.sheetOpen} pageUrl={flow.pageUrl} origin={flow.origin} onOpenWallet={flow.openWallet} onChooseWalletHere={flow.chooseWalletHere} onClose={flow.closeSheet} />
+    {children}<TxNoticeHost wallet={account.address} /></WalletConnectionContext.Provider>;
 }

@@ -6,10 +6,11 @@ import "@solana/wallet-adapter-react-ui/styles.css";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo } from "react";
 import { PUBLIC_SOLANA_RPC_URL } from "@sofinance/engine/rpc/urls";
-import { captureGrowthEvent } from "@/lib/analytics/client";
-import { GROWTH_EVENTS } from "@/lib/analytics/events";
 import { WalletGrowthAnalytics } from "./wallet-growth-analytics";
 import { WalletConnectionContext } from "./wallet-connection";
+import { AdapterConnectAnalytics } from "./adapter-connect-analytics";
+import { useSolanaConnectFlow } from "./use-solana-connect-flow";
+import { WalletDeeplinkSheet } from "./wallet-deeplink-sheet";
 import { TermsGate } from "./terms-gate";
 import { EvmWalletProvider } from "./evm-wallet-connection";
 import { TxNoticeHost } from "./transactions/tx-notice-host";
@@ -41,6 +42,7 @@ function BrowserWalletConnection({ children }: { children: React.ReactNode }) {
   // Phantom and other Wallet Standard wallets broadcast themselves (and rebroadcast until expiry).
   const canSignAndSend = walletSupportsSignAndSend(wallet?.adapter);
   const { setVisible } = useWalletModal();
+  const flow = useSolanaConnectFlow(() => setVisible(true));
   // Sentry: which wallet a transaction report came from (name, and the Wallet Standard version when exposed).
   const walletName = connected ? wallet?.adapter.name : undefined;
   const walletVersion = connected ? (wallet?.adapter as { wallet?: { version?: unknown } } | undefined)?.wallet?.version : undefined;
@@ -48,7 +50,7 @@ function BrowserWalletConnection({ children }: { children: React.ReactNode }) {
     setTxWalletTags(walletName ? { name: walletName, version: typeof walletVersion === "string" ? walletVersion : undefined } : null);
   }, [walletName, walletVersion]);
   return <WalletConnectionContext.Provider value={{
-    address, connected, connect: () => { captureGrowthEvent(GROWTH_EVENTS.walletConnectClicked); setVisible(true); },
+    address, connected, connect: flow.connect,
     disconnect: () => { void disconnect(); }, isMobile: false, walletsCount: wallets.length, connectionError: "",
     signTransaction: async (transaction) => {
       if (!signTransaction) throw new Error("This wallet does not support transaction signing");
@@ -62,7 +64,9 @@ function BrowserWalletConnection({ children }: { children: React.ReactNode }) {
       const signature = await signMessage(message);
       return signature;
     } : undefined,
-  }}><WalletGrowthAnalytics />{children}<TxNoticeHost wallet={address} /></WalletConnectionContext.Provider>;
+  }}><WalletGrowthAnalytics walletName={walletName} /><AdapterConnectAnalytics />
+    <WalletDeeplinkSheet open={flow.sheetOpen} pageUrl={flow.pageUrl} origin={flow.origin} onOpenWallet={flow.openWallet} onChooseWalletHere={flow.chooseWalletHere} onClose={flow.closeSheet} />
+    {children}<TxNoticeHost wallet={address} /></WalletConnectionContext.Provider>;
 }
 
 /** True only for Wallet Standard wallets that expose `solana:signAndSendTransaction`. */

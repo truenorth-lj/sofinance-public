@@ -21,6 +21,8 @@ vi.mock("@reown/appkit/react", () => ({
   useAppKitAccount: () => mocks.account,
   useDisconnect: () => ({ disconnect: mocks.disconnect }),
   useAppKitProvider: () => ({ walletProvider: mocks.walletProvider }),
+  useAppKitEvents: () => ({ timestamp: 0, data: { event: "MODAL_CREATED" } }),
+  useAppKitState: () => ({ open: false, initialized: true, loading: false, connectingWallet: undefined }),
 }));
 
 vi.mock("@reown/appkit-adapter-solana/react", () => ({

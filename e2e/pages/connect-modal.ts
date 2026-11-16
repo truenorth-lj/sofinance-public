@@ -15,10 +15,15 @@ export class ConnectModal {
   async open(trigger: Locator = this.connectButtons.first()) {
     await trigger.click();
     const terms = this.page.getByRole("dialog", { name: "Before you connect", exact: true });
-    await expect(terms.or(this.walletEntry.first())).toBeVisible();
+    const sheet = this.page.getByTestId("wallet-deeplink-sheet");
+    await expect(terms.or(this.walletEntry.first()).or(sheet)).toBeVisible();
     if (await terms.isVisible()) {
       await terms.getByRole("checkbox").check();
       await terms.getByRole("button", { name: "Continue to wallet", exact: true }).click();
+    }
+    if (await sheet.isVisible()) {
+      // Mobile, no injected extension: the sheet is first. Continue into the existing picker for Wallet Standard / e2e wallets.
+      await this.page.getByTestId("wallet-deeplink-choose-here").click();
     }
     await expect(this.walletEntry.first()).toBeVisible();
   }
