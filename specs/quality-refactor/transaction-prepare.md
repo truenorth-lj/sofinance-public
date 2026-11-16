@@ -78,6 +78,12 @@ optional bindings. Only this browser entry may register `client-module.ts`; both
 graphs reject server-only, DEX SDK and `.server` code. Generic capabilities and signing flags
 remain independent and unchanged.
 
+LP decision observations and full-exit preview use lazy Raydium registry bindings independently
+of new-operation/generic-plan capability. Observation commands are captured before lazy loading;
+fetchers and live cancellation signals retain their identity and optional argument defaults.
+The original observation reader and engine preview, budgets/cache, partial/unavailable results,
+no-execution claims, API errors and logging are preserved.
+
 Withdrawal status now uses a lazy native read binding, independent of new-withdrawal capability.
 It snapshots the signature and complete prepared authorization before awaits, retaining HMAC
 verification before RPC, existing finality/history/account read rules, message matching and cache
