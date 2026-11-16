@@ -7,7 +7,7 @@ import { createDexDescriptorRegistry } from "./registry";
 
 export const dexDescriptors = createDexDescriptorRegistry(DEX_DESCRIPTORS);
 
-export { uiFor, type UiForDeps } from "./ui";
+export { uiFor, openCapabilityFor, type UiForDeps } from "./ui";
 
 export type * from "./types";
 export { DEX_IDS, isDexId, normalizeDexId, feeRuleBps } from "./types";

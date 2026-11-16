@@ -1,5 +1,5 @@
 import { unsupportedTokenReason } from "@/lib/unified-pools/model";
-import { dexDescriptors, uiFor, type DexDescriptor } from "@/lib/dex/client";
+import { dexDescriptors, uiFor, openCapabilityFor, type DexDescriptor } from "@/lib/dex/client";
 
 /** The shell the pools-page Open button or a `?openPool=` deep link actually invokes. */
 export type OpenHandlerKind = "unsupported" | "none" | "registry" | "native-modal" | "rhc-dialog";
@@ -13,7 +13,7 @@ export type PoolOpenRef = {
 };
 
 export type OpenDispatchDeps = {
-  descriptorFor?: (id: string) => (Pick<DexDescriptor, "capabilities"> & Partial<Pick<DexDescriptor, "ui">>) | null;
+  descriptorFor?: (id: string) => (Pick<DexDescriptor, "capabilities" | "nativeCapabilities"> & Partial<Pick<DexDescriptor, "ui">>) | null;
 };
 
 export type PoolOpenDispatch = {
@@ -37,11 +37,15 @@ export function resolveOpenDispatch(pool: PoolOpenRef, deps: OpenDispatchDeps = 
 
   const ui = uiFor(pool.protocol, { descriptorFor });
   if (ui.openUi === "registry") {
-    const open = descriptorFor(pool.protocol)?.capabilities.open;
+    const open = openCapabilityFor(descriptorFor(pool.protocol));
     if (!open?.supported) return both({ handler: "none", reason: open?.reason ?? "Opening is not available yet" });
     return both({ handler: "registry" });
   }
   if (ui.openUi === "rhc-dialog") return both({ handler: "rhc-dialog" });
-  if (ui.openUi === "native-modal") return both({ handler: "native-modal" });
+  if (ui.openUi === "native-modal") {
+    const open = openCapabilityFor(descriptorFor(pool.protocol));
+    if (open && !open.supported) return both({ handler: "none", reason: open.reason });
+    return both({ handler: "native-modal" });
+  }
   return both({ handler: "none", reason: "Opening is not available yet" });
 }

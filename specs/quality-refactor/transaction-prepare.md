@@ -16,6 +16,12 @@ Operation-specific HTTP/MCP profiles live beside the corresponding DEX compatibi
 never request bodies. Compound and harvest recovery share their existing permit domain while
 binding the complete operation-specific summary.
 
+Raydium's descriptor owns the native open and position capability records. The native position UI,
+homepage/deep-link Open and shared prepare services use those records. Generic `capabilities` still
+describe the separate `DexAdapter` contract, and `module.enabled` still controls HTTP rollout.
+A native capability refusal stops new preparation before loading a binding; harvest recovery and
+SOL receipt reconciliation remain available independently of new-operation availability.
+
 HTTP retains parsing, relay AsyncLocalStorage, selected deadline and retry budget, status,
 headers, error handling and response projection. MCP retains its existing projection,
 submitArgs, full authenticated sign-token payload, URL and instructions. Compound quote

@@ -156,8 +156,7 @@ describe("landing page copy and routes", () => {
     expect(src).toContain("DOCS_ROUTES.risks");
     expect(src).toContain("BLOG_ROUTES.home");
     expect(table).toContain("APP_ROUTES.rwaPairs");
-    // Open follows the pools page's own rule (registry DEXes such as Meteora open their dialog), never a stale "not available".
-    expect(table).toContain("dexDescriptors.descriptorFor(pool.protocol)?.capabilities.open");
+    // Native/generic capability refusal is covered by the homepage DOM and open-dispatch handler tests.
     expect(table).toContain("?openPool=");
     expect(table).not.toContain("openUnavailableReason");
     expect(table).toContain("fetchRwaPairsList");

@@ -96,7 +96,7 @@ it("requires native bindings, snapshots nested input before lazy load and keeps 
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
   let compoundInput: unknown, recoveryInput: unknown;
-  const dexModule = { ...fakeSolanaModule, descriptor: { ...fakeSolanaModule.descriptor, capabilities: {
+  const dexModule = { ...fakeSolanaModule, descriptor: { ...fakeSolanaModule.descriptor, nativeCapabilities: { open: fakeSolanaModule.descriptor.capabilities.open, positions: fakeSolanaModule.descriptor.capabilities }, capabilities: {
     ...fakeSolanaModule.descriptor.capabilities, compound: { supported: false as const, reason: "Generic contract unavailable" },
   } }, enabled: () => false,
     buildCompound: async (input: ReturnType<typeof request>) => { await gate; compoundInput = input; return { summary, transaction }; },

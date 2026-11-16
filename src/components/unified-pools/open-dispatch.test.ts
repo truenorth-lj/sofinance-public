@@ -63,3 +63,11 @@ describe("open dispatch handler matrix (button and deep link)", () => {
     );
   });
 });
+
+it("refuses both native open button and deep link when the shared native declaration is unavailable", () => {
+  const descriptor = dexDescriptors.descriptorFor("raydium-clmm")!;
+  const deps: OpenDispatchDeps = { descriptorFor: () => ({ ...descriptor, nativeCapabilities: {
+    ...descriptor.nativeCapabilities!, open: { supported: false, reason: "Native opening is unavailable" },
+  } }) };
+  expect(resolveOpenDispatch(pool("raydium-clmm", "solana"), deps)).toEqual(same({ handler: "none", reason: "Native opening is unavailable" }));
+});

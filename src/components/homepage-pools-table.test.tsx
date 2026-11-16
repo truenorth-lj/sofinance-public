@@ -19,8 +19,18 @@ vi.mock("next/navigation", () => ({
 }));
 const mocks = vi.hoisted(() => ({
   aprFor: vi.fn<(poolId: string, protocol?: string) => PoolRangeAprState>(() => ({ status: "loading" })),
+  nativeOpenDisabled: false,
   tokens: {} as Record<string, { icon: string | null }>,
 }));
+vi.mock("@/lib/dex/client", async original => {
+  const actual = await original<typeof import("@/lib/dex/client")>();
+  return { ...actual, dexDescriptors: { ...actual.dexDescriptors, descriptorFor: (id: string) => {
+    const descriptor = actual.dexDescriptors.descriptorFor(id);
+    return mocks.nativeOpenDisabled && descriptor?.nativeCapabilities
+      ? { ...descriptor, nativeCapabilities: { ...descriptor.nativeCapabilities, open: { supported: false as const, reason: "Native opening is unavailable" } } }
+      : descriptor;
+  } } };
+});
 // The table reads APRs through `usePoolsApr7d` (the /app/rwa-pairs hook), which loads each pool through the shared
 // client; `aprFor` states map to that client's promise (ready → payload, error → rejection, loading → pending).
 vi.mock("./range-apr/pool-range-apr-client", async (importOriginal) => ({
@@ -67,6 +77,7 @@ beforeEach(() => {
   root = createRoot(container);
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
+  mocks.nativeOpenDisabled = false;
   mocks.tokens = {};
   mocks.aprFor.mockReset();
   mocks.aprFor.mockImplementation(() => ({ status: "loading" }));
@@ -595,4 +606,15 @@ describe("homepage pools: Top Pools card and the full list", () => {
     expect(cardKeysOf()).toEqual([sol("spcx-small"), sol("mstr-pool")]);
     expect(cardRowsOf().map(cardAprOf)).toEqual(["…", "…"]);
   });
+});
+
+it("disables homepage Open links when the shared native declaration is unavailable", async () => {
+  mocks.nativeOpenDisabled = true;
+  mocks.aprFor.mockImplementation(() => ready({ micro: 20, tight: 20, standard: 20, wide: 20 }));
+  jsonOk({ pairs: [pair({ poolAddress: "spcx-pool", tvlUsd: 20_000 })], freshness: { snapshotAt: new Date().toISOString(), stale: false } });
+  await mount();
+  expect(keysOf()).toEqual([sol("spcx-pool")]);
+  expect(rowsOf()[0]!.querySelector("a[aria-label^='Open position']")).toBeNull();
+  expect(cardRowsOf()[0]!.querySelector("a")).toBeNull();
+  expect(container.querySelector("[title='Native opening is unavailable']")).not.toBeNull();
 });

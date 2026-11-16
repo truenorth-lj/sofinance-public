@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { meteoraDlmmDescriptor } from "./meteora-dlmm/descriptor";
 import { orcaWhirlpoolDescriptor } from "./orca-whirlpool/descriptor";
 import type { DexDescriptor, DexUi } from "./types";
-import { uiFor } from "./ui";
+import { uiFor, openCapabilityFor } from "./ui";
 import { LEGACY_PLAN_TERMS, planPoolTerms } from "@/lib/lp-plan-pool-terms";
 
 /** Equivalent values in docs/refactor/phase-e-dex-registry.md §2.2, plus the alias PM decision. */
@@ -78,4 +78,13 @@ describe("uiFor (E-move registry UI)", () => {
     expect(terms.lpFeeShare).toBe(LEGACY_PLAN_TERMS.lpFeeShare);
     expect(terms.exits).toEqual(LEGACY_PLAN_TERMS.exits);
   });
+});
+
+it("resolves open availability from the selected native or generic contract", () => {
+  const native = { ...meteoraDlmmDescriptor, ui: { openUi: "native-modal" as const, useDescriptorPlanTerms: false },
+    nativeCapabilities: { open: { supported: false as const, reason: "Native unavailable" }, positions: meteoraDlmmDescriptor.capabilities } };
+  expect(openCapabilityFor(native)).toBe(native.nativeCapabilities.open);
+  expect(openCapabilityFor(meteoraDlmmDescriptor)).toBe(meteoraDlmmDescriptor.capabilities.open);
+  expect(openCapabilityFor({ ...native, ui: { ...native.ui, openUi: "rhc-dialog" } })).toBeUndefined();
+  expect(openCapabilityFor({ ...native, nativeCapabilities: undefined })).toBeUndefined();
 });

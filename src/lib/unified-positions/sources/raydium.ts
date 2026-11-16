@@ -1,14 +1,17 @@
 import type { WalletDiscovery, WalletPosition } from "@sofinance/engine/wallet-discovery";
+import { dexDescriptors } from "@/lib/dex/client";
 import { formatPositionLabel } from "@/lib/position-label";
-import { positionKey, SUPPORTED, type PositionSource, type RangeStatus, type UnifiedPosition } from "../model";
+import { positionKey, type PositionSource, type RangeStatus, type UnifiedPosition } from "../model";
 
+// The registered native capability record is shared with API/MCP preparation.
+const descriptor = dexDescriptors.descriptorFor("raydium-clmm")!;
 const STATUS: Readonly<Record<WalletPosition["rangeSide"], RangeStatus>> = { inside: "in", below: "below", above: "above" };
 
 export function raydiumUnifiedPosition(position: WalletPosition): UnifiedPosition<WalletPosition> {
   return {
-    key: positionKey("raydium-clmm", position.positionMint),
-    source: "raydium-clmm",
-    chain: "solana",
+    key: positionKey(descriptor.id, position.positionMint),
+    source: descriptor.id,
+    chain: descriptor.chain,
     nativeId: position.positionMint,
     poolId: position.poolId,
     tokenA: { id: position.mintA, symbol: position.symbolA, decimals: position.decimalsA },
@@ -22,21 +25,10 @@ export function raydiumUnifiedPosition(position: WalletPosition): UnifiedPositio
 
 /** Raydium CLMM on Solana: every `/app` tool works today (compound, Performance, Add, partial + full Withdraw, USDC exit estimate). */
 export const raydiumPositionSource: PositionSource<WalletPosition, Pick<WalletDiscovery, "positions">> = Object.freeze({
-  id: "raydium-clmm",
-  chain: "solana",
-  displayName: "Raydium CLMM",
-  capabilities: Object.freeze({
-    compound: SUPPORTED,
-    performance: SUPPORTED,
-    deposit: SUPPORTED,
-    withdraw: Object.freeze({ supported: true, partial: true }),
-    /** Today's Raydium Withdraw panel: original tokens, USDC or SOL. */
-    withdrawOutputs: Object.freeze(["pool-tokens", "usdc", "sol"] as const),
-    exitPreview: Object.freeze({ supported: true, output: "usdc+sol" }),
-    rangeDisplay: "price",
-    manualAdd: false,
-    signer: "solana-wallet",
-  }),
+  id: descriptor.id,
+  chain: descriptor.chain,
+  displayName: descriptor.displayName,
+  capabilities: descriptor.nativeCapabilities!.positions,
   fromDiscovery: (discovery) => (discovery?.positions ?? []).map(raydiumUnifiedPosition),
   label: (position, metadata) => formatPositionLabel(position.native, metadata),
 });

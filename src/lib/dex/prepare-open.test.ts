@@ -99,7 +99,7 @@ it("requires explicit native bindings and clones terms before lazy loading even 
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
   let received: unknown;
-  const dexModule = { ...fakeSolanaModule, enabled: () => false, descriptor: { ...fakeSolanaModule.descriptor, capabilities: {
+  const dexModule = { ...fakeSolanaModule, enabled: () => false, descriptor: { ...fakeSolanaModule.descriptor, nativeCapabilities: { open: fakeSolanaModule.descriptor.capabilities.open, positions: fakeSolanaModule.descriptor.capabilities }, capabilities: {
     ...fakeSolanaModule.descriptor.capabilities, open: { supported: false as const, reason: "Generic open unavailable" },
   } }, buildOpen: async (command: OpenPrepareCommand) => { await gate; received = command; return { summary, transaction }; },
     quoteOpen: async () => summary.quote as OpenPositionQuote,

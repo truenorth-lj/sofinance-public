@@ -23,6 +23,19 @@ const RAYDIUM_CLMM_FEE_POLICY: FeePolicy = Object.freeze({
   withdrawUsdc: Object.freeze({ kind: "swap-input-bps", bps: 10 }),
 });
 
+/** Single declaration of the tools already shipped in the native App and compatibility transports. */
+const NATIVE_POSITION_CAPABILITIES = Object.freeze({
+  compound: SUPPORTED,
+  performance: SUPPORTED,
+  deposit: SUPPORTED,
+  withdraw: Object.freeze({ supported: true as const, partial: true }),
+  withdrawOutputs: Object.freeze(["pool-tokens", "usdc", "sol"] as const),
+  exitPreview: Object.freeze({ supported: true as const, output: "usdc+sol" as const }),
+  rangeDisplay: "price" as const,
+  manualAdd: false,
+  signer: "solana-wallet" as const,
+});
+
 const NOT_YET = NOT_AVAILABLE_MESSAGE;
 
 export const raydiumClmmDescriptor: DexDescriptor = Object.freeze({
@@ -49,10 +62,11 @@ export const raydiumClmmDescriptor: DexDescriptor = Object.freeze({
       ]),
     }),
   }),
+  nativeCapabilities: Object.freeze({ open: SUPPORTED, positions: NATIVE_POSITION_CAPABILITIES }),
   capabilities: Object.freeze({
+    ...NATIVE_POSITION_CAPABILITIES,
     /** Add is implemented and contract-tested; module.enabled still keeps every generic route closed. */
     open: unsupported(NOT_YET),
-    deposit: SUPPORTED,
     withdraw: Object.freeze({ supported: false, reason: NOT_YET }),
     withdrawOutputs: Object.freeze([] as const),
     claim: unsupported(NOT_YET),
@@ -60,9 +74,6 @@ export const raydiumClmmDescriptor: DexDescriptor = Object.freeze({
     plan: unsupported(NOT_YET),
     performance: unsupported(NOT_YET),
     exitPreview: unsupported(NOT_YET),
-    rangeDisplay: "price" as const,
-    manualAdd: false,
-    signer: "solana-wallet" as const,
   }),
   ui: Object.freeze({
     openUi: "native-modal" as const,

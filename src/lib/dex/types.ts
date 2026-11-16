@@ -143,13 +143,22 @@ export type DexUi = {
   listPositions?: boolean;
 };
 
+/** Existing native transports use their own contracts while the generic adapter rolls out. */
+export type DexNativeCapabilities = {
+  open: Capability;
+  positions: SourceCapabilities;
+};
+
 /** UI-safe description of one DEX: the registry element the UI reads (extends the unified-positions source). */
 export type DexDescriptor<N = unknown> = {
   id: DexId;
   chain: ChainId;
   displayName: string;
   meta: DexMeta;
+  /** Capabilities implemented by the generic DexAdapter contract; never an HTTP activation flag. */
   capabilities: DexCapabilities;
+  /** Optional native compatibility surface. Position UI and native prepare services share this exact record. */
+  nativeCapabilities?: DexNativeCapabilities;
   /** Client-safe UI record. Present on registered venues that have shipped these flags (Meteora today). */
   ui?: DexUi;
   /** Per-position overrides, merged over `capabilities` by `capabilitiesFor` (same rule as unified positions). */
