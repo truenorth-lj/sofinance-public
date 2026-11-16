@@ -77,9 +77,11 @@ export async function POST(request: Request) {
     });
     return Response.json({ signature }, { headers: NO_STORE });
   } catch (error) {
-    // Preflight (simulation / blockhash) refusals are returned before the network sees the bytes: a plain 4xx.
+    // This RPC attempt's preflight does not prove the signed bytes never landed: a wallet may already have sent
+    // them, or our RPC pool may have accepted them before a timeout/retry/failover. Leave sent undecided so the
+    // client tracks the signed transaction's exact signature instead of offering a new transaction immediately.
     const preflight = /simulation failed|preflight|blockhash not found|insufficient funds|custom program error/i.test(String((error as Error)?.message ?? ""));
-    if (preflight) return apiError(error, "Transaction submission failed", 400, { sent: false });
+    if (preflight) return apiError(error, "Transaction submission failed", 400);
     // Unknown outcome (network / RPC fault): the bytes may have reached the network. 5xx, reported once.
     return apiError(error, "Transaction submission failed", 502, { transaction: true });
   }
