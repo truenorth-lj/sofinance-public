@@ -2,7 +2,7 @@ import "server-only";
 
 import { getAddress, isAddress } from "viem";
 import type { ScannedPosition } from "@sofinance/engine/protocols/uniswap-v4/position-scan";
-import { RHC_SCAN_FAILED_MESSAGE, RhcScanBusyError, scanRhcPositions } from "@/lib/rhc-position-scan";
+import { RHC_SCAN_FAILED_MESSAGE, RhcScanBusyError, scanRhcPositions } from "./position-scan.server";
 import type { UnifiedPosition } from "@/lib/unified-positions/model";
 import { listRhcUnifiedPositions } from "@/lib/unified-positions/sources/rhc";
 import type { DexAdapter } from "../adapter";

@@ -1,9 +1,11 @@
 import type { DexModule } from "../registry";
+import type { NativeEvmPositionReads } from "../evm-position-read";
 import type { NativeEvmLiquidity } from "../evm-liquidity";
 import { isRhcUniv4TradingEnabled, isRhcUniv4TxBuildEnabled } from "@/lib/protocol-flags";
 import { rhcScanClientIp, rhcScanRateLimited } from "@/lib/rhc-scan-rate-limit";
 import { uniswapV4RhcDescriptor } from "./descriptor";
 import { RhcOpenRequestSchema, RhcExitRequestSchema } from "./liquidity-input";
+import { parsePositionIds, RHC_SCAN_FAILED_MESSAGE } from "./position-input";
 
 /**
  * Server registration of Uniswap v4 on Robinhood Chain (E2-alias). Lazy adapter so other routes
@@ -17,6 +19,13 @@ import { RhcOpenRequestSchema, RhcExitRequestSchema } from "./liquidity-input";
  */
 export const uniswapV4RhcModule: DexModule = Object.freeze({
   descriptor: uniswapV4RhcDescriptor,
+  evmPositionReads: Object.freeze({
+    enabled: () => isRhcUniv4TradingEnabled(),
+    parseIds: parsePositionIds,
+    scanFailedMessage: RHC_SCAN_FAILED_MESSAGE,
+    scan: async (wallet, options) => (await import("./position-scan.server")).scanRhcPositions(wallet, options),
+    values: async (ids) => (await import("./position-values.server")).rhcPositionValues(ids),
+  } satisfies NativeEvmPositionReads),
   evmLiquidity: Object.freeze({
     enabled: isRhcUniv4TxBuildEnabled,
     schemas: Object.freeze({ open: RhcOpenRequestSchema, exit: RhcExitRequestSchema }),

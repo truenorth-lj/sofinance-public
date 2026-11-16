@@ -18,7 +18,7 @@ vi.mock("@/lib/dex/uniswap-v4-rhc/adapter.server", () => ({
 import { dexRegistry } from "@/lib/dex";
 import { resetDexRouteRateLimit } from "@/lib/dex-route-rate-limit";
 import { isRhcUniv4TradingEnabled } from "@/lib/protocol-flags";
-import { REQUESTS_PER_IP_PER_MINUTE, resetRhcScanCache, rhcScanRateLimited } from "@/lib/rhc-position-scan";
+import { REQUESTS_PER_IP_PER_MINUTE, resetRhcScanCache, rhcScanRateLimited } from "@/lib/dex/uniswap-v4-rhc/position-scan.server";
 import { POST } from "./route";
 
 const evmOwner = "0x2222222222222222222222222222222222222222";

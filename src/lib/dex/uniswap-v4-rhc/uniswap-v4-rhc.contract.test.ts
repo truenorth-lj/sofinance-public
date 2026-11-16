@@ -1,7 +1,7 @@
 import { vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/rhc-position-scan", () => ({
+vi.mock("@/lib/dex/uniswap-v4-rhc/position-scan.server", () => ({
   scanRhcPositions: vi.fn(async () => ({ state: "scan", wallet: "0x2222222222222222222222222222222222222222", positions: [], scannedToBlock: "0", checkedAt: 0, rpcCalls: 0 })),
   RHC_SCAN_FAILED_MESSAGE: "Couldn't check this wallet's Robinhood Chain positions right now.",
   RhcScanBusyError: class extends Error {},
