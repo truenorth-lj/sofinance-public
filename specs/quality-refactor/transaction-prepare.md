@@ -37,6 +37,15 @@ and broadcasts the same signed transaction only after validation. Original profi
 read defaults, error precedence and messages, final expiry/height checks, send options and
 unknown-send behavior are preserved. Validation never builds, signs, restamps or sends.
 
+Native compound state, confirmation and historical receipt import now use lazy read bindings.
+They remain available when new compound preparation is disabled. HTTP keeps its original
+body/wallet/attempt parsing, error codes and headers; each request passes one connection.
+Confirmation preserves finalized execution certainty separately from ledger reconstruction,
+including the original cache invalidation/reset timing. Receipt import retains the engine's
+bounded finalized-history verification. No read binding builds, signs or broadcasts.
+Receipt import also rejects a history provider's mismatched transaction signature before
+calling ledger verification, so a different transaction cannot be labeled as the requested source.
+
 HTTP retains parsing, relay AsyncLocalStorage, selected deadline and retry budget, status,
 headers, error handling and response projection. MCP retains its existing projection,
 submitArgs, full authenticated sign-token payload, URL and instructions. Compound quote

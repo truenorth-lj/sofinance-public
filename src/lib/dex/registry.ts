@@ -10,6 +10,7 @@ import type { ValidateSignedAdd } from "./add-submit";
 import type { QuoteAdd, ReadAddState } from "./selected-read";
 import type { BuildWithdrawal } from "./withdraw-prepare";
 import type { BuildCompound, BuildCompoundRecovery } from "./compound-prepare";
+import type { ReadCompoundState, ConfirmCompound, ImportCompoundReceipt } from "./compound-read";
 import type { BuildOpen, QuoteOpen } from "./open-prepare";
 import type { BuildSolSwapStep, ReadSolSwapDelivery } from "./sol-swap-step";
 import { DexUnsupportedError } from "./errors";
@@ -31,6 +32,10 @@ export type DexModule = {
   buildWithdrawal?: BuildWithdrawal;
   buildCompound?: BuildCompound;
   buildCompoundRecovery?: BuildCompoundRecovery;
+  /** Readback and historical recovery stay available independently of new compound preparation. */
+  readCompoundState?: ReadCompoundState;
+  confirmCompound?: ConfirmCompound;
+  importCompoundReceipt?: ImportCompoundReceipt;
   buildOpen?: BuildOpen;
   quoteOpen?: QuoteOpen;
   buildSolSwapStep?: BuildSolSwapStep;
@@ -91,6 +96,9 @@ export type DexRegistry = DexDescriptorRegistry & {
   buildWithdrawal(id: string, ...args: Parameters<BuildWithdrawal>): ReturnType<BuildWithdrawal>;
   buildCompound(id: string, ...args: Parameters<BuildCompound>): ReturnType<BuildCompound>;
   buildCompoundRecovery(id: string, ...args: Parameters<BuildCompoundRecovery>): ReturnType<BuildCompoundRecovery>;
+  readCompoundState(id: string, ...args: Parameters<ReadCompoundState>): ReturnType<ReadCompoundState>;
+  confirmCompound(id: string, ...args: Parameters<ConfirmCompound>): ReturnType<ConfirmCompound>;
+  importCompoundReceipt(id: string, ...args: Parameters<ImportCompoundReceipt>): ReturnType<ImportCompoundReceipt>;
   buildOpen(id: string, ...args: Parameters<BuildOpen>): ReturnType<BuildOpen>;
   quoteOpen(id: string, ...args: Parameters<QuoteOpen>): ReturnType<QuoteOpen>;
   buildSolSwapStep(id: string, ...args: Parameters<BuildSolSwapStep>): ReturnType<BuildSolSwapStep>;
@@ -248,6 +256,24 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
       // Recovery must remain usable when new compounding is disabled.
       if (!entry?.buildCompoundRecovery) throw new DexUnsupportedError();
       return entry.buildCompoundRecovery(structuredClone(command));
+    },
+    async readCompoundState(id: string, command: Parameters<ReadCompoundState>[0], connection: Parameters<ReadCompoundState>[1]) {
+      const canonical = normalizeDexId(id);
+      const entry = canonical ? byId.get(canonical) : undefined;
+      if (!entry?.readCompoundState) throw new DexUnsupportedError();
+      return entry.readCompoundState({ ...command }, connection);
+    },
+    async confirmCompound(id: string, command: Parameters<ConfirmCompound>[0], connection: Parameters<ConfirmCompound>[1]) {
+      const canonical = normalizeDexId(id);
+      const entry = canonical ? byId.get(canonical) : undefined;
+      if (!entry?.confirmCompound) throw new DexUnsupportedError();
+      return entry.confirmCompound(structuredClone(command), connection);
+    },
+    async importCompoundReceipt(id: string, command: Parameters<ImportCompoundReceipt>[0], connection: Parameters<ImportCompoundReceipt>[1]) {
+      const canonical = normalizeDexId(id);
+      const entry = canonical ? byId.get(canonical) : undefined;
+      if (!entry?.importCompoundReceipt) throw new DexUnsupportedError();
+      return entry.importCompoundReceipt({ ...command }, connection);
     },
     async buildOpen(id: string, command: Parameters<BuildOpen>[0], options?: Parameters<BuildOpen>[1]) {
       const canonical = normalizeDexId(id);
