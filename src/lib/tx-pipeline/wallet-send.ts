@@ -157,7 +157,6 @@ export async function sendWithWallet(wallet: TxWallet, transaction: VersionedTra
   // Pristine prepared copy: the relay's permit covers these bytes; the wallet signs a fresh copy.
   const prepared = clone(transaction);
   if (wallet.signAndSendTransaction && (options.presign || !options.cosign)) {
-    let signature: string | undefined;
     let outgoing = clone(prepared);
     if (options.presign) {
       try {
@@ -168,18 +167,18 @@ export async function sendWithWallet(wallet: TxWallet, transaction: VersionedTra
     }
     const askedAt = Date.now();
     try {
-      signature = await beforeDeadline(wallet.signAndSendTransaction(outgoing), (late) => {
+      const signature = await beforeDeadline(wallet.signAndSendTransaction(outgoing), (late) => {
         if (typeof late === "string" && SIGNATURE.test(late)) options.onLateSignature?.(late);
       });
+      // A fulfilled request with no signature may already have sent. Only an explicit unsupported-feature error
+      // below permits another signing request; an empty/undefined result must be reconciled on-chain instead.
+      if (typeof signature !== "string" || !SIGNATURE.test(signature)) return checkLanded(new Error("Your wallet did not return a transaction signature"), askedAt);
+      return { signature, via: "wallet" };
     } catch (error) {
       if (error instanceof TxPromptExpiredError) throw error;
       // Some connectors (AppKit, injected wallets) expose signAndSend but the wallet itself lacks
       // the feature; that refusal happens before any prompt, so fall back to sign-then-relay (under the fee ceiling).
       if (!isUnsupportedFeatureError(error)) return checkLanded(error, askedAt);
-    }
-    if (signature !== undefined) {
-      if (!SIGNATURE.test(signature)) return checkLanded(new Error("Your wallet did not return a transaction signature"), askedAt);
-      return { signature, via: "wallet" };
     }
   }
   let walletSigned: VersionedTransaction;
