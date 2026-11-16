@@ -51,6 +51,10 @@ it("native policy refuses new preparation before any lazy binding even when gene
   const registry = createDexRegistry([{ ...fakeSolanaModule, descriptor, ...ports }]);
   for (const invoke of attempts(registry, descriptor.id)) await expect(invoke()).rejects.toMatchObject({ code: "UNSUPPORTED" });
   for (const name of ["buildAdd", "buildWithdrawal", "buildCompound", "buildOpen", "quoteOpen", "buildSolSwapStep"] as const) expect(ports[name]).not.toHaveBeenCalled();
+  // Routing a swap stage does not authorize it: the native engine validates the
+  // first permit and receipt (covered through the real builder in withdraw/build.test).
+  await expect(registry.buildWithdrawal(descriptor.id, { ...withdraw, stage: "swap" })).resolves.toEqual({});
+  expect(ports.buildWithdrawal).toHaveBeenCalledOnce();
   // Recovery and receipt reconciliation remain available when new operations stop.
   await expect(registry.buildCompoundRecovery(descriptor.id, { wallet: "owner", compoundAccounts: [] })).resolves.toHaveProperty("alreadyClosed", true);
   await expect(registry.readSolSwapDelivery(descriptor.id, delivery)).resolves.toHaveProperty("delivered", "9007199254740993");

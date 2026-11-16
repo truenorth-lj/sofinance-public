@@ -189,9 +189,13 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
       const entry = canonical ? byId.get(canonical) : undefined;
       // Native capabilities describe these compatibility contracts; generic capabilities
       // describe DexAdapter/StepResult. Neither record enables generic HTTP routes.
-      if (!entry || !nativePositionCapabilities(entry).withdraw.supported
-        || !entry.buildWithdrawal) throw new DexUnsupportedError();
-      return entry.buildWithdrawal(structuredClone(input), preview);
+      if (!entry?.buildWithdrawal) throw new DexUnsupportedError();
+      const command = structuredClone(input);
+      // Stage 2 converts an already-landed withdrawal. The engine still requires
+      // the signed first-stage permit and a matching finalized receipt; the stage
+      // label alone cannot authorize it or remove any more liquidity.
+      if (!nativePositionCapabilities(entry).withdraw.supported && command?.stage !== "swap") throw new DexUnsupportedError();
+      return entry.buildWithdrawal(command, preview);
     },
     async buildCompound(id: string, command: Parameters<BuildCompound>[0]) {
       const canonical = normalizeDexId(id);

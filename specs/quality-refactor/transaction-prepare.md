@@ -19,8 +19,9 @@ binding the complete operation-specific summary.
 Raydium's descriptor owns the native open and position capability records. The native position UI,
 homepage/deep-link Open and shared prepare services use those records. Generic `capabilities` still
 describe the separate `DexAdapter` contract, and `module.enabled` still controls HTTP rollout.
-A native capability refusal stops new preparation before loading a binding; harvest recovery and
-SOL receipt reconciliation remain available independently of new-operation availability.
+A native capability refusal stops new preparation before loading a binding. Withdrawal stage-2
+conversion, harvest recovery and SOL receipt reconciliation remain available independently of
+new-operation availability; the withdrawal engine still verifies the first-stage permit and receipt.
 
 HTTP retains parsing, relay AsyncLocalStorage, selected deadline and retry budget, status,
 headers, error handling and response projection. MCP retains its existing projection,
