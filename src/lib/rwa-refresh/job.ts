@@ -8,7 +8,6 @@ import { sanitizePublicError } from "../public-error";
 import { getRwaStore } from "../rwa-store";
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import { raydiumPoolSource } from "../pool-sources/raydium";
-import type { MeteoraScanStats } from "../meteora-rwa-scan";
 import { rhcStateClient } from "../rhc-range-apr";
 import type { DailyTvlStats, DexId } from "@/lib/dex";
 import { resolveTokenIcons, rhcCronIconSources } from "../token-icons/resolve";
@@ -21,8 +20,7 @@ import {
 } from "../rwa-store-types";
 import type { AprQueueStats } from "./apr-queue";
 import { refreshAprPools } from "./apr-queue";
-import type { MeteoraAprQueueStats } from "./meteora-lane";
-import { publishMeteoraFeed } from "./meteora-lane";
+import { publishPoolCron, type PoolCronDiscoveryResult, type PoolCronLaneStats } from "@/lib/dex";
 import type { RhcAprRunStats, RhcDiscoveryResult } from "./rhc-lane";
 import { discoverRhcLane } from "./rhc-lane";
 
@@ -64,11 +62,11 @@ export type JobResult = {
   /** rwa-apr-refresh: the oldest-first queue (all active pools, how many this run selected / finished). */
   queue?: AprQueueStats;
   /** rwa-apr-refresh: the Meteora lane. */
-  meteoraQueue?: MeteoraAprQueueStats;
+  meteoraQueue?: PoolCronLaneStats;
   /** rwa-apr-refresh: each DEX's daily TVL record, by DEX id (registry `recordDailyTvl`). */
   dailyTvl?: Partial<Record<DexId, DailyTvlStats>>;
   /** rwa-discovery: the Meteora DLMM scan. */
-  meteora?: (MeteoraScanStats & { published: number }) | { error: string };
+  meteora?: PoolCronDiscoveryResult | { error: string };
 };
 
 export async function runJob(job: JobName, options: Options): Promise<JobResult> {
@@ -94,7 +92,7 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
     meteora: JobResult["meteora"],
     rhcStats: RhcAprRunStats | undefined,
     queue: AprQueueStats | undefined,
-    meteoraQueue: MeteoraAprQueueStats | undefined,
+    meteoraQueue: PoolCronLaneStats | undefined,
     dailyTvl: Partial<Record<DexId, DailyTvlStats>> | undefined,
     // Counted in `consecutive_failures` (and keeps `last_success_at`). The APR job counts only a GeckoTerminal 429 or
     // an error (a failed step, a pool error, or more than half of the finished pools degraded); a run that only ran out of its time budget, or saved
@@ -119,7 +117,7 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
       // Meteora DLMM (code flag): its own feed and generation, after Raydium's publish, so a Meteora failure keeps
       // its last generation and never touches Raydium's. Reported as an issue, not counted as a job failure.
       if (options.meteoraScan ?? true) {
-        meteora = await publishMeteoraFeed(store, lease, result.pairs, options.fetcher, signal)
+        meteora = await publishPoolCron("meteora-dlmm", { store, lease, seedPairs: result.pairs, fetcher: options.fetcher, signal })
           .catch((error) => ({ error: sanitizePublicError(error, "Meteora scan failed").slice(0, 200) }));
         if ("error" in meteora) { issues.push(`Meteora: ${meteora.error}`); status = "partial"; }
       }

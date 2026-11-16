@@ -1,3 +1,4 @@
+import { METEORA_CRON_POLICY } from "./cron-policy";
 import type { PublicPoolReads } from "../public-pool-read";
 import { isMeteoraDlmmDiscoveryEnabled } from "@/lib/protocol-flags";
 import type { DexModule } from "../registry";
@@ -9,6 +10,11 @@ import { meteoraDlmmDescriptor } from "./descriptor";
  */
 export const meteoraDlmmModule: DexModule = Object.freeze({
   descriptor: meteoraDlmmDescriptor,
+  poolCron: Object.freeze({
+    policy: METEORA_CRON_POLICY,
+    publish: async input => (await import("./cron.server")).publishMeteoraFeed(input.store, input.lease, input.seedPairs, input.fetcher, input.signal),
+    refresh: async input => (await import("./cron.server")).refreshMeteoraLane({ ...input, poolTimeoutMs: input.poolTimeoutMs ?? METEORA_CRON_POLICY.poolTimeoutMs }),
+  } satisfies NonNullable<DexModule["poolCron"]>),
   poolSource: Object.freeze({ order: 1, load: async () => (await import("@/lib/pool-sources/meteora")).meteoraPoolSource }),
   publicPoolReads: Object.freeze({
     snapshotBacked: false, rangeAprUnavailableMessage: "Meteora range APR unavailable",

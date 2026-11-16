@@ -1,3 +1,4 @@
+import type { NativePoolCron, PoolCronPolicy, PoolCronDiscoveryInput, PoolCronLaneInput } from "./pool-cron";
 import type { PoolDailyAprResult } from "@/lib/pool-daily-apr";
 import type { PoolSource } from "@/lib/pool-sources/types";
 import type { Lease, RwaStore } from "@/lib/rwa-store-types";
@@ -29,6 +30,7 @@ import { normalizeDexId, type DexCapabilities, type DexDescriptor, type DexId } 
 export type DexModule = {
   descriptor: DexDescriptor;
   nativeAprRefresh?: NativeAprRefresh;
+  poolCron?: NativePoolCron;
   lpPlanReads?: LpPlanReads;
   publicPoolReads?: PublicPoolReads;
   /** Existing native EVM validation/builds; independent of generic HTTP capabilities. */
@@ -107,6 +109,9 @@ export type DexDescriptorRegistry = {
 };
 
 export type DexRegistry = DexDescriptorRegistry & {
+  poolCronPolicyFor(id: string): PoolCronPolicy;
+  publishPoolCron(id: string, input: PoolCronDiscoveryInput): ReturnType<NativePoolCron["publish"]>;
+  refreshPoolCron(id: string, input: PoolCronLaneInput): ReturnType<NativePoolCron["refresh"]>;
   prepareNativeAprRun(id: string, input: NativeAprRunInput): Promise<Awaited<ReturnType<NativeAprRefresh["prepare"]>> | null>;
   readLpObservations(id: string, ...args: Parameters<LpPlanReads["observations"]>): ReturnType<LpPlanReads["observations"]>;
   readLpExitPreview(id: string, ...args: Parameters<LpPlanReads["exitPreview"]>): ReturnType<LpPlanReads["exitPreview"]>;
@@ -234,6 +239,25 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
     ? [Object.freeze({ ...entry.positionReads, id: entry.descriptor.id })] : []).sort((a, b) => a.order - b.order));
   return Object.freeze({
     ...lookups,
+    poolCronPolicyFor(id: string) {
+      const canonical = normalizeDexId(id);
+      const binding = canonical ? byId.get(canonical)?.poolCron : undefined;
+      if (!binding) throw new DexUnsupportedError();
+      return { ...binding.policy };
+    },
+    async publishPoolCron(id: string, input: PoolCronDiscoveryInput) {
+      const canonical = normalizeDexId(id);
+      const binding = canonical ? byId.get(canonical)?.poolCron : undefined;
+      if (!binding) throw new DexUnsupportedError();
+      // Capture initiating lease authority and seed mints before the module's lazy import.
+      return binding.publish({ ...input, lease: { ...input.lease }, seedPairs: input.seedPairs.map(pair => ({ ...pair })) });
+    },
+    async refreshPoolCron(id: string, input: PoolCronLaneInput) {
+      const canonical = normalizeDexId(id);
+      const binding = canonical ? byId.get(canonical)?.poolCron : undefined;
+      if (!binding) throw new DexUnsupportedError();
+      return binding.refresh({ ...input, lease: { ...input.lease } });
+    },
     async prepareNativeAprRun(id: string, input: NativeAprRunInput) {
       const canonical = normalizeDexId(id);
       const binding = canonical ? byId.get(canonical)?.nativeAprRefresh : undefined;

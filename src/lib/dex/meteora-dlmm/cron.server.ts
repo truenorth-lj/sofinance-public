@@ -1,11 +1,13 @@
 import "@/lib/engine-host";
 import "server-only";
-import { discoverMeteoraRwaPairs, METEORA_SCAN_MIN_TVL_USD, type MeteoraScanStats } from "../meteora-rwa-scan";
-import { FEED_KEY, FEED_KEY_METEORA, SOLANA_FEED_PROTOCOL, type Lease, type RwaStore } from "../rwa-store-types";
-import type { RwaPairRow } from "../rwa-pairs";
-import { APR_SAVE_RESERVE_MS, activePoolRefreshedAt, orderAprQueue } from "./apr-queue";
-import { refreshSolanaPool } from "./solana-pool";
-import type { ThrottleGate } from "../range-apr/throttle-gate";
+import { METEORA_APR_POOLS_PER_RUN, METEORA_APR_POOL_TIMEOUT_MS } from "./cron-policy";
+import type { PoolCronLaneStats } from "../pool-cron";
+import { discoverMeteoraRwaPairs, METEORA_SCAN_MIN_TVL_USD, type MeteoraScanStats } from "@/lib/meteora-rwa-scan";
+import { FEED_KEY, FEED_KEY_METEORA, SOLANA_FEED_PROTOCOL, type Lease, type RwaStore } from "@/lib/rwa-store-types";
+import type { RwaPairRow } from "@/lib/rwa-pairs";
+import { APR_SAVE_RESERVE_MS, activePoolRefreshedAt, orderAprQueue } from "@/lib/rwa-refresh/queue-policy";
+import { refreshSolanaPool } from "@/lib/rwa-refresh/solana-pool";
+import type { ThrottleGate } from "@/lib/range-apr/throttle-gate";
 
 /**
  * Meteora DLMM lane of the APR job: pools of the `meteora-dlmm-rwa-v1` feed with TVL ≥
@@ -14,12 +16,7 @@ import type { ThrottleGate } from "../range-apr/throttle-gate";
  * beside the GeckoTerminal queue on the same job deadline. A datapi 429 ends the lane (that pool saves nothing).
  * Datapi cost per pool: 1 pool + 1 daily volume + 3 hourly OHLCV spans = 5 requests (8 pools ≈ 40 per run).
  */
-export const METEORA_APR_POOLS_PER_RUN = 8;
 const METEORA_APR_CONCURRENCY = 3;
-export const METEORA_APR_POOL_TIMEOUT_MS = 10_000;
-
-/** The Meteora lane's queue (datapi, not GeckoTerminal): its own oldest-first queue and stop reason. */
-export type MeteoraAprQueueStats = { pools: number; selected: number; done: number; stoppedBy: "datapi-429" | "time" | null; failed: number };
 
 /**
  * The Meteora DLMM scan, published as the `meteora-dlmm-rwa-v1` generation. Seeds include the Raydium feed's mints.
@@ -45,14 +42,14 @@ export async function publishMeteoraFeed(store: RwaStore, lease: Lease, raydiumP
 export async function refreshMeteoraLane(input: {
   store: RwaStore; lease: Lease; fetcher: typeof fetch; clock: () => number; signal: AbortSignal; gate: ThrottleGate; jobDeadline: number;
   poolTimeoutMs: number;
-}): Promise<{ processed: number; issues: string[]; stats: MeteoraAprQueueStats }> {
+}): Promise<{ processed: number; issues: string[]; stats: PoolCronLaneStats }> {
   const { store, clock, signal, jobDeadline } = input;
   // Feed lists are Raydium-first (store contract), so read both Solana feeds and keep the Meteora rows.
   const pools = (await store.request({ op: "activePools", feedKeys: [FEED_KEY, FEED_KEY_METEORA] }))
     .filter((pool) => pool.pair.protocol === SOLANA_FEED_PROTOCOL[FEED_KEY_METEORA] && (pool.pair.tvlUsd ?? 0) >= METEORA_SCAN_MIN_TVL_USD);
   const selected = orderAprQueue(pools.map((pool) => ({ poolId: pool.pair.poolAddress, refreshedAt: activePoolRefreshedAt(pool), pool })))
     .slice(0, METEORA_APR_POOLS_PER_RUN);
-  const stats: MeteoraAprQueueStats = { pools: pools.length, selected: selected.length, done: 0, stoppedBy: null, failed: 0 };
+  const stats: PoolCronLaneStats = { pools: pools.length, selected: selected.length, done: 0, stoppedBy: null, failed: 0 };
   const issues: string[] = [];
   let processed = 0, next = 0;
   const worker = async () => {

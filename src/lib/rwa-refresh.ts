@@ -16,11 +16,10 @@ import {
   activePoolRefreshedAt as activePoolRefreshedAtImpl,
   orderAprQueue as orderAprQueueImpl,
 } from "./rwa-refresh/apr-queue";
-import {
-  METEORA_APR_POOLS_PER_RUN as meteoraAprPoolsPerRun,
-  METEORA_APR_POOL_TIMEOUT_MS as meteoraAprPoolTimeoutMs,
-} from "./rwa-refresh/meteora-lane";
+import { poolCronPolicyFor } from "./dex";
 import { refreshProfile as refreshProfileImpl } from "./rwa-refresh/solana-pool";
+
+const meteoraCronPolicy = poolCronPolicyFor("meteora-dlmm");
 
 // Value aliases (not `export { } from`) so importers of this entry are not charged for the lane files' frozen DEX imports.
 export const RWA_REFRESH_MAX_DURATION_MS = jobMaxDurationMs;
@@ -28,12 +27,12 @@ export const APR_SAVE_RESERVE_MS = aprSaveReserveMs;
 export const APR_POOL_MAX_MS = aprPoolMaxMs;
 export const APR_QUEUE_FIXED_MS = aprQueueFixedMs;
 export const APR_POOLS_PER_RUN = aprPoolsPerRun;
-export const METEORA_APR_POOLS_PER_RUN = meteoraAprPoolsPerRun;
-export const METEORA_APR_POOL_TIMEOUT_MS = meteoraAprPoolTimeoutMs;
+export const METEORA_APR_POOLS_PER_RUN = meteoraCronPolicy.poolsPerRun;
+export const METEORA_APR_POOL_TIMEOUT_MS = meteoraCronPolicy.poolTimeoutMs;
 
 export type { Options, JobResult } from "./rwa-refresh/job";
 export type { AprQueueStats } from "./rwa-refresh/apr-queue";
-export type { MeteoraAprQueueStats } from "./rwa-refresh/meteora-lane";
+export type { PoolCronLaneStats as MeteoraAprQueueStats } from "./dex";
 
 export async function refreshRwaSnapshots(...args: Parameters<typeof refreshRwaSnapshotsJob>) {
   return refreshRwaSnapshotsJob(...args);
