@@ -3,6 +3,7 @@ import { apiError } from "@/lib/api-response";
 import { snapshotError } from "@/lib/rwa-store";
 import { getRwaConfig } from "@/lib/config/rwa-env";
 import { NO_STORE_HEADERS } from "@/lib/http/no-store";
+import { rangeAprCdnHeaders } from "@/lib/range-apr/http-cache";
 
 /**
  * Read-only Orca Whirlpool pool state, range APR presets and liquidity distribution
@@ -13,12 +14,6 @@ import { NO_STORE_HEADERS } from "@/lib/http/no-store";
  */
 const NOT_FOUND = () => Response.json({ error: "Not found" }, { status: 404, headers: NO_STORE_HEADERS });
 
-const CDN_HEADERS = {
-  "Cache-Control": "public, max-age=0, must-revalidate",
-  "CDN-Cache-Control": "public, s-maxage=30, stale-while-revalidate=300",
-};
-const DEGRADED_CDN_HEADERS = { "Cache-Control": "public, max-age=0, must-revalidate", "CDN-Cache-Control": "public, s-maxage=10" };
-
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const protocol = params.get("protocol") ?? "orca-whirlpool";
@@ -26,7 +21,7 @@ export async function GET(request: Request) {
   try {
     const payload = await readProtocolRangeApr(protocol, poolId);
     if (payload === null) return NOT_FOUND();
-    return Response.json(payload, { headers: payload.sample.degraded ? DEGRADED_CDN_HEADERS : CDN_HEADERS });
+    return Response.json(payload, { headers: rangeAprCdnHeaders(payload.sample.degraded) });
   } catch (error) {
     const policy = protocolPoolReadPolicyFor(protocol);
     if (policy?.snapshotBacked && getRwaConfig().enabled) return snapshotError(error);

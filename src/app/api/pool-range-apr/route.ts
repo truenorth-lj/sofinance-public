@@ -3,6 +3,7 @@ import { getPoolAprSnapshot, snapshotError } from "@/lib/rwa-store";
 import { getRwaConfig } from "@/lib/config/rwa-env";
 import { NotRaydiumClmmPoolError } from "@/lib/range-apr/not-clmm-pool";
 import { RwaStoreError } from "@/lib/rwa-store-types";
+import { rangeAprCdnHeaders } from "@/lib/range-apr/http-cache";
 
 /**
  * One request per pool returns everything needed to price any range: the per-bin liquidity/volume model, the
@@ -10,19 +11,6 @@ import { RwaStoreError } from "@/lib/rwa-store-types";
  * in-flight de-duplication (see `pool-range-apr.ts`); the CDN header keeps repeat browsers off the server.
  */
 export const revalidate = 30;
-
-const CDN_HEADERS = {
-  "Cache-Control": "public, max-age=0, must-revalidate",
-  "CDN-Cache-Control": "public, s-maxage=30, stale-while-revalidate=300",
-  "Vercel-CDN-Cache-Control": "public, s-maxage=30, stale-while-revalidate=300",
-};
-
-/** A degraded payload (no estimates) must not be pinned at the CDN for minutes. */
-const DEGRADED_CDN_HEADERS = {
-  "Cache-Control": "public, max-age=0, must-revalidate",
-  "CDN-Cache-Control": "public, s-maxage=10",
-  "Vercel-CDN-Cache-Control": "public, s-maxage=10",
-};
 
 const POOL_ID = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
@@ -33,7 +21,8 @@ export async function GET(request: Request) {
   }
   try {
     const payload = await getPoolAprSnapshot(poolId);
-    return Response.json(payload, { headers: payload.sample.degraded ? DEGRADED_CDN_HEADERS : CDN_HEADERS });
+    const headers = rangeAprCdnHeaders(payload.sample.degraded);
+    return Response.json(payload, { headers: { ...headers, "Vercel-CDN-Cache-Control": headers["CDN-Cache-Control"] } });
   } catch (error) {
     if (getRwaConfig().enabled) return snapshotError(error);
     if (error instanceof NotRaydiumClmmPoolError) return snapshotError(new RwaStoreError("POOL_NOT_TRACKED"));

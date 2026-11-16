@@ -25,8 +25,9 @@ describe("GET /api/pool-range-apr", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(payload);
     expect(fetchPoolRangeApr).toHaveBeenCalledWith(POOL);
-    expect(response.headers.get("CDN-Cache-Control")).toMatch(/s-maxage=30/);
-    expect(response.headers.get("Cache-Control")).not.toMatch(/no-store/);
+    expect(response.headers.get("CDN-Cache-Control")).toBe("public, s-maxage=30, stale-while-revalidate=300");
+    expect(response.headers.get("Vercel-CDN-Cache-Control")).toBe("public, s-maxage=30, stale-while-revalidate=300");
+    expect(response.headers.get("Cache-Control")).toBe("public, max-age=0, must-revalidate");
   });
 
   it("does not pin a degraded payload (no estimates) at the CDN: 10 s, no stale-while-revalidate", async () => {
@@ -54,6 +55,8 @@ describe("GET /api/pool-range-apr", () => {
     const response = await call(`?poolId=${POOL}`);
     expect(response.status).toBe(503);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.headers.get("CDN-Cache-Control")).toBeNull();
+    expect(response.headers.get("Vercel-CDN-Cache-Control")).toBeNull();
     expect(await response.json()).toEqual({ error: expect.stringMatching(/unavailable/i) });
   });
 

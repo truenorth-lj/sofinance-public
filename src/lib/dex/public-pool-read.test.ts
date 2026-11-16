@@ -35,6 +35,7 @@ it("passes through each protocol payload and preserves healthy/degraded CDN life
       expect(response.status).toBe(200); expect(await response.json()).toEqual(payload);
       expect(response.headers.get("Cache-Control")).toBe("public, max-age=0, must-revalidate");
       expect(response.headers.get("CDN-Cache-Control")).toBe(degraded ? "public, s-maxage=10" : "public, s-maxage=30, stale-while-revalidate=300");
+      expect(response.headers.get("Vercel-CDN-Cache-Control")).toBeNull();
       expect(read).toHaveBeenLastCalledWith(poolId);
     }
   }
@@ -45,6 +46,8 @@ it("retains RHC snapshot error codes with no live-read fallback, and protocol er
   backend.rhc.mockRejectedValueOnce(new RwaStoreError("SNAPSHOT_UNAVAILABLE"));
   const response = await apr("uniswap-v4-rhc", RHC);
   expect(response.status).toBe(503); expect(response.headers.get("Cache-Control")).toBe("no-store");
+  expect(response.headers.get("CDN-Cache-Control")).toBeNull();
+  expect(response.headers.get("Vercel-CDN-Cache-Control")).toBeNull();
   expect(await response.json()).toMatchObject({ code: "SNAPSHOT_UNAVAILABLE" });
   expect(backend.liveRhc).not.toHaveBeenCalled();
   backend.rhcPools.mockRejectedValueOnce(new RwaStoreError("SNAPSHOT_UNAVAILABLE"));
