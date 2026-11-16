@@ -3,12 +3,12 @@ import "server-only";
 import { sanitizePublicError } from "../public-error";
 import { createCronGeckoGate } from "../pool-metrics/gecko";
 import { isRhcApr7dEnabled } from "../protocol-flags";
-import { dexRegistry, type DailyTvlStats, type DexId } from "@/lib/dex";
+import { dexRegistry, type DailyTvlStats, type DexId, type PreparedAprPool } from "@/lib/dex";
 import { FEED_KEY, FEED_KEY_METEORA, type ActivePool, type Lease, type RwaStore } from "../rwa-store-types";
 import type { Options } from "./job";
-import { type PoolOutcome, refreshSolanaPool } from "./solana-pool";
+import { refreshSolanaPool } from "./solana-pool";
 import { METEORA_APR_POOL_TIMEOUT_MS, refreshMeteoraLane, type MeteoraAprQueueStats } from "./meteora-lane";
-import { prepareRhcAprLane, type RhcAprRunStats, type RhcRun } from "./rhc-lane";
+import { prepareRhcAprLane, type RhcAprRunStats } from "./rhc-lane";
 
 /** No pool is started inside this last part of the APR job: `prepareDaily`, `finish` and the response. */
 export const APR_SAVE_RESERVE_MS = 10_000;
@@ -52,9 +52,7 @@ export function degradedIsSystemic(degraded: number, done: number): boolean {
 export type AprQueueStats = { pools: number; selected: number; done: number; stoppedBy: "429" | "time" | null };
 
 
-type QueueItem =
-  | { kind: "solana"; poolId: string; refreshedAt: string | null; pool: ActivePool }
-  | { kind: "rhc"; poolId: string; refreshedAt: string | null; spec: RhcRun["pools"][number]["spec"] };
+type QueueItem = PreparedAprPool;
 
 /**
  * Queue key of a Solana pool: the store's `refreshedAt`, else (an older store / gateway that does not send it)
@@ -111,8 +109,10 @@ export async function refreshAprPools(input: {
   await store.request({ op: "renew", lease });
   const pools = await store.request({ op: "activePools" });
   const all = orderAprQueue<QueueItem>([
-    ...pools.map((pool) => ({ kind: "solana" as const, poolId: pool.pair.poolAddress, refreshedAt: activePoolRefreshedAt(pool), pool })),
-    ...(rhc?.pools ?? []).map(({ spec, poolId, refreshedAt }) => ({ kind: "rhc" as const, poolId, refreshedAt, spec })),
+    ...pools.map((pool) => ({ poolId: pool.pair.poolAddress, refreshedAt: activePoolRefreshedAt(pool),
+      refresh: () => refreshSolanaPool({ store, lease, pool, fetcher, clock, signal, gate, throttled }),
+    })),
+    ...(rhc?.pools ?? []),
   ]);
   const selected = all.slice(0, APR_POOLS_PER_RUN);
   const queue: AprQueueStats = { pools: all.length, selected: selected.length, done: 0, stoppedBy: null };
@@ -140,15 +140,8 @@ export async function refreshAprPools(input: {
   for (const item of queue.stoppedBy ? [] : selected) {
     // Start a pool only if even its slowest case (`APR_POOL_MAX_MS`) plus the save reserve still fits.
     if (signal.aborted || jobDeadline - clock() < APR_POOL_MAX_MS + APR_SAVE_RESERVE_MS) { queue.stoppedBy = "time"; break; }
-    let outcome: PoolOutcome;
-    if (item.kind === "solana") {
-      const result = await refreshSolanaPool({ store, lease, pool: item.pool, fetcher, clock, signal, gate, throttled });
-      outcome = result.outcome;
-      if (result.issue) issues.push(result.issue);
-    } else {
-      const rhcOutcome = await rhc!.refreshPool(item.spec);
-      outcome = rhcOutcome === "saved" ? "fresh" : rhcOutcome === "failed" ? "error" : rhcOutcome;
-    }
+    const { outcome, issue } = await item.refresh();
+    if (issue) issues.push(issue);
     if (outcome === "throttled") { queue.stoppedBy = "429"; break; }
     // The job timeout fired mid-pool: that pool saved nothing (aborted); stop cleanly, it goes first next run.
     if (signal.aborted) { queue.stoppedBy = "time"; break; }

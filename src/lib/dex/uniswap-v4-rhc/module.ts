@@ -20,6 +20,10 @@ import { parsePositionIds, RHC_SCAN_FAILED_MESSAGE } from "./position-input";
  */
 export const uniswapV4RhcModule: DexModule = Object.freeze({
   descriptor: uniswapV4RhcDescriptor,
+  nativeAprRefresh: Object.freeze({
+    enabled: () => isRhcApr7dEnabled(),
+    prepare: async (input: import("../apr-refresh").NativeAprRunInput) => (await import("./prepare-apr.server")).prepareNativeRhcAprRun(input),
+  }),
   publicPoolReads: Object.freeze({
     snapshotBacked: true, rangeAprUnavailableMessage: "RHC range APR unavailable",
     discovery: Object.freeze({ enabled: () => isRhcUniv4DiscoveryEnabled(), read: async () => (await import("@/lib/rhc-snapshot")).getRhcPoolsSnapshot() }),

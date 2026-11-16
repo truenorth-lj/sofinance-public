@@ -20,7 +20,7 @@ vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: () => ({}) }));
 const rhcFlag = vi.hoisted(() => ({ enabled: false }));
 vi.mock("./protocol-flags", async (load) => ({ ...await load<typeof import("./protocol-flags")>(), isRhcApr7dEnabled: () => rhcFlag.enabled }));
 const rhcRun = vi.hoisted(() => ({ prepare: vi.fn() }));
-vi.mock("./rhc-apr-refresh", async (load) => ({ ...await load<object>(), prepareRhcRun: rhcRun.prepare }));
+vi.mock("./dex/uniswap-v4-rhc/apr-refresh.server", async (load) => ({ ...await load<object>(), prepareRhcRun: rhcRun.prepare }));
 import { METEORA_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/meteora/constants";
 import { activePoolRefreshedAt, APR_POOL_MAX_MS, APR_POOLS_PER_RUN, APR_QUEUE_FIXED_MS, APR_SAVE_RESERVE_MS, degradedIsSystemic, orderAprQueue, refreshProfile, runJob } from "./rwa-refresh";
 import { createCronGeckoGate, CRON_GECKO_SPACING_MS } from "./pool-metrics/gecko";

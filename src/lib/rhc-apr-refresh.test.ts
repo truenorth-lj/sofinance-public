@@ -19,7 +19,7 @@ import { ThrottleGate } from "./range-apr/throttle-gate";
 import {
   fetchRhcMarketBatch, planRhcProfileFetches, prepareRhcRun, rhcFailureBackoffMs, rhcPoolCreatedAtSeconds,
   rhcProfilePriority, rollRhcProfileForward, RHC_PROFILE_MAX_AGE_MS,
-} from "./rhc-apr-refresh";
+} from "./dex/uniswap-v4-rhc/apr-refresh.server";
 import type { Univ4MarketData } from "@sofinance/engine/protocols/uniswap-v4/market-data";
 import { volumeWindowEnd } from "./rwa-daily";
 import { aprSnapshotDelayed } from "./rwa-freshness";

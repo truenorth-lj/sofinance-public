@@ -2,8 +2,7 @@ import "@/lib/engine-host";
 import "server-only";
 import type { PublicClient } from "viem";
 import { sanitizePublicError } from "../public-error";
-import { isRhcApr7dEnabled } from "../protocol-flags";
-import { prepareRhcRun, type RhcAprRunStats, type RhcRun } from "../rhc-apr-refresh";
+import { prepareNativeAprRun, type NativeAprRun as RhcRun, type NativeAprRunStats as RhcAprRunStats } from "@/lib/dex";
 import { discoverRhcRegistryPools, rhcDiscoveryFindings, type RhcDiscoveryResult } from "../pool-metrics/rhc-discovery";
 import { captureRhcDiscoveryFindings } from "../sentry/capture";
 import type { Lease, RwaStore } from "../rwa-store-types";
@@ -21,8 +20,7 @@ export async function prepareRhcAprLane(input: {
 }): Promise<{ rhc: RhcRun | null; issues: string[]; failed: boolean }> {
   const issues: string[] = [];
   let failed = false;
-  if (!isRhcApr7dEnabled()) return { rhc: null, issues, failed };
-  const rhc = await prepareRhcRun(input).catch((error) => {
+  const rhc = await prepareNativeAprRun("uniswap-v4-rhc", input).catch((error) => {
     issues.push(`RHC: ${sanitizePublicError(error, "RHC APR refresh failed").slice(0, 200)}`);
     failed = true;
     return null;

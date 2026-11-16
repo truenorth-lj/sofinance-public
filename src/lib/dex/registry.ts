@@ -6,6 +6,7 @@ import { positionFigures } from "@/lib/portfolio/figures";
 import type { PositionKey, UnifiedPosition } from "@/lib/unified-positions/model";
 import type { PublicPoolReads, PublicPoolReadPolicy } from "./public-pool-read";
 import type { LpPlanReads } from "./lp-plan-read";
+import type { NativeAprRefresh, NativeAprRunInput } from "./apr-refresh";
 import type { DexAdapter } from "./adapter";
 import type { NativeEvmPositionReads, EvmPositionReadPolicy } from "./evm-position-read";
 import type { NativeEvmLiquidity } from "./evm-liquidity";
@@ -27,6 +28,7 @@ import { normalizeDexId, type DexCapabilities, type DexDescriptor, type DexId } 
 /** One DEX as registered server-side: its descriptor, a lazy adapter (keeps SDKs out of other routes), its pool scan. */
 export type DexModule = {
   descriptor: DexDescriptor;
+  nativeAprRefresh?: NativeAprRefresh;
   lpPlanReads?: LpPlanReads;
   publicPoolReads?: PublicPoolReads;
   /** Existing native EVM validation/builds; independent of generic HTTP capabilities. */
@@ -104,6 +106,7 @@ export type DexDescriptorRegistry = {
 };
 
 export type DexRegistry = DexDescriptorRegistry & {
+  prepareNativeAprRun(id: string, input: NativeAprRunInput): Promise<Awaited<ReturnType<NativeAprRefresh["prepare"]>> | null>;
   readLpObservations(id: string, ...args: Parameters<LpPlanReads["observations"]>): ReturnType<LpPlanReads["observations"]>;
   readLpExitPreview(id: string, ...args: Parameters<LpPlanReads["exitPreview"]>): ReturnType<LpPlanReads["exitPreview"]>;
   protocolPoolReadPolicyFor(id: string): PublicPoolReadPolicy | null;
@@ -224,6 +227,13 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
     ? [Object.freeze({ ...entry.positionReads, id: entry.descriptor.id })] : []).sort((a, b) => a.order - b.order));
   return Object.freeze({
     ...lookups,
+    async prepareNativeAprRun(id: string, input: NativeAprRunInput) {
+      const canonical = normalizeDexId(id);
+      const binding = canonical ? byId.get(canonical)?.nativeAprRefresh : undefined;
+      if (!binding?.enabled()) return null;
+      // Capture lease authority before lazy loading; keep store, client, clock, signal and shared gate live.
+      return binding.prepare({ ...input, lease: { ...input.lease } });
+    },
     async readLpObservations(id: string, ...args: Parameters<LpPlanReads["observations"]>) {
       const canonical = normalizeDexId(id);
       const binding = canonical ? byId.get(canonical)?.lpPlanReads : undefined;
