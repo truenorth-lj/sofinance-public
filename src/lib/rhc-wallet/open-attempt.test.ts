@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertRhcOpenAttempt, clearRhcOpenAttempt, parseRhcOpenAttempt, readRhcOpenAttempt,
-  reconcileRhcOpenAttempt, rhcOpenAttemptKey, writeRhcOpenAttempt, type RhcOpenAttempt } from "./open-attempt";
+  reconcileRhcOpenAttempt, rhcOpenAttemptKey, writeRhcOpenAttempt, type RhcOpenAttempt } from "../dex/uniswap-v4-rhc/wallet/open-attempt";
 const wallet = `0x${"22".repeat(20)}`, hash = `0x${"33".repeat(32)}`;
 const attempt: RhcOpenAttempt = { version: 1, id: "request-1", wallet, poolId: `0x${"44".repeat(32)}`, kind: "execute", hash, createdAt: 1 };
 beforeEach(() => {

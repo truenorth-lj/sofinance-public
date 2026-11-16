@@ -1,7 +1,7 @@
 import { UNIV4_RHC } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import { PINNED_UNIVERSAL_ROUTER } from "@sofinance/engine/protocols/uniswap-v4/open-constants";
 import type { TxView } from "@sofinance/engine/protocols/uniswap-v4/open-flow";
-import { currentChainId, type Eip1193Provider, ensureRobinhoodChain, RHC_CHAIN_ID, WalletRequestError } from "./eip1193";
+import { currentChainId, type Eip1193Provider, ensureRobinhoodChain, RHC_CHAIN_ID, WalletRequestError } from "@/lib/rhc-wallet/eip1193";
 
 /**
  * Client-side checks before the wallet is asked to send a Robinhood Chain open transaction (design §3.5 / §6).

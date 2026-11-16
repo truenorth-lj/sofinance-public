@@ -4,7 +4,7 @@ import nextTs from "eslint-config-next/typescript";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 
 // DEX boundary (DESIGN: shared DexAdapter registry). UI, routes, server use cases, MCP and the cron job reach a DEX
-// only through `@/lib/dex` / `@/lib/dex/client`. Files frozen in the shrink-only baseline are exempt until migrated;
+// only through `@/lib/dex` / `@/lib/dex/client` / optional `@/lib/dex/evm-client`. Files frozen in the shrink-only baseline are exempt until migrated;
 // src/lib/architecture-dex-boundaries.test.ts enforces the same rule on relative paths and keeps the baseline shrinking.
 const dexBaseline = JSON.parse(readFileSync(new URL("./src/lib/architecture-dex-baseline.json", import.meta.url), "utf8"));
 const dexBaselineFiles = Object.keys(dexBaseline.imports);
@@ -25,14 +25,14 @@ const dexModuleGroup = [
 ];
 const dexMessage = "Reach DEXes through the @/lib/dex registry (descriptors, capabilities, adapters), not a DEX module or SDK. See src/lib/architecture-dex-boundaries.test.ts.";
 const dexImportPattern = {
-  group: [...dexModuleGroup, "@/lib/dex/*", "!@/lib/dex/client", "!@/lib/dex/types", "!@/lib/dex/errors", "@/lib/dex/*/**"],
+  group: [...dexModuleGroup, "@/lib/dex/*", "!@/lib/dex/client", "!@/lib/dex/evm-client", "!@/lib/dex/types", "!@/lib/dex/errors", "@/lib/dex/*/**"],
   message: dexMessage,
 };
-// Client components may take only the browser-safe entry point; `@/lib/dex` itself (registry, server adapters) is off limits.
-const componentDexEntryMessage = "Components import only @/lib/dex/client, never @/lib/dex or its internals.";
+// Client components may take only the two browser-safe entry points; `@/lib/dex` itself (registry, server adapters) is off limits.
+const componentDexEntryMessage = "Components import only @/lib/dex/client or @/lib/dex/evm-client, never @/lib/dex or its internals.";
 const componentDexEntry = {
   paths: [{ name: "@/lib/dex", message: componentDexEntryMessage }],
-  patterns: [{ group: ["@/lib/dex/*", "!@/lib/dex/client", "@/lib/dex/*/**"], message: componentDexEntryMessage }],
+  patterns: [{ group: ["@/lib/dex/*", "!@/lib/dex/client", "!@/lib/dex/evm-client", "@/lib/dex/*/**"], message: componentDexEntryMessage }],
 };
 // Inside src/lib/dex: one DEX folder never imports another, and the shared entry points (client, registry, descriptors)
 // see each DEX only through its module.ts / descriptor.ts. The AST guard also checks relative paths and client.ts reachability.
@@ -57,6 +57,13 @@ const dexInternalConfigs = [
     ] }] },
   },
 ];
+dexInternalConfigs.push({
+  files: ["src/lib/dex/evm-client.ts"],
+  rules: { "no-restricted-imports": ["error", { patterns: [
+    { regex: "^(@/lib/dex|\\.)/[^/]+/(?!(client-module)$)", message: "The EVM browser entry imports only a DEX client-module.ts." },
+    { group: ["server-only", ...dexSdkGroup, "@sofinance/engine/protocols/**", "**/*.server"], message: "The EVM browser entry cannot import server code or a DEX SDK." },
+  ] }] },
+});
 const transportImportPattern = { group: ["@/app/**", "@/mcp/**", "@/components/**", "next", "next/**", "react", "react/**", "react-dom", "react-dom/**", "@modelcontextprotocol/sdk", "@modelcontextprotocol/sdk/**"],
   message: "Prepare use cases cannot depend on transport or UI adapters. The AST guard also checks relative paths and barrels." };
 
@@ -90,7 +97,7 @@ const eslintConfig = defineConfig([
     ignores: ["**/*.test.{ts,tsx}", ...dexBaselineFiles],
     rules: { "no-restricted-imports": ["error", {
       paths: componentDexEntry.paths,
-      patterns: [{ group: [...dexModuleGroup, "@/lib/dex/*", "!@/lib/dex/client", "@/lib/dex/*/**"], message: `${dexMessage} ${componentDexEntryMessage}` }],
+      patterns: [{ group: [...dexModuleGroup, "@/lib/dex/*", "!@/lib/dex/client", "!@/lib/dex/evm-client", "@/lib/dex/*/**"], message: `${dexMessage} ${componentDexEntryMessage}` }],
     }] },
   },
   {

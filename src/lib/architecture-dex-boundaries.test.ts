@@ -35,7 +35,7 @@ const config = ts.readConfigFile(path.join(root, "tsconfig.json"), ts.sys.readFi
 const options = ts.parseJsonConfigFileContent(config.config, ts.sys, root).options;
 
 /** Ceiling on the baseline totals; lower these together with the JSON whenever a PR removes violations. */
-const BASELINE_CEILING = { imports: 35, branches: 28 } as const;
+const BASELINE_CEILING = { imports: 15, branches: 28 } as const;
 
 /** Every DEX id spelling (canonical + legacy) and chain string that must not drive a branch outside src/lib/dex. */
 const DEX_BRANCH_LITERALS: ReadonlySet<string> = new Set([
@@ -67,10 +67,12 @@ const ONE_PROTOCOL_PATH = /^packages\/engine\/src\/protocols\/[^/]+\//;
 const AUTO_CLASSIFIED_PATH = /^(?:src\/lib|packages\/engine\/src)\//;
 /** Files that must go through the registry: UI, routes and pages, server use cases, MCP, and the cron job. */
 const REGISTRY_ONLY_PATH = /^src\/(?:app|components|server|mcp)\/|^src\/lib\/rwa-refresh[^/]*\.ts$/;
-/** UI components: client-side, so only the client registry entry point. */
+/** UI components use only browser registry entry points. */
 const COMPONENT_PATH = /^src\/components\//;
 const DEX_DIR = "src/lib/dex/";
 const DEX_CLIENT_ENTRY = "src/lib/dex/client.ts";
+const DEX_EVM_CLIENT_ENTRY = "src/lib/dex/evm-client.ts";
+const DEX_CLIENT_ENTRIES = [DEX_CLIENT_ENTRY, DEX_EVM_CLIENT_ENTRY];
 /** The only place DEX-specific branching is allowed. */
 const BRANCH_ALLOWED_PATH = /^src\/lib\/dex\//;
 
@@ -178,8 +180,8 @@ function dexImportFindings(relativeFile: string, host: Host, classify = dexClass
     const target = host.resolve(text, absolute);
     if (!target) return [];
     const relativeTarget = rel(target);
-    if (component && relativeTarget.startsWith(DEX_DIR) && relativeTarget !== DEX_CLIENT_ENTRY) {
-      return [{ file: relativeFile, detail: `${text} (components import only @/lib/dex/client)` }];
+    if (component && relativeTarget.startsWith(DEX_DIR) && !DEX_CLIENT_ENTRIES.includes(relativeTarget)) {
+      return [{ file: relativeFile, detail: `${text} (components import only @/lib/dex/client or @/lib/dex/evm-client)` }];
     }
     if (classify.isDexModule(relativeTarget)) return [{ file: relativeFile, detail: text }];
     const chain = classify.reexportedDex(target);
@@ -191,8 +193,8 @@ function dexImportFindings(relativeFile: string, host: Host, classify = dexClass
  * Rules inside src/lib/dex (no baseline; must stay at zero):
  * - `dex/<a>/**` never imports `dex/<b>/**`, and non-test code never imports the `__contract__` harness;
  * - shared top-level files (client, registry, descriptors, modules, …) import from `dex/<id>/` only `module.ts` or
- *   `descriptor.ts`, and no DEX SDK or DEX module outside src/lib/dex;
- * - nothing reachable from `client.ts` at runtime touches `server-only`, a DEX SDK, or a `*.server.ts` file.
+ *   `descriptor.ts` (the optional EVM browser entry may import `client-module.ts`), and no DEX SDK or DEX module outside src/lib/dex;
+ * - nothing reachable from either browser entry (`client.ts`, `evm-client.ts`) at runtime touches `server-only`, a DEX SDK, or a `*.server.ts` file.
  */
 function dexInternalFindings(files: readonly string[], host: Host, classify = dexClassifier(host)): Finding[] {
   const findings: Finding[] = [];
@@ -209,29 +211,32 @@ function dexInternalFindings(files: readonly string[], host: Host, classify = de
       const other = relativeTarget.startsWith(DEX_DIR) ? dexDirOf(relativeTarget) : null;
       if (other === "__contract__") { findings.push({ file: relativeFile, detail: `${text}: only tests import the contract harness` }); continue; }
       if (own && other && other !== own) { findings.push({ file: relativeFile, detail: `${text}: dex/${own} must not import dex/${other}` }); continue; }
-      if (!own && other && !/\/(?:module|descriptor)\.ts$/.test(relativeTarget)) findings.push({ file: relativeFile, detail: `${text}: shared DEX files import only <id>/module.ts or <id>/descriptor.ts` });
+      if (!own && other && !/\/(?:module|descriptor)\.ts$/.test(relativeTarget)
+        && !(relativeFile === DEX_EVM_CLIENT_ENTRY && /\/client-module\.ts$/.test(relativeTarget))) findings.push({ file: relativeFile, detail: `${text}: shared DEX files import only <id>/module.ts or <id>/descriptor.ts` });
       if (!own && !relativeTarget.startsWith(DEX_DIR) && classify.isDexModule(relativeTarget)) findings.push({ file: relativeFile, detail: `${text}: shared DEX files import no DEX implementation module` });
     }
   }
-  // Runtime reachability from the client entry point (type-only imports are erased and skipped).
-  const entry = path.join(root, DEX_CLIENT_ENTRY);
-  const seen = new Set<string>();
-  const walk = (absolute: string, chain: readonly string[]) => {
-    if (seen.has(absolute)) return;
-    seen.add(absolute);
-    let source: string;
-    try { source = host.read(absolute); } catch { return; }
-    const trail = [...chain, rel(absolute)];
-    for (const { text, typeOnly } of moduleSpecifiers(absolute, source)) {
-      if (typeOnly) continue;
-      if (text === "server-only" || DEX_SDK.test(text)) { findings.push({ file: DEX_CLIENT_ENTRY, detail: `reaches ${text} via ${trail.join(" -> ")}` }); continue; }
-      const target = host.resolve(text, absolute);
-      if (!target) continue;
-      if (/\.server\.tsx?$/.test(target)) { findings.push({ file: DEX_CLIENT_ENTRY, detail: `reaches ${rel(target)} via ${trail.join(" -> ")}` }); continue; }
-      walk(target, trail);
-    }
-  };
-  if (files.includes(DEX_CLIENT_ENTRY)) walk(entry, []);
+  // Each browser entry gets its own reachability walk (type-only imports are erased and skipped).
+  for (const clientEntry of DEX_CLIENT_ENTRIES) {
+    const entry = path.join(root, clientEntry);
+    const seen = new Set<string>();
+    const walk = (absolute: string, chain: readonly string[]) => {
+      if (seen.has(absolute)) return;
+      seen.add(absolute);
+      let source: string;
+      try { source = host.read(absolute); } catch { return; }
+      const trail = [...chain, rel(absolute)];
+      for (const { text, typeOnly } of moduleSpecifiers(absolute, source)) {
+        if (typeOnly) continue;
+        if (text === "server-only" || DEX_SDK.test(text)) { findings.push({ file: clientEntry, detail: `reaches ${text} via ${trail.join(" -> ")}` }); continue; }
+        const target = host.resolve(text, absolute);
+        if (!target) continue;
+        if (/\.server\.tsx?$/.test(target)) { findings.push({ file: clientEntry, detail: `reaches ${rel(target)} via ${trail.join(" -> ")}` }); continue; }
+        walk(target, trail);
+      }
+    };
+    if (files.includes(clientEntry)) walk(entry, []);
+  }
   return findings;
 }
 
@@ -340,6 +345,8 @@ describe("DEX boundaries (shrink-only baseline)", () => {
 const PROBE_TREE: Readonly<Record<string, string>> = {
   "src/lib/meteora-positions.ts": "export const x = 1;",
   "src/lib/dex/index.ts": "export const dexRegistry = {};",
+  "src/lib/dex/evm-client.ts": "export const evmClientFor = () => ({});",
+  "src/lib/dex/evm-client-module.ts": "export type NativeEvmClientModule = {};",
   "src/lib/dex/client.ts": "export const dexDescriptors = {};",
   "src/lib/dex/types.ts": "export type DexId = string;",
   "src/lib/dex/meteora-dlmm/adapter.server.ts": "export const adapter = {};",
@@ -426,7 +433,7 @@ describe("DEX boundary guard negative controls", () => {
   });
 
   it("allows the registry entry points, shared types and non-DEX libraries", () => {
-    expect(probe("src/components/probe.tsx", 'import { dexDescriptors } from "@/lib/dex/client"; import type { PoolSource } from "@/lib/pool-sources/types"; import { ok } from "@/lib/unrelated"; import { session } from "@/lib/rhc-wallet/evm-session";')).toEqual([]);
+    expect(probe("src/components/probe.tsx", 'import { dexDescriptors } from "@/lib/dex/client"; import { evmClientFor } from "@/lib/dex/evm-client"; import type { PoolSource } from "@/lib/pool-sources/types"; import { ok } from "@/lib/unrelated"; import { session } from "@/lib/rhc-wallet/evm-session";')).toEqual([]);
     expect(probe("src/app/api/probe/route.ts", 'import { dexRegistry } from "@/lib/dex";')).toEqual([]);
   });
 
@@ -491,6 +498,27 @@ describe("DEX boundary guard negative controls", () => {
       .toEqual(["src/lib/dex/client.ts: reaches @meteora-ag/dlmm via src/lib/dex/client.ts -> src/lib/dex/descriptors.ts -> src/lib/dex/meteora-dlmm/descriptor.ts"]);
     expect(probeDex({ ...clean, "src/lib/dex/fees.ts": 'import { Raydium } from "@raydium-io/raydium-sdk-v2"; export const f = Raydium;' }))
       .toEqual(["src/lib/dex/fees.ts: @raydium-io/raydium-sdk-v2: shared DEX files import no DEX SDK or engine DEX module"]);
+  });
+
+  it("guards both browser entries and confines client-module registration to the optional EVM entry", () => {
+    const entry = "src/lib/dex/evm-client.ts";
+    const clientModulePath = "src/lib/dex/uniswap-v4-rhc/client-module.ts";
+    const clean = {
+      [entry]: 'import { client } from "./uniswap-v4-rhc/client-module"; export const evmClientFor = () => client;',
+      [clientModulePath]: 'export const client = {};',
+    };
+    expect(probeDex(clean)).toEqual([]);
+    for (const body of ['import "server-only";', 'import sdk from "@uniswap/v4-sdk";', 'const build = () => import("./open.server");']) {
+      const findings = probeDex({ ...clean, [clientModulePath]: body, "src/lib/dex/uniswap-v4-rhc/open.server.ts": "export const build = 1;" });
+      expect(findings.some(finding => finding.startsWith(`${entry}: reaches `))).toBe(true);
+    }
+    for (const shared of ["src/lib/dex/client.ts", "src/lib/dex/registry.ts"]) {
+      expect(probeDex({ ...clean, [shared]: 'import { client } from "./uniswap-v4-rhc/client-module";' }))
+        .toContain(`${shared}: ./uniswap-v4-rhc/client-module: shared DEX files import only <id>/module.ts or <id>/descriptor.ts`);
+    }
+    expect(probeDex({ [entry]: 'import { build } from "./uniswap-v4-rhc/open.server";',
+      "src/lib/dex/uniswap-v4-rhc/open.server.ts": "export const build = 1;" }))
+      .toContain(`${entry}: reaches src/lib/dex/uniswap-v4-rhc/open.server.ts via ${entry}`);
   });
 
   it("ratchets both ways against the baseline", () => {

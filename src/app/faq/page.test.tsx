@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { FAQ_ITEMS, FAQ_SECTIONS } from "@/lib/faq";
 import { DEFAULT_SWAP_FEE_BPS } from "@sofinance/engine/swap/fee";
 import { OPEN_FEE_BPS } from "@sofinance/engine/protocols/uniswap-v4/open-constants";
-import { RHC_EXPLORER_TX } from "@/lib/rhc-wallet/open-execute";
+import { RHC_EXPLORER_TX } from "@/lib/dex/uniswap-v4-rhc/wallet/open-execute";
 import { listToolDefinitions } from "@/mcp/tool-definitions";
 
 vi.mock("@/components/ink", async (importOriginal) => ({

@@ -1,5 +1,5 @@
-import { currentChainId, type Eip1193Provider, RHC_CHAIN_ID, RHC_UNKNOWN_SEND } from "./eip1193";
-export { RHC_UNKNOWN_SEND } from "./eip1193";
+import { currentChainId, type Eip1193Provider, RHC_CHAIN_ID, RHC_UNKNOWN_SEND } from "@/lib/rhc-wallet/eip1193";
+export { RHC_UNKNOWN_SEND } from "@/lib/rhc-wallet/eip1193";
 import { mintedPositionId, waitForReceipt } from "./open-execute";
 
 type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;

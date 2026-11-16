@@ -7,12 +7,7 @@
     "src/app/app/page.tsx": 1,
     "src/app/app/rhc/page.tsx": 1,
     "src/components/homepage-pools-table.tsx": 1,
-    "src/components/rhc-close.ts": 5,
-    "src/components/rhc-univ4-open-panel.tsx": 6,
-    "src/components/rhc-univ4-positions-panel.tsx": 5,
     "src/components/unified-pools/unified-pools-panel.tsx": 1,
-    "src/components/unified-positions/rhc-positions.tsx": 3,
-    "src/components/unified-positions/rhc-values.ts": 1,
     "src/lib/rwa-refresh.ts": 2
   },
   "branches": {

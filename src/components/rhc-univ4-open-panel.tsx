@@ -1,25 +1,25 @@
 "use client";
 
-import type { OpenFlowResult, PermitJson } from "@sofinance/engine/protocols/uniswap-v4/open-flow";
+import { evmClientFor, type OpenFlowResult, type PermitJson, type WalletBalances, type OpenStepId,
+  type RhcOpenAttempt, type RhcPoolView } from "@/lib/dex/evm-client";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { formatUnits, parseUnits } from "viem";
 import { exactTickFromUiPrice } from "@sofinance/engine/range-apr/tick-math";
 import {
   connectEvmWallet, discoverEvmWallets, ensureRobinhoodChain, guardedWalletRequest, SIGNING_DISABLED_MESSAGE, WalletRequestError,
 } from "@/lib/rhc-wallet/eip1193";
-import {
-  checkExecuteTx, checkTx, explorerTxUrl, isPermitExpired, requireRobinhoodChain, SIGNATURE_EXPIRED_MESSAGE, walletTxParams,
-} from "@/lib/rhc-wallet/open-execute";
-import { readWalletBalances, trackPositionId, type WalletBalances } from "@/lib/rhc-wallet/exit-execute";
 import { RhcUniv4PositionsPanel } from "./rhc-univ4-positions-panel";
-import { openSteps, RETRY_CONFIRM_TEXT, stepProgressLabel, type OpenStepId } from "@/lib/rhc-wallet/open-steps";
-import { assertRhcOpenAttempt, clearRhcOpenAttempt, isRhcTxHash, parseRhcOpenAttempt, readRhcOpenAttempt,
-  reconcileRhcOpenAttempt, rhcOpenAttemptKey, rhcOpenStorage, RHC_HISTORY_ERROR, RHC_UNKNOWN_SEND,
-  subscribeRhcOpenAttempt, writeRhcOpenAttempt, type RhcOpenAttempt } from "@/lib/rhc-wallet/open-attempt";
-import type { RhcPoolView } from "@/lib/rhc-wallet/pool-view";
 import type { EvmWallet } from "@/lib/rhc-wallet/evm-session";
 import { OpenPositionFormFields, RhcRangeButtons } from "./open-position/open-position-form";
 import { shortAddress } from "@/lib/format/address";
+
+const nativeClient = evmClientFor("uniswap-v4-rhc");
+const { checkExecuteTx, checkTx, explorerTxUrl, isPermitExpired, requireRobinhoodChain, SIGNATURE_EXPIRED_MESSAGE, walletTxParams } = nativeClient.open;
+const { readWalletBalances, trackPositionId } = nativeClient.exit;
+const { openSteps, RETRY_CONFIRM_TEXT, stepProgressLabel } = nativeClient.steps;
+const { assertRhcOpenAttempt, clearRhcOpenAttempt, isRhcTxHash, parseRhcOpenAttempt, readRhcOpenAttempt,
+  reconcileRhcOpenAttempt, rhcOpenAttemptKey, rhcOpenStorage, RHC_HISTORY_ERROR, RHC_UNKNOWN_SEND,
+  subscribeRhcOpenAttempt, writeRhcOpenAttempt } = nativeClient.attempt;
 
 /**
  * Robinhood Chain (4663) Uniswap v4 open-position flow (design §6 PR5), behind `RHC_UNIV4_TRADING_ENABLED`.

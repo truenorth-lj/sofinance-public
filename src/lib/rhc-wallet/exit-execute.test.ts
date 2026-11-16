@@ -2,7 +2,7 @@
 import { UNIV4_RHC, UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import { buildExitModifyLiquidities } from "@sofinance/engine/protocols/uniswap-v4/tx-exit-posm";
 import { afterEach, describe, expect, it } from "vitest";
-import { checkExitTx, isDeadlinePassed, readWalletBalances, trackedPositionIds, trackPositionId, untrackPositionId } from "./exit-execute";
+import { checkExitTx, isDeadlinePassed, readWalletBalances, trackedPositionIds, trackPositionId, untrackPositionId } from "../dex/uniswap-v4-rhc/wallet/exit-execute";
 
 const pool = UNIV4_RHC_ALLOWLISTED_POOLS[0]!;
 const USER = "0xb95b77e9429643cbafde865fa2a9f687e8d21b04" as const;

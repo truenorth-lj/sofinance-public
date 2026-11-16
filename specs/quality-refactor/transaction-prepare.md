@@ -71,6 +71,13 @@ existing per-IP limiter. Decimal-id parsing shares the engine limit without load
 Official public RPC spacing/cooldown, saved-price freshness/nulls, 503 busy/error responses and
 all cache TTLs are preserved; this does not enable generic performance or writes.
 
+The optional `dex/evm-client` registry resolves native browser guards, receipt/history helpers,
+steps, pool views and position-source bindings. RHC helpers move into its own wallet directory;
+UI handlers and helper bodies remain unchanged. Metadata-only `dex/client` never imports the
+optional bindings. Only this browser entry may register `client-module.ts`; both browser import
+graphs reject server-only, DEX SDK and `.server` code. Generic capabilities and signing flags
+remain independent and unchanged.
+
 Withdrawal status now uses a lazy native read binding, independent of new-withdrawal capability.
 It snapshots the signature and complete prepared authorization before awaits, retaining HMAC
 verification before RPC, existing finality/history/account read rules, message matching and cache

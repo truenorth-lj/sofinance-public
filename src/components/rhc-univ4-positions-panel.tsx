@@ -1,17 +1,18 @@
 "use client";
 
-import type { RhcPositionView } from "@sofinance/engine/protocols/uniswap-v4/exit-flow";
-import type { ScannedPosition } from "@sofinance/engine/protocols/uniswap-v4/position-scan";
+import { evmClientFor, type RhcPositionView, type ScannedPosition } from "@/lib/dex/evm-client";
 import { formatUnits } from "viem";
-import { trackedPositionIds, trackPositionId, untrackPositionId } from "@/lib/rhc-wallet/exit-execute";
-import { explorerTxUrl } from "@/lib/rhc-wallet/open-execute";
-import { rhcPairLabel } from "@/lib/unified-pools/rows";
 import {
   poolOf, useRhcClose, type RhcCloseReady, type RhcCloseSent, type RhcWalletRef,
 } from "./rhc-close";
 import { shortAddress } from "@/lib/format/address";
 import { RhcPositionsToolbar } from "./rhc-positions-toolbar";
 import { useRhcPositionList } from "./use-rhc-position-list";
+
+const nativeClient = evmClientFor("uniswap-v4-rhc");
+const { trackedPositionIds, trackPositionId, untrackPositionId } = nativeClient.exit;
+const { explorerTxUrl } = nativeClient.open;
+const rhcPairLabel = nativeClient.pairLabel;
 
 /**
  * Robinhood Chain (4663) Uniswap v4 positions + Close (PR7), inside the `/app/rhc` panel (same flags: page behind
