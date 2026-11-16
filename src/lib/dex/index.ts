@@ -6,6 +6,9 @@ import "server-only";
 import { dexRegistry } from "./registry-instance";
 
 export { dexRegistry };
+export { prepareWithdrawal, quoteWithdrawal } from "./prepare-withdraw.server";
+export { APP_WITHDRAW_PREPARE, MCP_WITHDRAW_PREPARE } from "./withdraw-prepare";
+export type { WithdrawalPreparation } from "./withdraw-prepare";
 export { prepareAdd } from "./prepare-add.server";
 export const simulateAdd: typeof dexRegistry.buildAdd = (id, ...args) => dexRegistry.buildAdd(id, ...args);
 export { APP_ADD_PREPARE, MCP_ADD_PREPARE } from "./add-prepare";

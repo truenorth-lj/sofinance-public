@@ -16,7 +16,12 @@ vi.mock("@sofinance/engine/lp-exit-instructions", async () => {
 import { PublicKey, SystemProgram, VersionedTransaction, type Connection } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { PersonalPositionLayout, PoolInfoLayout } from "@raydium-io/raydium-sdk-v2";
-import { buildWithdraw } from "@sofinance/engine/withdraw/build";
+import { buildWithdraw as engineBuildWithdraw } from "@sofinance/engine/withdraw/build";
+import { dexRegistry } from "@/lib/dex";
+import type { WithdrawPrepareRequest } from "@sofinance/engine/withdraw/types";
+// Exercise the real native builder through its lazy registry binding, with the
+// existing synthetic account/simulation seams (this does not execute Raydium).
+const buildWithdraw = (input: WithdrawPrepareRequest, preview?: boolean) => dexRegistry.buildWithdrawal("raydium-clmm", input, preview);
 import { BLOCKHASH, SIGNING_SECRET, phantomRewriteTransaction, testKeypair } from "../test-support/send-fixtures";
 import { USDC_MINT } from "@sofinance/engine/ids";
 const key = (n: number) => testKeypair(n).publicKey;
@@ -176,4 +181,12 @@ it("rejects an absent, failed, mismatched, or under-minimum first receipt", asyn
     await expect(buildWithdraw(next)).rejects.toThrow("must be finalized");
     getTransaction.mockResolvedValue({ transaction: { message: first.message }, meta: { err: null, loadedAddresses: { writable: [], readonly: [] }, preTokenBalances: [], postTokenBalances: [] } });
     await expect(buildWithdraw(next)).rejects.toThrow("less than minimum");
+});
+
+it("preserves original-output transaction bytes and authorization through the registry", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1800000000000);
+    try {
+        const input = { ...request, receive: "original" as const };
+        expect(await buildWithdraw(input)).toEqual(await engineBuildWithdraw(input));
+    } finally { clock.mockRestore(); }
 });
