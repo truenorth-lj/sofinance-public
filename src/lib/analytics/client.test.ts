@@ -111,6 +111,18 @@ describe("event firing when the key is set", () => {
     expect(posthog.capture).toHaveBeenLastCalledWith(GROWTH_EVENTS.openSuccess, { pool: "pool" });
   });
 
+  it("attaches connect context to wallet_connected without putting it on identify or register", async () => {
+    const wallet = "So11111111111111111111111111111111111111112";
+    await initGrowthAnalytics();
+    await captureWalletConnected(wallet, { wallet_name: "Phantom", chain: "solana", device: "desktop", wallet_extension_detected: true });
+    expect(posthog.identify).toHaveBeenCalledWith(wallet);
+    expect(posthog.register).toHaveBeenCalledWith({ wallet_address: wallet });
+    expect(posthog.setPersonProperties).toHaveBeenCalledWith({ wallet_address: wallet });
+    expect(posthog.capture).toHaveBeenCalledWith(GROWTH_EVENTS.walletConnected, {
+      wallet_address: wallet, wallet_name: "Phantom", chain: "solana", device: "desktop", wallet_extension_detected: true,
+    });
+  });
+
   it("resets a previous wallet identity (legacy hashed id or another address) before identifying", async () => {
     await initGrowthAnalytics();
     posthog.get_distinct_id.mockReturnValueOnce(`wallet:${"a".repeat(64)}`);

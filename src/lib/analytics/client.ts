@@ -181,19 +181,20 @@ function resetIdentity(nextClient: GrowthClient) {
   if (stored) applyAttribution(stored);
 }
 
-/** Identify by the public wallet address and tag later events with it. */
-export async function captureWalletConnected(wallet: string) {
+/** Identify by the public wallet address and tag later events with it. Extra connect context is event-only, not identify/register. */
+export async function captureWalletConnected(wallet: string, extras?: Record<string, unknown>) {
   if (!wallet) return;
   const enabled = await initGrowthAnalytics();
   if (!enabled || !client) return;
   const current = client.get_distinct_id?.();
   if (current && current !== wallet && WALLET_DISTINCT_ID.test(current)) resetIdentity(client);
-  const properties = { wallet_address: wallet };
+  const identity = { wallet_address: wallet };
   client.identify(wallet);
   identifiedWallet = wallet;
-  client.register(properties);
-  client.setPersonProperties?.(properties);
-  captureGrowthEvent(GROWTH_EVENTS.walletConnected, properties);
+  client.register(identity);
+  client.setPersonProperties?.(identity);
+  const eventProperties = extras && Object.keys(extras).length > 0 ? { ...identity, ...extras } : identity;
+  captureGrowthEvent(GROWTH_EVENTS.walletConnected, eventProperties);
 }
 
 /** Wallet disconnected: stop tagging events with it and start a fresh anonymous id. */

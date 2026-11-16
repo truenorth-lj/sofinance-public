@@ -1,9 +1,18 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { isRhcUniv4TradingEnabled } from "@/lib/protocol-flags";
 import { RHC_CHAIN_ID } from "@/lib/rhc-wallet/eip1193";
 import { createEvmSession, type EvmSession, type EvmSessionState, type EvmWallet } from "@/lib/rhc-wallet/evm-session";
+import { captureGrowthEvent } from "@/lib/analytics/client";
+import { GROWTH_EVENTS } from "@/lib/analytics/events";
+import { walletConnectContext } from "@/lib/analytics/wallet-connect";
+import {
+  captureWalletConnectFailed,
+  captureWalletConnectStarted,
+  noteWalletConnectSucceeded,
+  openWalletConnectSession,
+} from "@/lib/analytics/wallet-connect-session";
 
 /**
  * The app-wide EVM wallet (Robinhood Chain), next to the Solana `useWalletConnection`. The two never share state:
@@ -42,11 +51,28 @@ export function EvmWalletProvider({ children, enabled = isRhcUniv4TradingEnabled
     return () => { live = false; };
   }, [enabled, session]);
   const status = !restored && state.status === "idle" ? "restoring" : state.status;
-  const value = useMemo<EvmWalletConnection>(() => ({
-    ...state, status, enabled, wrongNetwork: Boolean(state.wallet) && state.chainId !== RHC_CHAIN_ID,
-    connect: session.connect, disconnect: session.disconnect, dismissError: session.dismissError, switchNetwork: session.switchNetwork,
-  }), [state, status, enabled, session]);
-  return <EvmWalletContext.Provider value={value}>{children}</EvmWalletContext.Provider>;
+  const value = useMemo<EvmWalletConnection>(() => {
+    const connect = async () => {
+      openWalletConnectSession({ chain: "rhc", wallet_name: "EVM wallet" });
+      captureWalletConnectStarted({ wallet_name: "EVM wallet", chain: "rhc" });
+      try {
+        const wallet = await session.connect();
+        noteWalletConnectSucceeded();
+        return wallet;
+      } catch (error) {
+        captureWalletConnectFailed(error, { chain: "rhc" });
+        throw error;
+      }
+    };
+    return {
+      ...state, status, enabled, wrongNetwork: Boolean(state.wallet) && state.chainId !== RHC_CHAIN_ID,
+      connect, disconnect: session.disconnect, dismissError: session.dismissError, switchNetwork: session.switchNetwork,
+    };
+  }, [state, status, enabled, session]);
+  return <EvmWalletContext.Provider value={value}>
+    <EvmWalletGrowthAnalytics address={state.wallet?.address} name={state.wallet?.name} status={status} />
+    {children}
+  </EvmWalletContext.Provider>;
 }
 
 export function useEvmWalletConnection(): EvmWalletConnection {
@@ -58,4 +84,20 @@ export function useEvmWalletConnection(): EvmWalletConnection {
 /** For shared chrome (InkNav) that also renders outside the app providers (docs, blog, terms). */
 export function useOptionalEvmWalletConnection(): EvmWalletConnection | null {
   return useContext(EvmWalletContext);
+}
+
+/** Auto-reconnect (restore) also records wallet_connected, without sending the EVM address. */
+function EvmWalletGrowthAnalytics({ address, name, status }: { address?: string; name?: string; status: EvmSessionState["status"] }) {
+  const last = useRef<string | null>(null);
+  useEffect(() => {
+    if (status !== "connected" || !address || !name) {
+      if (!address) last.current = null;
+      return;
+    }
+    if (last.current === address) return;
+    last.current = address;
+    noteWalletConnectSucceeded();
+    captureGrowthEvent(GROWTH_EVENTS.walletConnected, walletConnectContext({ wallet_name: name, chain: "rhc" }));
+  }, [address, name, status]);
+  return null;
 }

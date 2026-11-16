@@ -1,7 +1,11 @@
 export const GROWTH_EVENTS = {
   rwaPairsView: "rwa_pairs_view",
   walletConnectClicked: "wallet_connect_clicked",
+  walletConnectStarted: "wallet_connect_started",
   walletConnected: "wallet_connected",
+  walletConnectFailed: "wallet_connect_failed",
+  walletConnectAbandoned: "wallet_connect_abandoned",
+  walletDeeplinkClicked: "wallet_deeplink_clicked",
   performanceView: "performance_view",
   openStarted: "open_position_started",
   openSuccess: "open_position_success",
