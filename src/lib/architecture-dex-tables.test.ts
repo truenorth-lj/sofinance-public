@@ -36,7 +36,7 @@ import baseline from "./architecture-dex-tables-baseline.json";
 const root = path.resolve(import.meta.dirname, "../..");
 
 /** Ceiling on the baseline total; lower this together with the JSON whenever a PR removes a table. */
-const BASELINE_CEILING = { tables: 2 } as const;
+const BASELINE_CEILING = { tables: 1 } as const;
 
 /** Canonical DEX ids plus the one-release legacy alias; chain strings are not keys of these tables. */
 const DEX_TABLE_KEYS: ReadonlySet<string> = new Set([

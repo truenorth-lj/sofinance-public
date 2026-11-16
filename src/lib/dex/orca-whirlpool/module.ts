@@ -1,4 +1,5 @@
-import { isOrcaPositionsEnabled } from "@/lib/protocol-flags";
+import type { PublicPoolReads } from "../public-pool-read";
+import { isOrcaPositionsEnabled, isOrcaDiscoveryEnabled } from "@/lib/protocol-flags";
 import type { DexModule } from "../registry";
 import { orcaWhirlpoolDescriptor } from "./descriptor";
 
@@ -14,6 +15,17 @@ import { orcaWhirlpoolDescriptor } from "./descriptor";
  */
 export const orcaWhirlpoolModule: DexModule = Object.freeze({
   descriptor: orcaWhirlpoolDescriptor,
+  publicPoolReads: Object.freeze({
+    snapshotBacked: false, rangeAprUnavailableMessage: "Orca range APR unavailable",
+    discovery: Object.freeze({ enabled: () => isOrcaDiscoveryEnabled(), read: async () => (await import("@/lib/orca-pairs")).discoverOrcaPairs() }),
+    rangeApr: Object.freeze({
+      enabled: () => isOrcaDiscoveryEnabled(),
+      read: async (poolId: string) => {
+        const reader = await import("@/lib/orca-range-apr");
+        return reader.isAllowlistedOrcaPool(poolId) ? reader.fetchOrcaRangeApr(poolId) : null;
+      },
+    }),
+  } satisfies PublicPoolReads),
   positionReads: Object.freeze({
     source: "orca" as const, order: 0, protocol: orcaWhirlpoolDescriptor.id,
     listing: Object.freeze({

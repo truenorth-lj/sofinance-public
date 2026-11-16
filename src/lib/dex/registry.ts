@@ -4,6 +4,7 @@ import type { Lease, RwaStore } from "@/lib/rwa-store-types";
 import type { PortfolioInput, PortfolioReader } from "@/lib/portfolio/model";
 import { positionFigures } from "@/lib/portfolio/figures";
 import type { PositionKey, UnifiedPosition } from "@/lib/unified-positions/model";
+import type { PublicPoolReads, PublicPoolReadPolicy } from "./public-pool-read";
 import type { DexAdapter } from "./adapter";
 import type { NativeEvmPositionReads, EvmPositionReadPolicy } from "./evm-position-read";
 import type { NativeEvmLiquidity } from "./evm-liquidity";
@@ -25,6 +26,7 @@ import { normalizeDexId, type DexCapabilities, type DexDescriptor, type DexId } 
 /** One DEX as registered server-side: its descriptor, a lazy adapter (keeps SDKs out of other routes), its pool scan. */
 export type DexModule = {
   descriptor: DexDescriptor;
+  publicPoolReads?: PublicPoolReads;
   /** Existing native EVM validation/builds; independent of generic HTTP capabilities. */
   evmLiquidity?: NativeEvmLiquidity;
   evmPositionReads?: NativeEvmPositionReads;
@@ -100,6 +102,9 @@ export type DexDescriptorRegistry = {
 };
 
 export type DexRegistry = DexDescriptorRegistry & {
+  protocolPoolReadPolicyFor(id: string): PublicPoolReadPolicy | null;
+  readProtocolPools(id: string): Promise<Awaited<ReturnType<PublicPoolReads["discovery"]["read"]>> | null>;
+  readProtocolRangeApr(id: string, poolId: string): ReturnType<PublicPoolReads["rangeApr"]["read"]>;
   evmPositionReadPolicyFor(id: string): EvmPositionReadPolicy;
   readEvmPositions(id: string, wallet: `0x${string}`, options?: { fresh?: boolean }): ReturnType<NativeEvmPositionReads["scan"]>;
   readEvmPositionValues(id: string, ids: bigint[]): ReturnType<NativeEvmPositionReads["values"]>;
@@ -215,6 +220,23 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
     ? [Object.freeze({ ...entry.positionReads, id: entry.descriptor.id })] : []).sort((a, b) => a.order - b.order));
   return Object.freeze({
     ...lookups,
+    protocolPoolReadPolicyFor(id: string) {
+      const canonical = normalizeDexId(id);
+      const binding = canonical ? byId.get(canonical)?.publicPoolReads : undefined;
+      return binding ? { snapshotBacked: binding.snapshotBacked, rangeAprUnavailableMessage: binding.rangeAprUnavailableMessage } : null;
+    },
+    async readProtocolPools(id: string) {
+      const canonical = normalizeDexId(id);
+      const binding = canonical ? byId.get(canonical)?.publicPoolReads : undefined;
+      if (!binding?.discovery.enabled()) return null;
+      return binding.discovery.read();
+    },
+    async readProtocolRangeApr(id: string, poolId: string) {
+      const canonical = normalizeDexId(id);
+      const binding = canonical ? byId.get(canonical)?.publicPoolReads : undefined;
+      if (!binding?.rangeApr.enabled()) return null;
+      return binding.rangeApr.read(poolId);
+    },
     async adapterFor(id: string) {
       const canonical = normalizeDexId(id);
       const entry = canonical ? byId.get(canonical) : undefined;

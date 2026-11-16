@@ -1,7 +1,8 @@
+import type { PublicPoolReads } from "../public-pool-read";
 import type { DexModule } from "../registry";
 import type { NativeEvmPositionReads } from "../evm-position-read";
 import type { NativeEvmLiquidity } from "../evm-liquidity";
-import { isRhcUniv4TradingEnabled, isRhcUniv4TxBuildEnabled } from "@/lib/protocol-flags";
+import { isRhcUniv4TradingEnabled, isRhcUniv4TxBuildEnabled, isRhcUniv4DiscoveryEnabled, isRhcApr7dEnabled } from "@/lib/protocol-flags";
 import { rhcScanClientIp, rhcScanRateLimited } from "@/lib/rhc-scan-rate-limit";
 import { uniswapV4RhcDescriptor } from "./descriptor";
 import { RhcOpenRequestSchema, RhcExitRequestSchema } from "./liquidity-input";
@@ -19,6 +20,18 @@ import { parsePositionIds, RHC_SCAN_FAILED_MESSAGE } from "./position-input";
  */
 export const uniswapV4RhcModule: DexModule = Object.freeze({
   descriptor: uniswapV4RhcDescriptor,
+  publicPoolReads: Object.freeze({
+    snapshotBacked: true, rangeAprUnavailableMessage: "RHC range APR unavailable",
+    discovery: Object.freeze({ enabled: () => isRhcUniv4DiscoveryEnabled(), read: async () => (await import("@/lib/rhc-snapshot")).getRhcPoolsSnapshot() }),
+    rangeApr: Object.freeze({
+      enabled: () => isRhcApr7dEnabled(),
+      read: async (poolId: string) => {
+        const { isAllowlistedRhcPool } = await import("@/lib/rhc-range-apr");
+        if (!isAllowlistedRhcPool(poolId)) return null;
+        return (await import("@/lib/rhc-snapshot")).getRhcAprSnapshot(poolId);
+      },
+    }),
+  } satisfies PublicPoolReads),
   evmPositionReads: Object.freeze({
     enabled: () => isRhcUniv4TradingEnabled(),
     parseIds: parsePositionIds,
