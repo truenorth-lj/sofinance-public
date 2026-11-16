@@ -644,6 +644,26 @@ describe("Meteora DLMM adapter specifics", () => {
     const ABOVE = { kind: "units", lower: 46063, upper: 46090 } as const;
     const ABOVE_POSITION = Keypair.fromSeed(new Uint8Array(32).fill(25)).publicKey.toBase58();
 
+    it.each([1000n, 1598n, 1599n, 2000n])("open: builds Micro setup when the swapped-input fee floors at the one-unit boundary (%s raw TSLA)", async (amount) => {
+      const adapter = createMeteoraDlmmAdapter();
+      const smallRequest: OpenRequest = { ...base, input: { token: TSLA, amountRaw: amount.toString() }, range: { kind: "preset", presetId: "micro" } };
+      const ranges = await adapter.openRanges!(TSLA_POOL);
+      const micro = ranges.presets.find((preset) => preset.id === "micro")!;
+      const swapped = meteoraSpotSplit(amount, 46062, micro.lowerUnit, micro.upperUnit).y;
+      const { quotes, restore } = recordQuotes();
+      try {
+        const quote = await adapter.quoteOpen(smallRequest);
+        expect(quote.range.units).toBe(4);
+        expect(quote.depositMinimum?.tooSmall).toBe(false);
+        expect(quote.platformFeeRaw).toBe(tenBps(swapped).toString());
+        expect(tenBps(swapped)).toBe(amount < 1599n ? 0n : 1n);
+        const step = await adapter.prepareOpen(smallRequest, first);
+        expect(step).toMatchObject({ step: 1, of: 2, done: false });
+        expect(chain.current.simulations).toContain("initialize_position");
+        for (const q of quotes) expect(q).toMatchObject({ inputMint: TSLA, outputMint: TSLAX, amount: swapped, platformFeeBps: 10 });
+      } finally { restore(); }
+    });
+
     it("open: the quoted fee is exactly 10 bps of the swapped TSLAx leg; the kept TSLA side is neither swapped nor charged", async () => {
       const { quotes, restore } = recordQuotes();
       try {

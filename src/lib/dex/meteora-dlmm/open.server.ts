@@ -12,7 +12,7 @@ import {
 import { fetchMeteoraPositionRent, readMeteoraOpenAccounts } from "@sofinance/engine/protocols/meteora/rent";
 import { checkMeteoraPoolMint, meteoraPoolTokenPrograms, type MeteoraMintRestriction } from "@sofinance/engine/protocols/meteora/token";
 import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT, SLIPPAGE_BPS, USDC_MINT } from "@sofinance/engine/ids";
-import type { SwapFeeConfig } from "@sofinance/engine/swap/fee";
+import { computeSwapFee, type SwapFeeConfig } from "@sofinance/engine/swap/fee";
 import { feeSwapLeg } from "@sofinance/engine/swap/leg";
 import { swapRouteInstructions } from "@sofinance/engine/swap/instructions";
 import type { BuildRoute } from "@sofinance/engine/swap/jupiter";
@@ -394,7 +394,9 @@ async function swapLegs(plan: MeteoraOpenPlan, owner: string, constraints: Jupit
       wallet: owner, inputMint: plan.inputMint, outputMint: side.mint, spend: side.spend, feeBps: plan.legBps,
       inputFee: plan.legBps > 0, build: true, constraints,
     });
-    if (plan.legBps > 0 && (!leg.feeInRoute || leg.feeAmount <= 0n)) {
+    // Small swap legs can legitimately floor to zero raw fee units. Keep the
+    // configured rate and in-route collection, and check the exact input fee.
+    if (plan.legBps > 0 && (!leg.feeInRoute || leg.feeAmount !== computeSwapFee(side.spend, plan.legBps))) {
       throw new DexError("UPSTREAM", "The platform fee could not be collected inside the Jupiter swap, so nothing was built.");
     }
     return { side: side.side, minOut: leg.minOut, route: leg.route as BuildRoute | null };
