@@ -10,20 +10,22 @@ import type { UnifiedPool } from "@/lib/unified-pools/model";
 import { POOL_NOT_TRACKED_MESSAGE } from "@/lib/range-apr/not-clmm-pool";
 import { usePoolsApr7d, type Apr7dState } from "./use-pools-apr7d";
 
-const mocks = vi.hoisted(() => ({ payload: null as unknown, calls: [] as unknown[][] }));
+const mocks = vi.hoisted(() => ({ payload: null as unknown, calls: [] as unknown[][], rhcEnabled: true }));
 vi.mock("../range-apr/pool-range-apr-client", () => ({ loadPoolRangeApr: async (...args: unknown[]) => { mocks.calls.push(args); if (mocks.payload instanceof Error) throw mocks.payload; return mocks.payload; } }));
+
+vi.mock("@/lib/protocol-flags", async load => ({ ...await load<typeof import("@/lib/protocol-flags")>(), isRhcApr7dEnabled: () => mocks.rhcEnabled }));
 
 const pool = { key: "solana:p1", chain: "solana", protocol: "raydium-clmm", poolAddress: "p1" } as UnifiedPool;
 let out: Record<string, Apr7dState> = {};
-function Probe({ onState }: { onState: (state: Record<string, Apr7dState>) => void }) {
-  const state = usePoolsApr7d([pool]);
+function Probe({ onState, pools = [pool] }: { onState: (state: Record<string, Apr7dState>) => void; pools?: UnifiedPool[] }) {
+  const state = usePoolsApr7d(pools);
   useEffect(() => { onState(state); }, [state, onState]);
   return null;
 }
 const keep = (state: Record<string, Apr7dState>) => { out = state; };
 
 let container: HTMLDivElement; let root: Root;
-beforeEach(() => { vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); container = document.createElement("div"); root = createRoot(container); });
+beforeEach(() => { mocks.rhcEnabled = true; vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); container = document.createElement("div"); root = createRoot(container); });
 afterEach(async () => { await act(async () => root.unmount()); vi.unstubAllGlobals(); });
 
 async function run(payload: unknown) {
@@ -84,4 +86,21 @@ describe("usePoolsApr7d RWA-list Meteora pools", () => {
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 5)); });
     expect(mocks.calls).toEqual([["m1", "meteora-dlmm", { rwaList: true }], ["m2", "meteora-dlmm"], ["p1", "raydium-clmm", { rwaList: true }]]);
   });
+});
+
+it("keeps RHC APR flag-off reads closed and hides a settled value when disabled again", async () => {
+  const rhc = { ...pool, key: "robinhood:rhc", chain: "robinhood", protocol: "uniswap-v4-rhc" } as UnifiedPool;
+  mocks.calls = []; mocks.payload = cardPayloadWithAprs({ micro: 40, tight: 20, standard: 10, wide: 5 }); mocks.rhcEnabled = false;
+  const render = async () => {
+    await act(async () => { root.render(createElement(Probe, { onState: keep, pools: [rhc] })); });
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
+  };
+  await render();
+  expect(mocks.calls).toEqual([]);
+  expect(out[rhc.key]).toEqual({ status: "missing", reason: "No 7-day estimate for this pool yet." });
+  mocks.rhcEnabled = true; await render();
+  expect(mocks.calls).toHaveLength(1); expect(out[rhc.key]?.status).toBe("ready");
+  mocks.rhcEnabled = false; await render();
+  expect(mocks.calls).toHaveLength(1);
+  expect(out[rhc.key]).toEqual({ status: "missing", reason: "No 7-day estimate for this pool yet." });
 });

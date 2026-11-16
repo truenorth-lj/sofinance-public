@@ -62,7 +62,7 @@ export const uniswapV4RhcDescriptor: DexDescriptor = Object.freeze({
     signer: "evm-wallet" as const,
   }),
   ui: Object.freeze({
-    rangeApr: Object.freeze({ route: "protocol" as const, cacheScope: "protocol" as const }),
+    rangeApr: Object.freeze({ route: "protocol" as const, cacheScope: "protocol" as const, rangeLabels: Object.freeze({ micro: "Min (±10 ticks)" }) }),
     nativePoolPresentation: Object.freeze({ pairLabel: rhcPairLabel, pool: rhcPool, openView: rhcPoolView }),
     defaultOpenPoolId: UNIV4_RHC_ALLOWLISTED_POOLS[0]!.poolId,
     openUi: "rhc-dialog" as const,
