@@ -83,7 +83,7 @@ const disk: GraphHost = {
 
 describe("prepare dependency direction", () => {
   it("follows every new use case through first-party aliases, barrels and literal dynamic imports", () => {
-    const result = audit([...sourceFiles(path.join(root, "src/server/transactions")), path.join(root, "src/lib/dex/prepare-add.server.ts"), path.join(root, "src/lib/dex/prepare-withdraw.server.ts")], disk);
+    const result = audit([...sourceFiles(path.join(root, "src/server/transactions")), path.join(root, "src/lib/dex/prepare-add.server.ts"), path.join(root, "src/lib/dex/prepare-withdraw.server.ts"), path.join(root, "src/lib/dex/prepare-compound.server.ts")], disk);
     expect(result.errors).toEqual([]);
     expect(result.visited.has(path.join(root, "src/lib/selected-atomic.ts"))).toBe(true);
     expect(result.visited.has(path.join(root, "packages/engine/src/withdraw/build.ts"))).toBe(true);

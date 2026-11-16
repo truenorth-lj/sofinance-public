@@ -1,12 +1,12 @@
 import "@/lib/engine-host";
-import { MCP_WITHDRAW_PREPARE } from "@/lib/dex";
+import { prepareWithdrawal, MCP_WITHDRAW_PREPARE } from "@/lib/dex";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { createSignToken } from "../../lib/pending-sign-token";
 import { buildSignUrl } from "../../lib/public-urls";
 
 export async function prepareWithdraw(input: import("@sofinance/engine/withdraw/types").WithdrawPrepareRequest) {
+ // This snapshot binds the later sign token; service/registry snapshots protect retries and lazy builders.
  const command=structuredClone(input);
- const {prepareWithdrawal}=await import("@/lib/dex");
  const prepared=await prepareWithdrawal("raydium-clmm", command, MCP_WITHDRAW_PREPARE);
  const submitArgs={wallet:command.wallet,permit:prepared.permit,summary:prepared.summary,confirmHighImpact:command.confirmHighImpact===true};
  const signToken=await createSignToken({kind:"withdraw",wallet:command.wallet,unsignedTransaction:prepared.unsignedTransaction,permit:prepared.permit,submitArgs,expiresAt:prepared.summary.expiresAt},getSigningSecret());

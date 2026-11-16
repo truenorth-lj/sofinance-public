@@ -1,8 +1,6 @@
 import "@/lib/engine-host";
 import { VersionedTransaction } from "@solana/web3.js";
-import { buildAndSimulateCompound } from "@sofinance/engine/compound-atomic";
-import { prepareCompound } from "@/server/transactions/compound-prepare";
-import { MCP_COMPOUND_PREPARE } from "@/server/transactions/surface-policy";
+import { prepareCompound, simulateCompound, MCP_COMPOUND_PREPARE } from "@/lib/dex";
 import { verifyCompoundPermit } from "../../lib/compound-permit";
 import { sendSignedCompoundTransaction } from "../../lib/compound-send";
 import { CompoundSendError, notSentRetryMessage, sanitizePublicError } from "../../lib/public-error";
@@ -23,11 +21,9 @@ import { capturePrepareSigningSecret } from "./prepare-secret";
  * Failure modes: Ineligible position, third reward token, insufficient harvested fees.
  */
 export async function quoteCompound(input: QuoteCompoundInput) {
-  const { summary } = await buildAndSimulateCompound(
-    input.wallet,
-    input.positionMint,
-    input.sourceSignatures || [],
-  );
+  const { summary } = await simulateCompound("raydium-clmm", {
+    wallet: input.wallet, positionMint: input.positionMint, sourceSignatures: input.sourceSignatures || [],
+  });
   
   // Return only public summary data
   return {
@@ -67,16 +63,15 @@ export async function quoteCompound(input: QuoteCompoundInput) {
  * Safety: Same as prepareTransaction, plus isolated yield accounts.
  */
 export async function prepareCompoundTransaction(input: QuoteCompoundInput) {
+  const command = { wallet: input.wallet, positionMint: input.positionMint, sourceSignatures: [...(input.sourceSignatures || [])] };
   const signingSecret = capturePrepareSigningSecret();
-  const { summary, permit, unsignedTransaction: unsignedTransactionBase64 } = await prepareCompound({
-    wallet: input.wallet, positionMint: input.positionMint, sourceSignatures: input.sourceSignatures || [],
-  }, signingSecret, MCP_COMPOUND_PREPARE);
+  const { summary, permit, unsignedTransaction: unsignedTransactionBase64 } = await prepareCompound("raydium-clmm", command, signingSecret, MCP_COMPOUND_PREPARE);
   const jupiterApiKey = signingSecret();
 
   // submitArgs for compound includes signedTransaction, permit, wallet, and full summary
   const submitArgs = {
     permit,
-    wallet: input.wallet,
+    wallet: command.wallet,
     summary,
   };
   
@@ -84,7 +79,7 @@ export async function prepareCompoundTransaction(input: QuoteCompoundInput) {
   const signToken = await createSignToken(
     {
       kind: "compound",
-      wallet: input.wallet,
+      wallet: command.wallet,
       unsignedTransaction: unsignedTransactionBase64,
       permit,
       submitArgs,
