@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import { OPEN_FEE_BPS } from "@sofinance/engine/protocols/uniswap-v4/open-constants";
 import { NO_FEE } from "../types";
 import { bpsFeeStrategy, feePolicyProblems } from "../fees";
@@ -28,16 +29,18 @@ describe("uniswap-v4-rhc descriptor (E2-alias)", () => {
     }
   });
 
-  it("keeps openUi rhc-dialog and useDescriptorPlanTerms false; alias inherits the same UI; listPositions is on", () => {
+  it("keeps the native UI and default Open pool without enabling generic operations", () => {
     expect(uniswapV4RhcDescriptor.id).toBe("uniswap-v4-rhc");
     expect(uniswapV4RhcDescriptor.chain).toBe("robinhood-chain");
     expect(uniswapV4RhcDescriptor.displayName).toBe("Uniswap v4");
     expect(uniswapV4RhcDescriptor.ui).toEqual({
+      defaultOpenPoolId: UNIV4_RHC_ALLOWLISTED_POOLS[0]!.poolId,
       openUi: "rhc-dialog",
       useDescriptorPlanTerms: false,
       listPositions: true,
     });
     const expectedUi = {
+      defaultOpenPoolId: UNIV4_RHC_ALLOWLISTED_POOLS[0]!.poolId,
       openUi: "rhc-dialog" as const,
       useDescriptorPlanTerms: false,
       listPositions: true,

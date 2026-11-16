@@ -1,3 +1,4 @@
+import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import { OPEN_FEE_BPS } from "@sofinance/engine/protocols/uniswap-v4/open-constants";
 import { NOT_AVAILABLE_MESSAGE, unsupported } from "@/lib/unified-positions/model";
 import { NO_FEE } from "../types";
@@ -60,6 +61,7 @@ export const uniswapV4RhcDescriptor: DexDescriptor = Object.freeze({
     signer: "evm-wallet" as const,
   }),
   ui: Object.freeze({
+    defaultOpenPoolId: UNIV4_RHC_ALLOWLISTED_POOLS[0]!.poolId,
     openUi: "rhc-dialog" as const,
     useDescriptorPlanTerms: false,
     listPositions: true,
