@@ -133,6 +133,39 @@ describe("Meteora DLMM adapter specifics", () => {
   });
   afterEach(() => teardown());
 
+  it("provides the 1:1 bin independently of the market price and honors the chosen parity bounds in quote and setup", async () => {
+    const adapter = createMeteoraDlmmAdapter();
+    const ranges = await adapter.openRanges!(TSLA_POOL);
+    expect(ranges.parityUnit).toBe(46054); // TSLA has 6 decimals, TSLAx has 8: raw bin 0 is not UI price 1
+    const micro = ranges.presets.find((preset) => preset.id === "micro")!;
+    expect(micro.lowerUnit).toBe(46060); // market-centered presets are unchanged
+    const lower = ranges.parityUnit! - Math.floor(micro.units / 2);
+    const parityRequest: OpenRequest = { ...base, range: { kind: "units", lower, upper: lower + micro.units - 1 } };
+    const quote = await adapter.quoteOpen(parityRequest);
+    expect(quote.range.units).toBe(4);
+    expect(quote.range.lowerPrice).toBeCloseTo(0.9998, 5);
+    expect(quote.range.upperPrice).toBeCloseTo(1.0002, 5);
+    const step = await adapter.prepareOpen(parityRequest, { step: 1, priorSignatures: [] });
+    if (step.prepared.kind !== "solana-tx") throw new Error("expected a Solana step");
+    const tx = VersionedTransaction.deserialize(Buffer.from(step.prepared.transaction, "base64"));
+    chain.current.land(tx);
+    const position = await chain.current.connection.getAccountInfo(new PublicKey(POSITION));
+    expect(position!.data.readInt32LE(7912)).toBe(46052);
+    expect(position!.data.readInt32LE(7916)).toBe(46055);
+    const deposit = await adapter.prepareOpen(parityRequest, { step: 2, priorSignatures: ["setup"], planToken: step.planToken });
+    expect(deposit).toMatchObject({ step: 2, of: 2, done: true });
+  });
+
+  it("uses the actual bin step for the parity bin on coarse-grid pools", async () => {
+    const info = await chain.current.connection.getAccountInfo(new PublicKey(TSLA_POOL));
+    const data = Buffer.from(info!.data);
+    data.writeUInt16LE(10, 80);
+    data.writeInt32LE(4609, 76);
+    chain.current.set(TSLA_POOL, { ...info!, data });
+    const ranges = await createMeteoraDlmmAdapter().openRanges!(TSLA_POOL);
+    expect(ranges.parityUnit).toBe(4607);
+  });
+
   it("lists the owner's positions in feed pools only, and only the static allowlist when the RWA store is off", async () => {
     installHeldPositions();
     const listed = await createMeteoraDlmmAdapter().listPositions(OWNER);

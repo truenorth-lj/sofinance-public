@@ -160,6 +160,9 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
   const [tokenId, setTokenId] = useState("");
   const [presetId, setPresetId] = useState<RangeAprPresetId | "">("");
   const [amount, setAmount] = useState("");
+  const [centerOnParity, setCenterOnParity] = useState(true);
+  const parityUnit = payload?.parityUnit;
+  const canCenterOnParity = Number.isSafeInteger(parityUnit);
   const token = tokens.find((item) => item.id === tokenId) ?? tokens[0];
   const preferred = useMemo(() => preferredOpenPresetId(presets, apr), [presets, apr]);
   const preset = presets.find((item) => item.id === presetId && item.available)
@@ -184,8 +187,11 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
     if (raw !== null && have !== undefined && raw > BigInt(have)) { problem = `Not enough ${token.symbol}: your wallet has ${formatAmount(have, token.decimals)}.`; raw = null; }
   }
 
+  const parityLower = canCenterOnParity && preset ? parityUnit! - Math.floor(preset.units / 2) : null;
   const request = token && preset && raw !== null
-    ? { poolId: pool.poolAddress, range: { kind: "preset" as const, presetId: preset.id }, input: { token: token.id, amountRaw: raw.toString() }, slippageBps: OPEN_SLIPPAGE_BPS }
+    ? { poolId: pool.poolAddress, range: centerOnParity && parityLower !== null
+      ? { kind: "units" as const, lower: parityLower, upper: parityLower + preset.units - 1 }
+      : { kind: "preset" as const, presetId: preset.id }, input: { token: token.id, amountRaw: raw.toString() }, slippageBps: OPEN_SLIPPAGE_BPS }
     : null;
   const requestKey = request ? JSON.stringify(request) : "";
   const [quote, setQuote] = useState<{ key: string; value?: OpenQuote; error?: string } | null>(null);
@@ -295,9 +301,15 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
         showCustom: false,
         unavailable,
       }}
-      rangeHint={!rangesError && payload && presets.length > 0 && !presets.some((item) => item.available)
+      rangeHint={<>
+        {canCenterOnParity ? <label className="mt-3 flex min-h-11 cursor-pointer items-center gap-2 text-xs text-cream/80">
+          <input type="checkbox" checked={centerOnParity} disabled={tx.locked} onChange={(event) => setCenterOnParity(event.target.checked)} className="size-4 accent-lemon" />
+          Center range on 1:1
+        </label> : null}
+        {!rangesError && payload && presets.length > 0 && !presets.some((item) => item.available)
         ? <p role="alert" className="mt-2 text-sm text-cream/80">{NO_RANGE_FITS_COPY}</p>
         : null}
+      </>}
       notes={<>
         {rangesError ? <p role="alert" data-testid="registry-open-ranges-error" className="mt-4 text-sm text-cream/80">{rangesError}</p> : null}
         {!rangesError && !payload ? <p role="status" className="mt-4 flex items-center gap-2 text-sm text-cream/80"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />Loading this pool&apos;s ranges…</p> : null}

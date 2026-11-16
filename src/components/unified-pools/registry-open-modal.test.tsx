@@ -105,6 +105,50 @@ const type = async (value: string) => {
 const openButton = () => container.querySelector<HTMLButtonElement>("[data-testid=registry-open-submit]")!;
 
 describe("RegistryOpenModal", () => {
+  it("defaults to parity bounds for both quote and open; unchecking restores the market preset without changing APR", async () => {
+    await render({ ranges: { ...ranges, parityUnit: 46054 } });
+    const checkbox = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    expect(checkbox.checked).toBe(true);
+    expect(checkbox.parentElement!.textContent).toContain("Center range on 1:1");
+    const aprText = container.querySelector('[data-testid="range-apr-headline"]')!.textContent;
+    await type("1");
+    const latestQuote = () => calls.filter((call) => call.url.endsWith("/quote-open")).at(-1)!.body as { request: { range: unknown } };
+    expect(latestQuote().request.range).toEqual({ kind: "units", lower: 46024, upper: 46083 });
+    await act(async () => { openButton().click(); });
+    const [prepared] = mocks.runSteps.mock.calls[0] as unknown as [{ request: { range: unknown } }];
+    expect(prepared.request.range).toEqual(latestQuote().request.range);
+
+    await act(async () => { checkbox.click(); });
+    expect(openButton().disabled).toBe(true); // the parity quote cannot authorize a market-centered open
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(checkbox.checked).toBe(false);
+    expect(latestQuote().request.range).toEqual({ kind: "preset", presetId: "standard" });
+    expect(container.querySelector('[data-testid="range-apr-headline"]')!.textContent).toBe(aprText);
+    await act(async () => { openButton().click(); });
+    const [market] = mocks.runSteps.mock.calls[1] as unknown as [{ request: { range: unknown } }];
+    expect(market.request.range).toEqual({ kind: "preset", presetId: "standard" });
+
+    await act(async () => { checkbox.click(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(latestQuote().request.range).toEqual({ kind: "units", lower: 46024, upper: 46083 });
+  });
+
+  it("keeps the four-bin width with APR unavailable and locks the parity checkbox during a transaction", async () => {
+    const props = { ranges: { ...ranges, parityUnit: 0 }, apr: new Error("APR unavailable") };
+    await render(props);
+    await type("1");
+    const quote = calls.filter((call) => call.url.endsWith("/quote-open")).at(-1)!.body as { request: { range: unknown } };
+    expect(quote.request.range).toEqual({ kind: "units", lower: -2, upper: 1 });
+    mocks.tx = { locked: true };
+    await render(props);
+    expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.disabled).toBe(true);
+  });
+
+  it("preserves the existing form for adapters without a parity unit", async () => {
+    await render();
+    expect(container.querySelector('input[type="checkbox"]')).toBeNull();
+  });
+
   it("quotes the default preset through the registry route and shows rent, the 0.1% fee, the wallet fee and SOL reserve notes", async () => {
     await render();
     expect(container.querySelector<HTMLButtonElement>("[data-testid=preset-wide]")!.disabled).toBe(true);
