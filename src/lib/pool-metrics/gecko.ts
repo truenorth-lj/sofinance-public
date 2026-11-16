@@ -1,4 +1,5 @@
 import { ThrottleGate } from "../range-apr/throttle-gate";
+import { chainAddressKey } from "@/lib/dex/address-key";
 
 /**
  * The one GeckoTerminal client config shared by every pool-metrics path (range APR, daily APR history,
@@ -17,7 +18,7 @@ export const geckoPoolsUrl = (network: GeckoNetwork) => `${GECKO_TERMINAL_API}/n
 
 /** OHLCV candles for one pool. Pool ids are case-sensitive on Solana and lowercase hex on EVM networks. */
 export function geckoOhlcvUrl(network: GeckoNetwork, poolId: string, timeframe: "day" | "hour", query: { limit: number; currency: "usd" | "token" }): string {
-  const id = network === "solana" ? poolId : poolId.toLowerCase();
+  const id = chainAddressKey(network, poolId);
   return `${geckoPoolsUrl(network)}/${encodeURIComponent(id)}/ohlcv/${timeframe}?aggregate=1&limit=${query.limit}&currency=${query.currency}`;
 }
 

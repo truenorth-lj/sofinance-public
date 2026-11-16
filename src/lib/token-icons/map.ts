@@ -1,3 +1,5 @@
+import { chainAddressKey as iconAddress } from "@/lib/dex/address-key";
+
 /**
  * Token icon links stored by the daily rwa-refresh job (`rwa_token_icon`) and served with `/api/rwa-pairs`
  * (`tokenIcons`). Client-safe: no fetching here. Only links are stored; images are never copied.
@@ -11,10 +13,8 @@ export type TokenIconMap = Record<IconChain, Record<string, string>>;
 const SOLANA_MINT = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const EVM_ADDRESS = /^0x[0-9a-f]{40}$/;
 
-/** Robinhood Chain addresses are stored lowercase; Solana mints are case-sensitive. */
-export function iconAddress(chain: IconChain, address: string): string {
-  return chain === "robinhood" ? address.toLowerCase() : address;
-}
+/** Compatibility name for the shared address-key policy. */
+export { iconAddress };
 
 export function validIconAddress(chain: IconChain, address: string): boolean {
   return chain === "solana" ? SOLANA_MINT.test(address) : EVM_ADDRESS.test(address);

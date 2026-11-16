@@ -1,4 +1,5 @@
 import type { TokenIconMap } from "@/lib/token-icons/map";
+import { chainAddressKey } from "@/lib/dex/address-key";
 import type { SnapshotSourceTime as HomepageSourceTime } from "@/lib/snapshot-updated";
 import { DEFAULT_FILTERS, DEFAULT_SORT, LOW_TVL_USD, meetsMinTvl, selectPools, unsupportedTokenReason, type Apr7dLookup, type PoolChain, type RankGroupLookup, type UnifiedPool } from "@/lib/unified-pools/model";
 import { rhcPool, solanaPool, type RhcPoolSummary, type SolanaPoolRow } from "@/lib/unified-pools/rows";
@@ -102,7 +103,7 @@ export function toHomepagePoolsSnapshot(input: {
   const keys = new Set(pools.map((pool) => pool.key));
   const apr7d = Object.fromEntries(Object.entries(input.apr7d ?? {}).filter(([key, value]) => keys.has(key) && Number.isFinite(value)));
   const mints = (chain: PoolChain) => new Set(pools.filter((row) => row.chain === chain)
-    .flatMap((row) => [row.mintA, row.mintB].map((mint) => (chain === "robinhood" ? mint.toLowerCase() : mint))));
+    .flatMap((row) => [row.mintA, row.mintB].map((mint) => chainAddressKey(chain, mint))));
   const icons = input.solana?.tokenIcons;
   const solanaMints = mints("solana"), rhcMints = mints("robinhood");
   const tokenIcons = icons

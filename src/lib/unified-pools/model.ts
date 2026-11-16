@@ -12,6 +12,8 @@
  * higher 24h volume, then the pool address (so the choice is stable).
  */
 
+import { chainAddressKey } from "@/lib/dex/address-key";
+
 export type PoolChain = "solana" | "robinhood";
 export type UnifiedProtocol = "raydium-clmm" | "orca-whirlpool" | "meteora-dlmm" | "uniswap-v4-rhc";
 
@@ -58,8 +60,7 @@ export type Apr7dLookup = (pool: UnifiedPool) => number | null;
  * Solana mints are not.
  */
 export function samePairKey(pool: Pick<UnifiedPool, "chain" | "protocol" | "mintA" | "mintB">): string {
-  const norm = (mint: string) => (pool.chain === "robinhood" ? mint.toLowerCase() : mint);
-  const [a, b] = [norm(pool.mintA), norm(pool.mintB)].sort();
+  const [a, b] = [pool.mintA, pool.mintB].map((mint) => chainAddressKey(pool.chain, mint)).sort();
   return `${pool.chain}:${pool.protocol}:${a}|${b}`;
 }
 

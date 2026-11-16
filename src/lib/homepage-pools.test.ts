@@ -200,15 +200,15 @@ describe("buildHomepagePools / two chains", () => {
 
   it("builds a snapshot with both chains' times and only the icons the candidate pools use", () => {
     const rhc = rhcSummaries();
-    const rhcAddress = UNIV4_RHC_ALLOWLISTED_POOLS[0]!.currency0.address;
+    const rhcAddress = `0x${UNIV4_RHC_ALLOWLISTED_POOLS[0]!.currency0.address.slice(2).toUpperCase()}`;
     const snapshot = toHomepagePoolsSnapshot({
       solana: {
         pairs: solana,
         fetchedAt: "2026-10-30T11:02:46.419Z",
         stale: false,
         tokenIcons: {
-          solana: { "SPCXx-mint": "https://example.test/spcxx.png", "NVDAx-mint": "https://example.test/nvdax.png" },
-          robinhood: { [rhcAddress.toLowerCase()]: "https://example.test/rhc.png", "0xunused": "https://example.test/u.png" },
+          solana: { "SPCXx-mint": "https://example.test/spcxx.png", "NVDAx-mint": "https://example.test/nvdax.png", "spcxx-mint": "https://example.test/wrong-case.png" },
+          robinhood: { [rhcAddress]: "https://example.test/rhc.png", "0xunused": "https://example.test/u.png" },
         },
       },
       rhc: { pools: rhc, fetchedAt: "2026-10-30T11:02:56.939Z", stale: false },
@@ -217,7 +217,8 @@ describe("buildHomepagePools / two chains", () => {
     expect(snapshot.pools).toHaveLength(17);
     expect(snapshot.tokenIcons).toEqual({
       solana: { "SPCXx-mint": "https://example.test/spcxx.png", "NVDAx-mint": "https://example.test/nvdax.png" },
-      robinhood: { [rhcAddress.toLowerCase()]: "https://example.test/rhc.png" },
+      // Filtering matches EVM case-insensitively, without rewriting the stored icon key.
+      robinhood: { [rhcAddress]: "https://example.test/rhc.png" },
     });
     expect(snapshot.updated.map((entry) => entry.chain)).toEqual(["solana", "robinhood"]);
     expect(updatedLabel(snapshot.updated)).toBe("Updated 2026-10-30 11:02 UTC");
