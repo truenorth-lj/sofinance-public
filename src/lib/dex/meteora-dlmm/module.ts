@@ -5,10 +5,11 @@ import { meteoraDlmmDescriptor } from "./descriptor";
 
 /**
  * Server registration of Meteora DLMM. The adapter (engine, RPC, Jupiter) loads lazily so routes that never touch
- * Meteora do not bundle it. No `poolSource` here yet: the pool scan moves behind the registry in PR12.
+ * Meteora do not bundle it. The pool scan source is also loaded only when requested.
  */
 export const meteoraDlmmModule: DexModule = Object.freeze({
   descriptor: meteoraDlmmDescriptor,
+  poolSource: Object.freeze({ order: 1, load: async () => (await import("@/lib/pool-sources/meteora")).meteoraPoolSource }),
   publicPoolReads: Object.freeze({
     snapshotBacked: false, rangeAprUnavailableMessage: "Meteora range APR unavailable",
     discovery: Object.freeze({ enabled: () => isMeteoraDlmmDiscoveryEnabled(), read: async () => (await import("@/lib/meteora-pairs")).discoverMeteoraPairs() }),

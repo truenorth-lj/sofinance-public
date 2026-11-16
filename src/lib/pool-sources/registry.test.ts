@@ -8,21 +8,25 @@ import { POOL_PROTOCOL_IDS } from "@sofinance/engine/protocols/types";
 import { RAYDIUM_ECONOMICS_SOURCE } from "../pool-range-apr";
 import { FEED_KEY } from "../rwa-store-types";
 import { solanaIconSources } from "../token-icons/resolve";
-import { POOL_SOURCES, poolSourceFor, scanPoolSources } from "./registry";
+import { poolSourceFor, scanPoolSources } from "./registry";
+import { dexRegistry } from "@/lib/dex";
 import { raydiumPoolSource } from "./raydium";
 
 describe("pool source registry", () => {
-  it("registers Raydium (existing feed key) and Meteora (its own feed)", () => {
-    expect(POOL_SOURCES.map((source) => source.id)).toEqual(["raydium-clmm", "meteora-dlmm"]);
-    expect(POOL_SOURCES[1]).toMatchObject({ feedKey: "meteora-dlmm-rwa-v1", displayName: "Meteora" });
-    expect(scanPoolSources()).toBe(POOL_SOURCES);
+  it("registers Raydium (existing feed key) and Meteora (its own feed)", async () => {
+    const sources = await scanPoolSources();
+    expect(sources.map((source) => source.id)).toEqual(["raydium-clmm", "meteora-dlmm"]);
+    expect(sources[1]).toMatchObject({ feedKey: "meteora-dlmm-rwa-v1", displayName: "Meteora" });
+    expect(Object.isFrozen(sources)).toBe(true);
+    expect(sources).toEqual(await dexRegistry.poolSources());
+    expect(sources[0]).toBe(raydiumPoolSource);
     expect(raydiumPoolSource).toMatchObject({ chain: "solana", feedKey: FEED_KEY, displayName: "Raydium", economics: RAYDIUM_ECONOMICS_SOURCE });
     expect(raydiumPoolSource.presets).toBeUndefined();
   });
 
-  it("refreshes Meteora rows on the Meteora path, every other protocol (and rows without one) on the Raydium path", () => {
-    expect(poolSourceFor("meteora-dlmm").id).toBe("meteora-dlmm");
-    for (const protocol of [...POOL_PROTOCOL_IDS.filter((id) => id !== "meteora-dlmm"), undefined]) expect(poolSourceFor(protocol)).toBe(raydiumPoolSource);
+  it("refreshes Meteora rows on the Meteora path, every other protocol (and rows without one) on the Raydium path", async () => {
+    expect((await poolSourceFor("meteora-dlmm")).id).toBe("meteora-dlmm");
+    for (const protocol of [...POOL_PROTOCOL_IDS.filter((id) => id !== "meteora-dlmm"), undefined]) expect(await poolSourceFor(protocol)).toBe(raydiumPoolSource);
   });
 });
 

@@ -60,7 +60,8 @@ export type DexModule = {
   readSolSwapDelivery?: ReadSolSwapDelivery;
   /** Compact Portfolio reader; a dedicated binding does not enable generic trading routes. */
   preparePortfolio?: (input: PortfolioInput, signal: AbortSignal) => Promise<PortfolioReader>;
-  poolSource?: PoolSource;
+  /** Independent of generic HTTP enablement; load only when the cron requests a source. */
+  poolSource?: { order: number; load: () => Promise<PoolSource> };
   /**
    * Daily fee APR series for one of this DEX's pools (same shape as the Raydium series of /api/pool-daily-apr), or
    * null when the pool is not this DEX's. Lazy, like the adapter.
@@ -152,7 +153,8 @@ export type DexRegistry = DexDescriptorRegistry & {
    * The generic route 429s when this is true, without calling `adapterFor`.
    */
   isRateLimited(id: string, op: string, request: Request): boolean;
-  poolSources(): readonly PoolSource[];
+  poolSources(): Promise<readonly PoolSource[]>;
+  poolSourceFor(id: string): Promise<PoolSource | null>;
   /**
    * The daily fee APR series from the registered DEX that lists this pool; null when none does (the caller keeps its
    * existing Raydium path for those pools).
@@ -184,7 +186,7 @@ export function dexDescriptorProblems(descriptors: readonly DexDescriptor[]): st
 function dexModuleProblems(modules: readonly DexModule[]): string[] {
   const problems = dexDescriptorProblems(modules.map((entry) => entry.descriptor));
   for (const { descriptor, poolSource } of modules) {
-    if (poolSource && poolSource.id !== descriptor.id) problems.push(`${descriptor.id}: pool source "${poolSource.id}" has a different id`);
+    if (poolSource && !Number.isFinite(poolSource.order)) problems.push(`${descriptor.id}: pool source order must be finite`);
   }
   return problems;
 }
@@ -222,7 +224,12 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
   if (problems.length) throw new Error(`Invalid DEX registry: ${problems.join("; ")}`);
   const lookups = createDexDescriptorRegistry(modules.map((entry) => entry.descriptor));
   const byId = new Map<DexId, DexModule>(modules.map((entry) => [entry.descriptor.id, entry]));
-  const sources = Object.freeze(modules.flatMap((entry) => (entry.poolSource ? [entry.poolSource] : [])));
+  const sources = modules.filter(entry => entry.poolSource).sort((a, b) => a.poolSource!.order - b.poolSource!.order);
+  const loadPoolSource = async (entry: DexModule): Promise<PoolSource> => {
+    const source = await entry.poolSource!.load();
+    if (source.id !== entry.descriptor.id) throw new Error(`${entry.descriptor.id}: pool source "${source.id}" has a different id`);
+    return source;
+  };
   const positionReaders = Object.freeze(modules.flatMap(entry => entry.positionReads
     ? [Object.freeze({ ...entry.positionReads, id: entry.descriptor.id })] : []).sort((a, b) => a.order - b.order));
   return Object.freeze({
@@ -477,7 +484,12 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
       const entry = canonical ? byId.get(canonical) : undefined;
       return Boolean(entry?.rateLimited?.(op, request));
     },
-    poolSources: () => sources,
+    poolSources: async () => Object.freeze(await Promise.all(sources.map(loadPoolSource))),
+    poolSourceFor: async id => {
+      const canonical = normalizeDexId(id);
+      const entry = canonical ? byId.get(canonical) : undefined;
+      return entry?.poolSource ? loadPoolSource(entry) : null;
+    },
     async poolDailyApr(poolId: string) {
       // A DEX that cannot tell whether it lists the pool (its pool list is down) throws; the others still get asked,
       // and the first such error is rethrown only when no DEX answered, so the caller never reads it as "unlisted".

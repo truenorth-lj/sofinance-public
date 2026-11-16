@@ -6,6 +6,8 @@ import "server-only";
 import { dexRegistry } from "./registry-instance";
 
 export { dexRegistry };
+export const scanPoolSources: typeof dexRegistry.poolSources = () => dexRegistry.poolSources();
+export const poolSourceFor: typeof dexRegistry.poolSourceFor = id => dexRegistry.poolSourceFor(id);
 export const prepareNativeAprRun: typeof dexRegistry.prepareNativeAprRun = (id, input) => dexRegistry.prepareNativeAprRun(id, input);
 export type { NativeAprRun, NativeAprRunStats, NativeAprRunInput, PreparedAprPool, AprPoolOutcome } from "./apr-refresh";
 export const readLpObservations: typeof dexRegistry.readLpObservations = (id, ...args) => dexRegistry.readLpObservations(id, ...args);

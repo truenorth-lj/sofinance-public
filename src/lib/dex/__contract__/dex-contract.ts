@@ -170,10 +170,10 @@ export function describeDexContract(entry: DexModule, fixtures: DexContractFixtu
       expect(missingFixtureProblems(entry, fixtures)).toEqual([]);
     });
 
-    it("declares a consistent descriptor and wires it into its adapter", () => {
+    it("declares a consistent descriptor and wires it into its adapter", async () => {
       expect(descriptorContractProblems(descriptor)).toEqual([]);
       expect(adapterContractProblems(descriptor, adapter)).toEqual([]);
-      if (entry.poolSource) expect(entry.poolSource.id).toBe(descriptor.id);
+      if (entry.poolSource) expect((await entry.poolSource.load()).id).toBe(descriptor.id);
     });
 
     it("lists the owner's positions in the unified shape, without GeckoTerminal", async () => {
