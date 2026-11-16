@@ -3,15 +3,14 @@ import "server-only";
 import { sanitizePublicError } from "../public-error";
 import { createCronGeckoGate } from "../pool-metrics/gecko";
 import { isRhcApr7dEnabled } from "../protocol-flags";
-import { dexRegistry, type DailyTvlStats, type DexId, type PreparedAprPool } from "@/lib/dex";
-import { FEED_KEY, FEED_KEY_METEORA, type ActivePool, type Lease, type RwaStore } from "../rwa-store-types";
+import { dexRegistry, type DailyTvlStats, type DexId, type PreparedAprPool, type PoolCronLaneStats } from "@/lib/dex";
+import { FEED_KEY, FEED_KEY_METEORA, type Lease, type RwaStore } from "../rwa-store-types";
 import type { Options } from "./job";
 import { refreshSolanaPool } from "./solana-pool";
-import { METEORA_APR_POOL_TIMEOUT_MS, refreshMeteoraLane, type MeteoraAprQueueStats } from "./meteora-lane";
+import { APR_SAVE_RESERVE_MS, activePoolRefreshedAt, orderAprQueue } from "./queue-policy";
+export { APR_SAVE_RESERVE_MS, activePoolRefreshedAt, orderAprQueue } from "./queue-policy";
 import { prepareRhcAprLane, type RhcAprRunStats } from "./rhc-lane";
 
-/** No pool is started inside this last part of the APR job: `prepareDaily`, `finish` and the response. */
-export const APR_SAVE_RESERVE_MS = 10_000;
 /**
  * Longest time one pool can take (the run's start guard), all in parallel then the save: Raydium economics (3
  * attempts × 5 s timeout + backoff ≈ 17 s); 2 gated GeckoTerminal calls (one attempt each, the first waits ≤ 12 s for
@@ -55,30 +54,6 @@ export type AprQueueStats = { pools: number; selected: number; done: number; sto
 type QueueItem = PreparedAprPool;
 
 /**
- * Queue key of a Solana pool: the store's `refreshedAt`, else (an older store / gateway that does not send it)
- * the saved profile's last fetch attempt or observation, so the queue never falls back to pool id order alone.
- */
-export function activePoolRefreshedAt(pool: Pick<ActivePool, "refreshedAt" | "profile">): string | null {
-  return pool.refreshedAt ?? pool.profile?.fetchState?.lastAttemptAt ?? pool.profile?.observedAt ?? null;
-}
-
-/**
- * The APR queue order: pools never refreshed first, then the oldest last refresh or attempt (`refreshedAt`), then
- * pool id (stable). Solana and RHC pools in one list.
- * `refreshedAt` is `GREATEST(payload_snapshot_at, last_attempt_at)` from the store (`refreshedAtSql`), so in practice
- * it is the pool's last attempt: every save (ok, degraded or error) sets `last_attempt_at`, and a snapshot is never
- * newer than the attempt that wrote it. A pool cut by a 429 or the time budget saves nothing, keeps its old key and
- * goes first next run; a failing pool still rotates to the back instead of blocking the queue.
- */
-export function orderAprQueue<T extends { poolId: string; refreshedAt?: string | null }>(items: readonly T[]): T[] {
-  const at = (item: T) => {
-    const ms = item.refreshedAt ? Date.parse(item.refreshedAt) : Number.NaN;
-    return Number.isFinite(ms) ? ms : Number.NEGATIVE_INFINITY;
-  };
-  return [...items].sort((a, b) => at(a) - at(b) || (a.poolId < b.poolId ? -1 : a.poolId > b.poolId ? 1 : 0));
-}
-
-/**
  * The `rwa-apr-refresh` work: ONE queue of the Solana and RHC pools, oldest refresh first, the first
  * `APR_POOLS_PER_RUN` of it refreshed one pool at a time on one GeckoTerminal gate (never two calls in parallel).
  * A 429 ends the run: the pool that hit it is not saved and, with the pools not reached, goes first next run.
@@ -87,7 +62,7 @@ export function orderAprQueue<T extends { poolId: string; refreshedAt?: string |
 export async function refreshAprPools(input: {
   store: RwaStore; lease: Lease; options: Options; signal: AbortSignal; clock: () => number; jobDeadline: number;
 }): Promise<{ processed: number; issues: string[]; rhcStats?: RhcAprRunStats; queue: AprQueueStats; failed: boolean;
-  meteoraQueue?: MeteoraAprQueueStats; dailyTvl?: Partial<Record<DexId, DailyTvlStats>> }> {
+  meteoraQueue?: PoolCronLaneStats; dailyTvl?: Partial<Record<DexId, DailyTvlStats>> }> {
   const { store, lease, options, signal, clock, jobDeadline } = input;
   const fetcher = options.fetcher ?? fetch;
   const gate = options.geckoGate ?? createCronGeckoGate();
@@ -128,8 +103,8 @@ export async function refreshAprPools(input: {
         issues.push(...result.issues, ...result.failures.map(({ displayName, error }) =>
           `${displayName} TVL: ${sanitizePublicError(error, "daily TVL not saved").slice(0, 200)}`));
       })
-      .then(() => refreshMeteoraLane({ store, lease, fetcher, clock, signal, gate, jobDeadline,
-        poolTimeoutMs: options.meteoraPoolTimeoutMs ?? METEORA_APR_POOL_TIMEOUT_MS }))
+      .then(() => dexRegistry.refreshPoolCron("meteora-dlmm", { store, lease, fetcher, clock, signal, gate, jobDeadline,
+        poolTimeoutMs: options.meteoraPoolTimeoutMs }))
       .catch((error) => {
         issues.push(`Meteora: ${sanitizePublicError(error, "Meteora APR lane failed").slice(0, 200)}`);
         return undefined;

@@ -6,6 +6,10 @@ import "server-only";
 import { dexRegistry } from "./registry-instance";
 
 export { dexRegistry };
+export const poolCronPolicyFor: typeof dexRegistry.poolCronPolicyFor = id => dexRegistry.poolCronPolicyFor(id);
+export const publishPoolCron: typeof dexRegistry.publishPoolCron = (id, input) => dexRegistry.publishPoolCron(id, input);
+export const refreshPoolCron: typeof dexRegistry.refreshPoolCron = (id, input) => dexRegistry.refreshPoolCron(id, input);
+export type { PoolCronDiscoveryInput, PoolCronDiscoveryResult, PoolCronLaneInput, PoolCronLaneStats, PoolCronLaneResult } from "./pool-cron";
 export const scanPoolSources: typeof dexRegistry.poolSources = () => dexRegistry.poolSources();
 export const poolSourceFor: typeof dexRegistry.poolSourceFor = id => dexRegistry.poolSourceFor(id);
 export const prepareNativeAprRun: typeof dexRegistry.prepareNativeAprRun = (id, input) => dexRegistry.prepareNativeAprRun(id, input);
