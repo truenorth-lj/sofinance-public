@@ -3,7 +3,7 @@ import type { DexId } from "./types";
 
 export type RangeAprProtocol = DexId;
 export type RangeAprOptions = { rwaList?: boolean };
-export type RangeAprClientPolicy = Readonly<{ route: "pool" | "protocol"; cacheScope: "pool" | "protocol"; rwaListRoute?: "pool" }>;
+export type RangeAprClientPolicy = Readonly<{ route: "pool" | "protocol"; cacheScope: "pool" | "protocol"; rwaListRoute?: "pool"; rangeLabels?: Readonly<Record<string, string>> }>;
 const DEFAULT_POLICY: RangeAprClientPolicy = Object.freeze({ route: "protocol", cacheScope: "protocol" });
 
 /** Resolve URL and cache identity together before the browser's concurrency queue can yield. */

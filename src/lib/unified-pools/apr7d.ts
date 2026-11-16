@@ -1,3 +1,4 @@
+import { uiFor } from "@/lib/dex/ui";
 import { OPEN_RANGE_UI_PRESETS } from "@sofinance/engine/open-range-presets";
 import { highestRangeSummary } from "@/lib/range-apr/preset-list";
 import { rangeAprPayload } from "@/lib/range-apr/display-policy";
@@ -72,9 +73,8 @@ export function summarizeApr7d(payload: PoolRangeAprPayload, protocol: UnifiedPr
   const aprPct = summary.aprPct;
   return {
     status: "ready", freshness, aprPct,
-    rangeLabel: protocol === "uniswap-v4-rhc" && summary.id === "micro"
-      ? "Min (±10 ticks)"
-      : OPEN_RANGE_UI_PRESETS.find((preset) => preset.id === summary.id)?.label ?? summary.label,
+    rangeLabel: uiFor(protocol).rangeApr?.rangeLabels?.[summary.id]
+      ?? OPEN_RANGE_UI_PRESETS.find((preset) => preset.id === summary.id)?.label ?? summary.label,
     lowConfidence: payload.sample.confidence === "low",
     avgDailyVolumeUsd: Number.isFinite(payload.model?.avgDailyVolumeUsd) ? payload.model.avgDailyVolumeUsd : null,
   };

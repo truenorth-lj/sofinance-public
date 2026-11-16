@@ -4,13 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { summarizeApr7d, type Apr7dState } from "@/lib/unified-pools/apr7d";
 import type { UnifiedPool } from "@/lib/unified-pools/model";
 import { loadPoolRangeApr, type RangeAprProtocol } from "../range-apr/pool-range-apr-client";
-import { isRhcApr7dEnabled } from "@/lib/protocol-flags";
+import { poolAprUnavailableReason } from "@/lib/unified-pools/apr-read-policy";
 import { POOL_NOT_TRACKED_MESSAGE } from "@/lib/range-apr/not-clmm-pool";
 
 export type { Apr7dState, AprFreshness } from "@/lib/unified-pools/apr7d";
-
-/** Kept for tests and offline copy when `RHC_APR7D_ENABLED` is off. */
-const NO_7D_APR_RHC = "No 7-day estimate for this pool yet.";
 
 /**
  * Estimated highest range APR (7-day average) for every pool in the list (Solana + RHC when the flag is on),
@@ -22,7 +19,7 @@ export function usePoolsApr7d(pools: readonly UnifiedPool[], refreshKey = 0,
   rwaListKeys?: ReadonlySet<string>): Record<string, Apr7dState> {
   const [settled, setSettled] = useState<Record<string, Apr7dState>>({});
   const wanted = useMemo(
-    () => pools.filter((pool) => pool.chain === "solana" || (pool.chain === "robinhood" && isRhcApr7dEnabled()))
+    () => pools.filter((pool) => poolAprUnavailableReason(pool.chain) === null)
       .map((pool) => ({ key: pool.key, poolAddress: pool.poolAddress, protocol: pool.protocol as RangeAprProtocol,
         rwaList: rwaListKeys?.has(pool.key) ?? false })),
     [pools, rwaListKeys],
@@ -56,8 +53,9 @@ export function usePoolsApr7d(pools: readonly UnifiedPool[], refreshKey = 0,
   return useMemo(() => {
     const out: Record<string, Apr7dState> = {};
     for (const pool of pools) {
-      out[pool.key] = pool.chain === "robinhood" && !isRhcApr7dEnabled()
-        ? { status: "missing", reason: NO_7D_APR_RHC }
+      const unavailable = poolAprUnavailableReason(pool.chain);
+      out[pool.key] = unavailable !== null
+        ? { status: "missing", reason: unavailable }
         : settled[pool.key] ?? { status: "loading" };
     }
     return out;

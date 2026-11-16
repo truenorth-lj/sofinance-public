@@ -3,7 +3,8 @@ import { unstable_cache } from "next/cache";
 import { withTimeout as withTimeoutMs } from "@sofinance/engine/async";
 import { getPoolAprSnapshot, getRwaPairs } from "@/lib/rwa-store";
 import { getRhcAprSnapshot, getRhcPoolsSnapshot } from "@/lib/rhc-snapshot";
-import { isRhcApr7dEnabled, isRhcUniv4DiscoveryEnabled } from "@/lib/protocol-flags";
+import { poolAprUnavailableReason } from "@/lib/unified-pools/apr-read-policy";
+import { isRhcUniv4DiscoveryEnabled } from "@/lib/protocol-flags";
 import { summarizeApr7d } from "@/lib/unified-pools/apr7d";
 import { RWA_PAIRS_LIST_QUERY } from "@/lib/rwa-pairs-list";
 import type { TokenIconMap } from "@/lib/token-icons/map";
@@ -95,7 +96,7 @@ export async function loadHomepagePoolsSnapshot(): Promise<HomepagePoolsSnapshot
   // `/app/rwa-pairs`' default view), so every pool has its APR read: Solana pools always, Robinhood Chain pools with
   // RHC_APR7D_ENABLED, as on `/app/rwa-pairs`.
   const refs: AprRef[] = buildHomepagePools({ solana: input.solana?.pairs, rhc: input.rhc?.pools })
-    .filter((pool) => pool.chain === "solana" || isRhcApr7dEnabled())
+    .filter((pool) => poolAprUnavailableReason(pool.chain) === null)
     .map(({ key, chain, protocol, poolAddress }) => ({ key, chain, protocol, poolAddress }));
   // Without the APRs the order falls back to TVL; the client re-ranks once it has loaded them.
   const apr7d = await withTimeout(cachedApr7d(refs)).catch(() => ({}));

@@ -35,7 +35,7 @@ describe("uniswap-v4-rhc descriptor (E2-alias)", () => {
     expect(uniswapV4RhcDescriptor.chain).toBe("robinhood-chain");
     expect(uniswapV4RhcDescriptor.displayName).toBe("Uniswap v4");
     expect(uniswapV4RhcDescriptor.ui).toEqual({
-      rangeApr: { route: "protocol", cacheScope: "protocol" },
+      rangeApr: { route: "protocol", cacheScope: "protocol", rangeLabels: { micro: "Min (±10 ticks)" } },
       nativePoolPresentation: { pairLabel: rhcPairLabel, pool: rhcPool, openView: rhcPoolView },
       defaultOpenPoolId: UNIV4_RHC_ALLOWLISTED_POOLS[0]!.poolId,
       openUi: "rhc-dialog",
@@ -43,7 +43,7 @@ describe("uniswap-v4-rhc descriptor (E2-alias)", () => {
       listPositions: true,
     });
     const expectedUi = {
-      rangeApr: { route: "protocol" as const, cacheScope: "protocol" as const },
+      rangeApr: { route: "protocol" as const, cacheScope: "protocol" as const, rangeLabels: { micro: "Min (±10 ticks)" } },
       nativePoolPresentation: { pairLabel: rhcPairLabel, pool: rhcPool, openView: rhcPoolView },
       defaultOpenPoolId: UNIV4_RHC_ALLOWLISTED_POOLS[0]!.poolId,
       openUi: "rhc-dialog" as const,
