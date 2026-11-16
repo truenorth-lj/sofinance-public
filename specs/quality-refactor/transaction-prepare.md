@@ -59,6 +59,12 @@ sanitized partial failures; required discovery errors remain fatal. App keeps it
 and read connection, while MCP keeps the scanner default connection and original projection.
 Wallet DTO entrypoints are type-only re-exports; scanner and token/ownership policy are unchanged.
 
+Withdrawal status now uses a lazy native read binding, independent of new-withdrawal capability.
+It snapshots the signature and complete prepared authorization before awaits, retaining HMAC
+verification before RPC, existing finality/history/account read rules, message matching and cache
+effects. A provider receipt for a different signature stays in manual review before success,
+failure or expiry classification; it cannot invalidate caches or unlock an unresolved withdrawal.
+
 HTTP retains parsing, relay AsyncLocalStorage, selected deadline and retry budget, status,
 headers, error handling and response projection. MCP retains its existing projection,
 submitArgs, full authenticated sign-token payload, URL and instructions. Compound quote

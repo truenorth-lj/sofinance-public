@@ -5,20 +5,17 @@ import { verifiedTokenAmount } from "@sofinance/engine/lp-exit-verification";
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { rpcConnection, resetRpcCache } from "@sofinance/engine/rpc";
-import { invalidatePositionHistoryCache } from "../position-history-cache";
+import { invalidatePositionHistoryCache } from "@/lib/position-history-cache";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { withdrawPermit } from "@sofinance/engine/withdraw/permit";
 import { landedTransactionMatchesPrepared } from "@sofinance/engine/wallet-returned-tx";
-import type { WithdrawPrepared } from "@sofinance/engine/withdraw/types";
+import type { ReadWithdrawalStatus, WithdrawalStatusResult } from "../withdraw-status";
 /** Confirm a landed withdrawal against the permit-bound prepared intent (Phantom-tolerant). */
-export async function withdrawStatus(input: {
-    signature: string;
-    prepared: WithdrawPrepared;
-}) {
+export const readRaydiumWithdrawalStatus: ReadWithdrawalStatus = async (input) => {
     if (bs58.decode(input.signature).length !== 64)
         throw new Error("Invalid signature");
     const { summary, permit, unsignedTransaction } = input.prepared;
-    const successful = () => {
+    const successful = (): WithdrawalStatusResult => {
         invalidatePositionHistoryCache(summary.positionMint);
         resetRpcCache();
         return { status: "success", signature: input.signature, stage: summary.stage };
@@ -34,6 +31,8 @@ export async function withdrawStatus(input: {
         if (observed || await connection.getBlockHeight("confirmed") <= summary.lastValidBlockHeight)
             return { status: "pending", signature: input.signature };
         const historical = await connection.getTransaction(input.signature, { commitment: "finalized", maxSupportedTransactionVersion: 0 });
+        if (historical && historical.transaction.signatures?.[0] !== input.signature)
+            return { status: "manual-review", signature: input.signature };
         if (landedTransactionMatchesPrepared(expected, historical, summary.wallet))
             return successful();
         // An absent signature is not enough to declare an attempted withdrawal safe to retry.
@@ -48,10 +47,12 @@ export async function withdrawStatus(input: {
     const receipt = await connection.getTransaction(input.signature, { commitment: "finalized", maxSupportedTransactionVersion: 0 });
     if (!receipt)
         return { status: "pending", signature: input.signature };
+    if (receipt.transaction.signatures?.[0] !== input.signature)
+        return { status: "manual-review", signature: input.signature, stage: summary.stage };
     if (!receipt.meta)
         return { status: "manual-review", signature: input.signature };
     if (receipt.meta.err)
         return { status: "failed", signature: input.signature };
     if (landedTransactionMatchesPrepared(expected, receipt, summary.wallet)) return successful();
     return { status: "manual-review", signature: input.signature, stage: summary.stage };
-}
+};

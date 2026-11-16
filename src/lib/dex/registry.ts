@@ -11,6 +11,7 @@ import type { QuoteAdd, ReadAddState } from "./selected-read";
 import type { NativePositionReader, RegisteredPositionReader } from "./position-read";
 import type { DiscoverNativeWallet, NativeWalletListing } from "./wallet-read";
 import type { BuildWithdrawal } from "./withdraw-prepare";
+import type { ReadWithdrawalStatus } from "./withdraw-status";
 import type { BuildCompound, BuildCompoundRecovery } from "./compound-prepare";
 import type { ReadCompoundState, ConfirmCompound, ImportCompoundReceipt } from "./compound-read";
 import type { BuildOpen, QuoteOpen } from "./open-prepare";
@@ -35,6 +36,7 @@ export type DexModule = {
   readAddState?: ReadAddState;
   /** Existing withdrawal transports, including signed recovery; independent of generic HTTP rollout. */
   buildWithdrawal?: BuildWithdrawal;
+  readWithdrawalStatus?: ReadWithdrawalStatus;
   buildCompound?: BuildCompound;
   buildCompoundRecovery?: BuildCompoundRecovery;
   /** Readback and historical recovery stay available independently of new compound preparation. */
@@ -104,6 +106,7 @@ export type DexRegistry = DexDescriptorRegistry & {
   quoteAdd(id: string, ...args: Parameters<QuoteAdd>): ReturnType<QuoteAdd>;
   readAddState(id: string, ...args: Parameters<ReadAddState>): ReturnType<ReadAddState>;
   buildWithdrawal(id: string, ...args: Parameters<BuildWithdrawal>): ReturnType<BuildWithdrawal>;
+  readWithdrawalStatus(id: string, ...args: Parameters<ReadWithdrawalStatus>): ReturnType<ReadWithdrawalStatus>;
   buildCompound(id: string, ...args: Parameters<BuildCompound>): ReturnType<BuildCompound>;
   buildCompoundRecovery(id: string, ...args: Parameters<BuildCompoundRecovery>): ReturnType<BuildCompoundRecovery>;
   readCompoundState(id: string, ...args: Parameters<ReadCompoundState>): ReturnType<ReadCompoundState>;
@@ -269,6 +272,13 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
       // State remains readable for diagnostics and recovery when new deposits are unavailable.
       if (!entry?.readAddState) throw new DexUnsupportedError();
       return entry.readAddState({ ...command, selection: { ...command.selection } });
+    },
+    async readWithdrawalStatus(id: string, command: Parameters<ReadWithdrawalStatus>[0]) {
+      const canonical = normalizeDexId(id);
+      const entry = canonical ? byId.get(canonical) : undefined;
+      // Pending withdrawals must remain reconcilable when new preparation is disabled.
+      if (!entry?.readWithdrawalStatus) throw new DexUnsupportedError();
+      return entry.readWithdrawalStatus(structuredClone(command));
     },
     async buildWithdrawal(id: string, input: Parameters<BuildWithdrawal>[0], preview?: boolean) {
       const canonical = normalizeDexId(id);
