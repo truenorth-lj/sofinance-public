@@ -1,6 +1,7 @@
 /**
  * Client entry point for DEX metadata and capabilities (DESIGN.md §1.4). Components import only from here (or
- * `@/lib/dex/types`); it carries no server code, SDK or protocol module.
+ * `@/lib/dex/types`); native EVM wallet bindings use the separate `./evm-client` entry.
+ * This metadata entry carries no server code, SDK or protocol module.
  */
 import { DEX_DESCRIPTORS } from "./descriptors";
 import { createDexDescriptorRegistry } from "./registry";

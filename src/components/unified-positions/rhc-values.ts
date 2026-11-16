@@ -1,4 +1,4 @@
-import type { RhcPositionValueRow } from "@sofinance/engine/protocols/uniswap-v4/position-value";
+import type { RhcPositionValueRow } from "@/lib/dex/evm-client";
 
 export type { RhcPositionValueRow };
 const CHUNK = 10;

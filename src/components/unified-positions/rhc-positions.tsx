@@ -1,9 +1,7 @@
 "use client";
 
-import type { PositionLookup } from "@sofinance/engine/protocols/uniswap-v4/exit-flow";
+import { evmClientFor, type PositionLookup, type RhcNative } from "@/lib/dex/evm-client";
 import { useEffect, useMemo, useState } from "react";
-import { trackedPositionIds, untrackPositionId } from "@/lib/rhc-wallet/exit-execute";
-import { rhcPositionSource, type RhcNative } from "@/lib/unified-positions/sources/rhc";
 import type { ToolId, UnifiedPosition } from "@/lib/unified-positions/model";
 import { useOptionalEvmWalletConnection } from "../evm-wallet-connection";
 import type { RhcWallet } from "../rhc-univ4-open-panel";
@@ -17,6 +15,9 @@ import { fetchPositionValues, type RhcPositionValueRow } from "./rhc-values";
 import { shortAddress } from "@/lib/format/address";
 import type { PositionFigures } from "@/lib/portfolio/figures";
 
+const nativeClient = evmClientFor("uniswap-v4-rhc");
+const { trackedPositionIds, untrackPositionId } = nativeClient.exit;
+const rhcPositionSource = nativeClient.positionSource;
 const short = shortAddress;
 const nativeOf = (position: UnifiedPosition) => position.native as RhcNative;
 

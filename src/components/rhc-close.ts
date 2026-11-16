@@ -1,12 +1,13 @@
 "use client";
 
-import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
-import type { ExitFlowResult, PositionLookup, RhcPositionView } from "@sofinance/engine/protocols/uniswap-v4/exit-flow";
-import type { ScannedPosition } from "@sofinance/engine/protocols/uniswap-v4/position-scan";
+import { evmClientFor, type ExitFlowResult, type PositionLookup, type RhcPositionView, type ScannedPosition } from "@/lib/dex/evm-client";
 import { useState } from "react";
 import { type Eip1193Provider, guardedWalletRequest } from "@/lib/rhc-wallet/eip1193";
-import { checkExitTx, EXIT_EXPIRED_MESSAGE, isDeadlinePassed } from "@/lib/rhc-wallet/exit-execute";
-import { requireRobinhoodChain, waitForReceipt, walletTxParams } from "@/lib/rhc-wallet/open-execute";
+
+const nativeClient = evmClientFor("uniswap-v4-rhc");
+const UNIV4_RHC_ALLOWLISTED_POOLS = nativeClient.pools;
+const { checkExitTx, EXIT_EXPIRED_MESSAGE, isDeadlinePassed } = nativeClient.exit;
+const { requireRobinhoodChain, waitForReceipt, walletTxParams } = nativeClient.open;
 
 /**
  * Robinhood Chain (4663) Uniswap v4 positions: the server reads (scan + lookups) and the full Close flow, shared by the pools

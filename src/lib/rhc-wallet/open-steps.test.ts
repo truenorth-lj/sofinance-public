@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { openSteps, RETRY_CONFIRM_TEXT, stepProgressLabel } from "./open-steps";
+import { openSteps, RETRY_CONFIRM_TEXT, stepProgressLabel } from "../dex/uniswap-v4-rhc/wallet/open-steps";
 
 describe("openSteps", () => {
   it("is Step 1/2 sign, 2/2 execute when Permit2 is already approved", () => {

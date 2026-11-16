@@ -2,7 +2,7 @@ import { UNIV4_RHC, type Univ4AllowlistedPool } from "@sofinance/engine/protocol
 import type { TxView } from "@sofinance/engine/protocols/uniswap-v4/open-flow";
 import { checkExitPlan, ExitGuardError } from "@sofinance/engine/protocols/uniswap-v4/tx-exit-posm";
 import { encodeFunctionData, parseAbi } from "viem";
-import type { Eip1193Provider } from "./eip1193";
+import type { Eip1193Provider } from "@/lib/rhc-wallet/eip1193";
 import { checkTx, TxGuardError } from "./open-execute";
 
 /**
