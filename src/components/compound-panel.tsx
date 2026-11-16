@@ -6,7 +6,6 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { CompoundTokenBurst, useCompoundCelebration } from "./compound-celebration";
 import { coinSymbol } from "@/lib/compound-celebration/coins";
-import { CompoundProtocolFee } from "./compound-overview";
 import { CompoundSubmitDialog, CompoundSubmitStatus, compoundSubmitActive } from "./compound-submit-dialog";
 import { formatAmount } from "@sofinance/engine/amount";
 import type { CompoundController } from "./use-compound-controller";
@@ -17,7 +16,6 @@ import { solscanTxUrl, solscanAccountUrl } from "@/lib/format/explorer";
 import { APP_ROUTES } from "@/lib/public-urls";
 import { positionKey } from "@/lib/unified-positions/model";
 import { raydiumPositionSource } from "@/lib/unified-positions/sources/raydium";
-import { dexDescriptors } from "@/lib/dex/client";
 import { recordActivity } from "@/lib/portfolio/session-activity";
 import { ROW_COMPOUND_CLASS, RowActionsBar, RowCompoundLabel, type RowCompoundSlot } from "./portfolio/portfolio-rows";
 import { ActionDialog } from "./portfolio/action-dialog";
@@ -35,9 +33,9 @@ const statusText = {
 
 /**
  * The Raydium row's Compound (LJ 11/14: the only Compound entry). The button opens the row's Compound popup and selects the
- * row's position so its fees are read. The popup: static facts first (the row's unclaimed fees and the descriptor's fee
- * rate, no new simulation), then Confirm runs the existing flow (`compound()`: prepare and simulate → wallet signature →
- * submit, unchanged), its progress (with the wallet-stage protocol fee note) and its result in the same popup. Done closes
+ * row's position so its fees are read. The popup: static facts first (the row's unclaimed fees, no new simulation; the
+ * protocol fee is not shown), then Confirm runs the existing flow (`compound()`: prepare and simulate → wallet signature →
+ * submit, unchanged), its progress and its result in the same popup. Done closes
  * it and re-reads the position. Only the active row (the controller's position) shows the controller's state.
  */
 export function RaydiumRowCompound({ controller: c, positionMint, positionKey, slot, tokenLabel = short }: {
@@ -85,12 +83,10 @@ export function RaydiumRowCompound({ controller: c, positionMint, positionKey, s
       {feedback ? <><CompoundSubmitStatus feedback={feedback} slow={c.feedbackSlow} onDone={() => { celebration.celebrateFrom(doneButton.current?.getBoundingClientRect()); close(); }} doneRef={doneButton} /><CleanupProgress controller={c} /></>
         : running ? <div data-testid="compound-progress">
           <p role="status" className="mt-4 flex items-center gap-2 text-sm text-cream/80"><LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />{action}</p>
-          {/* Stated before signing: the simulation's protocol fee shows while the wallet asks for the signature. */}
-          <CompoundProtocolFee summary={c.preview} tokenLabel={tokenLabel} />
           <CleanupProgress controller={c} />
         </div>
         : <>
-          <CompoundConfirm unclaimedUsd={slot.unclaimedUsd} feeRule={dexDescriptors.descriptorFor(raydiumPositionSource.id)?.meta.feePolicy.compound ?? null} blocked={blockedText}
+          <CompoundConfirm unclaimedUsd={slot.unclaimedUsd} blocked={blockedText}
             error={active ? c.error : null} loading={!loaded} disabled={!loaded || !c.canCompound} onConfirm={() => c.compound()} />
           {active && c.historyWarning && <p role="status" className="mt-4 rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs text-cream/80">{c.historyWarning}</p>}
           {rewards.length > 0 && <div className="mt-4 space-y-1 text-xs leading-5 text-cream/80">

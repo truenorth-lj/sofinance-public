@@ -93,12 +93,15 @@ for (const width of [1024, 1280, 1440, 768, 390, 375]) {
     await row.locator('[data-tool="compound"]').click();
     const popup = page.locator('dialog[data-testid="compound-popup"][data-open="true"]');
     await expect(popup).toBeVisible();
-    await expect(popup.getByTestId("compound-confirm-fee")).toHaveText("0.10%");
+    await expect(popup.getByTestId("compound-confirm-unclaimed")).toBeVisible();
+    await expect(popup.getByTestId("compound-confirm-fee")).toHaveCount(0);
+    await expect(popup.getByText("Protocol fee")).toHaveCount(0);
     const confirm = popup.getByTestId("compound-confirm-button");
     await expect(confirm).toBeEnabled({ timeout: 15_000 });
     await confirm.click();
     await expect(row.locator('[data-tool="compound"]')).toHaveText("Confirming in wallet…");
-    await expect(popup.getByTestId("compound-protocol-fee")).toBeVisible();
+    await expect(popup.getByTestId("compound-protocol-fee")).toHaveCount(0);
+    await expect(popup.getByText("Protocol fee")).toHaveCount(0);
     // Closing the popup leaves the compound running; the row keeps its stage label.
     await popup.locator('button[aria-label="Close"]').first().click();
     await expect(popup).toHaveCount(0);
@@ -177,11 +180,11 @@ for (const width of [375, 1280]) {
     await popup.getByTestId("compound-submit-done").click();
     await expect(popup).toHaveCount(0);
     await expect(page.getByTestId("compound-token-burst")).toBeAttached();
-    // Another sheet opened while the notice shows: its fee line and Confirm stay clear.
+    // Another sheet opened while the notice shows: its unclaimed-fees line and Confirm stay clear.
     const meteora = page.getByTestId("position-row").filter({ has: page.locator('[data-position-key^="meteora-dlmm:"]') });
     await meteora.locator('[data-tool="compound"]').click();
     await expect(popup.getByTestId("compound-confirm-button")).toBeVisible();
-    await expectClearOfNotices(page, [popup.getByTestId("compound-confirm-fee"), popup.getByTestId("compound-confirm-button")], `${width} confirm`);
+    await expectClearOfNotices(page, [popup.getByTestId("compound-confirm-unclaimed"), popup.getByTestId("compound-confirm-button")], `${width} confirm`);
     await context.close();
   });
 }
