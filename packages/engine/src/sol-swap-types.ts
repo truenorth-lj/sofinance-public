@@ -36,4 +36,3 @@ export type SolSwapDelivery =
     status: "confirmed"; delivered: string; decimals: number; blockTime: number | null;
     slot: number;
   };
-

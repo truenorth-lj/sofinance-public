@@ -23,6 +23,7 @@ vi.mock("@sofinance/engine/config/server-env", async original => ({
 }));
 const owner = testKeypair(1), nft = testKeypair(2), wallet = owner.publicKey.toBase58();
 const transaction = buildTransaction({ payer: owner, extraSigners: [nft], signWith: [] });
+const swapTransaction = buildTransaction({ payer: owner, signWith: [] });
 const summary = { operation: "open-position", wallet, nftMint: nft.publicKey.toBase58(), lastValidBlockHeight: 150,
   quote: { requested: "9007199254740993" } } as OpenPositionSummary;
 const swapSummary = { operation: "sol-swap-step", wallet, lastValidBlockHeight: 150 } as SolSwapStepSummary;
@@ -31,7 +32,7 @@ const request = (): OpenPrepareCommand => ({ wallet, selection: { poolId: testKe
   floorBps: 9900, toleranceBps: 200, nftMint: nft.publicKey.toBase58() });
 const message = Buffer.from(transaction.message.serialize()).toString("base64");
 beforeEach(() => { vi.resetAllMocks(); backend.open.mockResolvedValue({ summary, transaction });
-  backend.quote.mockResolvedValue(summary.quote); backend.swap.mockResolvedValue({ summary: swapSummary, transaction });
+  backend.quote.mockResolvedValue(summary.quote); backend.swap.mockResolvedValue({ summary: swapSummary, transaction: swapTransaction });
   backend.secret.mockReturnValue(SIGNING_SECRET); });
 afterEach(() => vi.unstubAllEnvs());
 
@@ -82,8 +83,10 @@ it("binds the SOL swap to its own permit domain and returned relay bytes", async
   vi.stubEnv("VERCEL_ENV", "preview");
   const result = await prepareSolSwapStep("raydium-clmm", wallet, "pool", "1");
   expect(backend.swap).toHaveBeenCalledWith("raydium-clmm", { wallet, poolId: "pool", amount: "1" });
-  expect(verifySolSwapPermit(SIGNING_SECRET, { wallet, summary: swapSummary, message }, result.permit)).toBe(true);
-  expect(verifyOpenPositionPermit(SIGNING_SECRET, { wallet, summary: swapSummary, message }, result.permit)).toBe(false);
+  const swapMessage = Buffer.from(swapTransaction.message.serialize()).toString("base64");
+  expect(VersionedTransaction.deserialize(Buffer.from(result.unsignedTransaction, "base64")).message.header.numRequiredSignatures).toBe(1);
+  expect(verifySolSwapPermit(SIGNING_SECRET, { wallet, summary: swapSummary, message: swapMessage }, result.permit)).toBe(true);
+  expect(verifyOpenPositionPermit(SIGNING_SECRET, { wallet, summary: swapSummary, message: swapMessage }, result.permit)).toBe(false);
   expect(verifyTxSendPermit(SIGNING_SECRET, wallet, Buffer.from(result.unsignedTransaction, "base64"), result.sendPermit)).toBe(true);
 });
 it("returns exact chain delivery including values above safe-integer range", async () => {
