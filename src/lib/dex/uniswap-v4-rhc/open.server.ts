@@ -5,8 +5,9 @@ import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap
 import { RHC_FEE_WALLET_ENV } from "@sofinance/engine/protocols/uniswap-v4/fee-recipient";
 import { finalizeOpen, type OpenFlowResult, permitFromJson, prepareOpen } from "@sofinance/engine/protocols/uniswap-v4/open-flow";
 import { createRhcClient } from "@sofinance/engine/rpc-evm/index";
-import { type Address, getAddress, type Hex, isAddress, isAddressEqual, type PublicClient } from "viem";
-import { z } from "zod";
+import { type Address, type Hex, isAddressEqual, type PublicClient } from "viem";
+import { EvmLiquidityInputError as RhcOpenInputError } from "../evm-liquidity";
+import type { RhcOpenRequest } from "./liquidity-input";
 
 /**
  * Robinhood Chain Uniswap v4 open-position BUILD + simulate (PR2). Returns unsigned calldata and Permit2 typed data;
@@ -14,37 +15,7 @@ import { z } from "zod";
  * server-only `RHC_UNIV4_FEE_WALLET` (EIP-55 checksummed); unset or invalid → every open fails closed.
  */
 
-const address = z.string().refine(v => isAddress(v, { strict: false }), "invalid address").transform(v => getAddress(v));
-const uintString = z.string().regex(/^[0-9]{1,78}$/, "expected a base-10 integer string");
-const tick = z.number().int().min(-887272).max(887272);
-
-const base = z.object({
-  poolId: z.string().regex(/^0x[0-9a-fA-F]{64}$/),
-  user: address,
-  depositToken: address,
-  amount: uintString,
-  tickLower: tick,
-  tickUpper: tick,
-});
-
-export const RhcOpenRequestSchema = z.discriminatedUnion("action", [
-  base.extend({ action: z.literal("prepare") }).strict(),
-  base.extend({
-    action: z.literal("finalize"),
-    attempt: z.number().int().min(0).max(10),
-    signature: z.string().regex(/^0x[0-9a-fA-F]{130}$/),
-    permit: z.object({
-      details: z.object({ token: address, amount: uintString, expiration: z.number().int().nonnegative(), nonce: z.number().int().nonnegative() }).strict(),
-      spender: address,
-      sigDeadline: uintString,
-    }).strict(),
-  }).strict(),
-]);
-export type RhcOpenRequest = z.infer<typeof RhcOpenRequestSchema>;
-
 let stateClient: PublicClient | null = null;
-
-export class RhcOpenInputError extends Error {}
 
 export async function runRhcUniv4Open(input: RhcOpenRequest, options: { client?: PublicClient } = {}): Promise<OpenFlowResult> {
   const pool = UNIV4_RHC_ALLOWLISTED_POOLS.find(p => p.poolId.toLowerCase() === input.poolId.toLowerCase());

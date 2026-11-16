@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 import type { PublicClient } from "viem";
-import { RhcOpenInputError, RhcOpenRequestSchema, runRhcUniv4Open } from "./rhc-univ4-open";
+import { EvmLiquidityInputError as RhcOpenInputError } from "./dex/evm-liquidity";
+import { RhcOpenRequestSchema } from "./dex/uniswap-v4-rhc/liquidity-input";
+import { runRhcUniv4Open } from "./dex/uniswap-v4-rhc/open.server";
 
 const POOL = "0x4f54c74021e4139bbc4c7bc924346c921975136ea120cf118a93c43b50bdbd3c";
 const USER = "0xab9069703d7df7c4a472bc634312f087f0b9b320";

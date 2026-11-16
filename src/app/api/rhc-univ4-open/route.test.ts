@@ -7,11 +7,11 @@ vi.mock("@/lib/protocol-flags", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/protocol-flags")>();
   return { ...actual, isRhcUniv4TxBuildEnabled: vi.fn(actual.isRhcUniv4TxBuildEnabled) };
 });
-vi.mock("@/lib/rhc-univ4-open", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/rhc-univ4-open")>();
+vi.mock("@/lib/dex/uniswap-v4-rhc/open.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/dex/uniswap-v4-rhc/open.server")>();
   return { ...actual, runRhcUniv4Open: vi.fn(async () => ({ state: "needs_signature", plan: { kind: "swap" } })) };
 });
-import { runRhcUniv4Open } from "@/lib/rhc-univ4-open";
+import { runRhcUniv4Open } from "@/lib/dex/uniswap-v4-rhc/open.server";
 import { isRhcUniv4TxBuildEnabled } from "@/lib/protocol-flags";
 import { GET, POST } from "./route";
 
@@ -58,7 +58,7 @@ describe("/api/rhc-univ4-open", () => {
   });
 
   it("route and lib never sign or send", () => {
-    for (const file of ["src/app/api/rhc-univ4-open/route.ts", "src/lib/rhc-univ4-open.ts"]) {
+    for (const file of ["src/app/api/rhc-univ4-open/route.ts", "src/lib/dex/uniswap-v4-rhc/open.server.ts"]) {
       const source = readFileSync(join(process.cwd(), file), "utf8");
       expect(source, file).not.toMatch(/sendRawTransaction|sendTransaction|signTransaction|privateKey|walletClient|stateOverride/i);
     }

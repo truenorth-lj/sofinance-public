@@ -4,8 +4,6 @@
     "src/app/api/lp-decision/route.ts": 1,
     "src/app/api/protocol-pools/range-apr/route.ts": 4,
     "src/app/api/protocol-pools/route.ts": 3,
-    "src/app/api/rhc-univ4-exit/route.ts": 1,
-    "src/app/api/rhc-univ4-open/route.ts": 1,
     "src/app/api/rhc-univ4-position-values/route.ts": 2,
     "src/app/api/rhc-univ4-positions/route.ts": 1,
     "src/app/app/page.tsx": 1,

@@ -59,6 +59,12 @@ sanitized partial failures; required discovery errors remain fatal. App keeps it
 and read connection, while MCP keeps the scanner default connection and original projection.
 Wallet DTO entrypoints are type-only re-exports; scanner and token/ownership policy are unchanged.
 
+RHC native open/exit HTTP handlers resolve strict validation and lazy builders through the
+registry. Schemas stay separate from RPC/flow imports and share the engine's NFT lookup limit.
+The registry captures the wallet, range, decimal amounts, Permit2 signature/terms and NFT ids
+before lazy loading. Existing tx-build flags, 400/422/503 responses, fee policy and unsigned
+calldata stay unchanged; generic RHC writes remain disabled.
+
 Withdrawal status now uses a lazy native read binding, independent of new-withdrawal capability.
 It snapshots the signature and complete prepared authorization before awaits, retaining HMAC
 verification before RPC, existing finality/history/account read rules, message matching and cache

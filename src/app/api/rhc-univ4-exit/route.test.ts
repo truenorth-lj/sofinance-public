@@ -8,13 +8,13 @@ vi.mock("@/lib/protocol-flags", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/protocol-flags")>();
   return { ...actual, isRhcUniv4TxBuildEnabled: vi.fn(actual.isRhcUniv4TxBuildEnabled) };
 });
-vi.mock("@/lib/rhc-univ4-exit", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/rhc-univ4-exit")>();
+vi.mock("@/lib/dex/uniswap-v4-rhc/exit.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/dex/uniswap-v4-rhc/exit.server")>();
   return { ...actual, runRhcUniv4Exit: vi.fn(async (input: { action: string }) => (input.action === "positions"
     ? { state: "positions", positions: [] }
     : { state: "failed", code: "not-owner", message: "Position #1 belongs to another wallet (0x2222…2222), not the connected one." })) };
 });
-import { runRhcUniv4Exit } from "@/lib/rhc-univ4-exit";
+import { runRhcUniv4Exit } from "@/lib/dex/uniswap-v4-rhc/exit.server";
 import { isRhcUniv4TxBuildEnabled } from "@/lib/protocol-flags";
 import { GET, POST } from "./route";
 
@@ -65,7 +65,7 @@ describe("/api/rhc-univ4-exit", () => {
   });
 
   it("route and lib never sign or send", () => {
-    for (const file of ["src/app/api/rhc-univ4-exit/route.ts", "src/lib/rhc-univ4-exit.ts"]) {
+    for (const file of ["src/app/api/rhc-univ4-exit/route.ts", "src/lib/dex/uniswap-v4-rhc/exit.server.ts"]) {
       const source = readFileSync(join(process.cwd(), file), "utf8");
       expect(source, file).not.toMatch(/sendRawTransaction|sendTransaction|signTransaction|privateKey|walletClient|stateOverride/i);
     }
