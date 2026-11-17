@@ -1,7 +1,7 @@
 "use client";
 
 import { SolanaAdapter } from "@reown/appkit-adapter-solana/react";
-import { solana } from "@reown/appkit/networks";
+import { solana, type AppKitNetwork } from "@reown/appkit/networks";
 import { createAppKit, useAppKit, useAppKitAccount, useAppKitProvider, useDisconnect } from "@reown/appkit/react";
 import { useEffect, useState } from "react";
 import {
@@ -25,12 +25,17 @@ import { WalletDeeplinkSheet } from "./wallet-deeplink-sheet";
 
 const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID?.trim();
 
+// viem 2.57.19 added PrepareTransactionRequestPhase "afterFillTransactionError".
+// AppKit's AppKitNetwork type still expects the previous phase union, so the
+// official `solana` network object is not assignable without this assertion.
+const solanaNetwork = solana as AppKitNetwork;
+
 if (typeof window !== "undefined" && projectId) {
   createAppKit({
     // Wallet Standard extensions are auto-detected via SolanaAdapter.watchStandard().
     adapters: [new SolanaAdapter()],
-    networks: [solana],
-    defaultNetwork: solana,
+    networks: [solanaNetwork],
+    defaultNetwork: solanaNetwork,
     projectId,
     metadata: {
       name: "SoFinance",
