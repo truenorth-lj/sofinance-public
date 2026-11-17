@@ -12,7 +12,7 @@ import type { StockBuyOption } from "@/lib/stock-market/public";
 export type HomepageWalletState = {
   /** The providers are (being) loaded. Set by the first Connect wallet or Buy, or on load for a remembered wallet. */
   mounted: boolean;
-  /** The providers have loaded and report the wallet below. */
+  /** The providers have finished restoring their session and report the wallet below. */
   ready: boolean;
   /** Bumped by every Connect wallet click; the root opens the wallet picker once per bump. */
   connectRequests: number;
@@ -62,8 +62,8 @@ export const homepageWallet = {
     answeredConnectRequests = state.connectRequests;
     return true;
   },
-  /** Called by the root: the providers are up, with this wallet (or none). */
-  report: (address: string | null) => set({ ready: true, address }),
+  /** Called by the root; mounting a provider alone does not finish its async session restoration. */
+  report: (address: string | null, restoring = false) => set({ ready: !restoring, address }),
   /** Called by the root: how to disconnect (not part of the state, see `disconnectWallet`). */
   setDisconnect: (disconnect: (() => void) | null) => { disconnectWallet = disconnect; },
   /** The root unmounted (the visitor left the homepage): nothing it reported is true any more. */
@@ -78,3 +78,17 @@ export function useHomepageWallet(): HomepageWalletState {
 
 /** `@solana/wallet-adapter-react` keeps the last wallet's name here and reconnects it (`autoConnect`). */
 export const REMEMBERED_WALLET_KEY = "walletName";
+
+/** Storage is only a loading hint. The provider must confirm the connection before we display a wallet. */
+export function hasRememberedHomepageWallet(): boolean {
+  try {
+    const storage = window.localStorage;
+    const legacy = storage.getItem(REMEMBERED_WALLET_KEY);
+    if ((legacy && legacy !== "null") || storage.getItem("@appkit/solana:connected_connector_id")) return true;
+    // AppKit can also restore a connection when only its connection list remains.
+    const connections = JSON.parse(storage.getItem("@appkit/connections") || "null");
+    return Array.isArray(connections?.solana) && connections.solana.length > 0;
+  } catch {
+    return false;
+  }
+}

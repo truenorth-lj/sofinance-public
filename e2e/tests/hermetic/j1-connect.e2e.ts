@@ -2,6 +2,7 @@
 // no signing requested by connecting, reload behaviour, disconnect, reconnect.
 import { expect, test } from "../fixtures";
 import { ConnectModal } from "../../pages/connect-modal";
+import { readFileSync } from "node:fs";
 
 const appkit = process.env.E2E_PROVIDER !== "adapter";
 
@@ -62,5 +63,37 @@ test.describe("J1 connect wallet", () => {
     await new ConnectModal(page, wallet).open();
     await expect(page.getByRole("button", { name: /phantom/i })).toHaveCount(0);
     await expect(page.getByRole("button", { name: /solflare/i })).toHaveCount(0);
+  });
+
+  test("homepage restores AppKit after navigation and reload without opening a picker", async ({ page, wallet }) => {
+    test.skip(!appkit, "AppKit session uses different storage from wallet-adapter");
+    await page.route("https://fonts.googleapis.com/**", route => route.fulfill({ contentType: "text/css", body: "" }));
+    // Homepage data is independent of wallet restoration; keep it off the live stock/RPC services.
+    const stocks = readFileSync(new URL("../../support/fixtures/stock-market.json", import.meta.url), "utf8");
+    const apr = readFileSync(new URL("../../support/fixtures/pool-range-apr.json", import.meta.url), "utf8");
+    await page.route("**/api/stock-market", route => route.fulfill({ contentType: "application/json", body: stocks }));
+    await page.route("**/api/protocol-pools/range-apr?**", route => route.fulfill({ contentType: "application/json", body: apr }));
+    await page.goto("/app/portfolio", { waitUntil: "domcontentloaded" });
+    const modal = new ConnectModal(page, wallet);
+    await modal.connect();
+    await expect(modal.navAddress).toBeVisible();
+    expect(await page.evaluate(() => localStorage.getItem("walletName"))).toBeNull();
+
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    const homeWallet = page.getByTestId("home-wallet");
+    await expect(homeWallet).toHaveAttribute("data-connected", "true");
+    await expect(homeWallet).toContainText(modal.shortAddress);
+    await expect(page.getByTestId("w3m-modal-card")).not.toBeVisible();
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(homeWallet).toHaveAttribute("data-connected", "true");
+    await expect(page.getByTestId("w3m-modal-card")).not.toBeVisible();
+
+    await homeWallet.click();
+    await expect(homeWallet).toHaveText("Connect wallet");
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(homeWallet).toHaveText("Connect wallet");
+    await expect(homeWallet).toBeEnabled();
+    await expect(page.getByTestId("w3m-modal-card")).not.toBeVisible();
+    expect(wallet.ledger).toEqual([]);
   });
 });

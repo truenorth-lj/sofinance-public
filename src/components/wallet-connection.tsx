@@ -6,6 +6,8 @@ import type { VersionedTransaction } from "@solana/web3.js";
 export type WalletConnection = {
   address?: string;
   connected: boolean;
+  /** The provider is initializing or restoring/connecting a session; absence of an address is not final yet. */
+  restoring?: boolean;
   connect: () => void;
   disconnect: () => void;
   isMobile: boolean;

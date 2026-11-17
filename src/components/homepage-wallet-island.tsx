@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { useEffect } from "react";
 import { LoaderCircle, Wallet } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { homepageWallet, REMEMBERED_WALLET_KEY, useHomepageWallet } from "./homepage-wallet";
+import { hasRememberedHomepageWallet, homepageWallet, useHomepageWallet } from "./homepage-wallet";
 import { shortAddress } from "@/lib/format/address";
 
 const HomepageWalletRoot = dynamic(() => import("./homepage-wallet-root").then((module) => module.HomepageWalletRoot), { ssr: false });
@@ -17,9 +17,9 @@ const HomepageWalletRoot = dynamic(() => import("./homepage-wallet-root").then((
 export function HomepageWalletIsland() {
   const { mounted } = useHomepageWallet();
   useEffect(() => {
-    let remembered = false;
-    try { remembered = Boolean(window.localStorage.getItem(REMEMBERED_WALLET_KEY)); } catch { /* storage blocked: wait for a click */ }
-    if (remembered) homepageWallet.mount();
+    if (hasRememberedHomepageWallet()) homepageWallet.mount();
+    // Cancel a click still waiting for restoration when the visitor leaves the homepage.
+    return () => { homepageWallet.takeConnectRequest(); };
   }, []);
   return mounted ? <HomepageWalletRoot /> : null;
 }
@@ -43,10 +43,10 @@ export function HomepageConnectButton() {
     </button>;
   }
   const loading = mounted && !ready;
-  return <button type="button" onClick={homepageWallet.requestConnect} data-testid="home-wallet" data-connected="false" aria-busy={loading || undefined}
+  return <button type="button" onClick={homepageWallet.requestConnect} disabled={loading} data-testid="home-wallet" data-connected="false" aria-busy={loading || undefined}
     title="Connect a Solana wallet (Phantom, Solflare, …)"
     className={cn(pill, "bg-cream text-ink hover:bg-white focus-visible:shadow-[0_0_0_2px_var(--color-lemon)]")}>
     {loading ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-    Connect wallet
+    {loading ? "Connecting…" : "Connect wallet"}
   </button>;
 }

@@ -30,8 +30,8 @@ const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID?.trim();
 // official `solana` network object is not assignable without this assertion.
 const solanaNetwork = solana as AppKitNetwork;
 
-if (typeof window !== "undefined" && projectId) {
-  createAppKit({
+const appKit = typeof window !== "undefined" && projectId
+  ? createAppKit({
     // Wallet Standard extensions are auto-detected via SolanaAdapter.watchStandard().
     adapters: [new SolanaAdapter()],
     networks: [solanaNetwork],
@@ -49,8 +49,7 @@ if (typeof window !== "undefined" && projectId) {
     allWallets: "SHOW",
     themeMode: APPKIT_THEME_MODE,
     themeVariables: APPKIT_THEME_VARIABLES,
-  });
-}
+  }) : undefined;
 
 export function MobileWalletProvider({ children }: { children: React.ReactNode }) {
   const account = useAppKitAccount({ namespace: "solana" });
@@ -58,6 +57,21 @@ export function MobileWalletProvider({ children }: { children: React.ReactNode }
   const { open } = useAppKit();
   const { disconnect } = useDisconnect();
   const [connectionError, setConnectionError] = useState("");
+  const [initialization, setInitialization] = useState<"pending" | "ready" | "failed">(appKit ? "pending" : "ready");
+  useEffect(() => {
+    if (!appKit) return;
+    let active = true;
+    // ready() includes reconnection. AppKit's UI `initialized` flag does not guarantee it has finished.
+    void appKit.ready().then(() => {
+      if (active) setInitialization("ready");
+    }, () => {
+      if (active) {
+        setInitialization("failed");
+        setConnectionError("Wallet restoration failed, please reconnect.");
+      }
+    });
+    return () => { active = false; };
+  }, []);
   // Sentry: which wallet a transaction report came from, when the AppKit provider names it.
   const walletName = account.isConnected ? (walletProvider as { name?: unknown } | undefined)?.name : undefined;
   useEffect(() => {
@@ -80,6 +94,7 @@ export function MobileWalletProvider({ children }: { children: React.ReactNode }
   return <WalletConnectionContext.Provider value={{
     address: account.address,
     connected: account.isConnected && !!account.address,
+    restoring: initialization === "pending" || (initialization === "ready" && (account.status === "connecting" || account.status === "reconnecting")),
     connect: flow.connect,
     disconnect: disconnectWallet,
     isMobile: true,
