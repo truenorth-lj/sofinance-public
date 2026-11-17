@@ -55,6 +55,16 @@ test.describe("production, read-only", () => {
     await expect(page.getByRole("button", { name: new RegExp(`${wallet.name}.*installed`, "i") })).toBeVisible();
     await modal.walletEntry.first().click();
     await expect(modal.navAddress).toBeVisible();
+    // The homepage must restore this AppKit session without wallet-adapter's walletName hint.
+    expect(await page.evaluate(() => localStorage.getItem("walletName"))).toBeNull();
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    const homeWallet = page.getByTestId("home-wallet");
+    await expect(homeWallet).toHaveAttribute("data-connected", "true");
+    await expect(homeWallet).toContainText(modal.shortAddress);
+    await expect(page.getByTestId("w3m-modal-card")).not.toBeVisible();
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(homeWallet).toHaveAttribute("data-connected", "true");
+    await expect(page.getByTestId("w3m-modal-card")).not.toBeVisible();
     expect(wallet.ledger).toEqual([]);
   });
 

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement, type ReactNode } from "react";
+import { act, createElement, StrictMode, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WalletConnectionContext, type WalletConnection } from "@/components/wallet-connection";
@@ -54,6 +54,105 @@ const page = () => createElement("div", null, createElement(HomepageConnectButto
 const button = () => host.querySelector<HTMLButtonElement>("[data-testid=home-wallet]")!;
 
 describe("homepage wallet", () => {
+  it("regression: restores an AppKit session without the legacy walletName key", async () => {
+    window.localStorage.setItem("@appkit/solana:connected_connector_id", "Phantom");
+    wallet.value = connection({ address: ADDRESS, connected: true });
+    await act(async () => root.render(page()));
+    expect(wallet.providerMounts).toBe(1);
+    expect(button().getAttribute("data-connected")).toBe("true");
+    expect(wallet.value.connect).not.toHaveBeenCalled();
+  });
+
+  it("regression: a click during async session restoration does not open a redundant picker", async () => {
+    const connect = vi.fn();
+    wallet.value = connection({ connect, restoring: true });
+    await act(async () => root.render(page()));
+    await act(async () => button().click());
+    expect(button().textContent).toBe("Connecting…");
+    expect(button().disabled).toBe(true);
+    expect(homepageWallet.get().ready).toBe(false);
+    expect(connect).not.toHaveBeenCalled();
+    // The SDK later restores the previously authorized wallet, without another user action.
+    wallet.value = connection({ address: ADDRESS, connected: true, connect });
+    await act(async () => root.render(page()));
+    expect(button().getAttribute("data-connected")).toBe("true");
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  it("opens the picker once after a requested restoration finishes without a wallet", async () => {
+    const connect = vi.fn();
+    wallet.value = connection({ connect, restoring: true });
+    await act(async () => root.render(page()));
+    await act(async () => button().click());
+    await act(async () => button().click());
+    expect(connect).not.toHaveBeenCalled();
+    wallet.value = connection({ connect, restoring: false });
+    await act(async () => root.render(page()));
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(button().textContent).toBe("Connect wallet");
+    expect(button().disabled).toBe(false);
+    await act(async () => root.render(page()));
+    expect(connect).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not show a cached address or open a picker when background restoration fails", async () => {
+    window.localStorage.setItem("@appkit/connections", JSON.stringify({ solana: [{ accounts: [{ address: ADDRESS }] }] }));
+    const connect = vi.fn();
+    wallet.value = connection({ connect, restoring: true });
+    await act(async () => root.render(page()));
+    expect(wallet.providerMounts).toBe(1);
+    expect(button().textContent).toBe("Connecting…");
+    expect(button().getAttribute("data-connected")).toBe("false");
+    wallet.value = connection({ connect, restoring: false });
+    await act(async () => root.render(page()));
+    expect(button().textContent).toBe("Connect wallet");
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  it.each(["null", "{}", '{"solana":[]}', '{"eip155":[{}]}', "broken JSON"])("does not load providers for an absent Solana session: %s", async (stored) => {
+    window.localStorage.setItem("@appkit/connections", stored);
+    await act(async () => root.render(page()));
+    expect(wallet.providerMounts).toBe(0);
+    expect(button().textContent).toBe("Connect wallet");
+  });
+
+  it("leaves connecting available when storage access is blocked", async () => {
+    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); });
+    try {
+      await act(async () => root.render(page()));
+      expect(wallet.providerMounts).toBe(0);
+      await act(async () => button().click());
+      expect(wallet.value.connect).toHaveBeenCalledTimes(1);
+    } finally { getItem.mockRestore(); }
+  });
+
+  it("cancels a pending click on navigation while restoration is still running", async () => {
+    const connect = vi.fn();
+    wallet.value = connection({ connect, restoring: true });
+    await act(async () => root.render(page()));
+    await act(async () => button().click());
+    expect(connect).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    wallet.value = connection({ connect, restoring: false });
+    await act(async () => root.render(page()));
+    expect(connect).not.toHaveBeenCalled();
+    await act(async () => button().click());
+    expect(connect).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a requested connect across Strict Mode's provider effect replay", async () => {
+    const connect = vi.fn();
+    wallet.value = connection({ connect, restoring: true });
+    const strictPage = () => createElement(StrictMode, null, page());
+    await act(async () => root.render(strictPage()));
+    await act(async () => button().click());
+    expect(connect).not.toHaveBeenCalled();
+    wallet.value = connection({ connect, restoring: false });
+    await act(async () => root.render(strictPage()));
+    expect(connect).toHaveBeenCalledTimes(1);
+  });
+
   it("loads nothing until it is needed: no remembered wallet, no click, no providers", async () => {
     await act(async () => root.render(page()));
     expect(button().textContent).toBe("Connect wallet");

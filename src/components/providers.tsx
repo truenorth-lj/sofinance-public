@@ -36,7 +36,7 @@ function BrowserWalletProvider({ children }: { children: React.ReactNode }) {
 }
 
 function BrowserWalletConnection({ children }: { children: React.ReactNode }) {
-  const { publicKey, connected, disconnect, wallets, wallet, signTransaction, sendTransaction, signAllTransactions, signMessage } = useWallet();
+  const { publicKey, connected, connecting, disconnect, wallets, wallet, signTransaction, sendTransaction, signAllTransactions, signMessage } = useWallet();
   const { connection } = useConnection();
   const address = publicKey?.toBase58();
   // Phantom and other Wallet Standard wallets broadcast themselves (and rebroadcast until expiry).
@@ -50,7 +50,7 @@ function BrowserWalletConnection({ children }: { children: React.ReactNode }) {
     setTxWalletTags(walletName ? { name: walletName, version: typeof walletVersion === "string" ? walletVersion : undefined } : null);
   }, [walletName, walletVersion]);
   return <WalletConnectionContext.Provider value={{
-    address, connected, connect: flow.connect,
+    address, connected, restoring: connecting, connect: flow.connect,
     disconnect: () => { void disconnect(); }, isMobile: false, walletsCount: wallets.length, connectionError: "",
     signTransaction: async (transaction) => {
       if (!signTransaction) throw new Error("This wallet does not support transaction signing");
