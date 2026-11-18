@@ -112,10 +112,13 @@ export async function syncPositionHistory(options: SyncPositionHistoryOptions): 
     row.parserVersion !== POSITION_HISTORY_PARSER_VERSION);
   let moreWork = false;
 
-  const result = (state: PositionHistorySnapshot["state"], transactions: StoredPositionTransaction[]) => {
+  const result = (state: PositionHistorySnapshot["state"], transactions: StoredPositionTransaction[],
+    requireLease = true) => {
     const hasOpening = transactions.some(row => row.status === "parsed" && !needsParse(row) &&
       row.events.some(event => event.kind === "open"));
-    const incomplete = !safe || !state.complete || !hasOpening || transactions.some(needsParse);
+    // A missed lease still serves a cached complete ledger; in-flight sync keeps
+    // using `safe` so a partial delta is not treated as caught up.
+    const incomplete = (requireLease && !safe) || !state.complete || !hasOpening || transactions.some(needsParse);
     const history = transactions.filter(row => row.status === "parsed" && !needsParse(row) && row.events.length)
       .map(({ signature, slot, blockTime, events }) => ({ signature, slot, blockTime, events }))
       .sort((a, b) => a.slot - b.slot || (a.blockTime ?? 0) - (b.blockTime ?? 0));
@@ -129,7 +132,7 @@ export async function syncPositionHistory(options: SyncPositionHistoryOptions): 
     outcome = { history, signatureCount: transactions.length, truncated: incomplete, metric };
     return outcome;
   };
-  if (!snapshot.lease) return result(oldState, snapshot.transactions);
+  if (!snapshot.lease) return result(oldState, snapshot.transactions, false);
 
   try {
     const process = async (info: HistorySignature): Promise<StoredPositionTransaction> => {

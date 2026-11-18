@@ -53,7 +53,11 @@ export function computeStockPerformance(input: StockPerformanceInput): StockPerf
   const opened = input.history.find((item) => item.events.some((event) =>
     event.kind === "open" && event.poolState === input.poolId));
   const firstTime = opened?.blockTime ?? null;
-  const entry = input.incomplete ? null : input.entry ?? null;
+  // Keep a recorded entry when history is incomplete only if the price is finite
+  // and this history includes the position's opening event.
+  const stored = input.entry ?? null;
+  const recorded = typeof stored?.entryPriceUsd === "number" && Number.isFinite(stored.entryPriceUsd) && opened;
+  const entry = recorded ? stored : input.incomplete ? null : stored;
   const priceUsd = input.quote?.usdPrice ?? null;
   const sharesIn = entry?.sharesIn ?? null, entryPriceUsd = entry?.entryPriceUsd ?? null;
   const feeUsd = input.valuation?.feeUsd ?? null;

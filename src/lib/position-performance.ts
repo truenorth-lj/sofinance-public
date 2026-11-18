@@ -205,6 +205,8 @@ export async function getPositionFigures(positionMint: string, options: Position
     shares: finite(equivalent?.metrics.equity),
     valueUsd: finite(data.metrics.currentEquityUsd),
     unclaimedFeesUsd: finite(data.metrics.uncollectedFeesUsd),
+    // feesEarnedUsd = history collects + on-chain uncollected. Missing early
+    // collect events would understate cumulative fees, so keep the dash until history is complete.
     cumulativeFeesUsd: !historyComplete ? null : finite(data.metrics.feesEarnedUsd),
   };
   return { figures, evaluatedAt: new Date(data.identity.evaluatedAt * 1000).toISOString(),

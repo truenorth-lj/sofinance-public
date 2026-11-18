@@ -38,7 +38,10 @@ export async function buildStockPerformance(input: {
     // multiply them by the other mint's price just because it has more liquidity.
     const priceMint = input.quotes.has(baseMint) ? baseMint : null;
     const quote = priceMint ? input.quotes.get(priceMint)! : null;
-    const entry = input.incomplete ? null : await resolveStockEntry({
+    // Still resolve an entry when history is incomplete so a recorded price can
+    // surface; computeStockPerformance keeps it only when entryPriceUsd is finite
+    // and the history includes this position's opening event.
+    const entry = await resolveStockEntry({
       history: input.history, positionId: input.positionId, poolId: input.poolId, mintA: input.mintA, mintB: input.mintB,
       decimalsA: input.decimalsA, decimalsB: input.decimalsB, baseSide: te.baseSide,
       uiPriceBPerA: te.uiPriceBPerA, signal: input.signal, deps: input.entryDeps,

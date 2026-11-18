@@ -209,3 +209,19 @@ it("fills price change and total for the NVDA position from the recorded entry p
   expect(stock?.totalUsd).toBeCloseTo(stock!.priceChangeUsd! + 1.8, 9);
   expect(stock?.entryUnavailableReason).toBeNull();
 });
+
+it("still uses a recorded entry price when the performance history is incomplete", async () => {
+  const { store } = memoryStore();
+  const stock = await buildStockPerformance({
+    history, positionId: POSITION, poolId: POOL, mintA: NVDA, mintB: NVDAX, decimalsA: 6, decimalsB: 8,
+    tokenNative: { tokenEquivalent: { baseSymbol: "NVDA", baseSide: "A", uiPriceBPerA: 0.9995,
+      metrics: { equity: 0.66, feesEarned: 0.01 } } } as TokenNativeMetrics,
+    metrics: { currentEquityUsd: 118.8, feesEarnedUsd: 1.8 }, incomplete: true, nowSeconds: deposit.blockTime + 86_400,
+    quotes: new Map([[NVDA, { source: "jupiter" as const, price: 180, priceChange24hPct: 1, liquidityUsd: 1 }]]),
+    entryDeps: { store, rpc: fixtureRpc().rpc },
+  });
+  expect(stock?.entryPriceUsd).toBeCloseTo(176.998, 3);
+  expect(stock?.entryUnavailableReason).toBeNull();
+  expect(stock?.feeUsd).toBe(1.8);
+  expect(stock?.totalUsd).toBeCloseTo(stock!.priceChangeUsd! + 1.8, 9);
+});

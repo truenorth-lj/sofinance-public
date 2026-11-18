@@ -519,19 +519,33 @@ describe("incremental position history", () => {
     expect(result.truncated).toBe(false);
   });
 
-  it("returns cached incomplete results during an active lease and releases on RPC errors", async () => {
+  it("returns a cached complete ledger when the lease is already held and releases on RPC errors", async () => {
     const store = new MemoryStore();
     const upstream = rpc([1]);
     const run = () => syncPositionHistory({ context, store, connection: upstream.connection, maxSignatures: 100 });
     await run();
     store.locked = true;
-    expect((await run()).truncated).toBe(true);
+    const cached = await run();
+    expect(cached.truncated).toBe(false);
+    expect(cached.metric.historyComplete).toBe(true);
     expect(upstream.signatures).toHaveBeenCalledTimes(1);
     store.locked = false;
     upstream.signatures.mockRejectedValue(new Error("provider unavailable"));
     await expect(run()).rejects.toThrow("provider unavailable");
     expect(store.released).toBe(2);
     expect(store.snapshot.state.complete).toBe(true);
+  });
+
+  it("keeps history incomplete when the lease is missed and the cached state is not complete", async () => {
+    const store = new MemoryStore();
+    store.locked = true;
+    const upstream = rpc([1]);
+    const result = await syncPositionHistory({ context, store, connection: upstream.connection, maxSignatures: 100 });
+    expect(result.truncated).toBe(true);
+    expect(result.metric.historyComplete).toBe(false);
+    expect(result.metric.canContinue).toBe(false);
+    expect(store.snapshot.state.complete).toBe(false);
+    expect(upstream.signatures).not.toHaveBeenCalled();
   });
 
   it("does not discard a committed result or mask upstream errors when release fails", async () => {
