@@ -60,6 +60,19 @@ describe("existing-metric stock presentation", () => {
     expect(stock.feeUsd).toBe(16.9);
     expect(stock.totalUsd).toBeCloseTo(stock.priceChangeUsd! + 16.9, 9);
   });
+  it("does not keep a recorded entry price when incomplete history has no opening event", () => {
+    const stock = computeStockPerformance(input({
+      incomplete: true,
+      history: [{ blockTime: 1_800_000_000, events: [{ kind: "increase", positionNftMint: "position",
+        liquidity: "1", amountA: "1", amountB: "0" }] }],
+      entry: { sharesIn: 0.38, entryPriceUsd: 1278.93, source: "stored", reason: null },
+      valuation: { valueUsd: 333.79, feeUsd: 16.9 },
+    }));
+    expect(stock.entryPriceUsd).toBeNull();
+    expect(stock.sharesIn).toBeNull();
+    expect(stock.entryUnavailableReason).toMatch(/incomplete/);
+    expect(stock.totalUsd).toBeNull();
+  });
   it("does not treat an unpriced entry as recorded when history is incomplete", () => {
     const stock = computeStockPerformance(input({
       incomplete: true,
