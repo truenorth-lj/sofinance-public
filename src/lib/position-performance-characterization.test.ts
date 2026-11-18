@@ -277,13 +277,14 @@ describe("Raydium position performance characterization", () => {
     expect(compact).not.toHaveProperty("history"); expect(compact).not.toHaveProperty("realizedFeeAprSeries");
     expect(options.fetcher).not.toHaveBeenCalled();
   });
-  it("keeps current value/shares but withholds cumulative fees for missing opening or truncated history", async () => {
-    await run("truncated");
+  it("keeps current value/shares and computed cumulative fees when history is truncated", async () => {
+    const full = await run("truncated");
     const compact = await getPositionFigures(nft.toBase58(), { connection, nowSeconds: NOW,
       prices: quotes(mintA.toBase58(), mintB.toBase58()), symbols: { symbolA: "HOODx", symbolB: "HOOD" } });
     expect(compact.historyComplete).toBe(false);
     expect(compact.figures.valueUsd).toBeTypeOf("number"); expect(compact.figures.shares).toBeTypeOf("number");
-    expect(compact.figures.cumulativeFeesUsd).toBeNull();
+    expect(compact.figures.cumulativeFeesUsd).toBe(full.metrics.feesEarnedUsd);
+    expect(compact.figures.cumulativeFeesUsd).toBeTypeOf("number");
   });
 
   it("values a supplied durable snapshot without entering the history synchronization path", async () => {
@@ -314,7 +315,8 @@ describe("Raydium position performance characterization", () => {
     const cold = await getPositionFigures(nft.toBase58(), { ...options, historyResult: { ...saved, history: [], truncated: true } });
     expect(cold.figures.valueUsd).toBeTypeOf("number");
     expect(cold.figures.unclaimedFeesUsd).toBeTypeOf("number");
-    expect(cold.figures.cumulativeFeesUsd).toBeNull();
+    expect(cold.figures.cumulativeFeesUsd).toBe(cold.figures.unclaimedFeesUsd);
+    expect(cold.figures.cumulativeFeesUsd).toBeTypeOf("number");
     expect(vi.mocked(loadPerformanceHistory)).not.toHaveBeenCalled();
   });
 

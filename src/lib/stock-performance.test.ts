@@ -42,7 +42,32 @@ describe("existing-metric stock presentation", () => {
     const stock = computeStockPerformance(input({ incomplete: true }));
     expect(stock.entryUnavailableReason).toMatch(/incomplete/);
     expect(stock.sharesNow).toBe(0.401697);
+    expect(stock.entryPriceUsd).toBeNull();
     expect(stock.totalUsd).toBeNull();
+  });
+  it("keeps a recorded entry price when history is incomplete", () => {
+    const stock = computeStockPerformance(input({
+      incomplete: true,
+      entry: { sharesIn: 0.38, entryPriceUsd: 1278.93, source: "stored", reason: null },
+      valuation: { valueUsd: 333.79, feeUsd: 16.9 },
+    }));
+    expect(stock.entryPriceUsd).toBe(1278.93);
+    expect(stock.sharesIn).toBe(0.38);
+    expect(stock.entryPriceSource).toBe("stored");
+    expect(stock.entryUnavailableReason).toBeNull();
+    expect(stock.priceChangeUsd).toBeCloseTo(0.38 * (900 - 1278.93), 9);
+    expect(stock.priceChangePct).toBeCloseTo((900 / 1278.93 - 1) * 100, 9);
+    expect(stock.feeUsd).toBe(16.9);
+    expect(stock.totalUsd).toBeCloseTo(stock.priceChangeUsd! + 16.9, 9);
+  });
+  it("does not treat an unpriced entry as recorded when history is incomplete", () => {
+    const stock = computeStockPerformance(input({
+      incomplete: true,
+      entry: { sharesIn: 0.38, entryPriceUsd: null, source: null, reason: "Entry price is still being recorded; it appears on a later view." },
+    }));
+    expect(stock.entryPriceUsd).toBeNull();
+    expect(stock.sharesIn).toBeNull();
+    expect(stock.entryUnavailableReason).toMatch(/incomplete/);
   });
   it("does not invent a deposit date or a quote", () => {
     const stock = computeStockPerformance(input({ history: [], quote: null }));
