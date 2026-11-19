@@ -43,6 +43,7 @@ describe("/faq", () => {
     const copy = FAQ_ITEMS.map((item) => `${item.question} ${item.answer}`).join("\n");
     expect(copy).toContain("Robinhood Chain");
     expect(copy).toContain("Uniswap v4");
+    expect(copy).toContain("Meteora DLMM");
     expect(copy).toContain("11 Uniswap v4 pools");
     expect(copy).not.toMatch(/\byield|\bearn/i);
     expect(copy).not.toMatch(/open[- ]source|github|Turnkey|0-SOL|zero[- ]SOL|fee wallet|Taiwan|prototype/i);
