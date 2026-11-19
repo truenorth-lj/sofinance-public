@@ -2,6 +2,7 @@ import type { MetadataRoute } from "next";
 import { articleCanonicalPath, listBlogArticles } from "@/lib/blog";
 import { DOCS_PAGES } from "@/lib/docs-nav";
 import { GUIDE_PAGES, GUIDES_UPDATED } from "@/lib/guides";
+import { poolSitemapEntries } from "@/lib/public-pool-pages";
 import { APP_ROUTES, BLOG_ROUTES, FAQ_ROUTE, GUIDE_ROUTES, LEGAL_ROUTES, getCanonicalSiteUrl } from "@/lib/public-urls";
 
 /**
@@ -19,7 +20,7 @@ type SitemapEntry = {
 };
 
 /** Public indexable pages on main: marketing home, pools, docs, FAQ, guides (pricing, learn, use cases) and blog, each with its last-modified date. */
-export function publicSitemapEntries(buildTime = new Date().toISOString()): SitemapEntry[] {
+export function publicSitemapEntries(buildTime = new Date().toISOString(), extra: SitemapEntry[] = []): SitemapEntry[] {
   const articles = listBlogArticles();
   const newestArticle = articles.map((article) => article.dateModified).sort().at(-1) ?? PUBLIC_COPY_UPDATED;
   return [
@@ -37,6 +38,7 @@ export function publicSitemapEntries(buildTime = new Date().toISOString()): Site
       lastModified: article.dateModified,
       changeFrequency: "monthly" as const,
     })),
+    ...extra,
   ];
 }
 
@@ -44,11 +46,20 @@ export function publicSitemapPaths(): string[] {
   return publicSitemapEntries().map((entry) => entry.path);
 }
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export function toSitemapUrls(entries: SitemapEntry[]): MetadataRoute.Sitemap {
   const base = getCanonicalSiteUrl();
-  return publicSitemapEntries().map((entry) => ({
+  return entries.map((entry) => ({
     url: entry.path === "/" ? base : `${base}${entry.path}`,
     lastModified: entry.lastModified,
     changeFrequency: entry.changeFrequency,
   }));
+}
+
+/** Includes /pools/{slug} entries from the cached snapshot when it is available. */
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const buildTime = new Date().toISOString();
+  // Dynamic import keeps this file importable from unit tests (homepage-pools-snapshot is server-only).
+  const { loadHomepagePoolsSnapshot } = await import("@/lib/homepage-pools-snapshot");
+  const extra = poolSitemapEntries(await loadHomepagePoolsSnapshot(), buildTime);
+  return toSitemapUrls(publicSitemapEntries(buildTime, extra));
 }

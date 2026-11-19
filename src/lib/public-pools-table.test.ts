@@ -62,7 +62,9 @@ describe("publicPoolRows", () => {
     expect(rows.map((row) => row.dex)).toEqual(["Meteora DLMM", "Raydium CLMM", "Uniswap v4"]);
     expect(rows[0]?.pairLabel).toBe("$TSLAx / $TSLA");
     expect(rows[0]?.apr7d).toBe("22.25%");
-    expect(rows[0]?.href).toBe("/app/rwa-pairs?pool=tsla-meteora&open=1");
+    expect(rows[0]?.href).toBe("/pools/tsla-tslax-meteora");
+    expect(rows.find((row) => row.dex === "Raydium CLMM")?.href).toBe("/pools/tsla-tslax");
+    expect(rows.find((row) => row.dex === "Uniswap v4")?.href).toBe("/pools/spcx-spcxon");
     expect(rows.some((row) => row.chain === "Solana")).toBe(true);
     expect(rows.some((row) => row.chain === "Robinhood Chain")).toBe(true);
   });
@@ -72,7 +74,7 @@ describe("publicPoolRows", () => {
   });
 
   it("formats a missing fee tier and missing 7-day estimate as a dash, never 0.00%", () => {
-    const row = toPublicPoolRow({ ...rhc, feeTierBps: null, tvlUsd: null, volume24hUsd: null }, null);
+    const row = toPublicPoolRow({ ...rhc, feeTierBps: null, tvlUsd: null, volume24hUsd: null }, null, "/pools/spcx-spcxon");
     expect(row.feeTier).toBe("—");
     expect(row.tvl).toBe("—");
     expect(row.volume24h).toBe("—");
@@ -96,7 +98,7 @@ describe("publicPoolsItemListJsonLd", () => {
       "@type": "ListItem",
       position: 1,
       name: "$TSLAx / $TSLA · Meteora DLMM · Solana",
-      url: "https://sofinancelab.xyz/app/rwa-pairs?pool=tsla-meteora&open=1",
+      url: "https://sofinancelab.xyz/pools/tsla-tslax-meteora",
     });
     expect(publicPoolsItemListJsonLd(null)).toBeNull();
   });
