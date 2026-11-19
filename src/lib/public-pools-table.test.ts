@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HomepagePool, HomepagePoolsSnapshot } from "@/lib/homepage-pools";
+import { USDC_MINT, USDT_MINT } from "@/lib/rwa-allowlist";
 import {
   PUBLIC_POOLS_APR_COLUMN,
   PUBLIC_POOLS_INTRO,
@@ -50,9 +51,20 @@ const rhc = pool({
   tvlUsd: 40_000,
 });
 
+const usdcUsdt = pool({
+  key: "solana:usdc-usdt",
+  protocol: "raydium-clmm",
+  poolAddress: "usdc-usdt-pool",
+  symbolA: "USDC",
+  symbolB: "USDT",
+  mintA: USDC_MINT,
+  mintB: USDT_MINT,
+  tvlUsd: 1_800_000,
+});
+
 const snapshot: HomepagePoolsSnapshot = {
-  pools: [raydium, meteora, rhc],
-  apr7d: { [raydium.key]: 18.5, [meteora.key]: 22.25, [rhc.key]: 9 },
+  pools: [raydium, meteora, rhc, usdcUsdt],
+  apr7d: { [raydium.key]: 18.5, [meteora.key]: 22.25, [rhc.key]: 9, [usdcUsdt.key]: 40 },
   updated: [],
 };
 
@@ -71,6 +83,22 @@ describe("publicPoolRows", () => {
 
   it("returns no rows when the snapshot is missing", () => {
     expect(publicPoolRows(null)).toEqual([]);
+  });
+
+  it("omits the USDC/USDT pool from the SSR table and ItemList, and keeps stock pools", () => {
+    const rows = publicPoolRows(snapshot);
+    expect(rows.map((row) => row.pairLabel)).toEqual(["$TSLAx / $TSLA", "$TSLAx / $TSLA", "$SPCX / $SPCXon"]);
+    expect(rows.map((row) => row.href)).not.toContain("/pools/usdc-usdt");
+    expect(rows.some((row) => /USDC|USDT/.test(row.pairLabel))).toBe(false);
+    const json = publicPoolsItemListJsonLd(snapshot);
+    expect(json?.numberOfItems).toBe(3);
+    const urls = (json?.itemListElement as { url: string }[]).map((item) => item.url);
+    expect(urls).not.toContain("https://sofinancelab.xyz/pools/usdc-usdt");
+    expect(urls).toEqual([
+      "https://sofinancelab.xyz/pools/tsla-tslax-meteora",
+      "https://sofinancelab.xyz/pools/tsla-tslax",
+      "https://sofinancelab.xyz/pools/spcx-spcxon",
+    ]);
   });
 
   it("formats a missing fee tier and missing 7-day estimate as a dash, never 0.00%", () => {
