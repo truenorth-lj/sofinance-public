@@ -4,7 +4,7 @@ import { ConnectionProvider, WalletProvider, useConnection, useWallet } from "@s
 import { WalletModalProvider, useWalletModal } from "@solana/wallet-adapter-react-ui";
 import "@solana/wallet-adapter-react-ui/styles.css";
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { PUBLIC_SOLANA_RPC_URL } from "@sofinance/engine/rpc/urls";
 import { WalletGrowthAnalytics } from "./wallet-growth-analytics";
 import { WalletConnectionContext, type WalletConnection } from "./wallet-connection";
@@ -37,9 +37,11 @@ const SSR_DISCONNECTED_WALLET: WalletConnection = {
  * That component must not wrap `children` on the server: Next then omits the entire /app document body
  * (including the public pool table and ItemList JSON-LD). Render children during SSR; swap in AppKit after mount.
  */
+const subscribeIsClient = () => () => {};
+
 function MobileWalletBranch({ children }: { children: React.ReactNode }) {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
+  // getServerSnapshot is false so SSR/hydration stay disconnected; the client snapshot is true after hydrate.
+  const mounted = useSyncExternalStore(subscribeIsClient, () => true, () => false);
   if (!mounted) {
     return (
       <WalletConnectionContext.Provider value={SSR_DISCONNECTED_WALLET}>
