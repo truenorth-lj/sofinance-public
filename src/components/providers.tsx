@@ -4,10 +4,10 @@ import { ConnectionProvider, WalletProvider, useConnection, useWallet } from "@s
 import { WalletModalProvider, useWalletModal } from "@solana/wallet-adapter-react-ui";
 import "@solana/wallet-adapter-react-ui/styles.css";
 import dynamic from "next/dynamic";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PUBLIC_SOLANA_RPC_URL } from "@sofinance/engine/rpc/urls";
 import { WalletGrowthAnalytics } from "./wallet-growth-analytics";
-import { WalletConnectionContext } from "./wallet-connection";
+import { WalletConnectionContext, type WalletConnection } from "./wallet-connection";
 import { AdapterConnectAnalytics } from "./adapter-connect-analytics";
 import { useSolanaConnectFlow } from "./use-solana-connect-flow";
 import { WalletDeeplinkSheet } from "./wallet-deeplink-sheet";
@@ -18,13 +18,45 @@ import { setTxWalletTags } from "@/lib/sentry/client-tx";
 
 const MobileWalletProvider = dynamic(() => import("./mobile-wallet-provider").then((module) => module.MobileWalletProvider), { ssr: false });
 
+/** Disconnected stub so /app pages can SSR (nav, public tables, JSON-LD) before AppKit loads on the client. */
+const SSR_DISCONNECTED_WALLET: WalletConnection = {
+  connected: false,
+  restoring: false,
+  connect: () => {},
+  disconnect: () => {},
+  isMobile: false,
+  walletsCount: 0,
+  connectionError: "",
+  signTransaction: async () => {
+    throw new Error("Wallet is not connected");
+  },
+};
+
+/**
+ * AppKit cannot run on the server, so MobileWalletProvider is loaded with `dynamic(..., { ssr: false })`.
+ * That component must not wrap `children` on the server: Next then omits the entire /app document body
+ * (including the public pool table and ItemList JSON-LD). Render children during SSR; swap in AppKit after mount.
+ */
+function MobileWalletBranch({ children }: { children: React.ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  if (!mounted) {
+    return (
+      <WalletConnectionContext.Provider value={SSR_DISCONNECTED_WALLET}>
+        <TermsGate>{children}</TermsGate>
+      </WalletConnectionContext.Provider>
+    );
+  }
+  return <MobileWalletProvider><TermsGate>{children}</TermsGate></MobileWalletProvider>;
+}
+
 export function Providers({ children }: { children: React.ReactNode }) {
   const endpoint = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || PUBLIC_SOLANA_RPC_URL;
   const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID?.trim();
 
   // The EVM wallet (Robinhood Chain) sits beside the Solana providers, not inside them: separate state, separate buttons.
   return <EvmWalletProvider><ConnectionProvider endpoint={endpoint}>
-    {projectId ? <MobileWalletProvider><TermsGate>{children}</TermsGate></MobileWalletProvider> : <BrowserWalletProvider><TermsGate>{children}</TermsGate></BrowserWalletProvider>}
+    {projectId ? <MobileWalletBranch>{children}</MobileWalletBranch> : <BrowserWalletProvider><TermsGate>{children}</TermsGate></BrowserWalletProvider>}
   </ConnectionProvider></EvmWalletProvider>;
 }
 

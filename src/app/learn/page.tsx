@@ -2,7 +2,8 @@ import Link from "next/link";
 import { GuideFooter } from "@/components/guides/guide-article";
 import { InkHero, InkShell } from "@/components/ink";
 import { SiteHeader } from "@/components/site-header";
-import { GUIDE_PAGES, LEARN_INDEX, type GuideKind } from "@/lib/guides";
+import { GUIDE_PAGES, LEARN_INDEX, learnIndexJsonLd, type GuideKind } from "@/lib/guides";
+import { serializeJsonLd } from "@/lib/json-ld";
 import { pageMetadata } from "@/lib/seo";
 
 export const dynamic = "force-static";
@@ -17,7 +18,9 @@ const GROUPS: { kind: GuideKind; title: string }[] = [
 
 export default function LearnIndexPage() {
   return (
-    <InkShell>
+    <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(learnIndexJsonLd()) }} />
+      <InkShell>
       <SiteHeader />
       <main className="mt-3">
         <InkHero label="Learn" title="Same-stock LP, explained" stacked>
@@ -38,6 +41,7 @@ export default function LearnIndexPage() {
         ))}
       </main>
       <GuideFooter />
-    </InkShell>
+      </InkShell>
+    </>
   );
 }

@@ -67,9 +67,17 @@ describe("guide pages", () => {
     });
   }
 
-  it("lists every guide on /learn", () => {
+  it("lists every guide on /learn and ships CollectionPage + BreadcrumbList JSON-LD", () => {
     const html = renderToStaticMarkup(<LearnIndexPage />);
     for (const page of GUIDE_PAGES) expect(html).toContain(`href="${page.path}"`);
+    const jsonLd = JSON.parse(html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)![1]!.replace(/\\u003c/g, "<"));
+    const types = jsonLd["@graph"].map((node: { "@type": string }) => node["@type"]);
+    expect(types).toContain("CollectionPage");
+    expect(types).toContain("BreadcrumbList");
+    const collection = jsonLd["@graph"].find((node: { "@type": string }) => node["@type"] === "CollectionPage");
+    expect(collection.datePublished).toBe(GUIDES_PUBLISHED);
+    expect(collection.mainEntity["@type"]).toBe("ItemList");
+    expect(collection.mainEntity.itemListElement).toHaveLength(GUIDE_PAGES.length);
   });
 
   it("states pricing plainly on /fees", () => {
