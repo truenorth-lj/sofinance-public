@@ -10,10 +10,11 @@ const sdk = vi.hoisted(() => ({
   ready: Promise.resolve(),
   account: { address: undefined as string | undefined, isConnected: false, status: "disconnected" },
   open: vi.fn(async () => undefined),
+  disconnect: vi.fn(async () => undefined),
 }));
 vi.mock("@reown/appkit/react", () => ({
-  createAppKit: () => ({ ready: () => sdk.ready }),
-  useAppKit: () => ({ open: sdk.open }),
+  createAppKit: () => ({ ready: () => sdk.ready, open: sdk.open, disconnect: sdk.disconnect }),
+  useAppKit: () => ({ open: async () => undefined }),
   useAppKitAccount: () => sdk.account,
   useAppKitProvider: () => ({ walletProvider: undefined }),
   useDisconnect: () => ({ disconnect: vi.fn() }),
@@ -44,7 +45,7 @@ const render = () => root.render(createElement(MobileWalletProvider, null, creat
 beforeEach(() => {
   sdk.ready = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
   sdk.account = { address: undefined, isConnected: false, status: "disconnected" };
-  sdk.open.mockClear();
+  sdk.open.mockClear(); sdk.disconnect.mockClear();
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
 afterEach(() => { act(() => root.unmount()); host.remove(); });

@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createElement } from "react";
@@ -5,7 +6,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { VersionedTransaction } from "@solana/web3.js";
 import { FEATURED_SOLANA_WALLET_IDS, type AppKitSolanaWalletProvider } from "../lib/appkit-wallet";
-import { MobileWalletProvider } from "./mobile-wallet-provider";
 import { useWalletConnection, type WalletConnection } from "./wallet-connection";
 
 const mocks = vi.hoisted(() => ({
@@ -16,10 +16,14 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@reown/appkit/react", () => ({
-  createAppKit: vi.fn(),
-  useAppKit: () => ({ open: mocks.open }),
+  createAppKit: () => ({
+    ready: () => Promise.resolve(),
+    open: mocks.open,
+    disconnect: mocks.disconnect,
+  }),
+  useAppKit: () => ({ open: async () => undefined }),
   useAppKitAccount: () => mocks.account,
-  useDisconnect: () => ({ disconnect: mocks.disconnect }),
+  useDisconnect: () => ({ disconnect: async () => undefined }),
   useAppKitProvider: () => ({ walletProvider: mocks.walletProvider }),
   useAppKitEvents: () => ({ timestamp: 0, data: { event: "MODAL_CREATED" } }),
   useAppKitState: () => ({ open: false, initialized: true, loading: false, connectingWallet: undefined }),
@@ -32,6 +36,10 @@ vi.mock("@reown/appkit-adapter-solana/react", () => ({
 vi.mock("@reown/appkit/networks", () => ({
   solana: { id: "solana:mainnet" },
 }));
+
+vi.stubEnv("NEXT_PUBLIC_REOWN_PROJECT_ID", "provider-unit-test");
+const { MobileWalletProvider } = await import("./mobile-wallet-provider");
+vi.unstubAllEnvs();
 
 function fakeTx() {
   return { serialized: true } as unknown as VersionedTransaction;

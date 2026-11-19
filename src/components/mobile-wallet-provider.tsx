@@ -2,7 +2,7 @@
 
 import { SolanaAdapter } from "@reown/appkit-adapter-solana/react";
 import { solana, type AppKitNetwork } from "@reown/appkit/networks";
-import { createAppKit, useAppKit, useAppKitAccount, useAppKitProvider, useDisconnect } from "@reown/appkit/react";
+import { createAppKit, useAppKitAccount, useAppKitProvider } from "@reown/appkit/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   APPKIT_FEATURES,
@@ -54,8 +54,6 @@ const appKit = typeof window !== "undefined" && projectId
 function useReownWalletConnection(): { value: WalletConnection; walletName: string | undefined; flow: ReturnType<typeof useSolanaConnectFlow>; address: string | undefined } {
   const account = useAppKitAccount({ namespace: "solana" });
   const { walletProvider } = useAppKitProvider<AppKitSolanaWalletProvider>("solana");
-  const { open } = useAppKit();
-  const { disconnect } = useDisconnect();
   const [connectionError, setConnectionError] = useState("");
   const [initialization, setInitialization] = useState<"pending" | "ready" | "failed">(appKit ? "pending" : "ready");
   useEffect(() => {
@@ -78,18 +76,23 @@ function useReownWalletConnection(): { value: WalletConnection; walletName: stri
     setTxWalletTags(typeof walletName === "string" && walletName ? { name: `appkit:${walletName}` } : null);
   }, [walletName]);
 
-  const flow = useSolanaConnectFlow(() => {
+  // AppKit 1.8.24's useAppKit().open and useDisconnect().disconnect are new every render.
+  // useSolanaConnectFlow would then refresh flow.connect, the context value, and onChange in a loop.
+  // The module-level appKit instance is stable (it has open() and disconnect(namespace)).
+  const openModal = useCallback(() => {
     setConnectionError("");
-    void Promise.resolve(open({ view: "Connect", namespace: "solana" })).catch(() => {
+    void Promise.resolve(appKit?.open({ view: "Connect", namespace: "solana" })).catch(() => {
       setConnectionError("Wallet connection incomplete, please try again.");
     });
-  });
+  }, []);
+
+  const flow = useSolanaConnectFlow(openModal);
 
   const disconnectWallet = useCallback(() => {
-    void disconnect({ namespace: "solana" }).catch(() => {
+    void Promise.resolve(appKit?.disconnect("solana")).catch(() => {
       setConnectionError("Disconnect failed, please retry.");
     });
-  }, [disconnect]);
+  }, []);
 
   const restoring = initialization === "pending" || (initialization === "ready" && (account.status === "connecting" || account.status === "reconnecting"));
   const value = useMemo<WalletConnection>(() => ({
