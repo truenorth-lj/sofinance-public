@@ -1,5 +1,5 @@
 import { HideOnMount } from "@/components/hide-on-mount";
-import { PublicPoolsTable, PUBLIC_POOLS_SSR_ID } from "@/components/public-pools-table";
+import { PublicPoolsTable } from "@/components/public-pools-table";
 import { PoolsPage } from "@/components/unified-pools/pools-page";
 import { loadHomepagePoolsSnapshot } from "@/lib/homepage-pools-snapshot";
 import { serializeJsonLd } from "@/lib/json-ld";
@@ -33,8 +33,9 @@ export default async function RwaPairsPage({ searchParams }: {
           dangerouslySetInnerHTML={{ __html: serializeJsonLd(itemList) }}
         />
       )}
-      <PublicPoolsTable snapshot={snapshot} />
-      <HideOnMount targetId={PUBLIC_POOLS_SSR_ID} />
+      <HideOnMount>
+        <PublicPoolsTable snapshot={snapshot} />
+      </HideOnMount>
       <PoolsPage flags={flags} rhcSigningEnabled={rhcSigning} deepLinkPool={deepLinkPool || undefined} />
     </>
   );

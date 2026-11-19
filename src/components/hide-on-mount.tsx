@@ -1,14 +1,18 @@
 "use client";
 
-import { useEffect } from "react";
+import { useSyncExternalStore, type ReactNode } from "react";
+
+const subscribeIsClient = () => () => {};
 
 /**
- * Removes a server-rendered block after hydrate so JS users (and e2e locators like `h1`) see only the interactive UI.
- * The markup stays in the initial HTML for curl and no-JS clients.
+ * Keeps server-rendered children in the initial HTML (curl, no-JS, crawlers), then unmounts them after hydrate
+ * so JS users and e2e locators see only the interactive UI.
+ *
+ * Do not `element.remove()` a React-managed node: when the Reown provider swaps in after mount, React's unmount
+ * of the previous tree throws `NotFoundError: Failed to execute 'removeChild'`.
  */
-export function HideOnMount({ targetId }: { targetId: string }) {
-  useEffect(() => {
-    document.getElementById(targetId)?.remove();
-  }, [targetId]);
-  return null;
+export function HideOnMount({ children }: { children: ReactNode }) {
+  const mounted = useSyncExternalStore(subscribeIsClient, () => true, () => false);
+  if (mounted) return null;
+  return children;
 }
