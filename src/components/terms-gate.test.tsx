@@ -57,7 +57,9 @@ describe("TermsGate", () => {
   it("is mounted inside both wallet providers, so every connect (app, /app/sign deep links, /app/ai MCP card) goes through it", async () => {
     const { readFileSync } = await import("node:fs");
     const source = readFileSync("src/components/providers.tsx", "utf8");
-    expect(source).toContain("<MobileWalletProvider><TermsGate>{children}</TermsGate></MobileWalletProvider>");
+    expect(source).toContain("<TermsGate>{children}</TermsGate>");
+    expect(source).toContain("<MobileWalletBridge onChange={setValue} />");
+    expect(source).not.toMatch(/<MobileWallet(Provider|Bridge)[^>]*>\s*<TermsGate>/);
     expect(source).toContain("<BrowserWalletProvider><TermsGate>{children}</TermsGate></BrowserWalletProvider>");
   });
 });

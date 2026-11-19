@@ -4,10 +4,10 @@ import { ConnectionProvider, WalletProvider, useConnection, useWallet } from "@s
 import { WalletModalProvider, useWalletModal } from "@solana/wallet-adapter-react-ui";
 import "@solana/wallet-adapter-react-ui/styles.css";
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { PUBLIC_SOLANA_RPC_URL } from "@sofinance/engine/rpc/urls";
 import { WalletGrowthAnalytics } from "./wallet-growth-analytics";
-import { WalletConnectionContext, type WalletConnection } from "./wallet-connection";
+import { DISCONNECTED_RESTORING_WALLET, WalletConnectionContext } from "./wallet-connection";
 import { AdapterConnectAnalytics } from "./adapter-connect-analytics";
 import { useSolanaConnectFlow } from "./use-solana-connect-flow";
 import { WalletDeeplinkSheet } from "./wallet-deeplink-sheet";
@@ -16,40 +16,26 @@ import { EvmWalletProvider } from "./evm-wallet-connection";
 import { TxNoticeHost } from "./transactions/tx-notice-host";
 import { setTxWalletTags } from "@/lib/sentry/client-tx";
 
-const MobileWalletProvider = dynamic(() => import("./mobile-wallet-provider").then((module) => module.MobileWalletProvider), { ssr: false });
-
-/** Disconnected stub so /app pages can SSR (nav, public tables, JSON-LD) before AppKit loads on the client. */
-const SSR_DISCONNECTED_WALLET: WalletConnection = {
-  connected: false,
-  restoring: false,
-  connect: () => {},
-  disconnect: () => {},
-  isMobile: false,
-  walletsCount: 0,
-  connectionError: "",
-  signTransaction: async () => {
-    throw new Error("Wallet is not connected");
-  },
-};
+const MobileWalletBridge = dynamic(() => import("./mobile-wallet-provider").then((module) => module.MobileWalletBridge), { ssr: false });
 
 /**
- * AppKit cannot run on the server, so MobileWalletProvider is loaded with `dynamic(..., { ssr: false })`.
- * That component must not wrap `children` on the server: Next then omits the entire /app document body
- * (including the public pool table and ItemList JSON-LD). Render children during SSR; swap in AppKit after mount.
+ * AppKit cannot run on the server, so the hook island is loaded with `dynamic(..., { ssr: false })`.
+ * That island must not wrap `children`: Next would omit the /app document body (H1, table, ItemList), and
+ * swapping it in as the parent remounts TermsGate and the page (blank frame, effects re-run).
+ * Keep a stable Provider + TermsGate root; after mount, load the bridge as a sibling and push its value up.
  */
 const subscribeIsClient = () => () => {};
 
 function MobileWalletBranch({ children }: { children: React.ReactNode }) {
-  // getServerSnapshot is false so SSR/hydration stay disconnected; the client snapshot is true after hydrate.
+  const [value, setValue] = useState(DISCONNECTED_RESTORING_WALLET);
+  // getServerSnapshot is false so SSR/hydration do not render the ssr:false chunk; the client snapshot is true after hydrate.
   const mounted = useSyncExternalStore(subscribeIsClient, () => true, () => false);
-  if (!mounted) {
-    return (
-      <WalletConnectionContext.Provider value={SSR_DISCONNECTED_WALLET}>
-        <TermsGate>{children}</TermsGate>
-      </WalletConnectionContext.Provider>
-    );
-  }
-  return <MobileWalletProvider><TermsGate>{children}</TermsGate></MobileWalletProvider>;
+  return (
+    <WalletConnectionContext.Provider value={value}>
+      <TermsGate>{children}</TermsGate>
+      {mounted ? <MobileWalletBridge onChange={setValue} /> : null}
+    </WalletConnectionContext.Provider>
+  );
 }
 
 export function Providers({ children }: { children: React.ReactNode }) {

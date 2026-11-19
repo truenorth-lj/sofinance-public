@@ -94,4 +94,11 @@ describe("browser batch wallet signing", () => {
     expect(html).toContain("<table");
     expect(html).toContain("7d APR");
   });
+
+  it("exposes a restoring stub until the Reown AppKit bridge loads", () => {
+    vi.stubEnv("NEXT_PUBLIC_REOWN_PROJECT_ID", "test-reown-id");
+    const connection = capture();
+    expect(connection.restoring).toBe(true);
+    expect(connection.connected).toBe(false);
+  });
 });

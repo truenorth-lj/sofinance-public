@@ -59,6 +59,20 @@ describe("InkNav wallets", () => {
     expect(evm()!.dataset.connected).toBe("false");
   });
 
+  it("disables the Solana Connect button while the wallet session is restoring", async () => {
+    await act(async () => {
+      root.render(createElement(InkNav, {
+        wallet: null, connected: false, restoring: true,
+        onConnect: solana.connect, onDisconnect: solana.disconnect,
+      }));
+    });
+    expect(sol().disabled).toBe(true);
+    expect(sol().textContent).toBe("Connecting…");
+    expect(sol().getAttribute("aria-busy")).toBe("true");
+    await click(sol());
+    expect(solana.connect).not.toHaveBeenCalled();
+  });
+
   it("connecting the EVM wallet leaves Solana alone, and the reverse", async () => {
     localStorage.setItem("sofi:evm-wallet:v1", JSON.stringify({ disconnected: true }));
     await render();

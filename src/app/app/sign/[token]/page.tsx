@@ -29,7 +29,7 @@ const short = shortAddress;
 export default function SignPage() {
   const params = useParams<{ token: string }>();
   const router = useRouter();
-  const { address: wallet, connected, connect, disconnect } = useWalletConnection();
+  const { address: wallet, connected, restoring, connect, disconnect } = useWalletConnection();
   const txWallet = useTxWallet();
   
   const [payload, setPayload] = useState<PendingSignPayload | null>(null);
@@ -348,9 +348,11 @@ export default function SignPage() {
             {showConnect && (
               <button
                 onClick={connect}
-                className="flex-1 rounded-full bg-lemon px-5 py-3 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f]"
+                disabled={restoring}
+                aria-busy={restoring || undefined}
+                className="flex-1 rounded-full bg-lemon px-5 py-3 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-wait disabled:opacity-60"
               >
-                Connect wallet
+                {restoring ? "Connecting…" : "Connect wallet"}
               </button>
             )}
             

@@ -23,6 +23,20 @@ export type WalletConnection = {
   signMessage?: (message: Uint8Array) => Promise<Uint8Array>;
 };
 
+/** SSR / pre-AppKit value: pending, so the Connect button stays loading until the real session is known. */
+export const DISCONNECTED_RESTORING_WALLET: WalletConnection = {
+  connected: false,
+  restoring: true,
+  connect: () => {},
+  disconnect: () => {},
+  isMobile: false,
+  walletsCount: 0,
+  connectionError: "",
+  signTransaction: async () => {
+    throw new Error("Wallet is not connected");
+  },
+};
+
 export const WalletConnectionContext = createContext<WalletConnection | null>(null);
 
 export function useWalletConnection(): WalletConnection {

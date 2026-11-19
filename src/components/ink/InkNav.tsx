@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useContext, useId, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SiteLogo } from "@/components/site-logo";
@@ -10,12 +10,14 @@ import { APP_ROUTES, GUIDE_ROUTES } from "@/lib/public-urls";
 import { EXTERNAL_LINK_PROPS, SOCIAL_LINKS } from "@/lib/social-links";
 import { XIcon } from "@/components/x-icon";
 import { useOptionalEvmWalletConnection } from "@/components/evm-wallet-connection";
+import { WalletConnectionContext } from "@/components/wallet-connection";
 import { RHC_CHAIN_ID } from "@/lib/rhc-wallet/eip1193";
 import { shortAddress } from "@/lib/format/address";
 
 interface InkNavProps {
   wallet?: string | null;
   connected?: boolean;
+  restoring?: boolean;
   onConnect?: () => void;
   onDisconnect?: () => void;
 }
@@ -34,9 +36,11 @@ const NAV_LINKS = [
 const pill =
   "flex h-10 items-center justify-center rounded-full border px-4 text-[13px] font-medium outline-none transition-colors";
 
-export function InkNav({ wallet, connected, onConnect, onDisconnect }: InkNavProps) {
+export function InkNav({ wallet, connected, restoring: restoringProp, onConnect, onDisconnect }: InkNavProps) {
   const pathname = usePathname();
   const evm = useOptionalEvmWalletConnection();
+  const walletConnection = useContext(WalletConnectionContext);
+  const restoring = restoringProp ?? Boolean(walletConnection?.restoring);
   // Wallet buttons only on app pages (they pass the Solana handlers); plan and sign pages without handlers show none.
   const showSolana = Boolean(onConnect && onDisconnect);
   const showEvm = showSolana && Boolean(evm?.enabled);
@@ -108,14 +112,16 @@ export function InkNav({ wallet, connected, onConnect, onDisconnect }: InkNavPro
           <button
             type="button"
             onClick={solanaConnected ? onDisconnect : onConnect}
-            title={solanaConnected ? "Disconnect Solana wallet" : "Connect a Solana wallet (Phantom, Solflare, …)"}
+            disabled={!solanaConnected && restoring}
+            aria-busy={!solanaConnected && restoring ? true : undefined}
+            title={solanaConnected ? "Disconnect Solana wallet" : restoring ? "Restoring Solana wallet…" : "Connect a Solana wallet (Phantom, Solflare, …)"}
             aria-label={solanaConnected && wallet ? `Solana wallet ${short(wallet)}, connected. Disconnect` : undefined}
             data-testid="nav-solana-wallet"
             data-connected={solanaConnected ? "true" : "false"}
-            className={cn(walletPill, solanaConnected ? walletOn : walletOff)}
+            className={cn(walletPill, solanaConnected ? walletOn : walletOff, !solanaConnected && restoring && "disabled:cursor-wait disabled:opacity-60")}
           >
             <Wallet className={cn("h-4 w-4 shrink-0", solanaConnected && "hidden sm:block")} aria-hidden="true" />
-            {solanaConnected && wallet ? <WalletLabel address={short(wallet)} chain="SOL" /> : <span className="truncate">Solana wallet</span>}
+            {solanaConnected && wallet ? <WalletLabel address={short(wallet)} chain="SOL" /> : <span className="truncate">{restoring ? "Connecting…" : "Solana wallet"}</span>}
           </button>
           {/* No network tag or switch here (LJ 11/14): another network is only asked about where it matters (RHC Close).
               The address shows a chain tag only on Robinhood Chain. */}
