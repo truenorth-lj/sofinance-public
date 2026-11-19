@@ -4,10 +4,10 @@ import { ConnectionProvider, WalletProvider, useConnection, useWallet } from "@s
 import { WalletModalProvider, useWalletModal } from "@solana/wallet-adapter-react-ui";
 import "@solana/wallet-adapter-react-ui/styles.css";
 import dynamic from "next/dynamic";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { PUBLIC_SOLANA_RPC_URL } from "@sofinance/engine/rpc/urls";
 import { WalletGrowthAnalytics } from "./wallet-growth-analytics";
-import { WalletConnectionContext } from "./wallet-connection";
+import { DISCONNECTED_RESTORING_WALLET, WalletConnectionContext } from "./wallet-connection";
 import { AdapterConnectAnalytics } from "./adapter-connect-analytics";
 import { useSolanaConnectFlow } from "./use-solana-connect-flow";
 import { WalletDeeplinkSheet } from "./wallet-deeplink-sheet";
@@ -16,7 +16,27 @@ import { EvmWalletProvider } from "./evm-wallet-connection";
 import { TxNoticeHost } from "./transactions/tx-notice-host";
 import { setTxWalletTags } from "@/lib/sentry/client-tx";
 
-const MobileWalletProvider = dynamic(() => import("./mobile-wallet-provider").then((module) => module.MobileWalletProvider), { ssr: false });
+const MobileWalletBridge = dynamic(() => import("./mobile-wallet-provider").then((module) => module.MobileWalletBridge), { ssr: false });
+
+/**
+ * AppKit cannot run on the server, so the hook island is loaded with `dynamic(..., { ssr: false })`.
+ * That island must not wrap `children`: Next would omit the /app document body (H1, table, ItemList), and
+ * swapping it in as the parent remounts TermsGate and the page (blank frame, effects re-run).
+ * Keep a stable Provider + TermsGate root; after mount, load the bridge as a sibling and push its value up.
+ */
+const subscribeIsClient = () => () => {};
+
+function MobileWalletBranch({ children }: { children: React.ReactNode }) {
+  const [value, setValue] = useState(DISCONNECTED_RESTORING_WALLET);
+  // getServerSnapshot is false so SSR/hydration do not render the ssr:false chunk; the client snapshot is true after hydrate.
+  const mounted = useSyncExternalStore(subscribeIsClient, () => true, () => false);
+  return (
+    <WalletConnectionContext.Provider value={value}>
+      <TermsGate>{children}</TermsGate>
+      {mounted ? <MobileWalletBridge onChange={setValue} /> : null}
+    </WalletConnectionContext.Provider>
+  );
+}
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const endpoint = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || PUBLIC_SOLANA_RPC_URL;
@@ -24,7 +44,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   // The EVM wallet (Robinhood Chain) sits beside the Solana providers, not inside them: separate state, separate buttons.
   return <EvmWalletProvider><ConnectionProvider endpoint={endpoint}>
-    {projectId ? <MobileWalletProvider><TermsGate>{children}</TermsGate></MobileWalletProvider> : <BrowserWalletProvider><TermsGate>{children}</TermsGate></BrowserWalletProvider>}
+    {projectId ? <MobileWalletBranch>{children}</MobileWalletBranch> : <BrowserWalletProvider><TermsGate>{children}</TermsGate></BrowserWalletProvider>}
   </ConnectionProvider></EvmWalletProvider>;
 }
 

@@ -16,6 +16,7 @@ import { shortAddress } from "@/lib/format/address";
 interface InkNavProps {
   wallet?: string | null;
   connected?: boolean;
+  restoring?: boolean;
   onConnect?: () => void;
   onDisconnect?: () => void;
 }
@@ -34,7 +35,7 @@ const NAV_LINKS = [
 const pill =
   "flex h-10 items-center justify-center rounded-full border px-4 text-[13px] font-medium outline-none transition-colors";
 
-export function InkNav({ wallet, connected, onConnect, onDisconnect }: InkNavProps) {
+export function InkNav({ wallet, connected, restoring = false, onConnect, onDisconnect }: InkNavProps) {
   const pathname = usePathname();
   const evm = useOptionalEvmWalletConnection();
   // Wallet buttons only on app pages (they pass the Solana handlers); plan and sign pages without handlers show none.
@@ -108,14 +109,16 @@ export function InkNav({ wallet, connected, onConnect, onDisconnect }: InkNavPro
           <button
             type="button"
             onClick={solanaConnected ? onDisconnect : onConnect}
-            title={solanaConnected ? "Disconnect Solana wallet" : "Connect a Solana wallet (Phantom, Solflare, …)"}
+            disabled={!solanaConnected && restoring}
+            aria-busy={!solanaConnected && restoring ? true : undefined}
+            title={solanaConnected ? "Disconnect Solana wallet" : restoring ? "Restoring Solana wallet…" : "Connect a Solana wallet (Phantom, Solflare, …)"}
             aria-label={solanaConnected && wallet ? `Solana wallet ${short(wallet)}, connected. Disconnect` : undefined}
             data-testid="nav-solana-wallet"
             data-connected={solanaConnected ? "true" : "false"}
-            className={cn(walletPill, solanaConnected ? walletOn : walletOff)}
+            className={cn(walletPill, solanaConnected ? walletOn : walletOff, !solanaConnected && restoring && "disabled:cursor-wait disabled:opacity-60")}
           >
             <Wallet className={cn("h-4 w-4 shrink-0", solanaConnected && "hidden sm:block")} aria-hidden="true" />
-            {solanaConnected && wallet ? <WalletLabel address={short(wallet)} chain="SOL" /> : <span className="truncate">Solana wallet</span>}
+            {solanaConnected && wallet ? <WalletLabel address={short(wallet)} chain="SOL" /> : <span className="truncate">{restoring ? "Connecting…" : "Solana wallet"}</span>}
           </button>
           {/* No network tag or switch here (LJ 11/14): another network is only asked about where it matters (RHC Close).
               The address shows a chain tag only on Robinhood Chain. */}

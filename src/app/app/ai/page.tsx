@@ -6,11 +6,11 @@ import { McpConnectionCard } from "@/components/mcp-connection-card";
 import { Wallet, Sparkles, Code, Link as LinkIcon } from "lucide-react";
 
 export default function AIManagementPage() {
-  const { address: wallet, connected, connect, disconnect } = useWalletConnection();
+  const { address: wallet, connected, restoring, connect, disconnect } = useWalletConnection();
 
   return (
     <InkShell maxWidth="5xl">
-      <InkNav wallet={wallet} connected={connected} onConnect={connect} onDisconnect={disconnect} />
+      <InkNav wallet={wallet} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
 
       <InkHero
         label="Use AI"
@@ -37,10 +37,12 @@ export default function AIManagementPage() {
                   </p>
                 <button
                   onClick={connect}
-                  className="mt-4 inline-flex items-center justify-center gap-2 rounded-full bg-lemon px-5 py-2.5 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f]"
+                  disabled={restoring}
+                  aria-busy={restoring || undefined}
+                  className="mt-4 inline-flex items-center justify-center gap-2 rounded-full bg-lemon px-5 py-2.5 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-wait disabled:opacity-60"
                 >
                   <Wallet className="h-4 w-4" />
-                  Connect wallet
+                  {restoring ? "Connecting…" : "Connect wallet"}
                 </button>
               </div>
             </div>

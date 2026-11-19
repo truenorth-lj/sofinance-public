@@ -78,4 +78,27 @@ describe("browser batch wallet signing", () => {
     expect(walletSupportsSignAndSend({ wallet: { features: { "solana:signTransaction": {} } } })).toBe(false);
     expect(walletSupportsSignAndSend({ wallet: { features: { "solana:signAndSendTransaction": {} } } })).toBe(true);
   });
+
+  it("still server-renders page HTML when Reown mobile wallets are enabled", () => {
+    // Production sets NEXT_PUBLIC_REOWN_PROJECT_ID, which used to wrap the page in `dynamic(..., { ssr: false })`
+    // and left curl of /app/rwa-pairs with an empty body (`<!--$!--><template data-dgst="">`).
+    vi.stubEnv("NEXT_PUBLIC_REOWN_PROJECT_ID", "test-reown-id");
+    const html = renderToStaticMarkup(createElement(Providers, null, createElement(
+      "section",
+      { id: "public-pools-ssr" },
+      createElement("h1", null, "Same-stock liquidity pools"),
+      createElement("table", null, createElement("thead", null, createElement("tr", null, createElement("th", null, "7d APR")))),
+    )));
+    expect(html).toContain("id=\"public-pools-ssr\"");
+    expect(html).toContain("Same-stock liquidity pools");
+    expect(html).toContain("<table");
+    expect(html).toContain("7d APR");
+  });
+
+  it("exposes a restoring stub until the Reown AppKit bridge loads", () => {
+    vi.stubEnv("NEXT_PUBLIC_REOWN_PROJECT_ID", "test-reown-id");
+    const connection = capture();
+    expect(connection.restoring).toBe(true);
+    expect(connection.connected).toBe(false);
+  });
 });

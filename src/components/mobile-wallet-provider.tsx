@@ -2,8 +2,8 @@
 
 import { SolanaAdapter } from "@reown/appkit-adapter-solana/react";
 import { solana, type AppKitNetwork } from "@reown/appkit/networks";
-import { createAppKit, useAppKit, useAppKitAccount, useAppKitProvider, useDisconnect } from "@reown/appkit/react";
-import { useEffect, useState } from "react";
+import { createAppKit, useAppKitAccount, useAppKitProvider } from "@reown/appkit/react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   APPKIT_FEATURES,
   APPKIT_THEME_MODE,
@@ -16,7 +16,7 @@ import {
   type AppKitSolanaWalletProvider,
 } from "../lib/appkit-wallet";
 import { WalletGrowthAnalytics } from "./wallet-growth-analytics";
-import { WalletConnectionContext } from "./wallet-connection";
+import { WalletConnectionContext, type WalletConnection } from "./wallet-connection";
 import { TxNoticeHost } from "./transactions/tx-notice-host";
 import { setTxWalletTags } from "@/lib/sentry/client-tx";
 import { AppKitConnectAnalytics } from "./appkit-connect-analytics";
@@ -51,11 +51,9 @@ const appKit = typeof window !== "undefined" && projectId
     themeVariables: APPKIT_THEME_VARIABLES,
   }) : undefined;
 
-export function MobileWalletProvider({ children }: { children: React.ReactNode }) {
+function useReownWalletConnection(): { value: WalletConnection; walletName: string | undefined; flow: ReturnType<typeof useSolanaConnectFlow>; address: string | undefined } {
   const account = useAppKitAccount({ namespace: "solana" });
   const { walletProvider } = useAppKitProvider<AppKitSolanaWalletProvider>("solana");
-  const { open } = useAppKit();
-  const { disconnect } = useDisconnect();
   const [connectionError, setConnectionError] = useState("");
   const [initialization, setInitialization] = useState<"pending" | "ready" | "failed">(appKit ? "pending" : "ready");
   useEffect(() => {
@@ -78,23 +76,29 @@ export function MobileWalletProvider({ children }: { children: React.ReactNode }
     setTxWalletTags(typeof walletName === "string" && walletName ? { name: `appkit:${walletName}` } : null);
   }, [walletName]);
 
-  const flow = useSolanaConnectFlow(() => {
+  // AppKit 1.8.24's useAppKit().open and useDisconnect().disconnect are new every render.
+  // useSolanaConnectFlow would then refresh flow.connect, the context value, and onChange in a loop.
+  // The module-level appKit instance is stable (it has open() and disconnect(namespace)).
+  const openModal = useCallback(() => {
     setConnectionError("");
-    void Promise.resolve(open({ view: "Connect", namespace: "solana" })).catch(() => {
+    void Promise.resolve(appKit?.open({ view: "Connect", namespace: "solana" })).catch(() => {
       setConnectionError("Wallet connection incomplete, please try again.");
     });
-  });
+  }, []);
 
-  function disconnectWallet() {
-    void disconnect({ namespace: "solana" }).catch(() => {
+  const flow = useSolanaConnectFlow(openModal);
+
+  const disconnectWallet = useCallback(() => {
+    void Promise.resolve(appKit?.disconnect("solana")).catch(() => {
       setConnectionError("Disconnect failed, please retry.");
     });
-  }
+  }, []);
 
-  return <WalletConnectionContext.Provider value={{
+  const restoring = initialization === "pending" || (initialization === "ready" && (account.status === "connecting" || account.status === "reconnecting"));
+  const value = useMemo<WalletConnection>(() => ({
     address: account.address,
     connected: account.isConnected && !!account.address,
-    restoring: initialization === "pending" || (initialization === "ready" && (account.status === "connecting" || account.status === "reconnecting")),
+    restoring,
     connect: flow.connect,
     disconnect: disconnectWallet,
     isMobile: true,
@@ -104,8 +108,36 @@ export function MobileWalletProvider({ children }: { children: React.ReactNode }
     signAndSendTransaction: appKitSignAndSendTransaction(walletProvider),
     signAllTransactions: appKitSignAllTransactions(walletProvider),
     signMessage: appKitSignMessage(walletProvider),
-  }}><WalletGrowthAnalytics walletName={typeof walletName === "string" ? walletName : undefined} />
+  }), [account.address, account.isConnected, connectionError, disconnectWallet, flow.connect, restoring, walletProvider]);
+
+  return { value, walletName: typeof walletName === "string" ? walletName : undefined, flow, address: account.address };
+}
+
+function AppKitWalletChrome({ walletName, flow, address }: { walletName: string | undefined; flow: ReturnType<typeof useSolanaConnectFlow>; address: string | undefined }) {
+  return <>
+    <WalletGrowthAnalytics walletName={walletName} />
     <AppKitConnectAnalytics />
     <WalletDeeplinkSheet open={flow.sheetOpen} pageUrl={flow.pageUrl} origin={flow.origin} onOpenWallet={flow.openWallet} onChooseWalletHere={flow.chooseWalletHere} onClose={flow.closeSheet} />
-    {children}<TxNoticeHost wallet={account.address} /></WalletConnectionContext.Provider>;
+    <TxNoticeHost wallet={address} />
+  </>;
+}
+
+/**
+ * Client-only AppKit hook island. Must be a sibling of page children, not a wrapper: `dynamic(..., { ssr: false })`
+ * would otherwise omit the document body, and swapping this in as the parent remounts TermsGate and the page.
+ * Pushes the live wallet value up to the stable WalletConnectionContext.Provider.
+ */
+export function MobileWalletBridge({ onChange }: { onChange: (value: WalletConnection) => void }) {
+  const { value, walletName, flow, address } = useReownWalletConnection();
+  useEffect(() => { onChange(value); }, [onChange, value]);
+  return <AppKitWalletChrome walletName={walletName} flow={flow} address={address} />;
+}
+
+/** Test/legacy tree that still wraps children. Production uses MobileWalletBridge under a stable Provider. */
+export function MobileWalletProvider({ children }: { children: React.ReactNode }) {
+  const { value, walletName, flow, address } = useReownWalletConnection();
+  return <WalletConnectionContext.Provider value={value}>
+    <AppKitWalletChrome walletName={walletName} flow={flow} address={address} />
+    {children}
+  </WalletConnectionContext.Provider>;
 }

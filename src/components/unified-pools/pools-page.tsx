@@ -16,10 +16,10 @@ import { UnifiedPoolsPanel, type UnifiedPoolFlags } from "./unified-pools-panel"
 export function PoolsPage({ flags, rhcSigningEnabled, deepLinkPool }: {
   flags: UnifiedPoolFlags; rhcSigningEnabled: boolean; deepLinkPool?: string;
 }) {
-  const { address, connected, connect, disconnect } = useWalletConnection();
+  const { address, connected, restoring, connect, disconnect } = useWalletConnection();
   const [rhcOpen, setRhcOpen] = useState<RhcPoolView | null>(null);
   return <InkShell>
-    <InkNav wallet={address} connected={connected} onConnect={connect} onDisconnect={disconnect} />
+    <InkNav wallet={address} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
     <InkHero label="Pools" title="RWA pairs on Solana and Robinhood Chain" />
     <UnifiedPoolsPanel flags={flags} deepLinkPool={deepLinkPool} onOpenRhc={({ pool }) => setRhcOpen(pool)} />
     {rhcOpen && <RhcOpenDialog pool={rhcOpen} signingEnabled={rhcSigningEnabled} onClose={() => setRhcOpen(null)} />}

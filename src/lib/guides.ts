@@ -640,3 +640,41 @@ export const LEARN_INDEX = {
     "Beginner guides to same-stock liquidity pools: what they are, how to open a position on Raydium, Meteora or Robinhood Chain, impermanent loss, pricing and TSLA/SPCX use cases.",
 } as const;
 
+/** CollectionPage + ItemList + BreadcrumbList for the /learn index (guides already have Article JSON-LD). */
+export function learnIndexJsonLd(): JsonLd {
+  const url = `${CANONICAL_SITE_URL}${LEARN_INDEX.path}`;
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "CollectionPage",
+        "@id": `${url}#page`,
+        name: LEARN_INDEX.metaTitle,
+        description: LEARN_INDEX.metaDescription,
+        url,
+        datePublished: GUIDES_PUBLISHED,
+        dateModified: GUIDES_UPDATED,
+        inLanguage: "en",
+        isPartOf: { "@id": `${CANONICAL_SITE_URL}/#website` },
+        publisher: { "@id": ORGANIZATION_ID },
+        mainEntity: {
+          "@type": "ItemList",
+          itemListElement: GUIDE_PAGES.map((page, index) => ({
+            "@type": "ListItem",
+            position: index + 1,
+            name: page.title,
+            item: `${CANONICAL_SITE_URL}${page.path}`,
+          })),
+        },
+      },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Home", item: CANONICAL_SITE_URL },
+          { "@type": "ListItem", position: 2, name: "Learn", item: url },
+        ],
+      },
+    ],
+  };
+}
+
