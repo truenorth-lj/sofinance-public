@@ -4,10 +4,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { articleCanonicalPath, listBlogArticles } from "@/lib/blog";
 import { DOCS_PAGES } from "@/lib/docs-nav";
 import { GUIDE_PAGES } from "@/lib/guides";
-import { APP_ROUTES, BLOG_ROUTES, CANONICAL_SITE_URL, FAQ_ROUTE, GUIDE_ROUTES } from "@/lib/public-urls";
+import { APP_ROUTES, BLOG_ROUTES, CANONICAL_SITE_URL, FAQ_ROUTE, GUIDE_ROUTES, LEGAL_ROUTES } from "@/lib/public-urls";
 import { config as proxyConfig } from "@/proxy";
-import robots from "./robots";
-import sitemap, { PUBLIC_COPY_UPDATED, publicSitemapPaths } from "./sitemap";
+import robots, { AI_CRAWLER_USER_AGENTS } from "./robots";
+import sitemap, { PUBLIC_COPY_UPDATED, TERMS_UPDATED, publicSitemapPaths } from "./sitemap";
 
 function docsHrefsFromAppDir(root = resolve("src/app/docs")): string[] {
   const hrefs: string[] = [];
@@ -48,6 +48,7 @@ describe("SEO metadata routes", () => {
       APP_ROUTES.rwaPairs,
       ...DOCS_PAGES.map((page) => page.href),
       FAQ_ROUTE,
+      LEGAL_ROUTES.terms,
       ...guidePaths,
       ...blogPaths,
     ]);
@@ -63,10 +64,12 @@ describe("SEO metadata routes", () => {
       `${CANONICAL_SITE_URL}/app/rwa-pairs`,
       ...DOCS_PAGES.map((page) => `${CANONICAL_SITE_URL}${page.href}`),
       `${CANONICAL_SITE_URL}/faq`,
+      `${CANONICAL_SITE_URL}/terms`,
       ...guidePaths.map((path) => `${CANONICAL_SITE_URL}${path}`),
       ...blogPaths.map((path) => `${CANONICAL_SITE_URL}${path}`),
     ]);
-    expect(urls.join("\n")).not.toMatch(/\/terms|\/api\/|\/app\/sign|\/app\/plan|\/position-performance/);
+    expect(urls).toContain(`${CANONICAL_SITE_URL}/terms`);
+    expect(urls.join("\n")).not.toMatch(/\/api\/|\/app\/sign|\/app\/plan|\/position-performance/);
   });
 
   it("gives every sitemap entry a real lastModified date", () => {
@@ -78,6 +81,7 @@ describe("SEO metadata routes", () => {
     }
     const byUrl = new Map(entries.map((entry) => [entry.url, entry]));
     expect(byUrl.get(`${CANONICAL_SITE_URL}/faq`)?.lastModified).toBe(PUBLIC_COPY_UPDATED);
+    expect(byUrl.get(`${CANONICAL_SITE_URL}/terms`)?.lastModified).toBe(TERMS_UPDATED);
     expect(byUrl.get(`${CANONICAL_SITE_URL}/docs/fee-apr`)?.lastModified).toBe(PUBLIC_COPY_UPDATED);
     for (const article of listBlogArticles()) {
       expect(byUrl.get(`${CANONICAL_SITE_URL}${articleCanonicalPath(article.slug)}`)?.lastModified).toBe(article.dateModified);
@@ -85,17 +89,21 @@ describe("SEO metadata routes", () => {
     expect(entries.map((entry) => entry.url).join("\n")).not.toContain("yield-and-apr");
   });
 
-  it("allows crawlers, blocks /api/, and points at the production sitemap", () => {
+  it("allows crawlers, blocks /api/, names AI crawlers, and points at the production sitemap", () => {
     delete process.env.NEXT_PUBLIC_APP_URL;
+    const allowPublic = { allow: "/", disallow: ["/api/", "/lumen/"] };
     expect(robots()).toEqual({
-      rules: {
-        userAgent: "*",
-        allow: "/",
-        disallow: ["/api/", "/lumen/"],
-      },
+      rules: [
+        { userAgent: "*", ...allowPublic },
+        { userAgent: [...AI_CRAWLER_USER_AGENTS], ...allowPublic },
+      ],
       sitemap: `${CANONICAL_SITE_URL}/sitemap.xml`,
       host: CANONICAL_SITE_URL,
     });
+    expect(AI_CRAWLER_USER_AGENTS).toEqual(expect.arrayContaining([
+      "GPTBot", "OAI-SearchBot", "ChatGPT-User", "ClaudeBot", "Claude-SearchBot",
+      "PerplexityBot", "Google-Extended", "Applebot-Extended",
+    ]));
   });
 
   it("keeps sitemap.xml, robots.txt and llms.txt out of the Next.js proxy matcher", () => {

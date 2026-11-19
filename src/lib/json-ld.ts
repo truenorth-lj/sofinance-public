@@ -34,6 +34,21 @@ export function homeJsonLd(): JsonLd {
         inLanguage: "en",
         publisher: { "@id": ORGANIZATION_ID },
       },
+      {
+        "@type": "SoftwareApplication",
+        "@id": `${CANONICAL_SITE_URL}/#software`,
+        name: "SoFinance",
+        url: CANONICAL_SITE_URL,
+        applicationCategory: "FinanceApplication",
+        operatingSystem: "Web",
+        offers: {
+          "@type": "Offer",
+          price: "0",
+          priceCurrency: "USD",
+          description: "Zero performance fee. 0.10% only when SoFinance swaps. Self-custodial.",
+        },
+        publisher: { "@id": ORGANIZATION_ID },
+      },
     ],
   };
 }

@@ -26,7 +26,7 @@ export const FAQ_SECTIONS: readonly FaqSection[] = [
       {
         question: "How do liquidity providers collect trading fees?",
         answer:
-          "Every swap through a pool pays that pool's fee. Liquidity providers (LPs) deposit two tokens into the pool, and the fees are shared among LPs in proportion to the liquidity they have active at the current price. In concentrated-liquidity pools (Raydium CLMM on Solana, Uniswap v4 on Robinhood Chain) you choose a price range, and your position collects fees only while the pool price is inside that range. On SoFinance you pick a same-stock pool, review the suggested range, and open the position from your own wallet. On Solana you can compound collected fees or withdraw at any time; on Robinhood Chain you can close the position at any time, which returns both pool tokens and the fees it has collected. Liquidity providing can lose money; see the risks questions below.",
+          "Every swap through a pool pays that pool's fee. Liquidity providers (LPs) deposit two tokens into the pool, and the fees are shared among LPs in proportion to the liquidity they have active at the current price. In concentrated-liquidity pools (Raydium CLMM and Meteora DLMM on Solana, Uniswap v4 on Robinhood Chain) you choose a price range, and your position collects fees only while the pool price is inside that range. On SoFinance you pick a same-stock pool, review the suggested range, and open the position from your own wallet. On Solana you can compound collected fees or withdraw at any time; on Robinhood Chain you can close the position at any time, which returns both pool tokens and the fees it has collected. Liquidity providing can lose money; see the risks questions below.",
       },
       {
         question: "What happens when the price leaves my LP range?",
@@ -46,7 +46,7 @@ export const FAQ_SECTIONS: readonly FaqSection[] = [
       {
         question: "What is a same-stock pool, like MSTR/MSTRx or SPCX/SPCXx?",
         answer:
-          "It is a pool where both sides are the same underlying stock from two issuers. On Solana that is a Backpack Securities token (for example MSTR) paired with the xStocks token (for example MSTRx) on Raydium. On Robinhood Chain it is a Robinhood stock token paired with the Ondo Global Markets token for the same stock (for example NVDA/NVDAon) on Uniswap v4. Traders swap between the two versions, and each swap pays the pool fee. Because both tokens track the same share, the price stays close to 1:1, which makes tight ranges practical.",
+          "It is a pool where both sides are the same underlying stock from two issuers. On Solana that is a Backpack Securities token (for example MSTR) paired with the xStocks token (for example MSTRx) on Raydium or Meteora. On Robinhood Chain it is a Robinhood stock token paired with the Ondo Global Markets token for the same stock (for example NVDA/NVDAon) on Uniswap v4. Traders swap between the two versions, and each swap pays the pool fee. Because both tokens track the same share, the price stays close to 1:1, which makes tight ranges practical.",
       },
     ],
   },
@@ -66,7 +66,7 @@ export const FAQ_SECTIONS: readonly FaqSection[] = [
       },
       {
         question: "Which pools does SoFinance support?",
-        answer: `SoFinance lists same-stock pools on two chains. On Solana: Raydium CLMM pools pairing Backpack Securities and xStocks tokens; as of ${FAQ_POOLS_AS_OF} these include ${FAQ_SOLANA_POOLS}, some in more than one fee tier, plus a USDC/USDT pool. On Robinhood Chain: 11 Uniswap v4 pools that use a reviewed StablePairHook and pair a Robinhood stock token with its Ondo Global Markets version, for ${FAQ_ROBINHOOD_CHAIN_POOLS}. The live list, with fee tier, TVL and 24h volume for each pool, is at sofinancelab.xyz/app/rwa-pairs.`,
+        answer: `SoFinance lists same-stock pools on two chains. On Solana: Raydium CLMM and Meteora DLMM pools pairing Backpack Securities and xStocks tokens; as of ${FAQ_POOLS_AS_OF} these include ${FAQ_SOLANA_POOLS}, some in more than one fee tier, plus a USDC/USDT pool. On Robinhood Chain: 11 Uniswap v4 pools that use a reviewed StablePairHook and pair a Robinhood stock token with its Ondo Global Markets version, for ${FAQ_ROBINHOOD_CHAIN_POOLS}. The live list, with fee tier, TVL and 24h volume for each pool, is at sofinancelab.xyz/app/rwa-pairs.`,
       },
       {
         question: "Which wallet do I need?",
@@ -112,7 +112,7 @@ export const FAQ_SECTIONS: readonly FaqSection[] = [
       {
         question: "Is SoFinance a broker? Does it give me shares?",
         answer:
-          "No. SoFinance is not a broker, does not sell or issue stocks, and does not hold your assets. It is an LP tool: it helps people who already hold tokenized stocks, or who swap into them while opening a position, provide liquidity on Raydium or Uniswap v4. Rights such as redemption into real shares come from the token issuer, not from SoFinance.",
+          "No. SoFinance is not a broker, does not sell or issue stocks, and does not hold your assets. It is an LP tool: it helps people who already hold tokenized stocks, or who swap into them while opening a position, provide liquidity on Raydium, Meteora or Uniswap v4. Rights such as redemption into real shares come from the token issuer, not from SoFinance.",
       },
     ],
   },

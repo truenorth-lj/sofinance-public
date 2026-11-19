@@ -568,6 +568,8 @@ const IMPERMANENT_LOSS: GuidePage = {
 export const GUIDE_PAGES: readonly GuidePage[] = [FEES, WHAT_IS, HOW_TO_OPEN, IMPERMANENT_LOSS, TSLA, SPCX];
 
 export const GUIDES_UPDATED = "2026-11-14";
+/** First git commit of this module (d2c9375, 2026-11-14), the day these guides were written. */
+export const GUIDES_PUBLISHED = "2026-11-14";
 
 export function guideBySlug(kind: GuideKind, slug: string): GuidePage | undefined {
   return GUIDE_PAGES.find((page) => page.kind === kind && page.slug === slug);
@@ -584,6 +586,16 @@ export function guideAnswerText(qa: GuideQa): string {
 
 export function guideJsonLd(page: GuidePage): JsonLd {
   const url = `${CANONICAL_SITE_URL}${page.path}`;
+  const parent = page.kind === "pricing"
+    ? { name: "Pricing", path: GUIDE_ROUTES.fees }
+    : { name: "Learn", path: GUIDE_ROUTES.learn };
+  const breadcrumbs = [
+    { "@type": "ListItem", position: 1, name: "Home", item: CANONICAL_SITE_URL },
+    { "@type": "ListItem", position: 2, name: parent.name, item: `${CANONICAL_SITE_URL}${parent.path}` },
+    ...((page.path === parent.path) ? [] : [
+      { "@type": "ListItem", position: 3, name: page.title, item: url },
+    ]),
+  ];
   return {
     "@context": "https://schema.org",
     "@graph": [
@@ -594,7 +606,9 @@ export function guideJsonLd(page: GuidePage): JsonLd {
         description: page.metaDescription,
         url,
         mainEntityOfPage: url,
+        datePublished: GUIDES_PUBLISHED,
         dateModified: page.updated,
+        image: `${CANONICAL_SITE_URL}/og.png`,
         inLanguage: "en",
         author: { "@id": ORGANIZATION_ID },
         publisher: { "@id": ORGANIZATION_ID },
@@ -609,6 +623,10 @@ export function guideJsonLd(page: GuidePage): JsonLd {
           name: qa.question,
           acceptedAnswer: { "@type": "Answer", text: guideAnswerText(qa) },
         })),
+      },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: breadcrumbs,
       },
     ],
   };

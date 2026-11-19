@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { SiteLogo } from "@/components/site-logo";
 import { Menu, Wallet, X as CloseIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { APP_ROUTES } from "@/lib/public-urls";
+import { APP_ROUTES, GUIDE_ROUTES } from "@/lib/public-urls";
 import { EXTERNAL_LINK_PROPS, SOCIAL_LINKS } from "@/lib/social-links";
 import { XIcon } from "@/components/x-icon";
 import { useOptionalEvmWalletConnection } from "@/components/evm-wallet-connection";
@@ -27,6 +27,7 @@ const NAV_LINKS = [
   { href: APP_ROUTES.home, label: "Portfolio" },
   // Plan and Docs left the bar on 11/4 (Docs is in the page footer, InkFooter).
   { href: APP_ROUTES.rwaPairs, label: "Pools" },
+  { href: GUIDE_ROUTES.learn, label: "Learn" },
   { href: APP_ROUTES.ai, label: "Use AI" },
 ] as const;
 

@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { GUIDE_PAGES, guideAnswerText } from "@/lib/guides";
+import { GUIDE_PAGES, GUIDES_PUBLISHED, guideAnswerText } from "@/lib/guides";
 
 vi.mock("@/components/ink", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/components/ink")>()),
@@ -27,6 +27,10 @@ describe("guide pages", () => {
         const [article, faq] = jsonLd["@graph"];
         expect(article["@type"]).toBe("Article");
         expect(article.url).toBe(`https://sofinancelab.xyz${page.path}`);
+        expect(article.datePublished).toBe(GUIDES_PUBLISHED);
+        expect(article.dateModified).toBe(page.updated);
+        expect(article.image).toBe("https://sofinancelab.xyz/og.png");
+        expect(jsonLd["@graph"].some((node: { "@type": string }) => node["@type"] === "BreadcrumbList")).toBe(true);
         expect(faq["@type"]).toBe("FAQPage");
         expect(faq.mainEntity).toHaveLength(page.qas.length);
         for (const [index, qa] of page.qas.entries()) {

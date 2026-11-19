@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { HomepageConnectButton } from "@/components/homepage-wallet-island";
 import { SiteLogo } from "@/components/site-logo";
-import { APP_ROUTES, BLOG_ROUTES } from "@/lib/public-urls";
+import { APP_ROUTES, BLOG_ROUTES, GUIDE_ROUTES } from "@/lib/public-urls";
 
 const navPill =
   "flex h-10 items-center justify-center rounded-full border border-white/25 px-4 text-[13px] font-medium text-cream/85 outline-none transition-colors hover:border-white/70 focus-visible:border-lemon";
@@ -24,6 +24,9 @@ export function SiteHeader({ onHomepage = false }: { onHomepage?: boolean }) {
         </a>
         <Link href={APP_ROUTES.home} className={`${navPill} flex-1`}>
           Portfolio
+        </Link>
+        <Link href={GUIDE_ROUTES.learn} className={`${navPill} flex-1`}>
+          Learn
         </Link>
         <Link href={APP_ROUTES.ai} className={`${navPill} hidden flex-1 sm:flex`}>
           AI agents
