@@ -7,7 +7,7 @@ import { GUIDE_PAGES } from "@/lib/guides";
 import { APP_ROUTES, BLOG_ROUTES, CANONICAL_SITE_URL, FAQ_ROUTE, GUIDE_ROUTES, LEGAL_ROUTES } from "@/lib/public-urls";
 import { config as proxyConfig } from "@/proxy";
 import robots, { AI_CRAWLER_USER_AGENTS } from "./robots";
-import sitemap, { PUBLIC_COPY_UPDATED, TERMS_UPDATED, publicSitemapPaths } from "./sitemap";
+import { PUBLIC_COPY_UPDATED, TERMS_UPDATED, publicSitemapEntries, publicSitemapPaths, toSitemapUrls } from "./sitemap";
 
 function docsHrefsFromAppDir(root = resolve("src/app/docs")): string[] {
   const hrefs: string[] = [];
@@ -58,7 +58,7 @@ describe("SEO metadata routes", () => {
     expect(blogPaths).toContain("/blog/xstocks-xpoints");
     expect(blogPaths).toContain("/blog/competitor-comparison");
 
-    const urls = sitemap().map((entry) => entry.url);
+    const urls = toSitemapUrls(publicSitemapEntries()).map((entry) => entry.url);
     expect(urls).toEqual([
       CANONICAL_SITE_URL,
       `${CANONICAL_SITE_URL}/app/rwa-pairs`,
@@ -74,7 +74,7 @@ describe("SEO metadata routes", () => {
 
   it("gives every sitemap entry a real lastModified date", () => {
     delete process.env.NEXT_PUBLIC_APP_URL;
-    const entries = sitemap();
+    const entries = toSitemapUrls(publicSitemapEntries());
     for (const entry of entries) {
       expect(entry.lastModified, entry.url).toBeTruthy();
       expect(Number.isFinite(Date.parse(String(entry.lastModified))), entry.url).toBe(true);
@@ -113,5 +113,20 @@ describe("SEO metadata routes", () => {
     expect(matcher).toContain("robots.txt");
     const proxySource = readFileSync(resolve("src/proxy.ts"), "utf8");
     expect(proxySource).toContain("sitemap.xml|robots.txt");
+  });
+
+  it("appends /pools/{slug} sitemap extras without changing the static public set", () => {
+    delete process.env.NEXT_PUBLIC_APP_URL;
+    const extra = [
+      { path: "/pools/tsla-tslax", lastModified: "2026-11-20T00:00:00.000Z", changeFrequency: "daily" as const },
+      { path: "/pools/tsla-tslax-meteora", lastModified: "2026-11-20T00:00:00.000Z", changeFrequency: "daily" as const },
+    ];
+    const paths = publicSitemapEntries("2026-11-20T00:00:00.000Z", extra).map((entry) => entry.path);
+    expect(paths).toContain("/pools/tsla-tslax");
+    expect(paths).toContain("/pools/tsla-tslax-meteora");
+    expect(publicSitemapPaths()).not.toContain("/pools/tsla-tslax");
+    const urls = toSitemapUrls(publicSitemapEntries("2026-11-20T00:00:00.000Z", extra)).map((entry) => entry.url);
+    expect(urls).toContain(`${CANONICAL_SITE_URL}/pools/tsla-tslax`);
+    expect(urls).toContain(`${CANONICAL_SITE_URL}/pools/tsla-tslax-meteora`);
   });
 });

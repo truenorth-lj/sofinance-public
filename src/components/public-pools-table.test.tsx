@@ -48,6 +48,10 @@ describe("PublicPoolsTable (HTML without JS)", () => {
     expect(markup).toContain("past 7 days");
     expect(markup).toContain("/learn");
     expect(markup).toContain("Open pool");
+    expect(markup).toContain('href="/pools/tsla-tslax"');
+    expect(markup).toContain('href="/pools/tsla-tslax-meteora"');
+    expect(markup).toContain('href="/pools/nvda-nvdaon"');
+    expect(markup).not.toContain("/app/rwa-pairs?pool=");
   });
 
   it("uses the phrase 7d APR only once, and does not use banned copy", () => {

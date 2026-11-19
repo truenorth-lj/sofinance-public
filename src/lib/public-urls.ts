@@ -122,3 +122,10 @@ export const LLMS_TXT_ROUTE = "/llms.txt";
 export const LEGAL_ROUTES = {
   terms: "/terms",
 } as const;
+
+/** Public, indexable per-pool pages (SSR facts; the app still opens via ?pool=&open=1). */
+export const POOLS_PATH = "/pools";
+
+export function publicPoolPath(slug: string): string {
+  return `${POOLS_PATH}/${slug}`;
+}

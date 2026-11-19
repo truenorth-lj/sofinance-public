@@ -5,8 +5,9 @@ import type { HomepagePoolsSnapshot } from "@/lib/homepage-pools";
 import { aprLookupFrom, rwaPairsDefaultOrder } from "@/lib/homepage-pools";
 import type { JsonLd } from "@/lib/json-ld";
 import { formatFeeTier } from "@/lib/position-label";
-import { APP_ROUTES, CANONICAL_SITE_URL, buildOpenPositionPath } from "@/lib/public-urls";
+import { APP_ROUTES, CANONICAL_SITE_URL, publicPoolPath } from "@/lib/public-urls";
 import { publicDexLabel } from "@/lib/dex/ui";
+import { assignPublicPoolSlugs } from "@/lib/public-pool-pages";
 import { CHAIN_LABELS, type UnifiedPool } from "@/lib/unified-pools/model";
 
 export const PUBLIC_POOLS_H1 = "Same-stock liquidity pools";
@@ -32,7 +33,7 @@ export type PublicPoolRow = {
 
 const dash = "—";
 
-export function toPublicPoolRow(pool: UnifiedPool, apr7dPct: number | null): PublicPoolRow {
+export function toPublicPoolRow(pool: UnifiedPool, apr7dPct: number | null, href: string): PublicPoolRow {
   return {
     key: pool.key,
     pairLabel: `$${pool.symbolA} / $${pool.symbolB}`,
@@ -42,15 +43,20 @@ export function toPublicPoolRow(pool: UnifiedPool, apr7dPct: number | null): Pub
     tvl: formatPoolUsd(pool.tvlUsd),
     volume24h: formatPoolUsd(pool.volume24hUsd),
     apr7d: formatAprPct(apr7dPct),
-    href: buildOpenPositionPath(pool.poolAddress),
+    href,
   };
 }
 
-/** Default /app/rwa-pairs order (hide duplicates, 7-day estimate high to low). */
+/** Default /app/rwa-pairs order (hide duplicates, 7-day estimate high to low). Row links go to /pools/{slug}. */
 export function publicPoolRows(snapshot: HomepagePoolsSnapshot | null): PublicPoolRow[] {
   if (!snapshot) return [];
   const lookup = aprLookupFrom(snapshot.apr7d);
-  return rwaPairsDefaultOrder(snapshot.pools, lookup).map((pool) => toPublicPoolRow(pool, lookup(pool)));
+  const slugs = assignPublicPoolSlugs(snapshot.pools);
+  return rwaPairsDefaultOrder(snapshot.pools, lookup).map((pool) => {
+    const slug = slugs.get(pool.key);
+    if (!slug) throw new Error(`missing public slug for ${pool.key}`);
+    return toPublicPoolRow(pool, lookup(pool), publicPoolPath(slug));
+  });
 }
 
 export function publicPoolsItemListJsonLd(snapshot: HomepagePoolsSnapshot | null): JsonLd | null {
