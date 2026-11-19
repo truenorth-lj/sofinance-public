@@ -38,3 +38,18 @@ export function openCapabilityFor(descriptor: Pick<DexDescriptor, "capabilities"
   if (descriptor?.ui?.openUi === "rhc-dialog") return undefined;
   return descriptor?.capabilities.open;
 }
+
+/**
+ * Public list / AEO name for a DEX. Uses the registered descriptor's display name, and adds "DLMM" when the
+ * protocol counts ranges in bins and the badge is only the short brand (in-app Meteora stays "Meteora").
+ */
+export function publicDexLabel(protocol: string): string {
+  const canonical = normalizeDexId(protocol);
+  const descriptor = defaultDescriptorFor(canonical ?? protocol);
+  if (!descriptor) return protocol;
+  if (descriptor.meta.rangeUnit === "bin" && !/\bDLMM\b/.test(descriptor.displayName)) {
+    return `${descriptor.displayName} DLMM`;
+  }
+  return descriptor.displayName;
+}
+
