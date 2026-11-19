@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { HIGHEST_RANGE_APR_7D_HELP } from "@/lib/apr-labels/copy";
 import type { HomepagePool, HomepagePoolsSnapshot } from "@/lib/homepage-pools";
+import { USDC_MINT, USDT_MINT } from "@/lib/rwa-allowlist";
 import { PUBLIC_POOLS_H1 } from "@/lib/public-pools-table";
 import {
   PUBLIC_POOL_APR_LABEL,
@@ -123,5 +124,29 @@ describe("public pool page models", () => {
     // metadata may mention the 7-day window without using the "7d APR" phrase
     expect(blob).not.toContain(PUBLIC_POOL_APR_LABEL);
     expect(listPublicPoolPageModels(snapshot)).toHaveLength(2);
+  });
+
+  it("does not list or look up the USDC/USDT pool, and leaves stock slugs in the sitemap", () => {
+    const stable = pool({
+      key: "solana:usdc-usdt",
+      protocol: "raydium-clmm",
+      poolAddress: "usdc-usdt-pool",
+      symbolA: "USDC",
+      symbolB: "USDT",
+      mintA: USDC_MINT,
+      mintB: USDT_MINT,
+    });
+    const withStable: HomepagePoolsSnapshot = {
+      pools: [...snapshot.pools, stable],
+      apr7d: { ...snapshot.apr7d, [stable.key]: 40 },
+      updated: [],
+    };
+    expect(findPublicPoolPageModel(withStable, "usdc-usdt")).toBeNull();
+    expect(listPublicPoolPageModels(withStable).map((page) => page.slug).sort()).toEqual(["tsla-tslax", "tsla-tslax-meteora"]);
+    expect(poolSitemapEntries(withStable, "2026-11-20T00:00:00.000Z").map((entry) => entry.path)).not.toContain("/pools/usdc-usdt");
+    expect(poolSitemapEntries(withStable, "2026-11-20T00:00:00.000Z").map((entry) => entry.path).sort()).toEqual([
+      "/pools/tsla-tslax",
+      "/pools/tsla-tslax-meteora",
+    ]);
   });
 });

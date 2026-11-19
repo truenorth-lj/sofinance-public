@@ -4,6 +4,7 @@ import { DEX_IDS, normalizeDexId } from "@/lib/dex/types";
 import { publicDexLabel } from "@/lib/dex/ui";
 import { formatPoolUsd } from "@/lib/format/usd";
 import { aprLookupFrom, type HomepagePool, type HomepagePoolsSnapshot } from "@/lib/homepage-pools";
+import { isSameStockPool } from "@/lib/pool-metrics/same-stock-pair";
 import type { JsonLd } from "@/lib/json-ld";
 import { formatFeeTier } from "@/lib/position-label";
 import {
@@ -133,6 +134,11 @@ export function assignPublicPoolSlugs(pools: readonly UnifiedPool[]): Map<string
   return slugs;
 }
 
+/** Pools that may appear on /pools/{slug}, the SSR table, the sitemap and public JSON-LD. */
+export function seoPublicPools(snapshot: HomepagePoolsSnapshot | null): HomepagePool[] {
+  return snapshot ? snapshot.pools.filter(isSameStockPool) : [];
+}
+
 export function publicPoolPairLabel(pool: Pick<UnifiedPool, "symbolA" | "symbolB">): string {
   return `$${pool.symbolA} / $${pool.symbolB}`;
 }
@@ -165,10 +171,11 @@ export function publicPoolPageModel(pool: HomepagePool, apr7dPct: number | null,
 }
 
 export function listPublicPoolPageModels(snapshot: HomepagePoolsSnapshot | null): PublicPoolPageModel[] {
-  if (!snapshot) return [];
-  const slugs = assignPublicPoolSlugs(snapshot.pools);
+  const pools = seoPublicPools(snapshot);
+  if (!snapshot || pools.length === 0) return [];
+  const slugs = assignPublicPoolSlugs(pools);
   const lookup = aprLookupFrom(snapshot.apr7d);
-  return [...snapshot.pools]
+  return [...pools]
     .sort((a, b) => a.key.localeCompare(b.key))
     .flatMap((pool) => {
       const slug = slugs.get(pool.key);
@@ -182,8 +189,9 @@ export function findPublicPoolPageModel(snapshot: HomepagePoolsSnapshot | null, 
 }
 
 export function slugForPool(snapshot: HomepagePoolsSnapshot | null, poolKey: string): string | null {
-  if (!snapshot) return null;
-  return assignPublicPoolSlugs(snapshot.pools).get(poolKey) ?? null;
+  const pools = seoPublicPools(snapshot);
+  if (pools.length === 0) return null;
+  return assignPublicPoolSlugs(pools).get(poolKey) ?? null;
 }
 
 export function publicPoolJsonLd(model: PublicPoolPageModel): JsonLd {

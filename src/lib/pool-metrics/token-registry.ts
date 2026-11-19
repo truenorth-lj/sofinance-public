@@ -41,7 +41,7 @@ export type RegistryToken = {
 export type RegistryPair<T extends RegistryToken = RegistryToken> = { underlying: string; a: T; b: T };
 
 /** The pairing rule: same chain, same underlying, different issuer. */
-function isSameAssetPair(a: RegistryToken, b: RegistryToken): boolean {
+export function isSameAssetPair(a: RegistryToken, b: RegistryToken): boolean {
   return a.chain === b.chain && a.underlying === b.underlying && a.issuer !== b.issuer
     && a.address.toLowerCase() !== b.address.toLowerCase();
 }

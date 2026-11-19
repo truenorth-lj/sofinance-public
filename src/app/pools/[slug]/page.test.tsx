@@ -2,6 +2,7 @@ import { type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { HomepagePool, HomepagePoolsSnapshot } from "@/lib/homepage-pools";
+import { USDC_MINT, USDT_MINT } from "@/lib/rwa-allowlist";
 
 const { notFound, loadHomepagePoolsSnapshot } = vi.hoisted(() => ({
   notFound: vi.fn(() => {
@@ -33,8 +34,9 @@ const snapshot: HomepagePoolsSnapshot = {
   pools: [
     pool({ key: "solana:tsla-raydium", protocol: "raydium-clmm", poolAddress: "tsla-raydium", symbolA: "TSLAx", symbolB: "TSLA" }),
     pool({ key: "solana:tsla-meteora", protocol: "meteora-dlmm", poolAddress: "tsla-meteora", symbolA: "TSLAx", symbolB: "TSLA" }),
+    pool({ key: "solana:usdc-usdt", protocol: "raydium-clmm", poolAddress: "usdc-usdt-pool", symbolA: "USDC", symbolB: "USDT", mintA: USDC_MINT, mintB: USDT_MINT }),
   ],
-  apr7d: { "solana:tsla-raydium": 10, "solana:tsla-meteora": 11 },
+  apr7d: { "solana:tsla-raydium": 10, "solana:tsla-meteora": 11, "solana:usdc-usdt": 40 },
   updated: [],
 };
 
@@ -49,8 +51,13 @@ describe("/pools/[slug]", () => {
   it("prebuilds the snapshot slugs and 404s an unknown slug", async () => {
     const params = await generateStaticParams();
     expect(params.map((row) => row.slug).sort()).toEqual(["tsla-tslax", "tsla-tslax-meteora"]);
+    expect(params.map((row) => row.slug)).not.toContain("usdc-usdt");
     await expect(PublicPoolSlugPage({ params: Promise.resolve({ slug: "not-a-pool" }) })).rejects.toThrow("NEXT_NOT_FOUND");
     expect(notFound).toHaveBeenCalled();
+    notFound.mockClear();
+    await expect(PublicPoolSlugPage({ params: Promise.resolve({ slug: "usdc-usdt" }) })).rejects.toThrow("NEXT_NOT_FOUND");
+    expect(notFound).toHaveBeenCalled();
+    await expect(generateMetadata({ params: Promise.resolve({ slug: "usdc-usdt" }) })).resolves.toEqual({ title: "Pool not found" });
     await expect(generateMetadata({ params: Promise.resolve({ slug: "not-a-pool" }) })).resolves.toEqual({ title: "Pool not found" });
   });
 

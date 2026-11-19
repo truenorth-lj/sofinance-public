@@ -2,6 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { HomepagePool, HomepagePoolsSnapshot } from "@/lib/homepage-pools";
+import { USDC_MINT, USDT_MINT } from "@/lib/rwa-allowlist";
 import { PUBLIC_POOLS_APR_COLUMN, PUBLIC_POOLS_H1 } from "@/lib/public-pools-table";
 import { PublicPoolsTable } from "./public-pools-table";
 
@@ -24,8 +25,9 @@ const snapshot: HomepagePoolsSnapshot = {
     pool({ key: "solana:tsla-raydium", protocol: "raydium-clmm", poolAddress: "tsla-raydium", symbolA: "TSLAx", symbolB: "TSLA", tvlUsd: 80_000 }),
     pool({ key: "solana:tsla-meteora", protocol: "meteora-dlmm", poolAddress: "tsla-meteora", symbolA: "TSLAx", symbolB: "TSLA", tvlUsd: 20_000 }),
     pool({ key: "robinhood:0xnvda", chain: "robinhood", protocol: "uniswap-v4-rhc", poolAddress: "0xnvda", symbolA: "NVDA", symbolB: "NVDAon", feeTierBps: null }),
+    pool({ key: "solana:usdc-usdt", protocol: "raydium-clmm", poolAddress: "usdc-usdt", symbolA: "USDC", symbolB: "USDT", mintA: USDC_MINT, mintB: USDT_MINT, tvlUsd: 1_800_000 }),
   ],
-  apr7d: { "solana:tsla-raydium": 10, "solana:tsla-meteora": 11, "robinhood:0xnvda": 8 },
+  apr7d: { "solana:tsla-raydium": 10, "solana:tsla-meteora": 11, "robinhood:0xnvda": 8, "solana:usdc-usdt": 40 },
   updated: [],
 };
 
@@ -52,6 +54,8 @@ describe("PublicPoolsTable (HTML without JS)", () => {
     expect(markup).toContain('href="/pools/tsla-tslax-meteora"');
     expect(markup).toContain('href="/pools/nvda-nvdaon"');
     expect(markup).not.toContain("/app/rwa-pairs?pool=");
+    expect(markup).not.toContain("USDC");
+    expect(markup).not.toContain("/pools/usdc-usdt");
   });
 
   it("uses the phrase 7d APR only once, and does not use banned copy", () => {

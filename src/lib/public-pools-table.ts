@@ -7,7 +7,7 @@ import type { JsonLd } from "@/lib/json-ld";
 import { formatFeeTier } from "@/lib/position-label";
 import { APP_ROUTES, CANONICAL_SITE_URL, publicPoolPath } from "@/lib/public-urls";
 import { publicDexLabel } from "@/lib/dex/ui";
-import { assignPublicPoolSlugs } from "@/lib/public-pool-pages";
+import { assignPublicPoolSlugs, seoPublicPools } from "@/lib/public-pool-pages";
 import { CHAIN_LABELS, type UnifiedPool } from "@/lib/unified-pools/model";
 
 export const PUBLIC_POOLS_H1 = "Same-stock liquidity pools";
@@ -50,9 +50,11 @@ export function toPublicPoolRow(pool: UnifiedPool, apr7dPct: number | null, href
 /** Default /app/rwa-pairs order (hide duplicates, 7-day estimate high to low). Row links go to /pools/{slug}. */
 export function publicPoolRows(snapshot: HomepagePoolsSnapshot | null): PublicPoolRow[] {
   if (!snapshot) return [];
+  const pools = seoPublicPools(snapshot);
+  if (pools.length === 0) return [];
   const lookup = aprLookupFrom(snapshot.apr7d);
-  const slugs = assignPublicPoolSlugs(snapshot.pools);
-  return rwaPairsDefaultOrder(snapshot.pools, lookup).map((pool) => {
+  const slugs = assignPublicPoolSlugs(pools);
+  return rwaPairsDefaultOrder(pools, lookup).map((pool) => {
     const slug = slugs.get(pool.key);
     if (!slug) throw new Error(`missing public slug for ${pool.key}`);
     return toPublicPoolRow(pool, lookup(pool), publicPoolPath(slug));
