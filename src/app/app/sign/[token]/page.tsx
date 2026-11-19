@@ -256,7 +256,7 @@ export default function SignPage() {
 
   return (
     <InkShell>
-      <InkNav wallet={wallet} connected={connected} onConnect={connect} onDisconnect={disconnect} />
+      <InkNav wallet={wallet} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
       
       <div className="mx-auto max-w-3xl">
       <InkHero label="Sign" title="Sign transaction">

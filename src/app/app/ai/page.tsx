@@ -10,7 +10,7 @@ export default function AIManagementPage() {
 
   return (
     <InkShell maxWidth="5xl">
-      <InkNav wallet={wallet} connected={connected} onConnect={connect} onDisconnect={disconnect} />
+      <InkNav wallet={wallet} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
 
       <InkHero
         label="Use AI"

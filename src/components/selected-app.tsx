@@ -10,6 +10,7 @@ import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import { resolveNftAccountLookup } from "@/lib/exit-account-lookup";
 import { useTokenMetadata } from "./use-token-metadata";
 import { useSelectedController } from "./use-selected-controller";
+import { useWalletConnection } from "./wallet-connection";
 import { TransactionStatusDialog } from "./transaction-status-dialog";
 import { useCompoundController } from "./use-compound-controller";
 import { InkFooter, InkNav } from "./ink";
@@ -75,6 +76,7 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
   const [detail, setDetail] = useState<string | null>(null);
   const [withdrawBusy,setWithdrawBusy]=useState(false);
   const controller = useSelectedController();
+  const { restoring } = useWalletConnection();
   const { wallet, connected, connect, disconnect, connectionError,
     discovery, selection, state, amount, tolerancePercent, result, attempt, attemptStatus,
     error, reprepare, quoteError, quoteErrorCode, quoteErrorOutputMint, quoteErrorAmount, showQuoteRecalculate,
@@ -359,7 +361,7 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
   const popupOpen = Boolean(popupIsPanel && popup.open);
   return <div className="min-h-screen bg-canvas text-cream">
     <div className="relative mx-auto max-w-[1280px] px-3 pb-32 pt-3 max-sm:pb-[max(8rem,calc(var(--tx-notice-bottom-offset,0px)+2rem))] sm:px-5 sm:pt-5">
-      <InkNav wallet={wallet} connected={connected} onConnect={connect} onDisconnect={disconnect} />
+      <InkNav wallet={wallet} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
 
       <div className="relative">
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 px-1">
@@ -375,7 +377,7 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
 
       <section aria-labelledby="all-positions-heading" className="mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-7">
         <h2 id="all-positions-heading" className="mb-5 text-base font-semibold text-cream">All positions</h2>
-        {showEmpty ? <PositionsEmptyState connected={connected} onConnect={connect} />
+        {showEmpty ? <PositionsEmptyState connected={connected} restoring={restoring} onConnect={connect} />
           : !allPositions.length ? <p role="status" className="text-sm text-smoke">Loading positions…</p>
           : <div>{renderPositionRows()}</div>}
         {registry.loadingNames.length ? <p role="status" className="mt-2 text-xs text-smoke" data-testid="registry-positions-loading">Loading {registry.loadingNames.join(", ")} positions…</p> : null}
@@ -473,11 +475,11 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
 }
 
 /** The one empty state of All positions: one sentence and the way to Pools (plus Connect while no wallet is connected). */
-function PositionsEmptyState({ connected, onConnect }: { connected: boolean; onConnect: () => void }) {
+function PositionsEmptyState({ connected, restoring, onConnect }: { connected: boolean; restoring?: boolean; onConnect: () => void }) {
   return <div data-testid="positions-empty-state" className="rounded-2xl border border-white/12 bg-white/[0.03] p-4 sm:p-5">
     <p className="text-sm leading-6 text-cream/80">{connected ? "No positions in this wallet yet." : "Connect your wallet to see your positions."}</p>
     <div className="mt-3 flex flex-wrap gap-2">
-      {!connected && <button type="button" onClick={onConnect} className="rounded-full bg-lemon px-4 py-2 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f]">Connect wallet</button>}
+      {!connected && <button type="button" onClick={onConnect} disabled={restoring} aria-busy={restoring || undefined} className="rounded-full bg-lemon px-4 py-2 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-wait disabled:opacity-60">{restoring ? "Connecting…" : "Connect wallet"}</button>}
       <a href={APP_ROUTES.rwaPairs} className="rounded-full border border-white/25 px-4 py-2 text-sm font-semibold text-cream transition-colors hover:border-white/50 hover:bg-white/[0.04]">Go to Pools</a>
     </div>
   </div>;

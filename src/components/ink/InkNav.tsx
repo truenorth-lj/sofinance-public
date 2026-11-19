@@ -1,6 +1,6 @@
 "use client";
 
-import { useContext, useId, useState } from "react";
+import { useId, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SiteLogo } from "@/components/site-logo";
@@ -10,7 +10,6 @@ import { APP_ROUTES, GUIDE_ROUTES } from "@/lib/public-urls";
 import { EXTERNAL_LINK_PROPS, SOCIAL_LINKS } from "@/lib/social-links";
 import { XIcon } from "@/components/x-icon";
 import { useOptionalEvmWalletConnection } from "@/components/evm-wallet-connection";
-import { WalletConnectionContext } from "@/components/wallet-connection";
 import { RHC_CHAIN_ID } from "@/lib/rhc-wallet/eip1193";
 import { shortAddress } from "@/lib/format/address";
 
@@ -36,11 +35,9 @@ const NAV_LINKS = [
 const pill =
   "flex h-10 items-center justify-center rounded-full border px-4 text-[13px] font-medium outline-none transition-colors";
 
-export function InkNav({ wallet, connected, restoring: restoringProp, onConnect, onDisconnect }: InkNavProps) {
+export function InkNav({ wallet, connected, restoring = false, onConnect, onDisconnect }: InkNavProps) {
   const pathname = usePathname();
   const evm = useOptionalEvmWalletConnection();
-  const walletConnection = useContext(WalletConnectionContext);
-  const restoring = restoringProp ?? Boolean(walletConnection?.restoring);
   // Wallet buttons only on app pages (they pass the Solana handlers); plan and sign pages without handlers show none.
   const showSolana = Boolean(onConnect && onDisconnect);
   const showEvm = showSolana && Boolean(evm?.enabled);
