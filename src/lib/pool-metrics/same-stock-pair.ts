@@ -50,21 +50,22 @@ function matchRhcStockWrap(symbolA: string, symbolB: string): boolean {
  * USDC/USDT (curated stable, underlying USD) and same-asset crypto wraps (cbBTC/WBTC) are not.
  */
 export function isSameStockPool(pool: SameStockPoolInput): boolean {
-  if (pool.chain === "robinhood") {
-    const a = rhcToken(pool.mintA);
-    const b = rhcToken(pool.mintB);
-    if (a && b) return isSameStockRegistryPair(a, b);
-    // Fallback when mints are not in the checked-in registry (tests, or a newly listed pool):
-    // Ondo stock tokens use the BASEon ticker next to the plain stock ticker.
-    return matchRhcStockWrap(pool.symbolA, pool.symbolB);
-  }
-  if (pool.chain === "solana") {
-    const staticA = solanaStaticToken(pool.mintA);
-    const staticB = solanaStaticToken(pool.mintB);
-    if (staticA && staticB) return isSameStockRegistryPair(staticA, staticB);
-    // Stock wraps (NVDAx/NVDA, SPCXx/SPCX, …). Stablecoin bases are already rejected by the wrap rule.
-    // Non-stock same-asset pairs (cbBTC/WBTC) are not FOOx/FOO wraps, so they do not match.
-    return matchWrapPairShape(pool.symbolA, pool.symbolB).matched;
-  }
-  return false;
+  // Resolve from token registries first (no chain-string branch). Curated Solana
+  // stables (USDC/USDT, underlying USD) and RHC tokens are classified here.
+  const staticA = solanaStaticToken(pool.mintA);
+  const staticB = solanaStaticToken(pool.mintB);
+  if (staticA && staticB) return isSameStockRegistryPair(staticA, staticB);
+
+  const rhcA = rhcToken(pool.mintA);
+  const rhcB = rhcToken(pool.mintB);
+  if (rhcA && rhcB) return isSameStockRegistryPair(rhcA, rhcB);
+
+  // Solana stock wraps (NVDAx/NVDA, SPCXx/SPCX, …). Stablecoin bases are already
+  // rejected by the wrap rule. Non-stock same-asset pairs (cbBTC/WBTC) are not
+  // FOOx/FOO wraps, so they do not match.
+  if (matchWrapPairShape(pool.symbolA, pool.symbolB).matched) return true;
+
+  // Fallback when RHC mints are not in the checked-in registry (tests, or a newly
+  // listed pool): Ondo stock tokens use the BASEon ticker next to the plain ticker.
+  return matchRhcStockWrap(pool.symbolA, pool.symbolB);
 }
