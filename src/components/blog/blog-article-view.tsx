@@ -10,6 +10,7 @@ import {
   getPublicPngSize,
 } from "@/lib/blog";
 import { BLOG_ROUTES } from "@/lib/public-urls";
+import { PageHeader } from "@/components/page-header";
 
 export function BlogArticleView({ article }: { article: BlogArticle }) {
   const heroSize = getPublicPngSize(article.hero.src);
@@ -17,23 +18,21 @@ export function BlogArticleView({ article }: { article: BlogArticle }) {
   return (
     <>
       <article>
-        <header className="mt-3 rounded-[28px] bg-cream p-6 text-ink sm:p-9">
-          <p className="flex flex-wrap items-center gap-x-3 gap-y-2 font-data text-[10px] uppercase tracking-[0.14em] text-ink/60">
-            <Link href={BLOG_ROUTES.home} className="hover:text-ink">
-              Blog
-            </Link>
-            <span aria-hidden="true">·</span>
-            <time {...blogTimeProps(article.datePublished)}>{formatBlogDate(article.datePublished)}</time>
-            <span aria-hidden="true">·</span>
-            <span>{BLOG_ORGANIZATION}</span>
-          </p>
-          <h1 className="mt-5 max-w-4xl text-[clamp(1.65rem,3.4vw,2.7rem)] font-medium leading-[1.12] tracking-[-0.035em]">
-            {article.title}
-          </h1>
-          <p className="mt-5 max-w-3xl border-t border-ink/20 pt-5 text-base leading-7 text-ink/70">
-            {article.description}
-          </p>
-        </header>
+        <PageHeader
+          eyebrow={
+            <p className="flex flex-wrap items-center gap-x-3 gap-y-2 font-data text-[10px] uppercase tracking-[0.14em] text-smoke">
+              <Link href={BLOG_ROUTES.home} className="hover:text-cream">
+                Blog
+              </Link>
+              <span aria-hidden="true">·</span>
+              <time {...blogTimeProps(article.datePublished)}>{formatBlogDate(article.datePublished)}</time>
+              <span aria-hidden="true">·</span>
+              <span>{BLOG_ORGANIZATION}</span>
+            </p>
+          }
+          title={article.title}
+          subline={article.description}
+        />
 
         <figure className="mt-3 overflow-hidden rounded-[28px] bg-char">
           <Image

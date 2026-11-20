@@ -1,11 +1,12 @@
 "use client";
 
-import { InkHero, InkShell, InkCard } from "@/components/ink";
+import { InkShell, InkCard } from "@/components/ink";
+import { PageHeader } from "@/components/page-header";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { useWalletConnection } from "@/components/wallet-connection";
 import { McpConnectionCard } from "@/components/mcp-connection-card";
-import { Wallet, Sparkles, Code, Link as LinkIcon } from "lucide-react";
+import { Wallet, Code, Link as LinkIcon } from "lucide-react";
 
 export default function AIManagementPage() {
   const { address: wallet, connected, restoring, connect, disconnect } = useWalletConnection();
@@ -14,13 +15,10 @@ export default function AIManagementPage() {
     <InkShell maxWidth="5xl">
       <SiteHeader variant="app" wallet={wallet} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
 
-      <InkHero
-        label="Use AI"
+      <PageHeader
         title="Manage positions with AI"
-        aside={<Sparkles className="h-5 w-5 text-ink/60" aria-hidden="true" />}
-      >
-        <p>Connect your wallet to get started with AI-powered position management via MCP</p>
-      </InkHero>
+        subline="Connect your wallet to get started with AI-powered position management via MCP"
+      />
 
       {!connected ? (
         <InkCard className="mt-3">

@@ -1,7 +1,8 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { InkHero, InkShell } from "@/components/ink";
+import { InkShell } from "@/components/ink";
+import { PageHeader } from "@/components/page-header";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { DOCS_ROUTES } from "@/lib/public-urls";
@@ -23,7 +24,7 @@ function Section({ id, title, children }: { id: string; title: string; children:
 export default function TermsPage() {
   return <InkShell>
     <SiteHeader />
-    <InkHero label="Legal" title="Terms of Service">Last updated {TERMS_LAST_UPDATED}</InkHero>
+    <PageHeader title="Terms of Service" subline={<>Last updated {TERMS_LAST_UPDATED}</>} />
     <article className="mt-3 space-y-6 rounded-[28px] border border-white/12 bg-char p-6 sm:p-9">
       <Section id="acceptance" title="1. Acceptance of these Terms">
         <p>These Terms of Service (the &ldquo;Terms&rdquo;) govern your access to and use of the SoFinance website at sofinancelab.xyz, its web application, its documentation and its MCP server for AI agents (together, &ldquo;SoFinance&rdquo; or the &ldquo;Interface&rdquo;). By accessing the Interface or connecting a wallet to it, you agree to these Terms. If you do not agree, do not use SoFinance.</p>

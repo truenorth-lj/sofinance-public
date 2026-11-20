@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { InkHero } from "@/components/ink";
+import { PageHeader } from "@/components/page-header";
 import { DOCS_PAGES, type DocsPage } from "@/lib/docs-nav";
 
 export function DocsArticle({
@@ -16,9 +16,7 @@ export function DocsArticle({
 
   return (
     <article>
-      <InkHero label="Docs" title={page.title} stacked>
-        <p>{page.description}</p>
-      </InkHero>
+      <PageHeader title={page.title} subline={page.description} />
 
       <div className="mt-3 space-y-3 rounded-[28px] border border-white/12 bg-char p-6 text-sm leading-7 text-cream/90 sm:p-8 [&_a]:text-lemon [&_a]:underline [&_a]:underline-offset-2 [&_a]:hover:text-[#fff27f] [&_h2]:mt-8 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:tracking-[-0.02em] [&_h2]:text-cream [&_h2:first-child]:mt-0 [&_ol]:mt-3 [&_ol]:list-decimal [&_ol]:space-y-2 [&_ol]:pl-5 [&_p+p]:mt-3 [&_ul]:mt-3 [&_ul]:list-disc [&_ul]:space-y-2 [&_ul]:pl-5">
         {children}

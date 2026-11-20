@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { SiteFooter } from "@/components/site-footer";
-import { InkHero, InkShell } from "@/components/ink";
+import { InkShell } from "@/components/ink";
+import { PageHeader } from "@/components/page-header";
 import { SiteHeader } from "@/components/site-header";
 import { DOCS_ROUTES, GUIDE_ROUTES } from "@/lib/public-urls";
 import { HOMEPAGE_APR_DOCS_LINK_LABEL } from "@/lib/apr-labels/copy";
@@ -35,9 +36,7 @@ export function PublicPoolPage({ model }: { model: PublicPoolPageModel }) {
             <li className="text-cream">{model.title}</li>
           </ol>
         </nav>
-        <InkHero label="Pool" title={model.title} stacked>
-          <p>{model.aprHelp}</p>
-        </InkHero>
+        <PageHeader title={model.title} subline={model.aprHelp} />
         <section aria-labelledby="pool-facts-heading" className="mt-3 rounded-[28px] border border-white/12 bg-char p-6 sm:p-8">
           <h2 id="pool-facts-heading" className="text-lg font-semibold tracking-[-0.02em] text-cream">Pool facts</h2>
           <dl className="mt-4">

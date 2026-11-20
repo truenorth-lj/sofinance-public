@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { InkHero, InkShell } from "@/components/ink";
+import { InkShell } from "@/components/ink";
+import { PageHeader } from "@/components/page-header";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { GUIDE_RISK_LINE, guideJsonLd, type GuideBlock, type GuidePage } from "@/lib/guides";
@@ -19,18 +20,23 @@ function Block({ block }: { block: GuideBlock }) {
   );
 }
 
-/** Server-rendered guide page: hero, one card per question (h2 + answer), related links, risk line, JSON-LD. */
+/** Server-rendered guide page: title + subline, one card per question (h2 + answer), related links, risk line, JSON-LD. */
 export function GuideArticle({ page, children }: { page: GuidePage; children?: ReactNode }) {
   return (
     <InkShell>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(guideJsonLd(page)) }} />
       <SiteHeader />
-      <main className="mt-3">
+      <main>
         <article>
-          <InkHero label={page.heroLabel} title={page.title} stacked>
-            <p>{page.intro}</p>
-            <p className="mt-3 font-data text-[11px] uppercase tracking-[0.12em] text-ink/60">Updated {page.updated}</p>
-          </InkHero>
+          <PageHeader
+            title={page.title}
+            subline={
+              <>
+                <p>{page.intro}</p>
+                <p className="mt-1 font-data text-[11px] uppercase tracking-[0.12em] text-smoke">Updated {page.updated}</p>
+              </>
+            }
+          />
 
           {page.qas.map((qa) => (
             <section key={qa.id} id={qa.id} aria-labelledby={`${qa.id}-title`} className={`${card} scroll-mt-6`}>

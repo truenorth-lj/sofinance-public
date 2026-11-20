@@ -5,7 +5,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { VersionedTransaction } from "@solana/web3.js";
 import { LoaderCircle, CircleAlert, CheckCircle2 } from "lucide-react";
-import { InkHero, InkShell, InkCard } from "@/components/ink";
+import { InkShell, InkCard } from "@/components/ink";
+import { PageHeader } from "@/components/page-header";
 import { SiteHeader } from "@/components/site-header";
 import { useWalletConnection } from "@/components/wallet-connection";
 import { useTxWallet } from "@/components/use-tx-wallet";
@@ -260,9 +261,7 @@ export default function SignPage() {
       <SiteHeader variant="app" wallet={wallet} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
       
       <div className="mx-auto max-w-3xl">
-      <InkHero label="Sign" title="Sign transaction">
-        <p>Review and sign the prepared transaction</p>
-      </InkHero>
+      <PageHeader title="Sign transaction" subline="Review and sign the prepared transaction" />
 
       <InkCard className="mt-3">
         <div className="space-y-6">
