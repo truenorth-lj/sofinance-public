@@ -45,6 +45,8 @@ async function callTool(name: string, args: unknown, token = goodToken()) {
 
 beforeEach(() => {
   vi.stubEnv("JUPITER_API_KEY", SIGNING_SECRET);
+  vi.stubEnv("SOFINANCE_SIGNING_SECRET", undefined);
+  vi.stubEnv("SOFINANCE_SIGNING_SECRET_PREVIOUS", undefined);
   vi.spyOn(console, "error").mockImplementation(() => {});
   for (const fn of Object.values(toolFns)) fn.mockResolvedValue({ ok: true });
 });
@@ -254,7 +256,7 @@ describe("authentication", () => {
     expect(toolFns.listPositions).not.toHaveBeenCalled();
   });
 
-  it("QUIRK: the server secret is JUPITER_API_KEY; if it is unset, authenticated methods return 500 / 'Server configuration error'", async () => {
+  it("authenticated methods return a configuration error when the current secret is unavailable", async () => {
     const token = goodToken();
     vi.stubEnv("JUPITER_API_KEY", undefined);
     const { response, json } = await send(call, bearer(token));
@@ -262,10 +264,25 @@ describe("authentication", () => {
     expect(json.error).toMatchObject({ code: -32002, message: "Server configuration error" });
   });
 
-  it("QUIRK: rotating JUPITER_API_KEY invalidates every outstanding MCP token", async () => {
-    const token = goodToken();
-    vi.stubEnv("JUPITER_API_KEY", "rotated");
-    expect((await send(call, bearer(token))).response.status).toBe(401);
+  it("accepts both MCP token generations across a rolling rotation, then drops the old key", async () => {
+    const oldToken = goodToken();
+    const newSecret = "new-signing-secret";
+    const newToken = generateMcpToken(wallet, newSecret);
+
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET_PREVIOUS", newSecret);
+    expect((await send(call, bearer(newToken))).response.status).toBe(200);
+
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", newSecret);
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET_PREVIOUS", SIGNING_SECRET);
+    expect((await send(call, bearer(oldToken))).response.status).toBe(200);
+    expect((await send(call, bearer(newToken))).response.status).toBe(200);
+    const expired = generateMcpToken(wallet, SIGNING_SECRET, -1);
+    expect((await send(call, bearer(expired))).response.status).toBe(401);
+
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET_PREVIOUS", undefined);
+    expect((await send(call, bearer(oldToken))).response.status).toBe(401);
+    vi.stubEnv("JUPITER_API_KEY", "rotated-jupiter-key");
+    expect((await send(call, bearer(newToken))).response.status).toBe(200);
   });
 
   it("QUIRK: an unknown method is 401 when unauthenticated, and 404 / -32601 only after auth", async () => {

@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { apiError } from "@/lib/api-response";
-import { getSigningSecret } from "@sofinance/engine/config/server-env";
+import { getSigningSecrets } from "@sofinance/engine/config/server-env";
 import { rpcConnection } from "@sofinance/engine/rpc";
 import { exceedsTxSizeLimit } from "@sofinance/engine/transaction-limits";
 import { cacheLandedResult, cachedLandedResult } from "@/lib/tx-landed/cache";
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
     if (exceedsTxSizeLimit(bytes.length)) throw new Error("Invalid transaction check input");
     const prepared = VersionedTransaction.deserialize(bytes);
     const wallet = prepared.message.staticAccountKeys[0]?.toBase58();
-    if (!wallet || !verifyTxLandedPermit(getSigningSecret(), wallet, bytes, lastValidBlockHeight, landedPermit)) {
+    if (!wallet || !getSigningSecrets().some(secret => verifyTxLandedPermit(secret, wallet, bytes, lastValidBlockHeight, landedPermit))) {
       throw new Error("This transaction was not prepared by SoFinance");
     }
     if (txLandedCheckRateLimited(landedPermit as string, wallet)) return tooMany();

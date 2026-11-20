@@ -110,7 +110,7 @@ describe("MCP Tools", () => {
     vi.stubEnv("SOFINANCE_RWA_DB_ENABLED", "false");
     vi.clearAllMocks();
     // The permit secret is read through lib/config/server-env: pin it so the tests prove it reaches the issuers.
-    vi.stubEnv("JUPITER_API_KEY", "tools-secret");
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", "tools-secret");
   });
   afterEach(() => {
     vi.unstubAllEnvs();

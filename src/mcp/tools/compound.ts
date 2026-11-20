@@ -4,7 +4,7 @@ import { prepareCompound, simulateCompound, MCP_COMPOUND_PREPARE } from "@/lib/d
 import { verifyCompoundPermit } from "../../lib/compound-permit";
 import { sendSignedCompoundTransaction } from "../../lib/compound-send";
 import { CompoundSendError, notSentRetryMessage, sanitizePublicError } from "../../lib/public-error";
-import { getSigningSecret } from "@sofinance/engine/config/server-env";
+import { getSigningSecrets } from "@sofinance/engine/config/server-env";
 import type { CompoundSummary } from "@sofinance/engine/compound-types";
 import { createSignToken } from "../../lib/pending-sign-token";
 import { buildSignUrl } from "../../lib/public-urls";
@@ -121,18 +121,12 @@ export async function submitCompoundTransaction(input: SubmitCompoundTransaction
       : transaction;
     if (prepared !== transaction) assertWalletReturnedTransaction(prepared, transaction, input.wallet);
 
-    const jupiterApiKey = getSigningSecret();
-    if (
-      !verifyCompoundPermit(
-        jupiterApiKey,
-        {
-          wallet: input.wallet,
-          message: Buffer.from(prepared.message.serialize()).toString("base64"),
-          summary: input.summary,
-        },
-        input.permit
-      )
-    ) {
+    const permitInput = {
+      wallet: input.wallet,
+      message: Buffer.from(prepared.message.serialize()).toString("base64"),
+      summary: input.summary,
+    };
+    if (!getSigningSecrets().some(secret => verifyCompoundPermit(secret, permitInput, input.permit))) {
       throw new Error("Transaction does not match simulated compound authorization");
     }
 

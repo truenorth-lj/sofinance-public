@@ -25,7 +25,8 @@ for (const source of sources) {
 }
 const stamp = fingerprint.digest("hex");
 
-export const buildEnv = { ...process.env, JUPITER_API_KEY: secret };
+export const buildEnv = { ...process.env, JUPITER_API_KEY: "e2e-dummy-jupiter-key", SOFINANCE_SIGNING_SECRET: secret };
+delete buildEnv.SOFINANCE_SIGNING_SECRET_PREVIOUS;
 delete buildEnv.NEXT_PUBLIC_REOWN_PROJECT_ID;
 if (variant === "appkit") buildEnv.NEXT_PUBLIC_REOWN_PROJECT_ID = "00000000000000000000000000000000";
 

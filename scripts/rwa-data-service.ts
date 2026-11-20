@@ -6,11 +6,12 @@ import {
   createRwaDatabase,
   PostgresRwaStore,
 } from "../src/lib/rwa-postgres-store";
-import { RwaStoreError, storeRequestSchema } from "../src/lib/rwa-store-types";
+import { storeRequestSchema } from "../src/lib/rwa-store-types";
 import { PostgresPositionHistoryStore } from "../src/lib/position-history-postgres-store";
-import { PositionHistoryStoreError, positionStoreRequestSchema } from "../src/lib/position-history-store-types";
+import { positionStoreRequestSchema } from "../src/lib/position-history-store-types";
 import { PostgresStockEntryPriceStore } from "../src/lib/stock-entry-price-postgres-store";
-import { entryPriceStoreRequestSchema, StockEntryPriceStoreError } from "../src/lib/stock-entry-price-store-types";
+import { entryPriceStoreRequestSchema } from "../src/lib/stock-entry-price-store-types";
+import { dataServiceFailure, logObservedError } from "../src/lib/observed-error";
 
 const config = getRwaConfig(),
   service = getRwaServiceConfig();
@@ -84,12 +85,11 @@ const server = createServer(async (req, res) => {
       : await store.request(storeRequestSchema.parse(parsed.data));
     reply(200, result);
   } catch (error) {
-    const code =
-      error instanceof RwaStoreError || error instanceof PositionHistoryStoreError || error instanceof StockEntryPriceStoreError
-        ? error.code : "RWA_STORE_UNAVAILABLE";
-    // Only stable codes: never log the request, Authorization header, URL or database error detail.
-    console.error("rwa-data-service", code);
-    reply(code === "LEASE_LOST" ? 409 : 503, { code });
+    const failure = dataServiceFailure(error);
+    const route = isEntryPrices ? "/v1/entry-prices" : isPositionHistory ? "/v1/position-history" : "/v1/rwa";
+    // Classification fields only: never the request, Authorization header, or raw database message.
+    logObservedError("rwa-data-service", error, { route, storeCode: failure.code });
+    reply(failure.status, { code: failure.code });
   }
 });
 server.requestTimeout = 15_000;

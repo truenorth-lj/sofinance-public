@@ -26,6 +26,7 @@ import type { WithdrawPrepareRequest } from "@sofinance/engine/withdraw/types";
 const buildWithdraw = (input: WithdrawPrepareRequest, preview?: boolean) => dexRegistry.buildWithdrawal("raydium-clmm", input, preview);
 import { BLOCKHASH, SIGNING_SECRET, phantomRewriteTransaction, testKeypair } from "../test-support/send-fixtures";
 import { USDC_MINT } from "@sofinance/engine/ids";
+import { withdrawPermit } from "@sofinance/engine/withdraw/permit";
 const key = (n: number) => testKeypair(n).publicKey;
 const wallet = key(1), mintA = key(2), mintB = key(3), positionMint = key(4), positionKey = key(5), poolKey = key(6), nft = key(7);
 const ata = (mint: PublicKey) => getAssociatedTokenAddressSync(mint, wallet);
@@ -42,7 +43,8 @@ function withdrawalDisabledRegistry() {
 
 beforeEach(() => {
     vi.clearAllMocks();
-    vi.stubEnv("JUPITER_API_KEY", SIGNING_SECRET);
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", SIGNING_SECRET);
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET_PREVIOUS", undefined);
     mocks.padding = 0;
     mocks.impact = "0.01";
     mocks.swapStage = false;
@@ -162,9 +164,12 @@ it("recovers conversion with native withdrawal disabled only from a finalized ma
     expect(second.summary.assets.map(a => a.amount)).toEqual(["199", "300"]);
     expect(second.summary.assets.map(a => a.starting)).toEqual(["299", "400"]);
 });
-it("prepares conversion from a Phantom-modified finalized first receipt", async () => {
+it("prepares conversion from a Phantom-modified finalized first receipt after a signing key rotation", async () => {
     mocks.padding = 1100;
     const previous = await buildWithdraw(request);
+    const currentSecret = "rotated-withdraw-signing-secret";
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", currentSecret);
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET_PREVIOUS", SIGNING_SECRET);
     const first = VersionedTransaction.deserialize(Buffer.from(previous.unsignedTransaction, "base64"));
     const landed = phantomRewriteTransaction(first);
     expect(Buffer.from(landed.message.serialize()).equals(Buffer.from(first.message.serialize()))).toBe(false);
@@ -182,6 +187,14 @@ it("prepares conversion from a Phantom-modified finalized first receipt", async 
     expect(second.summary.stage).toBe("swap");
     expect(second.summary.assets.map(a => a.amount)).toEqual(["199", "300"]);
     expect(second.summary.tx1Signature).toBe("receipt");
+    const secondTransaction = VersionedTransaction.deserialize(Buffer.from(second.unsignedTransaction, "base64"));
+    const permitInput = {
+        wallet: request.wallet,
+        message: Buffer.from(secondTransaction.message.serialize()).toString("base64"),
+        summary: second.summary,
+    };
+    expect(withdrawPermit.verify(currentSecret, permitInput, second.permit)).toBe(true);
+    expect(withdrawPermit.verify(SIGNING_SECRET, permitInput, second.permit)).toBe(false);
 });
 it("rejects an absent, failed, mismatched, or under-minimum first receipt", async () => {
     mocks.padding = 1100;

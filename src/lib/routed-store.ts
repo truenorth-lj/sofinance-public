@@ -1,6 +1,7 @@
 import "server-only";
 import type { ZodType } from "zod";
 import { getRwaConfig } from "./config/rwa-env";
+import { GATEWAY_TIMEOUT_CODE, logObservedError, stableErrorCode, transportFailureCode } from "./observed-error";
 import { getRwaDatabase, runRwaDatabaseRequest } from "./rwa-database";
 
 type RwaDatabase = ReturnType<typeof getRwaDatabase>;
@@ -37,7 +38,19 @@ export function createRoutedStore<TStore extends StoreRequest>(options: RoutedSt
   let gateway: { url: string; secret: string; store: TStore } | undefined;
   const fail = (code: string) => new options.ErrorClass(code);
   const unavailable = () => fail(options.unavailableCode);
-  const asStoreError = (error: unknown) => (error instanceof options.ErrorClass ? error : unavailable());
+  const wrapStoreError = (error: unknown) => {
+    if (error instanceof options.ErrorClass) {
+      logObservedError("routed-store", error, { route: options.path, storeCode: error.code });
+      return error;
+    }
+    const code = transportFailureCode(error) ?? options.unavailableCode;
+    const wrapped = fail(code);
+    const fields = logObservedError("routed-store", error, { route: options.path, storeCode: code });
+    if (fields.name !== "unknown") wrapped.name = fields.name;
+    if (fields.pgCode) Object.assign(wrapped, { pgCode: fields.pgCode });
+    if (fields.httpStatus !== undefined) Object.assign(wrapped, { status: fields.httpStatus });
+    return wrapped;
+  };
 
   function getStore(): TStore {
     const config = getRwaConfig();
@@ -61,11 +74,15 @@ export function createRoutedStore<TStore extends StoreRequest>(options: RoutedSt
               body,
               signal: AbortSignal.timeout(options.timeoutMs),
             });
-            const result = await response.json();
-            if (!response.ok) throw fail(typeof result.code === "string" ? result.code : options.unavailableCode);
+            const result = await readGatewayResult(response);
+            if (!response.ok) {
+              const failure = fail(stableErrorCode(result.code, options.unavailableCode));
+              Object.assign(failure, { status: response.status });
+              throw failure;
+            }
             return result;
           } catch (error) {
-            throw asStoreError(error);
+            throw wrapStoreError(error);
           }
         },
       } as TStore;
@@ -85,17 +102,29 @@ export function createRoutedStore<TStore extends StoreRequest>(options: RoutedSt
                 if (options.refreshDirectIfPoolRetired && getRwaDatabase() !== db) return await getStore().request(input as never);
                 return await runRwaDatabaseRequest(db, () => postgres.request(input as never));
               } catch (error) {
-                throw asStoreError(error);
+                throw wrapStoreError(error);
               }
             },
           } as TStore,
         };
       }
     } catch (error) {
-      throw asStoreError(error);
+      throw wrapStoreError(error);
     }
     return direct.store;
   }
 
   return getStore;
+}
+
+async function readGatewayResult(response: Response): Promise<{ code?: unknown }> {
+  try {
+    const result: unknown = await response.json();
+    return result && typeof result === "object" ? result as { code?: unknown } : {};
+  } catch (error) {
+    if (transportFailureCode(error) === GATEWAY_TIMEOUT_CODE) throw error;
+    const parseError = new SyntaxError("Gateway response was not JSON");
+    Object.assign(parseError, { status: response.status });
+    throw parseError;
+  }
 }

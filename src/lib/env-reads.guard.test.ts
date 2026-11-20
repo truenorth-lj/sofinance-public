@@ -13,6 +13,8 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const SRC = join(import.meta.dirname, "..");
+const ENGINE_SRC = join(SRC, "../packages/engine/src");
+const SIGNING_ENV_NAMES = ["SOFINANCE_SIGNING_SECRET", "SOFINANCE_SIGNING_SECRET_PREVIOUS"] as const;
 
 /** Names whose values are credentials (or embed credentials, like an RPC URL with an api key). */
 const SECRET_ENV_NAMES = [
@@ -20,6 +22,7 @@ const SECRET_ENV_NAMES = [
   // Non-secret routing controls are also ratcheted: selection must stay in config helpers.
   "SOFINANCE_RWA_STORE_MODE", "SOFINANCE_RWA_NATIVE_CRON_ENABLED", "SOFINANCE_RWA_DB_EXPECTED_ROLE",
   "JUPITER_API_KEY", "SOLANA_RPC_URL", "SOFINANCE_MCP_TOKEN",
+  ...SIGNING_ENV_NAMES,
   // Optional dedicated Robinhood Chain RPC (may embed a provider key); read only inside the engine.
   "RHC_RPC_URL",
 ] as const;
@@ -63,7 +66,8 @@ function scanEnvReads(sourceText: string, fileName = "x.ts"): EnvRead[] {
     ts.isIdentifier(node.expression) && node.expression.text === "process";
   const isEnvLike = (node: ts.Node): boolean => isProcessEnv(node) ||
     (ts.isIdentifier(node) && /(^|[a-z])env$/i.test(node.text)) ||
-    (ts.isPropertyAccessExpression(node) && /(^|[a-z])env$/i.test(node.name.text));
+    (ts.isPropertyAccessExpression(node) && /(^|[a-z])env$/i.test(node.name.text)) ||
+    (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "engineEnv");
   const visit = (node: ts.Node) => {
     if (ts.isVariableDeclaration(node) && ts.isObjectBindingPattern(node.name) && node.initializer && isEnvLike(node.initializer)) {
       // const { JUPITER_API_KEY } = process.env
@@ -99,14 +103,14 @@ function walk(dir: string, files: string[] = []): string[] {
   return files;
 }
 
-function inventory() {
-  const secretReads: Record<string, Reads> = Object.fromEntries(SECRET_ENV_NAMES.map((name) => [name, {}]));
+function inventory(root: string, names: readonly string[]) {
+  const secretReads: Record<string, Reads> = Object.fromEntries(names.map((name) => [name, {}]));
   const wholeEnv: Reads = {};
-  for (const file of walk(SRC)) {
-    const rel = relative(SRC, file).replaceAll("\\", "/");
+  for (const file of walk(root)) {
+    const rel = relative(root, file).replaceAll("\\", "/");
     for (const read of scanEnvReads(readFileSync(file, "utf8"), file)) {
       if (read.name === "*") wholeEnv[rel] = (wholeEnv[rel] ?? 0) + 1;
-      else if ((SECRET_ENV_NAMES as readonly string[]).includes(read.name)) {
+      else if (names.includes(read.name)) {
         const bucket = secretReads[read.name]!;
         bucket[rel] = (bucket[rel] ?? 0) + 1;
       }
@@ -118,7 +122,12 @@ function inventory() {
 const sortedEntries = (reads: Reads) => Object.fromEntries(Object.entries(reads).sort(([a], [b]) => a.localeCompare(b)));
 
 describe("secret env var read ratchet", () => {
-  const { secretReads, wholeEnv } = inventory();
+  const { secretReads, wholeEnv } = inventory(SRC, SECRET_ENV_NAMES);
+  const engine = inventory(ENGINE_SRC, SIGNING_ENV_NAMES);
+
+  it.each(SIGNING_ENV_NAMES)("%s is read only in the engine server-env module", (name) => {
+    expect(engine.secretReads[name]).toEqual({ "config/server-env.ts": 1 });
+  });
 
   it.each(SECRET_ENV_NAMES)("%s is read only where the allowlist says (exact match: shrink the list when you remove a read)", (name) => {
     expect(sortedEntries(secretReads[name]!)).toEqual(sortedEntries(ALLOWED_SECRET_READS[name] ?? {}));
@@ -145,8 +154,9 @@ describe("scanEnvReads (the scanner itself)", () => {
       "// process.env.JUPITER_API_KEY in a comment",
       "const s = 'process.env.JUPITER_API_KEY in a string';",
       "const f = process.env as Record<string, string>;",
+      "const g = engineEnv().SOFINANCE_SIGNING_SECRET;",
     ].join("\n"));
-    expect(reads.map((read) => read.name)).toEqual(["JUPITER_API_KEY", "SOFINANCE_MCP_TOKEN", "SOLANA_RPC_URL", "RHC_RPC_URL", "*", "*"]);
+    expect(reads.map((read) => read.name)).toEqual(["JUPITER_API_KEY", "SOFINANCE_MCP_TOKEN", "SOLANA_RPC_URL", "RHC_RPC_URL", "*", "*", "SOFINANCE_SIGNING_SECRET"]);
   });
 
   it("finds destructured reads", () => {

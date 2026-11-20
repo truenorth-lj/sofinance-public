@@ -36,7 +36,7 @@ let client: Client, server: ReturnType<typeof createMcpServer>;
 let transaction: VersionedTransaction, openTransaction: VersionedTransaction;
 beforeEach(async () => {
   vi.resetAllMocks(); vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(1793100000000);
-  vi.stubEnv("JUPITER_API_KEY", SIGNING_SECRET); vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.invalid.example");
+  vi.stubEnv("SOFINANCE_SIGNING_SECRET", SIGNING_SECRET); vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.invalid.example");
   vi.stubEnv("SOFINANCE_RWA_DB_ENABLED", undefined); vi.stubEnv("SOFINANCE_RWA_GATEWAY_URL", undefined);
   vi.spyOn(console, "error").mockImplementation(() => {});
   transaction = buildTransaction({ payer, signWith: [] });

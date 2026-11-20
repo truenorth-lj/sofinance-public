@@ -6,7 +6,7 @@ import bs58 from "bs58";
 vi.mock("server-only", () => ({}));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
 vi.mock("@sofinance/engine/config/server-env", async (original) => ({
-  ...await original<typeof import("@sofinance/engine/config/server-env")>(), getSigningSecret: () => "test-signing-secret-not-a-real-key",
+  ...await original<typeof import("@sofinance/engine/config/server-env")>(), getSigningSecrets: () => ["test-signing-secret-not-a-real-key"],
 }));
 
 import { rpcConnection } from "@sofinance/engine/rpc";

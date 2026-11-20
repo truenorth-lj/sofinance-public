@@ -128,7 +128,7 @@ async function call(surface: Surface, body: unknown, tokenWallet = testKeypair(1
 }
 beforeEach(async () => {
   vi.resetAllMocks(); vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(NOW);
-  vi.stubEnv("JUPITER_API_KEY", SIGNING_SECRET); vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubEnv("SOFINANCE_SIGNING_SECRET", SIGNING_SECRET); vi.spyOn(console, "error").mockImplementation(() => {});
   trace = []; contexts.length = 0;
   backend.sim.mockImplementation(({ transaction, wallet, requested, expectedLiquidity, sigVerify, ...rest }) => {
     record("simulator", wallet.toBase58(), toBase64(transaction), String(requested), String(expectedLiquidity), sigVerify,

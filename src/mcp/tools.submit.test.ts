@@ -43,7 +43,7 @@ let connection: FakeConnection;
 let transaction: ReturnType<typeof buildTransaction>;
 
 beforeEach(() => {
-  vi.stubEnv("JUPITER_API_KEY", SIGNING_SECRET);
+  vi.stubEnv("SOFINANCE_SIGNING_SECRET", SIGNING_SECRET);
   transaction = buildTransaction({ payer: walletKey });
   connection = fakeConnection({ sendRawTransaction: vi.fn(async () => signatureOf(transaction)) });
   vi.mocked(rpcConnection).mockReturnValue(connection as never);
@@ -134,9 +134,10 @@ describe("submitSignedTransaction (MCP add-liquidity submit)", () => {
   it("rejects a permit changed after issue and a permit from another key; missing key throws a signing-key error", async () => {
     const input = selectedInput();
     await expect(submitSignedTransaction({ ...input, requested: "1000001" })).rejects.toThrow("does not match server's simulation permit");
-    vi.stubEnv("JUPITER_API_KEY", "rotated-key");
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", "rotated-key");
     await expect(submitSignedTransaction(input)).rejects.toThrow("does not match server's simulation permit");
     vi.stubEnv("JUPITER_API_KEY", undefined);
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", undefined);
     await expect(submitSignedTransaction(input)).rejects.toThrow("Missing server signing key");
   });
 

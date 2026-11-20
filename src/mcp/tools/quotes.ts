@@ -4,7 +4,7 @@ import { submitSelected } from "@/server/transactions/selected-submit";
 import { quoteAdd, prepareAdd, MCP_ADD_PREPARE } from "@/lib/dex";
 import { MCP_SELECTED_SUBMIT } from "@/server/transactions/surface-policy";
 import { verifySelectedPermit } from "../../lib/selected-permit";
-import { getSigningSecret } from "@sofinance/engine/config/server-env";
+import { getSigningSecrets } from "@sofinance/engine/config/server-env";
 import { createSignToken } from "../../lib/pending-sign-token";
 import { buildSignUrl } from "../../lib/public-urls";
 import { isSingleWalletSignedTransaction } from "@sofinance/engine/transaction-limits";
@@ -182,7 +182,6 @@ export async function submitSignedTransaction(input: SubmitSignedTransactionInpu
   if (prepared !== transaction) assertWalletReturnedTransaction(prepared, transaction, walletAddress);
 
   // Verify permit against the prepared message; the wallet-returned tx is matched semantically.
-  const jupiterApiKey = getSigningSecret();
   const permitInput = {
     message: Buffer.from(prepared.message.serialize()).toString("base64"),
     wallet: walletAddress,
@@ -197,7 +196,7 @@ export async function submitSignedTransaction(input: SubmitSignedTransactionInpu
     startingBalances: input.startingBalances,
   };
   
-  if (!verifySelectedPermit(jupiterApiKey, permitInput, input.permit)) {
+  if (!getSigningSecrets().some(secret => verifySelectedPermit(secret, permitInput, input.permit))) {
     throw new Error("Transaction content does not match server's simulation permit");
   }
   

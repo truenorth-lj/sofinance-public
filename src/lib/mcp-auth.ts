@@ -12,7 +12,7 @@ import bs58 from "bs58";
  * Security:
  * - Requires ed25519 signature proof of wallet ownership before minting
  * - Tokens expire (default 24h, configurable)
- * - HMAC-signed with JUPITER_API_KEY (server-side secret)
+ * - HMAC-signed with the server-side signing secret
  * - Bound to specific wallet address
  * - Can be revoked by changing secret or waiting for expiry
  */
@@ -195,7 +195,7 @@ export function verifyChallengeSignature(
  * SECURITY: This should only be called after verifying wallet ownership via signature.
  * 
  * @param wallet - Solana wallet public key (base58)
- * @param secret - HMAC secret (use JUPITER_API_KEY from env)
+ * @param secret - Current HMAC secret
  * @param ttlMs - Token time-to-live in milliseconds (default 24h)
  * @returns Signed token string
  */
@@ -238,12 +238,14 @@ export function generateMcpToken(
  * Verify and decode an MCP auth token.
  * 
  * @param token - Token string to verify
- * @param secret - HMAC secret (use JUPITER_API_KEY from env)
+ * @param secret - Current HMAC secret
+ * @param previousSecret - Optional verification key for a rotation
  * @returns Decoded payload if valid, null otherwise
  */
 export function verifyMcpToken(
   token: string,
-  secret: string
+  secret: string,
+  previousSecret?: string
 ): McpTokenPayload | null {
   if (!token || !secret) {
     return null;
@@ -260,11 +262,8 @@ export function verifyMcpToken(
       return null;
     }
 
-    const expectedSignature = createHmac("sha256", secret)
-      .update(payloadBase64)
-      .digest("base64url");
-
-    if (signature !== expectedSignature) {
+    const matches = (key: string) => createHmac("sha256", key).update(payloadBase64).digest("base64url") === signature;
+    if (!matches(secret) && !(previousSecret && matches(previousSecret))) {
       return null;
     }
 

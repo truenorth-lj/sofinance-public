@@ -1,6 +1,6 @@
 import "@/lib/engine-host";
 import { PublicKey } from "@solana/web3.js";
-import { getSigningSecret } from "@sofinance/engine/config/server-env";
+import { getSigningSecrets } from "@sofinance/engine/config/server-env";
 import { apiError } from "@/lib/api-response";
 import { verifySignToken } from "@/lib/pending-sign-token";
 import { prepareOpen, MCP_OPEN_PREPARE } from "@/lib/dex";
@@ -18,15 +18,15 @@ export async function POST(request: Request) {
     const body = await request.json() as { token?: unknown; nftMint?: unknown };
     if (typeof body.token !== "string" || typeof body.nftMint !== "string") throw new Error("Invalid request");
     const nftMint = new PublicKey(body.nftMint).toBase58();
-    const secret = getSigningSecret();
-    const payload = await verifySignToken(body.token, secret);
+    const [secret, previousSecret] = getSigningSecrets();
+    const payload = secret ? await verifySignToken(body.token, secret, previousSecret) : null;
     if (!payload || payload.kind !== "open-position" || !payload.openRequest) {
       return apiError(new Error("Token invalid, expired, or malformed"), "Token invalid, expired, or malformed");
     }
     if (nftMint === payload.wallet) throw new Error("Invalid position NFT mint");
     const { selection, amount, range, floorBps, toleranceBps } = payload.openRequest;
     const prepared = await prepareOpen("raydium-clmm", { wallet: payload.wallet, selection, amount, range, floorBps, toleranceBps, nftMint },
-      getSigningSecret, MCP_OPEN_PREPARE);
+      () => secret, MCP_OPEN_PREPARE);
     const sendPermit = sendPermitFor(payload.wallet, prepared.unsignedTransaction, secret);
     return Response.json({ ...prepared, sendPermit }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

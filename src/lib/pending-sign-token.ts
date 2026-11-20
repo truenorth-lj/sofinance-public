@@ -56,7 +56,8 @@ export async function createSignToken(
 
 export async function verifySignToken(
   token: string,
-  secret: string
+  secret: string,
+  previousSecret?: string
 ): Promise<PendingSignPayload | null> {
   try {
     const parts = token.split(".");
@@ -65,7 +66,7 @@ export async function verifySignToken(
     const [signature, data] = parts;
     if (!signature || !data) return null;
     
-    if (!hmacVerify(data, signature, secret)) {
+    if (!hmacVerify(data, signature, secret) && !(previousSecret && hmacVerify(data, signature, previousSecret))) {
       return null;
     }
     

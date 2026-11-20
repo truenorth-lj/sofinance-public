@@ -6,7 +6,7 @@ import { parseWallet } from "@sofinance/engine/api-input";
 import { verifyCompoundPermit } from "./compound-permit";
 import type { CompoundSummary } from "@sofinance/engine/compound-types";
 import type { CompoundRecoverySummary } from "@sofinance/engine/compound-recovery-types";
-import { getSigningSecret } from "@sofinance/engine/config/server-env";
+import { getSigningSecrets } from "@sofinance/engine/config/server-env";
 import { isSingleWalletSignedTransaction } from "@sofinance/engine/transaction-limits";
 import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
 
@@ -45,9 +45,10 @@ export async function parseCompoundBroadcast(request: Request, operation: "compo
     throw new Error("Compound payer, signature, or transaction size mismatch");
   }
   if (prepared !== transaction) assertWalletReturnedTransaction(prepared, transaction, wallet);
-  if (!verifyCompoundPermit(getSigningSecret(), {
+  const permitInput = {
     wallet, message: Buffer.from(prepared.message.serialize()).toString("base64"), summary: body.summary,
-  }, body.permit)) throw new Error("Transaction does not match simulated compound authorization");
+  };
+  if (!getSigningSecrets().some(secret => verifyCompoundPermit(secret, permitInput, body.permit))) throw new Error("Transaction does not match simulated compound authorization");
   // Summary fields become trusted only after the complete HMAC is verified.
   const summary = body.summary as CompoundSummary | CompoundRecoverySummary;
   if (summary.operation !== operation || !Number.isSafeInteger(summary.expiresAt) || summary.expiresAt <= Date.now() ||
