@@ -176,7 +176,7 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
             className="rounded-xl border border-lemon/30 bg-lemon/10 px-4 py-3 text-[12px] leading-relaxed text-cream">{notice.message}</p> : null}
 
           {plan && projection && best ? <dl className={cn(panel, "px-4 py-2.5")} data-testid="share-calc-assumptions">
-            <InfoRow label={`Est. LP APY · ${aprWindowAvgLabel(best)}`}>{formatPct(plan.apyPct)}</InfoRow>
+            <InfoRow label={`Est. fee APR · ${aprWindowAvgLabel(best)}`}>{formatPct(plan.apyPct)}</InfoRow>
             <InfoRow label="Fees collected">${formatCents(plan.feesEarned)}</InfoRow>
             <InfoRow label="Protocol cut of fees">{`${Math.round((1 - terms.lpFeeShare) * 100)}%`}</InfoRow>
             <InfoRow label="Opening cost">{formatCostUsd(plan.entryCost)}</InfoRow>

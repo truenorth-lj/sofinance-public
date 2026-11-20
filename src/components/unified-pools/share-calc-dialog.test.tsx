@@ -86,6 +86,8 @@ describe("ShareCalcDialog", () => {
   it("lays the numbers out like a vault page: assumptions, returns by horizon, quick amounts", async () => {
     await render(SPCX, { kind: "open", onOpen: vi.fn() });
     const rows = node.querySelector("[data-testid=share-calc-assumptions]")!.textContent!;
+    expect(rows).toContain("Est. fee APR ·");
+    expect(rows).not.toContain("Est. LP APY");
     expect(rows).toContain("Protocol cut of fees16%");
     expect(rows).toContain("Opening cost−$10.00");
     expect(rows).toMatch(/Closing cost \(to USDC\)−\$\d{2}\.\d{2}/);

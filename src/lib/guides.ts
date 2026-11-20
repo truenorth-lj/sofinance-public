@@ -193,7 +193,7 @@ const TSLA: GuidePage = {
         p("You open a TSLA/TSLAx position from the SoFinance pools page in a few steps, and your wallet signs once to open it."),
         ol(
           "Open sofinancelab.xyz/app/rwa-pairs and search for TSLA.",
-          "Choose the Meteora or Raydium TSLA/TSLAx pool and press Open position.",
+          "Choose the Meteora or Raydium TSLAx/TSLA pool and press Open position.",
           "Connect a Solana wallet such as Phantom.",
           "Pick what to deposit (SOL, USDC, TSLA or TSLAx) and how much. If you deposit one token, part of it is swapped into the other side, with the 0.10% fee on the swapped part.",
           "Review the suggested range preset and the preview: estimated fee APR (7-day window), every cost, and what you will hold.",
@@ -289,7 +289,7 @@ const SPCX: GuidePage = {
         p("You open an SPCX/SPCXx position from the SoFinance pools page, and your wallet signs once to open it."),
         ol(
           "Open sofinancelab.xyz/app/rwa-pairs and search for SPCX.",
-          "Choose a Raydium or Meteora SPCX/SPCXx pool and press Open position.",
+          "Choose a Raydium or Meteora SPCXx/SPCX pool and press Open position.",
           "Connect a Solana wallet such as Phantom.",
           "Pick what to deposit (SOL, USDC, SPCX or SPCXx) and how much. If you deposit one token, part of it is swapped into the other side, with the 0.10% fee on the swapped part.",
           "Review the suggested range preset and the preview: estimated fee APR (7-day window), every cost, and what you will hold.",
@@ -433,7 +433,7 @@ const HOW_TO_OPEN: GuidePage = {
       blocks: [
         p("On Solana, Raydium CLMM and Meteora DLMM pools use the same SoFinance steps, and your wallet signs once."),
         ol(
-          "Go to sofinancelab.xyz/app/rwa-pairs and pick a same-stock pool, for example TSLA/TSLAx or SPCX/SPCXx. The Raydium or Meteora label shows which DEX the pool is on.",
+          "Go to sofinancelab.xyz/app/rwa-pairs and pick a same-stock pool, for example TSLAx/TSLA or SPCXx/SPCX. The Raydium or Meteora label shows which DEX the pool is on.",
           "Press Open position and connect your Solana wallet.",
           "Choose what to deposit (SOL, USDC or one of the pool tokens) and the amount.",
           "Review the suggested range preset (Micro, Tight, Standard or Wide), scored on the last 7 days of fee data. You can pick another preset or type a custom range.",

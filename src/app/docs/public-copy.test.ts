@@ -27,4 +27,16 @@ describe("public docs copy", () => {
     const fees = readFileSync(resolve("src/app/docs/fees/page.tsx"), "utf8").replace(/\s+/g, " ");
     expect(fees).toContain("Buying a stock token with USDC in the app (spot swap): 10 bps of the part that is swapped, in USDC, the same as opening or adding to a position.");
   });
+
+  it("points Getting started at Pools and Portfolio, not RWA pairs or Positions", () => {
+    const page = readFileSync(resolve("src/app/docs/page.tsx"), "utf8");
+    expect(page).toContain("Connect a Solana or EVM wallet");
+    expect(page).toContain(">Pools<");
+    expect(page).toContain("Raydium, Meteora and Robinhood Chain");
+    expect(page).toContain(">Portfolio<");
+    expect(page).toContain("APP_ROUTES.rwaPairs");
+    expect(page).toContain("APP_ROUTES.home");
+    expect(page).not.toContain(">RWA pairs<");
+    expect(page).not.toMatch(/under\s+Positions/);
+  });
 });
