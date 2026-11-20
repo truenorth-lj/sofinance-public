@@ -36,20 +36,21 @@ export function HomepageMarketView({ initialPools = null, initialStocks = null }
 
   return <>
     <div className="mx-auto max-w-[1280px] px-3 sm:px-5">
-      <section data-testid="landing-hero" className="relative isolate px-1 pb-10 pt-12 text-center sm:pb-14 sm:pt-20">
-        <h1 className="mx-auto max-w-[20ch] text-[clamp(2.2rem,5.6vw,4.4rem)] font-medium leading-[1.02] tracking-[-0.045em] text-cream">
+      <section data-testid="landing-hero" className="relative isolate px-1 pb-6 pt-8 text-center sm:pb-8 sm:pt-10">
+        <h1 className="mx-auto text-[clamp(2rem,4.5vw,3.5rem)] font-medium leading-[1.02] tracking-[-0.045em] text-cream">
           Hold the stock. <span className="text-lemon">Collect the fees.</span>
         </h1>
-        <p className="mx-auto mt-5 max-w-3xl text-balance text-base leading-7 text-cream/70 sm:text-lg">
+        <p className="mx-auto mt-4 max-w-2xl text-balance text-sm leading-6 text-cream/70 sm:max-w-3xl sm:text-base sm:leading-7">
           {HERO_SUBLINE}
         </p>
-        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
           <a href={`#${TOP_POOLS_ANCHOR_ID}`} className={primaryBtn} data-testid="hero-see-pools">{HERO_SEE_POOLS}</a>
           <Link href={GUIDE_ROUTES.whatIsSameStock} className={secondaryBtn} data-testid="hero-how-it-works">{HERO_HOW_IT_WORKS}</Link>
         </div>
-        <ul data-testid="hero-trust" className="mx-auto mt-8 flex max-w-3xl flex-col items-center gap-2 text-sm leading-6 text-smoke sm:gap-3">
-          {HERO_TRUST.map((item) => (
-            <li key={item.href}>
+        <ul data-testid="hero-trust" className="mx-auto mt-5 px-1 text-center text-sm leading-6 text-smoke">
+          {HERO_TRUST.map((item, i) => (
+            <li key={item.href} className="inline">
+              {i > 0 ? <span className="select-none" aria-hidden="true"> · </span> : null}
               <Link href={item.href} className="underline decoration-white/25 underline-offset-4 transition-colors hover:text-cream hover:decoration-cream">
                 {item.text}
               </Link>

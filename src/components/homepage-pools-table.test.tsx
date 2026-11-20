@@ -361,6 +361,7 @@ describe("homepage pools: single top-5 block", () => {
       ["Zero performance fee. 0.10% only when we swap.", "/fees"],
       ["Solana + Robinhood Chain", "/docs"],
     ]);
+    expect(container.querySelector("[data-testid=hero-trust]")!.textContent).toMatch(/·/);
     expect(container.querySelector("#hero-search")).toBeNull();
     expect(container.querySelector("[role=search]")).toBeNull();
     expect(container.querySelector("[data-testid=hero-search-matches]")).toBeNull();
