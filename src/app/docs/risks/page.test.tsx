@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { OPEN_FEE_BPS } from "@sofinance/engine/protocols/uniswap-v4/open-constants";
 import { RHC_EXPLORER_TX } from "@/lib/dex/uniswap-v4-rhc/wallet/open-execute";
 
+vi.mock("next/navigation", () => ({ usePathname: () => "/docs/risks" }));
+
 vi.mock("@/components/ink", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/components/ink")>()),
   InkNav: () => null,

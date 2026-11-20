@@ -1,19 +1,12 @@
 "use client";
 
-import { useId, useState } from "react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { SiteLogo } from "@/components/site-logo";
-import { Menu, Wallet, X as CloseIcon } from "lucide-react";
+import { Wallet } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { APP_ROUTES, GUIDE_ROUTES } from "@/lib/public-urls";
-import { EXTERNAL_LINK_PROPS, SOCIAL_LINKS } from "@/lib/social-links";
-import { XIcon } from "@/components/x-icon";
 import { useOptionalEvmWalletConnection } from "@/components/evm-wallet-connection";
 import { RHC_CHAIN_ID } from "@/lib/rhc-wallet/eip1193";
 import { shortAddress } from "@/lib/format/address";
 
-interface InkNavProps {
+export interface InkNavProps {
   wallet?: string | null;
   connected?: boolean;
   restoring?: boolean;
@@ -24,143 +17,78 @@ interface InkNavProps {
 const short = shortAddress;
 const shortEvm = shortAddress;
 
-const NAV_LINKS = [
-  { href: APP_ROUTES.home, label: "Portfolio" },
-  // Plan and Docs left the bar on 11/4 (Docs is in the page footer, InkFooter).
-  { href: APP_ROUTES.rwaPairs, label: "Pools" },
-  { href: GUIDE_ROUTES.learn, label: "Learn" },
-  { href: APP_ROUTES.ai, label: "Use AI" },
-] as const;
+const walletPill = "flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-full border px-2 text-[13px] sm:gap-2 sm:px-4 font-medium outline-none transition-colors focus-visible:border-lemon";
+const walletOff = "border-white/25 text-cream/85 hover:border-white/70";
+const walletOn = "border-white/40 text-cream hover:border-white/70";
 
-const pill =
-  "flex h-10 items-center justify-center rounded-full border px-4 text-[13px] font-medium outline-none transition-colors";
-
+/**
+ * App wallet slot for SiteHeader: Solana and EVM stay independent. No nav links (those live in SiteHeader).
+ * Wallet buttons only render when the page passes Solana handlers; plan/sign pages without handlers show none.
+ */
 export function InkNav({ wallet, connected, restoring = false, onConnect, onDisconnect }: InkNavProps) {
-  const pathname = usePathname();
   const evm = useOptionalEvmWalletConnection();
-  // Wallet buttons only on app pages (they pass the Solana handlers); plan and sign pages without handlers show none.
   const showSolana = Boolean(onConnect && onDisconnect);
   const showEvm = showSolana && Boolean(evm?.enabled);
   const solanaConnected = Boolean(connected && wallet);
   const evmBusy = evm?.status === "connecting" || evm?.status === "restoring";
   const evmOnRhc = evm?.chainId === RHC_CHAIN_ID;
-  // Below sm the page links fold into a Menu button (six pills took three rows of a phone screen, PM 11/4).
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuId = useId();
+
+  if (!showSolana) return null;
 
   return (
-    // Below sm: brand, X and Menu on the first row, the two wallet buttons on the second; the links open under them from
-    // Menu. sm–lg: brand, X and wallets share the first row, links below. lg: one row.
-    <header className="flex flex-wrap items-center justify-between gap-2">
-      <SiteLogo href={APP_ROUTES.home} className="order-1" />
-
-      <nav aria-label="App" id={menuId}
-        onKeyDown={(event) => { if (event.key === "Escape") setMenuOpen(false); }}
-        className={cn("order-5 w-full gap-2 sm:flex sm:flex-wrap lg:order-2 lg:w-auto lg:flex-1", menuOpen ? "grid grid-cols-2" : "hidden")}>
-        {NAV_LINKS.map((link) => {
-          const isActive = pathname === link.href || Boolean(pathname?.startsWith(`${link.href}/`));
-          return (
-            <Link
-              key={link.href}
-              href={link.href}
-              aria-current={isActive ? "page" : undefined}
-              onClick={() => setMenuOpen(false)}
-              className={cn(
-                pill,
-                "min-w-fit flex-1",
-                isActive
-                  ? "border-cream bg-cream text-ink"
-                  : "border-white/25 text-cream/85 hover:border-white/70 focus-visible:border-lemon",
-              )}
-            >
-              {link.label}
-            </Link>
-          );
-        })}
-      </nav>
-
-      <a
-        href={SOCIAL_LINKS.x.href}
-        {...EXTERNAL_LINK_PROPS}
-        aria-label={SOCIAL_LINKS.x.ariaLabel}
-        title={SOCIAL_LINKS.x.ariaLabel}
-        className={cn(
-          pill,
-          "order-2 ml-auto w-10 shrink-0 border-white/25 px-0 text-cream/85 hover:border-white/70 focus-visible:border-lemon lg:order-3 lg:ml-0",
-        )}
-      >
-        <XIcon className="h-3.5 w-3.5" />
-      </a>
-
-      <button
-        type="button"
-        aria-expanded={menuOpen}
-        aria-controls={menuId}
-        onClick={() => setMenuOpen((open) => !open)}
-        data-testid="nav-menu"
-        className={cn(pill, "order-2 shrink-0 gap-1.5 px-3.5 sm:hidden", menuOpen ? "border-cream bg-cream text-ink" : "border-white/25 text-cream/85 focus-visible:border-lemon")}
-      >
-        {menuOpen ? <CloseIcon className="h-4 w-4" aria-hidden="true" /> : <Menu className="h-4 w-4" aria-hidden="true" />}
-        Menu
-      </button>
-
-      {showSolana && (
-        <div className="order-3 grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto lg:order-4" data-testid="nav-wallets">
+    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
+      <div className="flex shrink-0 gap-1.5 sm:gap-2" data-testid="nav-wallets">
+        <button
+          type="button"
+          onClick={solanaConnected ? onDisconnect : onConnect}
+          disabled={!solanaConnected && restoring}
+          aria-busy={!solanaConnected && restoring ? true : undefined}
+          title={solanaConnected ? "Disconnect Solana wallet" : restoring ? "Restoring Solana wallet…" : "Connect a Solana wallet (Phantom, Solflare, …)"}
+          aria-label={solanaConnected && wallet ? `Solana wallet ${short(wallet)}, connected. Disconnect` : "Connect a Solana wallet"}
+          data-testid="nav-solana-wallet"
+          data-connected={solanaConnected ? "true" : "false"}
+          className={cn(walletPill, solanaConnected ? walletOn : walletOff, !solanaConnected && restoring && "disabled:cursor-wait disabled:opacity-60")}
+        >
+          <Wallet className="hidden h-4 w-4 shrink-0 sm:block" aria-hidden="true" />
+          {solanaConnected && wallet ? <WalletLabel address={short(wallet)} chain="SOL" /> : <span className="shrink-0">{restoring ? "Connecting…" : "Solana"}</span>}
+        </button>
+        {/* No network tag or switch here (LJ 11/14): another network is only asked about where it matters (RHC Close).
+            The address shows a chain tag only on Robinhood Chain. */}
+        {showEvm && evm && (
           <button
             type="button"
-            onClick={solanaConnected ? onDisconnect : onConnect}
-            disabled={!solanaConnected && restoring}
-            aria-busy={!solanaConnected && restoring ? true : undefined}
-            title={solanaConnected ? "Disconnect Solana wallet" : restoring ? "Restoring Solana wallet…" : "Connect a Solana wallet (Phantom, Solflare, …)"}
-            aria-label={solanaConnected && wallet ? `Solana wallet ${short(wallet)}, connected. Disconnect` : undefined}
-            data-testid="nav-solana-wallet"
-            data-connected={solanaConnected ? "true" : "false"}
-            className={cn(walletPill, solanaConnected ? walletOn : walletOff, !solanaConnected && restoring && "disabled:cursor-wait disabled:opacity-60")}
+            onClick={evm.wallet ? evm.disconnect : () => { evm.dismissError(); void evm.connect().catch(() => {}); }}
+            disabled={evmBusy}
+            title={evm.wallet ? "Disconnect EVM wallet" : "Connect an EVM wallet (MetaMask) for Robinhood Chain"}
+            aria-label={evm.wallet ? `EVM wallet ${shortEvm(evm.wallet.address)}${evmOnRhc ? " on Robinhood Chain" : ""}, connected. Disconnect` : "Connect an EVM wallet"}
+            data-testid="nav-evm-wallet"
+            data-connected={evm.wallet ? "true" : "false"}
+            className={cn(walletPill, evm.wallet ? walletOn : walletOff, "disabled:cursor-wait disabled:opacity-60")}
           >
-            <Wallet className={cn("h-4 w-4 shrink-0", solanaConnected && "hidden sm:block")} aria-hidden="true" />
-            {solanaConnected && wallet ? <WalletLabel address={short(wallet)} chain="SOL" /> : <span className="truncate">{restoring ? "Connecting…" : "Solana wallet"}</span>}
+            <Wallet className="hidden h-4 w-4 shrink-0 sm:block" aria-hidden="true" />
+            {evm.wallet
+              ? <WalletLabel address={shortEvm(evm.wallet.address)} chain={evmOnRhc ? "RHC" : null} />
+              : <span className="shrink-0">{evm.status === "connecting" ? "Connecting…" : "EVM"}</span>}
           </button>
-          {/* No network tag or switch here (LJ 11/14): another network is only asked about where it matters (RHC Close).
-              The address shows a chain tag only on Robinhood Chain. */}
-          {showEvm && evm && (
-            <button
-              type="button"
-              onClick={evm.wallet ? evm.disconnect : () => { evm.dismissError(); void evm.connect().catch(() => {}); }}
-              disabled={evmBusy}
-              title={evm.wallet ? "Disconnect EVM wallet" : "Connect an EVM wallet (MetaMask) for Robinhood Chain"}
-              aria-label={evm.wallet ? `EVM wallet ${shortEvm(evm.wallet.address)}${evmOnRhc ? " on Robinhood Chain" : ""}, connected. Disconnect` : undefined}
-              data-testid="nav-evm-wallet"
-              data-connected={evm.wallet ? "true" : "false"}
-              className={cn(walletPill, evm.wallet ? walletOn : walletOff, "disabled:cursor-wait disabled:opacity-60")}
-            >
-              <Wallet className={cn("h-4 w-4 shrink-0", evm.wallet && "hidden sm:block")} aria-hidden="true" />
-              {evm.wallet
-                ? <WalletLabel address={shortEvm(evm.wallet.address)} chain={evmOnRhc ? "RHC" : null} />
-                : <span className="truncate">{evm.status === "connecting" ? "Connecting…" : "EVM wallet"}</span>}
-            </button>
-          )}
-        </div>
-      )}
-
+        )}
+      </div>
       {showEvm && evm?.error && (
-        <p role="alert" className="order-4 flex w-full items-center justify-end gap-2 text-xs text-red-200 lg:order-6" data-testid="nav-evm-error">
+        <p role="alert" className="w-full text-right text-xs text-red-200" data-testid="nav-evm-error">
           <span>EVM wallet: {evm.error}</span>
+          {" "}
           <button type="button" onClick={evm.dismissError} className="underline underline-offset-2">Dismiss</button>
         </p>
       )}
-    </header>
+    </div>
   );
 }
 
-const walletPill = "flex h-10 min-w-0 items-center justify-center gap-1.5 rounded-full border px-3 text-[13px] sm:gap-2 sm:px-4 font-medium outline-none transition-colors focus-visible:border-lemon";
-const walletOff = "border-white/25 text-cream/85 hover:border-white/70";
-const walletOn = "border-white/40 text-cream hover:border-white/70";
-
-// Below sm the two pills share one row (about 165px each at 375px), so a connected pill drops the wallet icon to keep the
-// whole short address visible.
+// Short visible labels with no CSS ellipsis: disconnected pills say "Solana" / "EVM"; connected pills show the whole
+// short address. Icons stay at sm+ so the 375 row (logo + two pills + Menu) can keep every label visible. The chain
+// tag hides below sm for the same reason (it remains in the accessibility name).
 function WalletLabel({ address, chain }: { address: string; chain: string | null }) {
   return <>
-    <span className="truncate font-data text-[12px]">{address}</span>
-    {chain && <span className="shrink-0 rounded-full bg-white/12 px-1.5 py-px text-[10px] font-semibold leading-4 tracking-wide text-cream/80">{chain}</span>}
+    <span className="shrink-0 font-data text-[12px]">{address}</span>
+    {chain && <span className="hidden shrink-0 rounded-full bg-white/12 px-1.5 py-px text-[10px] font-semibold leading-4 tracking-wide text-cream/80 sm:inline">{chain}</span>}
   </>;
 }

@@ -34,9 +34,10 @@ describe("/terms page", () => {
     expect(page).not.toMatch(/draft|lawyer|pending review/i);
   });
 
-  it("is linked from the landing footer and the docs footer", () => {
+  it("is linked from the shared site footer on marketing and docs pages", () => {
     expect(LEGAL_ROUTES.terms).toBe("/terms");
-    expect(readFileSync(resolve("src/components/landing-page.tsx"), "utf8")).toContain("LEGAL_ROUTES.terms");
-    expect(readFileSync(resolve("src/components/docs/docs-shell.tsx"), "utf8")).toContain("LEGAL_ROUTES.terms");
+    expect(readFileSync(resolve("src/components/site-footer.tsx"), "utf8")).toContain("LEGAL_ROUTES.terms");
+    expect(readFileSync(resolve("src/components/landing-page.tsx"), "utf8")).toContain("<SiteFooter variant=\"marketing\" />");
+    expect(readFileSync(resolve("src/components/docs/docs-shell.tsx"), "utf8")).toContain("<SiteFooter variant=\"marketing\" />");
   });
 });

@@ -13,7 +13,8 @@ import { useSelectedController } from "./use-selected-controller";
 import { useWalletConnection } from "./wallet-connection";
 import { TransactionStatusDialog } from "./transaction-status-dialog";
 import { useCompoundController } from "./use-compound-controller";
-import { InkFooter, InkNav } from "./ink";
+import { SiteFooter } from "./site-footer";
+import { SiteHeader } from "./site-header";
 import { AddLiquiditySection } from "./add-liquidity-section";
 import { PositionPerformancePanel } from "./position-performance-panel";
 import { PositionExitEstimate } from "./position-exit-estimate";
@@ -361,7 +362,7 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
   const popupOpen = Boolean(popupIsPanel && popup.open);
   return <div className="min-h-screen bg-canvas text-cream">
     <div className="relative mx-auto max-w-[1280px] px-3 pb-32 pt-3 max-sm:pb-[max(8rem,calc(var(--tx-notice-bottom-offset,0px)+2rem))] sm:px-5 sm:pt-5">
-      <InkNav wallet={wallet} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
+      <SiteHeader variant="app" wallet={wallet} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
 
       <div className="relative">
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 px-1">
@@ -385,7 +386,7 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
         {external?.status}
       </section>
       </div>
-      <InkFooter />
+      <SiteFooter variant="app" />
     </div>
     {popupIsPanel && <ActionDialog open={popupOpen} onClose={closePopup} title={popupTitle} testId={`${popup.view}-popup`}
       size={popup.view === "activity" ? "md" : "lg"}>

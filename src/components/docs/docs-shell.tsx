@@ -4,10 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { InkShell } from "@/components/ink";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { DOCS_PAGES } from "@/lib/docs-nav";
 import { GUIDE_PAGES } from "@/lib/guides";
-import { DOCS_ROUTES, FAQ_ROUTE, GUIDE_ROUTES, LEGAL_ROUTES } from "@/lib/public-urls";
+import { DOCS_ROUTES } from "@/lib/public-urls";
 import { cn } from "@/lib/cn";
 
 function isActive(pathname: string, href: string) {
@@ -66,13 +67,7 @@ export function DocsShell({ children }: { children: ReactNode }) {
         </nav>
         <div className="min-w-0 lg:col-span-9">{children}</div>
       </div>
-      <footer className="mt-6 flex flex-wrap items-center gap-5 px-2 py-4 font-data text-[11px] uppercase tracking-[0.12em] text-smoke">
-        <Link href="/" className="transition-colors hover:text-cream">Home</Link>
-        <Link href={FAQ_ROUTE} className="transition-colors hover:text-cream">FAQ</Link>
-        <Link href={GUIDE_ROUTES.learn} className="transition-colors hover:text-cream">Learn</Link>
-        <Link href={GUIDE_ROUTES.fees} className="transition-colors hover:text-cream">Pricing</Link>
-        <Link href={LEGAL_ROUTES.terms} className="transition-colors hover:text-cream">Terms of Service</Link>
-      </footer>
+      <SiteFooter variant="marketing" />
     </InkShell>
   );
 }

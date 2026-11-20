@@ -8,6 +8,8 @@ import { OPEN_FEE_BPS } from "@sofinance/engine/protocols/uniswap-v4/open-consta
 import { RHC_EXPLORER_TX } from "@/lib/dex/uniswap-v4-rhc/wallet/open-execute";
 import { listToolDefinitions } from "@/mcp/tool-definitions";
 
+vi.mock("next/navigation", () => ({ usePathname: () => "/faq" }));
+
 vi.mock("@/components/ink", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/components/ink")>()),
   InkNav: () => null,

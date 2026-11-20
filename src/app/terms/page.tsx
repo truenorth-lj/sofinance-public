@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { InkHero, InkShell } from "@/components/ink";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { DOCS_ROUTES } from "@/lib/public-urls";
 import { SOCIAL_LINKS } from "@/lib/social-links";
@@ -105,5 +106,6 @@ export default function TermsPage() {
         <p>Questions about these Terms can be sent to <a href={SOCIAL_LINKS.x.href} target="_blank" rel="noreferrer">SoFinance on X</a>.</p>
       </Section>
     </article>
+    <SiteFooter variant="marketing" />
   </InkShell>;
 }

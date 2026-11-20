@@ -1,6 +1,9 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+
+vi.mock("next/navigation", () => ({ usePathname: () => "/pools/tsla-tslax" }));
+
 import type { HomepagePool } from "@/lib/homepage-pools";
 import { PUBLIC_POOL_APR_LABEL, publicPoolPageModel } from "@/lib/public-pool-pages";
 import { PublicPoolPage } from "./public-pool-page";

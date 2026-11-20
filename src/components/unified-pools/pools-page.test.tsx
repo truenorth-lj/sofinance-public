@@ -8,10 +8,10 @@ const seen = vi.hoisted(() => ({ openRhc: null as null | ((r: { pool: unknown })
   panel: vi.fn<(props: Record<string, unknown>) => void>() }));
 vi.mock("../ink", () => ({
   InkShell: ({ children }: { children: unknown }) => createElement("main", null, children as never),
-  InkNav: () => null,
-  InkFooter: () => null,
   InkHero: ({ title }: { title: string }) => createElement("h1", null, title),
 }));
+vi.mock("../site-header", () => ({ SiteHeader: () => null }));
+vi.mock("../site-footer", () => ({ SiteFooter: () => null }));
 vi.mock("../wallet-connection", () => ({ useWalletConnection: () => ({ address: null, connected: false, connect: vi.fn(), disconnect: vi.fn() }) }));
 vi.mock("./unified-pools-panel", () => ({
   UnifiedPoolsPanel: (props: { onOpenRhc: (r: { pool: unknown }) => void; deepLinkPool?: string }) => {

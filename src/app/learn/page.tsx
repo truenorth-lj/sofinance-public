@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { GuideFooter } from "@/components/guides/guide-article";
+import { SiteFooter } from "@/components/site-footer";
 import { InkHero, InkShell } from "@/components/ink";
 import { SiteHeader } from "@/components/site-header";
 import { GUIDE_PAGES, LEARN_INDEX, learnIndexJsonLd, type GuideKind } from "@/lib/guides";
@@ -40,7 +40,7 @@ export default function LearnIndexPage() {
           </section>
         ))}
       </main>
-      <GuideFooter />
+      <SiteFooter variant="marketing" />
       </InkShell>
     </>
   );

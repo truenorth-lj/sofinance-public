@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { GuideFooter } from "@/components/guides/guide-article";
+import { SiteFooter } from "@/components/site-footer";
 import { InkHero, InkShell } from "@/components/ink";
 import { SiteHeader } from "@/components/site-header";
 import { DOCS_ROUTES, GUIDE_ROUTES } from "@/lib/public-urls";
@@ -68,7 +68,7 @@ export function PublicPoolPage({ model }: { model: PublicPoolPageModel }) {
           </p>
         </section>
       </main>
-      <GuideFooter />
+      <SiteFooter variant="marketing" />
     </InkShell>
   );
 }

@@ -2,6 +2,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { GUIDE_PAGES, GUIDES_PUBLISHED, guideAnswerText } from "@/lib/guides";
 
+vi.mock("next/navigation", () => ({ usePathname: () => "/learn" }));
+
 vi.mock("@/components/ink", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/components/ink")>()),
   InkNav: () => null,

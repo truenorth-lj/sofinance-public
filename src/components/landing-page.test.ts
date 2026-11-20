@@ -78,6 +78,7 @@ describe("landing page copy and routes", () => {
       "src/app/docs/risks/page.tsx",
       "src/components/blog/blog-shell.tsx",
       "src/components/site-header.tsx",
+      "src/components/site-footer.tsx",
       "content/blog/dex-evolution.md",
       "content/blog/xstocks-xpoints.md",
       "src/lib/apr-labels/copy.ts",
@@ -123,7 +124,7 @@ describe("landing page copy and routes", () => {
 
   it("uses the cream squircle H mark in the header, not the old square logo image", () => {
     // The header moved to SiteHeader (shared with blog, docs, FAQ and terms).
-    expect(src).toContain("<SiteHeader onHomepage />");
+    expect(src).toContain('<SiteHeader variant="marketing" />');
     const header = readFileSync(resolve("src/components/site-header.tsx"), "utf8");
     expect(header).toContain("<SiteLogo");
     expect(header).not.toContain("BrandMark");
@@ -150,11 +151,13 @@ describe("landing page copy and routes", () => {
   });
 
   it("keeps /app, agents, docs and risks reachable and deep-links Open position into the existing flow", () => {
-    expect(src).toContain("APP_ROUTES.home");
-    expect(src).toContain("APP_ROUTES.ai");
-    expect(src).toContain("DOCS_ROUTES.home");
-    expect(src).toContain("DOCS_ROUTES.risks");
-    expect(src).toContain("BLOG_ROUTES.home");
+    expect(src).toContain("<SiteFooter variant=\"marketing\" />");
+    const footer = readFileSync(resolve("src/components/site-footer.tsx"), "utf8");
+    expect(footer).toContain("APP_ROUTES.home");
+    expect(footer).toContain("APP_ROUTES.ai");
+    expect(footer).toContain("DOCS_ROUTES.home");
+    expect(footer).toContain("DOCS_ROUTES.risks");
+    expect(footer).toContain("BLOG_ROUTES.home");
     expect(table).toContain("APP_ROUTES.rwaPairs");
     // Native/generic capability refusal is covered by the homepage DOM and open-dispatch handler tests.
     expect(table).toContain("?openPool=");
