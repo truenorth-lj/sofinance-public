@@ -32,10 +32,10 @@ describe("PublicPoolPage (HTML without JS)", () => {
 
   it("renders an H1, factual stats, the 7-day window, and app/list links", () => {
     expect(markup).toContain("<h1");
-    expect(markup).toContain("$TSLAx / $TSLA on Raydium CLMM");
+    expect(markup).toContain("TSLAx / TSLA pool on Raydium CLMM");
     expect(markup).toContain("Solana");
     expect(markup).toContain("Raydium CLMM");
-    expect(markup).toContain("0.25% fee");
+    expect(markup).toContain("25 bps");
     expect(markup).toContain("TVL");
     expect(markup).toContain("24h volume");
     expect(markup).toContain(PUBLIC_POOL_APR_LABEL);

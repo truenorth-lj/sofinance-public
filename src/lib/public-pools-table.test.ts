@@ -72,7 +72,7 @@ describe("publicPoolRows", () => {
   it("lists Meteora DLMM alongside Raydium CLMM and Uniswap v4, in default 7-day order", () => {
     const rows = publicPoolRows(snapshot);
     expect(rows.map((row) => row.dex)).toEqual(["Meteora DLMM", "Raydium CLMM", "Uniswap v4"]);
-    expect(rows[0]?.pairLabel).toBe("$TSLAx / $TSLA");
+    expect(rows[0]?.pairLabel).toBe("TSLAx / TSLA");
     expect(rows[0]?.apr7d).toBe("22.25%");
     expect(rows[0]?.href).toBe("/pools/tsla-tslax-meteora");
     expect(rows.find((row) => row.dex === "Raydium CLMM")?.href).toBe("/pools/tsla-tslax");
@@ -87,7 +87,7 @@ describe("publicPoolRows", () => {
 
   it("omits the USDC/USDT pool from the SSR table and ItemList, and keeps stock pools", () => {
     const rows = publicPoolRows(snapshot);
-    expect(rows.map((row) => row.pairLabel)).toEqual(["$TSLAx / $TSLA", "$TSLAx / $TSLA", "$SPCX / $SPCXon"]);
+    expect(rows.map((row) => row.pairLabel)).toEqual(["TSLAx / TSLA", "TSLAx / TSLA", "SPCX / SPCXon"]);
     expect(rows.map((row) => row.href)).not.toContain("/pools/usdc-usdt");
     expect(rows.some((row) => /USDC|USDT/.test(row.pairLabel))).toBe(false);
     const json = publicPoolsItemListJsonLd(snapshot);
@@ -125,7 +125,7 @@ describe("publicPoolsItemListJsonLd", () => {
     expect(items[0]).toMatchObject({
       "@type": "ListItem",
       position: 1,
-      name: "$TSLAx / $TSLA · Meteora DLMM · Solana",
+      name: "TSLAx / TSLA · Meteora DLMM · Solana",
       url: "https://sofinancelab.xyz/pools/tsla-tslax-meteora",
     });
     expect(publicPoolsItemListJsonLd(null)).toBeNull();

@@ -74,7 +74,7 @@ describe("/pools/[slug]", () => {
     expect(html).toContain("application/ld+json");
     expect(html).toContain("BreadcrumbList");
     expect(html).toContain("WebPage");
-    expect(html).toContain("$TSLAx / $TSLA on Raydium CLMM");
+    expect(html).toContain("TSLAx / TSLA pool on Raydium CLMM");
     expect(html).toContain("7d APR");
     expect(html.split("7d APR")).toHaveLength(2);
     expect(html).toContain("10.00%");

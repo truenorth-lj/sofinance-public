@@ -4,7 +4,7 @@ import { formatPoolUsd } from "@/lib/format/usd";
 import type { HomepagePoolsSnapshot } from "@/lib/homepage-pools";
 import { aprLookupFrom, rwaPairsDefaultOrder } from "@/lib/homepage-pools";
 import type { JsonLd } from "@/lib/json-ld";
-import { formatFeeTier } from "@/lib/position-label";
+import { poolFeeTierLabel, poolPairLabel } from "@/lib/pool-names";
 import { APP_ROUTES, CANONICAL_SITE_URL, publicPoolPath } from "@/lib/public-urls";
 import { publicDexLabel } from "@/lib/dex/ui";
 import { assignPublicPoolSlugs, seoPublicPools } from "@/lib/public-pool-pages";
@@ -42,10 +42,10 @@ const dash = "—";
 export function toPublicPoolRow(pool: UnifiedPool, apr7dPct: number | null, href: string): PublicPoolRow {
   return {
     key: pool.key,
-    pairLabel: `$${pool.symbolA} / $${pool.symbolB}`,
+    pairLabel: poolPairLabel(pool, " / "),
     chain: CHAIN_LABELS[pool.chain],
     dex: publicDexLabel(pool.protocol),
-    feeTier: formatFeeTier(pool.feeTierBps) ?? dash,
+    feeTier: poolFeeTierLabel(pool.feeTierBps) ?? dash,
     tvl: formatPoolUsd(pool.tvlUsd),
     volume24h: formatPoolUsd(pool.volume24hUsd),
     apr7d: formatAprPct(apr7dPct),

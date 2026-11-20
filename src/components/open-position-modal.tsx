@@ -18,6 +18,7 @@ import { solSwapReceiptLabel } from "@/components/transactions/open/use-open-sub
 import { SOL_SWAP_RECEIPT_TTL_MS } from "@/components/transactions/open/sol-swap-receipt-store";
 import { depositUsd } from "@/lib/range-apr/size-aware";
 import { useDebouncedValue } from "./use-debounced-value";
+import { poolPairLabel } from "@/lib/pool-names";
 import { openPositionStatusCopy } from "@/lib/status-copy";
 import { shortAddress } from "@/lib/format/address";
 import { solscanTxUrl } from "@/lib/format/explorer";
@@ -110,7 +111,7 @@ export function OpenPositionModal({
     actionBlockedReason: c.actionBlockedReason,
   });
 
-  const pairLabel = `${pair.wrappedSymbol}/${pair.plainSymbol}`;
+  const pairLabel = poolPairLabel({ pairLabel: `${pair.wrappedSymbol}/${pair.plainSymbol}` });
   const assets = c.inputAssets.map((asset) => {
     const symbol = asset.kind === "native"
       ? "SOL"

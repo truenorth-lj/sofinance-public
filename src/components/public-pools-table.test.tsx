@@ -45,7 +45,7 @@ describe("PublicPoolsTable (HTML without JS)", () => {
     expect(markup).toContain("Meteora DLMM");
     expect(markup).toContain("Raydium CLMM");
     expect(markup).toContain("Uniswap v4");
-    expect(markup).toContain("$TSLAx / $TSLA");
+    expect(markup).toContain("TSLAx / TSLA");
     expect(markup).toContain("Robinhood Chain");
     expect(markup).toContain("24h volume");
     expect(markup).toContain("TVL");

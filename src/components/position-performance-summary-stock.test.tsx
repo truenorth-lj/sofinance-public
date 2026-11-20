@@ -44,4 +44,6 @@ it("keeps the standalone single-position stock summary by default", () => {
 it("keeps the Range card when the summary is not embedded under the My positions badge", () => {
   const html = renderToStaticMarkup(<PerformanceSummary data={report} embedded={false} metadata={{}} />);
   expect(html).toContain("In range");
+  expect(html).toContain("NVDAx / NVDA");
+  expect(html).not.toContain("NVDA / NVDAx");
 });
