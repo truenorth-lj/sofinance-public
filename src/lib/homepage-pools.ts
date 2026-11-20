@@ -91,6 +91,36 @@ export const aprLookupFrom = (apr7d: Readonly<Record<string, number>>): Apr7dLoo
   (pool) => (Number.isFinite(apr7d[pool.key]) ? apr7d[pool.key]! : null);
 
 /**
+ * True when the snapshot has pools but not a single 7-day APR. That is a failed
+ * or empty APR fetch, not "this one pool is too new" (which leaves other keys in
+ * `apr7d` and still shows "—" for only the missing pool).
+ */
+export function snapshotFailedToLoadAprs(snapshot: HomepagePoolsSnapshot | null): boolean {
+  return !!snapshot && snapshot.pools.length > 0 && Object.keys(snapshot.apr7d).length === 0;
+}
+
+/**
+ * Build the `{ poolKey: aprPct }` map from settled APR reads. Throws when every
+ * read failed, or when refs were requested but none came back ready, so an empty
+ * map is never stored in `unstable_cache` (that would pin "—" on prerendered
+ * `/pools/{slug}` pages until the 15-minute window expires).
+ */
+export function collectedApr7d(
+  refs: readonly { key: string }[],
+  results: readonly PromiseSettledResult<readonly [string, number] | null>[],
+): Record<string, number> {
+  if (refs.length > 0 && results.every((result) => result.status === "rejected")) {
+    throw new Error("APR snapshots unavailable");
+  }
+  const apr7d = Object.fromEntries(results.flatMap((result) => (result.status === "fulfilled" && result.value ? [result.value] : [])));
+  if (refs.length > 0 && Object.keys(apr7d).length === 0) {
+    throw new Error("APR snapshots unavailable");
+  }
+  return apr7d;
+}
+
+
+/**
  * Server snapshot for the homepage table: every candidate pool (both chains), their 7-day APRs, only the icons those
  * pools use, and when each chain's saved list was written.
  */

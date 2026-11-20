@@ -11,7 +11,9 @@ import {
   HOMEPAGE_MIN_TVL_NOTE,
   HOMEPAGE_MIN_TVL_USD,
   HOMEPAGE_POOL_LIMIT,
+  collectedApr7d,
   rwaPairsDefaultOrder,
+  snapshotFailedToLoadAprs,
   toHomepagePoolsSnapshot,
   updatedLabel,
   utcMinuteLabel,
@@ -280,5 +282,40 @@ describe("homepage pools match /app/rwa-pairs", () => {
     const shown = homepageRows(candidates, apr7d);
     expect(shown.map((row) => row.key)).toEqual(rwaPairs.slice(0, HOMEPAGE_POOL_LIMIT).map((row) => row.key));
     expect(shown.map((row) => row.pairLabel)).toEqual(rwaPairs.slice(0, HOMEPAGE_POOL_LIMIT).map((row) => row.pairLabel));
+  });
+});
+
+describe("collectedApr7d / snapshotFailedToLoadAprs", () => {
+  const refs = [{ key: "solana:a" }, { key: "solana:b" }];
+
+  it("throws when every read fails or none come back ready, so an empty map is not cached", () => {
+    const rejected: PromiseRejectedResult = { status: "rejected", reason: new Error("down") };
+    expect(() => collectedApr7d(refs, [rejected, rejected])).toThrow("APR snapshots unavailable");
+    expect(() => collectedApr7d(refs, [
+      { status: "fulfilled", value: null },
+      { status: "fulfilled", value: null },
+    ])).toThrow("APR snapshots unavailable");
+  });
+
+  it("keeps ready APRs and allows a genuine miss on another pool", () => {
+    const apr7d = collectedApr7d(refs, [
+      { status: "fulfilled", value: ["solana:a", 81.28] },
+      { status: "fulfilled", value: null },
+    ]);
+    expect(apr7d).toEqual({ "solana:a": 81.28 });
+    expect(snapshotFailedToLoadAprs({
+      pools: [{ key: "solana:a" }, { key: "solana:b" }] as never,
+      apr7d,
+      updated: [],
+    })).toBe(false);
+  });
+
+  it("detects a total APR fetch failure, not a single new pool", () => {
+    const empty = { pools: [{ key: "solana:a" }] as never, apr7d: {}, updated: [] };
+    const mixed = { pools: [{ key: "solana:a" }] as never, apr7d: { "solana:a": 81.28 }, updated: [] };
+    expect(snapshotFailedToLoadAprs(empty)).toBe(true);
+    expect(snapshotFailedToLoadAprs(mixed)).toBe(false);
+    expect(snapshotFailedToLoadAprs({ pools: [], apr7d: {}, updated: [] })).toBe(false);
+    expect(snapshotFailedToLoadAprs(null)).toBe(false);
   });
 });
