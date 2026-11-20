@@ -14,7 +14,7 @@ import { InfoTip } from "../info-tip";
 import { PairTokenIcons } from "../pair-token-icons";
 import { dataDaysLabel, MIN_DATA_DAYS } from "@/lib/min-data-days";
 
-/* Pool list pieces shared by `/app/rwa-pairs` and the homepage, so both render pools with the same component. */
+/* Pool list pieces shared by `/pools` and the homepage, so both render pools with the same component. */
 
 export const money = formatPoolUsd;
 /** Missing APR is "—"; a real but tiny APR is "<0.01%" (never a misleading "0.00%"). */
@@ -160,13 +160,13 @@ const narrow = "max-md:px-1.5";
 const wideOnly = "max-md:hidden";
 
 /**
- * The pool list (table) view, shared by `/app/rwa-pairs` (List view, sortable) and the homepage (fixed order, no
+ * The pool list (table) view, shared by `/pools` (List view, sortable) and the homepage (fixed order, no
  * `onSort`): pair with token icons (letter avatar until a logo loads, or when there is none), chain badge, protocol,
  * Est. APR · 7d (the only APR shown), TVL, 24h volume and the open action. From 768px up the Pool column stays
  * pinned while the table scrolls sideways if needed; below 768px only Pool (with TVL as a small line), Chain,
  * Est. APR · 7d and an icon-only Open are shown, so the table fits the screen with no horizontal scroll.
  */
-/** One list row on `/app/rwa-pairs` and the homepage "All pools" table. */
+/** One list row on `/pools` and the homepage "All pools" table. */
 export function PoolTableRow({ pool, apr, action, icons, highlight = false, detailHref }: {
   pool: UnifiedPool; apr: Apr7dState | undefined; action: OpenAction; icons?: TokenIconMap; highlight?: boolean;
   /** When set, the pair name links to the public pool page. */

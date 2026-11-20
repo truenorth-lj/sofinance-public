@@ -192,7 +192,7 @@ const TSLA: GuidePage = {
       blocks: [
         p("You open a TSLA/TSLAx position from the SoFinance pools page in a few steps, and your wallet signs once to open it."),
         ol(
-          "Open sofinancelab.xyz/app/rwa-pairs and search for TSLA.",
+          "Open sofinancelab.xyz/pools and search for TSLA.",
           "Choose the Meteora or Raydium TSLAx/TSLA pool and press Open position.",
           "Connect a Solana wallet such as Phantom.",
           "Pick what to deposit (SOL, USDC, TSLA or TSLAx) and how much. If you deposit one token, part of it is swapped into the other side, with the 0.10% fee on the swapped part.",
@@ -288,7 +288,7 @@ const SPCX: GuidePage = {
       blocks: [
         p("You open an SPCX/SPCXx position from the SoFinance pools page, and your wallet signs once to open it."),
         ol(
-          "Open sofinancelab.xyz/app/rwa-pairs and search for SPCX.",
+          "Open sofinancelab.xyz/pools and search for SPCX.",
           "Choose a Raydium or Meteora SPCXx/SPCX pool and press Open position.",
           "Connect a Solana wallet such as Phantom.",
           "Pick what to deposit (SOL, USDC, SPCX or SPCXx) and how much. If you deposit one token, part of it is swapped into the other side, with the 0.10% fee on the swapped part.",
@@ -433,7 +433,7 @@ const HOW_TO_OPEN: GuidePage = {
       blocks: [
         p("On Solana, Raydium CLMM and Meteora DLMM pools use the same SoFinance steps, and your wallet signs once."),
         ol(
-          "Go to sofinancelab.xyz/app/rwa-pairs and pick a same-stock pool, for example TSLAx/TSLA or SPCXx/SPCX. The Raydium or Meteora label shows which DEX the pool is on.",
+          "Go to sofinancelab.xyz/pools and pick a same-stock pool, for example TSLAx/TSLA or SPCXx/SPCX. The Raydium or Meteora label shows which DEX the pool is on.",
           "Press Open position and connect your Solana wallet.",
           "Choose what to deposit (SOL, USDC or one of the pool tokens) and the amount.",
           "Review the suggested range preset (Micro, Tight, Standard or Wide), scored on the last 7 days of fee data. You can pick another preset or type a custom range.",
@@ -456,7 +456,7 @@ const HOW_TO_OPEN: GuidePage = {
       blocks: [
         p("On Robinhood Chain you open a Uniswap v4 same-stock position from the same pools page with an EVM wallet."),
         ol(
-          "Pick a Robinhood Chain pool on sofinancelab.xyz/app/rwa-pairs, for example NVDA/NVDAon.",
+          "Pick a Robinhood Chain pool on sofinancelab.xyz/pools, for example NVDA/NVDAon.",
           "Connect an EVM wallet; the app asks it to switch to or add Robinhood Chain.",
           "Enter the token and amount, review the range and the simulated preview.",
           "Approve in your wallet. The position is a standard Uniswap v4 position NFT.",

@@ -27,14 +27,14 @@ describe("SiteFooter", () => {
     expect(marketing).toContain('aria-label="Learn"');
     expect(marketing).toContain('aria-label="Legal"');
     expect(hrefs(marketing)).toEqual(expect.arrayContaining([
-      "/app/rwa-pairs", "/app/portfolio", "/app/ai",
+      "/pools", "/app/portfolio", "/app/ai",
       "/learn", "/docs", "/faq", "/fees", "/blog",
       "/docs/risks", "/terms", "/llms.txt",
     ]));
     expect(marketing).toMatch(/<a[^>]*href="\/terms"[^>]*>Terms<\/a>/);
     expect(marketing).not.toContain("Terms of Service");
     expect(hrefs(app)).toEqual(expect.arrayContaining([
-      "/app/rwa-pairs", "/app/portfolio", "/app/ai",
+      "/pools", "/app/portfolio", "/app/ai",
       "/learn", "/docs", "/faq", "/fees",
       "/docs/risks", "/terms", "/llms.txt",
     ]));

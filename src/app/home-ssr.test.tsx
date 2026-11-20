@@ -136,7 +136,7 @@ describe("homepage server render", () => {
     expect(html).toContain("Microsoft");
     expect(html).toContain("Updated 2026-10-30 11:02 UTC");
     expect(html).toContain(`See all ${fullListCount(storeResult.pairs.length)} pools →`);
-    expect(html).toMatch(/<a[^>]*href="\/app\/rwa-pairs"[^>]*>See all \d+ pools →<\/a>/);
+    expect(html).toMatch(/<a[^>]*href="\/pools"[^>]*>See all \d+ pools →<\/a>/);
     expect(html).toContain('"@type":"Organization"');
     expect(html).toContain('"@type":"WebSite"');
   });
@@ -171,7 +171,7 @@ describe("homepage server render", () => {
     expect(html).not.toContain("All pools");
     // One duplicate Solana SPCX pair is hidden in the full list.
     expect(html).toContain(`See all ${fullListCount(storeResult.pairs.length + 1, 1)} pools →`);
-    expect(html).toContain(`/app/rwa-pairs?openPool=spcx-hot`);
+    expect(html).toContain(`/pools?openPool=spcx-hot`);
     expect(html).toContain('data-testid="top-pools-cards"');
     expect(poolsHtml(html)).not.toContain("<table");
     expect(html).toContain("Open position");

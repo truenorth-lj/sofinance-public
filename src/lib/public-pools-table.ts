@@ -13,7 +13,7 @@ import { CHAIN_LABELS, type UnifiedPool } from "@/lib/unified-pools/model";
 export const PUBLIC_POOLS_H1 = "Same-stock liquidity pools";
 
 /**
- * On-page heading for the /app/rwa-pairs crawler table (and the visible subline under the "Pools" h1).
+ * On-page heading for the /pools crawler table (and the visible subline under the "Pools" h1).
  * Does not say "same-stock" because the interactive list also includes USDC/USDT.
  */
 export const PUBLIC_POOLS_SSR_HEADING = "Liquidity pools on Solana and Robinhood Chain";
@@ -53,7 +53,7 @@ export function toPublicPoolRow(pool: UnifiedPool, apr7dPct: number | null, href
   };
 }
 
-/** Default /app/rwa-pairs order (hide duplicates, 7-day estimate high to low). Row links go to /pools/{slug}. */
+/** Default /pools order (hide duplicates, 7-day estimate high to low). Row links go to /pools/{slug}. */
 export function publicPoolRows(snapshot: HomepagePoolsSnapshot | null): PublicPoolRow[] {
   if (!snapshot) return [];
   const pools = seoPublicPools(snapshot);

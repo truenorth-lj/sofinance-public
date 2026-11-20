@@ -18,14 +18,14 @@ const pool = solanaPool({
 const render = () => {
   const html = renderToString(createElement(PoolTable, {
     pools: [pool], apr: { [pool.key]: { status: "ready", aprPct: 31.85 } } as never, sort: DEFAULT_SORT,
-    actionFor: () => ({ kind: "link" as const, href: "/app/rwa-pairs?openPool=spcx-pool" }),
+    actionFor: () => ({ kind: "link" as const, href: "/pools?openPool=spcx-pool" }),
   }));
   const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
   return doc;
 };
 const cls = (el: Element | null) => (el?.getAttribute("class") ?? "").split(/\s+/);
 
-describe("PoolTable responsive layout (shared by the homepage and /app/rwa-pairs)", () => {
+describe("PoolTable responsive layout (shared by the homepage and /pools)", () => {
   it("below 768px keeps only Pool (with TVL under the name), Chain, Est. APR · 7d and Open, with no forced width", () => {
     const doc = render();
     const table = doc.querySelector("table")!;

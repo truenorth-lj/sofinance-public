@@ -81,7 +81,7 @@ describe("browser batch wallet signing", () => {
 
   it("still server-renders page HTML when Reown mobile wallets are enabled", () => {
     // Production sets NEXT_PUBLIC_REOWN_PROJECT_ID, which used to wrap the page in `dynamic(..., { ssr: false })`
-    // and left curl of /app/rwa-pairs with an empty body (`<!--$!--><template data-dgst="">`).
+    // and left curl of /pools with an empty body (`<!--$!--><template data-dgst="">`).
     vi.stubEnv("NEXT_PUBLIC_REOWN_PROJECT_ID", "test-reown-id");
     const html = renderToStaticMarkup(createElement(Providers, null, createElement(
       "section",

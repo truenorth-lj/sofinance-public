@@ -5,7 +5,7 @@ import { act, createElement, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("next/navigation", () => ({ usePathname: () => "/app/rwa-pairs" }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/pools" }));
 
 import { InkNav } from "./InkNav";
 import { EvmWalletProvider } from "../evm-wallet-connection";

@@ -119,7 +119,7 @@ describe("publicPoolsItemListJsonLd", () => {
       "@type": "ItemList",
       name: "Same-stock liquidity pools",
       numberOfItems: 3,
-      url: "https://sofinancelab.xyz/app/rwa-pairs",
+      url: "https://sofinancelab.xyz/pools",
     });
     const items = json?.itemListElement as { position: number; name: string; url: string }[];
     expect(items[0]).toMatchObject({

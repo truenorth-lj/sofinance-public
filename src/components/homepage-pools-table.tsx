@@ -126,7 +126,7 @@ export function useHomepagePools(initial?: HomepagePoolsSnapshot | null): Homepa
   }, [load]);
 
   const pools = useMemo(() => (byChain ? [...(byChain.solana ?? []), ...(byChain.robinhood ?? [])] : null), [byChain]);
-  // Every pool is listed, so every pool's 7-day APR is loaded (the /app/rwa-pairs APR state). Every Solana pool here
+  // Every pool is listed, so every pool's 7-day APR is loaded (the /pools APR state). Every Solana pool here
   // comes from `/api/rwa-pairs`, so its Meteora pools read their saved APR snapshot.
   const all = useMemo(() => pools ?? [], [pools]);
   const rwaListKeys = useMemo(() => new Set(all.filter((pool) => pool.chain === "solana").map((pool) => pool.key)), [all]);

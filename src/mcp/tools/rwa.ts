@@ -50,7 +50,7 @@ const SORTERS: Record<ListRwaPairsInput["sortBy"], (pair: RwaPairRow, apr?: Pool
 
 /**
  * Listed same-stock Solana pools (Raydium CLMM and Meteora DLMM) from the saved pools snapshot, the same list as
- * https://sofinancelab.xyz/app/rwa-pairs, each with its 7-day range APR summary.
+ * https://sofinancelab.xyz/pools, each with its 7-day range APR summary.
  *
  * Safety: read-only. Production reads saved snapshots only (no RPC); no wallet or token needed.
  */

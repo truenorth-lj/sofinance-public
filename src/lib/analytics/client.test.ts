@@ -74,7 +74,7 @@ describe("event firing when the key is set", () => {
   });
 
   it("inits once, captures pageviews, and keeps first-touch ref on later events", async () => {
-    window.history.replaceState({}, "", "/app/rwa-pairs?ref=x-launch&utm_source=twitter");
+    window.history.replaceState({}, "", "/pools?ref=x-launch&utm_source=twitter");
     expect(await initGrowthAnalytics(window.location.search)).toBe(true);
     expect(posthog.init).toHaveBeenCalledWith("phc_test", expect.objectContaining({
       api_host: "/lumen",
@@ -87,7 +87,7 @@ describe("event firing when the key is set", () => {
       respect_dnt: true,
     }));
     expect(posthog.register).toHaveBeenCalledWith(expect.objectContaining({ ref: "x-launch", utm_source: "twitter" }));
-    capturePageview("/app/rwa-pairs", "https://sofinancelab.xyz/app/rwa-pairs?ref=x-launch");
+    capturePageview("/pools", "https://sofinancelab.xyz/pools?ref=x-launch");
     captureGrowthEvent(GROWTH_EVENTS.rwaPairsView, { ref: "x-launch" });
     captureGrowthEvent(GROWTH_EVENTS.openStarted, { pair: "HOODx/HOOD" });
     expect(posthog.capture.mock.calls.map((call) => call[0])).toEqual([

@@ -16,7 +16,7 @@ type Page = { path: string; load: () => Promise<{ metadata: Metadata }> };
 
 const PAGES: Page[] = [
   { path: "/", load: () => import("@/app/page") },
-  { path: "/app/rwa-pairs", load: () => import("@/app/app/rwa-pairs/layout") },
+  { path: "/pools", load: () => import("@/app/app/rwa-pairs/layout") },
   { path: "/faq", load: () => import("@/app/faq/page") },
   { path: "/docs", load: () => import("@/app/docs/page") },
   { path: "/docs/fee-apr", load: () => import("@/app/docs/fee-apr/page") },

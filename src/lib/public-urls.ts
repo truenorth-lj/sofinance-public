@@ -5,7 +5,7 @@ export const APP_ROUTES = {
   home: `${APP_PATH}/portfolio`,
   portfolioRecovery: `${APP_PATH}/portfolio/recovery`,
   plan: `${APP_PATH}/plan`,
-  rwaPairs: `${APP_PATH}/rwa-pairs`,
+  rwaPairs: "/pools",
   positionPerformance: `${APP_PATH}/position-performance`,
   ai: `${APP_PATH}/ai`,
 } as const;
@@ -59,12 +59,12 @@ export function buildOpenPositionPath(poolId: string): string {
   return `${APP_ROUTES.rwaPairs}?openPool=${encodeURIComponent(poolId)}`;
 }
 
-/** Deep link that opens the share calculator for a pool on /app/rwa-pairs. */
+/** Deep link that opens the share calculator for a pool on /pools. */
 export function buildCalculatePath(poolId: string): string {
   return `${APP_ROUTES.rwaPairs}?calc=${encodeURIComponent(poolId)}`;
 }
 
-/** Deep link that opens the add-liquidity modal on /app/rwa-pairs. */
+/** Deep link that opens the add-liquidity modal on /pools. */
 export function buildOpenPositionUrl(poolId: string): string {
   const path = buildOpenPositionPath(poolId);
   const base = getPublicBaseUrl();

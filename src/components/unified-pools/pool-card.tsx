@@ -35,7 +35,7 @@ function AprTip({ label, children }: { label: string; children?: ReactNode }) {
 const cardEyebrow = "font-data text-[10px] uppercase tracking-[0.12em] text-ink/60";
 
 /**
- * One pool as a cream card (the `/app/rwa-pairs` card fields, now for both chains): token icons and issuer names, the
+ * One pool as a cream card (the `/pools` card fields, now for both chains): token icons and issuer names, the
  * estimated highest range APR (7-day) with the range it comes from ("Highest range", the same range the Create position
  * modal calls Best), when the data was updated, confidence and volume notes in the tooltip, then TVL, volume, fee and
  * fee tier (no 24h APR: the 7-day estimate is the only APR shown). "Plan this pool" follows the DEX's `plan` capability (greyed with its reason when unsupported;

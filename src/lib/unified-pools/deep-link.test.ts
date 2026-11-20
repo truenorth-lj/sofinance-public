@@ -8,19 +8,19 @@ afterEach(() => { vi.unstubAllEnvs(); });
 const RHC_POOL = "0x4f54c74021e4139bbc4c7bc924346c921975136ea120cf118a93c43b50bdbd3c";
 const location = (res: Response) => { const url = new URL(res.headers.get("location")!); return url.pathname + url.search; };
 
-describe("pool deep links → /app/rwa-pairs (the pools page)", () => {
+describe("pool deep links → /pools (the pools page)", () => {
   it("/app/rhc opens the allowlisted Robinhood Chain pool on the pools page", () => {
-    expect(RHC_DEEP_LINK).toBe(`/app/rwa-pairs?openPool=${RHC_POOL}`);
+    expect(RHC_DEEP_LINK).toBe(`/pools?openPool=${RHC_POOL}`);
     expect(unifiedAppRedirect("/app/rhc")).toBe(RHC_DEEP_LINK);
   });
   it("old /app?openPool= links move to the pools page; /app itself moves to Portfolio", () => {
     expect(unifiedAppRedirect("/app", `?openPool=${RHC_POOL}`)).toBe(RHC_DEEP_LINK);
-    expect(unifiedAppRedirect("/app", "?openPool=poolone&view=performance")).toBe("/app/rwa-pairs?openPool=poolone");
+    expect(unifiedAppRedirect("/app", "?openPool=poolone&view=performance")).toBe("/pools?openPool=poolone");
     expect(unifiedAppRedirect("/app")).toBe("/app/portfolio");
     expect(unifiedAppRedirect("/app", "?view=performance&mint=abc")).toBe("/app/portfolio?view=performance&mint=abc");
-    expect(unifiedAppRedirect("/app/rwa-pairs", "?openPool=x")).toBeNull();
+    expect(unifiedAppRedirect("/pools", "?openPool=x")).toBeNull();
     expect(openPoolRedirect("  ")).toBeNull();
-    expect(openPoolRedirect("a b")).toBe("/app/rwa-pairs?openPool=a%20b");
+    expect(openPoolRedirect("a b")).toBe("/pools?openPool=a%20b");
   });
   it.each([
     ["/app/rhc", RHC_DEEP_LINK],
@@ -54,7 +54,7 @@ describe("/app → /app/portfolio (Positions was renamed Portfolio)", () => {
     expect(location(res)).toBe(`/app/portfolio${query}`);
   });
   it("still sends old ?openPool= links to the pools page, and leaves /app/portfolio alone", () => {
-    expect(location(go("/app?openPool=poolone&position=raydium-clmm:x"))).toBe("/app/rwa-pairs?openPool=poolone");
+    expect(location(go("/app?openPool=poolone&position=raydium-clmm:x"))).toBe("/pools?openPool=poolone");
     expect(go("/app/portfolio?position=raydium-clmm:x").headers.get("location")).toBeNull();
     expect(go("/app/portfolio/recovery").headers.get("location")).toBeNull();
   });

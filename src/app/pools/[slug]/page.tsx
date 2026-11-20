@@ -10,7 +10,7 @@ import {
   publicPoolMetadata,
 } from "@/lib/public-pool-pages";
 
-/** Same window as the cached homepage / /app/rwa-pairs snapshot. No per-request RPC. */
+/** Same window as the cached homepage / /pools snapshot. No per-request RPC. */
 export const revalidate = 900;
 export const dynamicParams = true;
 

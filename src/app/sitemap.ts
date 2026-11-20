@@ -14,7 +14,7 @@ export const PUBLIC_COPY_UPDATED = "2026-10-30";
 export const TERMS_UPDATED = "2026-10-24";
 
 /**
- * Same ISR window as /pools/[slug], the homepage, /app/rwa-pairs, and
+ * Same ISR window as /pools/[slug], the homepage, /pools, and
  * HOMEPAGE_POOLS_REVALIDATE_SECONDS. Without this, Next prerenders /sitemap.xml
  * once per deploy and new pool slugs stay missing until the next build.
  * This is ISR (at most one regeneration per window, and only if the sitemap is

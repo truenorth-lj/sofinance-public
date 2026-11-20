@@ -587,7 +587,7 @@ describe("UnifiedPoolsPanel: Low TVL and Not supported yet (PM 2026-11-04)", () 
     expect(tr("solana:nvda").querySelector("[aria-label^='Open position']")).toBeNull();
   });
 
-  it("a deep link to the unsupported pool (/app/rwa-pairs?openPool=) does not open Create position", async () => {
+  it("a deep link to the unsupported pool (/pools?openPool=) does not open Create position", async () => {
     await render(flags, { deepLinkPool: "nvda" });
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
     expect(mocks.modal).not.toHaveBeenCalled();

@@ -20,7 +20,7 @@ describe("SiteHeader", () => {
   it("lists Pools, Portfolio, Learn, AI agents, then Blog on marketing pages; Pools always goes to the list page", () => {
     const marketing = renderToStaticMarkup(createElement(SiteHeader, { variant: "marketing" }));
     const marketingHrefs = hrefs(marketing);
-    expect(marketingHrefs).toEqual(expect.arrayContaining(["/", "/app/rwa-pairs", "/app/portfolio", "/learn", "/app/ai", "/blog"]));
+    expect(marketingHrefs).toEqual(expect.arrayContaining(["/", "/pools", "/app/portfolio", "/learn", "/app/ai", "/blog"]));
     expect(marketingHrefs).not.toContain("#pools");
     expect(marketingHrefs).not.toContain("/#pools");
     const marketingNav = marketing.match(/<nav[\s\S]*?<\/nav>/)![0];
@@ -33,7 +33,7 @@ describe("SiteHeader", () => {
 
   it("omits Blog on the app variant and keeps the App nav label", () => {
     const app = renderToStaticMarkup(createElement(SiteHeader, { variant: "app" }));
-    expect(hrefs(app)).toEqual(expect.arrayContaining(["/", "/app/rwa-pairs", "/app/portfolio", "/learn", "/app/ai"]));
+    expect(hrefs(app)).toEqual(expect.arrayContaining(["/", "/pools", "/app/portfolio", "/learn", "/app/ai"]));
     expect(hrefs(app)).not.toContain("/blog");
     expect(app).toContain('aria-label="App"');
     expect(app).not.toContain('aria-label="Sections"');

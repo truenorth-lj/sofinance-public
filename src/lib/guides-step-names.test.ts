@@ -14,5 +14,7 @@ describe("guide click-step pool names", () => {
     // H1s / titles keep the existing keyword order.
     expect(src).toContain("TSLA same-stock LP: TSLA/TSLAx pools on Meteora and Raydium");
     expect(src).toContain("SPCX same-stock LP: SPCX/SPCXx pools on Raydium and Meteora");
+    expect(src).toContain("sofinancelab.xyz/pools");
+    expect(src).not.toContain("sofinancelab.xyz/app/rwa-pairs");
   });
 });
