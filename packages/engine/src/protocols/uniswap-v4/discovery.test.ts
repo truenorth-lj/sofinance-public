@@ -30,7 +30,7 @@ describe("uniswap-v4-rhc discovery (mock RPC replaying the 2026-10-29 capture)",
     // 50.5 pips × $36.54 / $48,711.43 × 365 ≈ 0.00138 %.
     expect(pool!.estimatedApr!.feeRatePct).toBeCloseTo(0.00505, 6);
     expect(pool!.estimatedApr!.estimatedPoolFeeAprPct).toBeCloseTo(0.00505 / 100 * 36.54 / 48711.43 * 365 * 100, 9);
-    // RPC: 1 block + 1 multicall + 1 storage read; never eth_getLogs.
+    // RPC: 1 block + 1 state multicall + 1 storage read; never eth_getLogs.
     expect(chain.calls.map(call => call.method).sort()).toEqual(["eth_call", "eth_getBlockByNumber", "eth_getStorageAt"]);
   });
 
@@ -81,7 +81,7 @@ describe("uniswap-v4-rhc discovery (mock RPC replaying the 2026-10-29 capture)",
 });
 
 describe("readPoolStates (batched) matches per-pool readPoolState on the pinned 2026-10-29 fixture", () => {
-  it("returns identical values for all 11 allowlisted pools and uses 3 RPC requests instead of 33", async () => {
+  it("returns identical values for all 11 allowlisted pools and uses 4 RPC requests instead of 33", async () => {
     const chain = mockRhcChain();
     // Distinct per-pool ticks and liquidity so a crossed result cannot pass by accident.
     chain.poolState = Object.fromEntries(UNIV4_RHC_ALLOWLISTED_POOLS.map((spec, index) => [spec.poolId.toLowerCase(), {

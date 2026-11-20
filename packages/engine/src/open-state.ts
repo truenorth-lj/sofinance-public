@@ -2,6 +2,7 @@ import { ClmmConfigLayout, CLMM_PROGRAM_ID, PoolInfoLayout, TickUtil } from "@ra
 import {
   getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, unpackAccount, unpackMint,
 } from "@solana/spl-token";
+import { scaledUiMultiplierFromMint } from "./scaled-ui-multiplier";
 import { Connection, PublicKey, type AccountInfo } from "@solana/web3.js";
 import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT, USDC_MINT } from "./ids";
 import { rpcConnection } from "./rpc";
@@ -119,6 +120,8 @@ export async function readOpenPoolState(
       /* shortened mints in the UI */
     }
   }
+  const multiplierA = scaledUiMultiplierFromMint(mintA.mint);
+  const multiplierB = scaledUiMultiplierFromMint(mintB.mint);
   return {
     wallet: walletAddress, slot: discovered.slot, fetchedAt: Date.now(),
     poolId: poolId.toBase58(), programId: CLMM_PROGRAM_ID.toBase58(),
@@ -139,6 +142,8 @@ export async function readOpenPoolState(
     freezeRiskA, freezeRiskB, freezeRisk: freezeRiskA || freezeRiskB,
     token2022A, token2022B, unsupportedExtensions,
     solLamports, sufficientSol: solLamports >= MIN_SOL_LAMPORTS,
+    ...(multiplierA !== undefined ? { multiplierA } : {}),
+    ...(multiplierB !== undefined ? { multiplierB } : {}),
   };
 }
 

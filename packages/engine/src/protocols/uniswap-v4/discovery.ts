@@ -91,6 +91,7 @@ async function counted<T>(stats: { rpcRequests: number } | undefined, work: () =
   }
 }
 
+
 /** Current pool state: 1 block header + 1 multicall + 1 storage read (all at `latest`). Used for a single pool at transaction time. */
 export async function readPoolState(
   client: PublicClient, spec: Univ4AllowlistedPool, stats?: { rpcRequests: number },
@@ -103,9 +104,8 @@ export async function readPoolState(
 
 /**
  * Current state of many allowlisted pools at one latest block: 1 getBlock, 1 Multicall3
- * (`batchSize: 0` so it is a single eth_call), and 1 getStorageAt per distinct hook
- * (the allowlist shares StablePairHook, so typically 3 JSON-RPC requests vs 3 per pool).
- * Storage cannot go through Multicall3; values match `readPoolState` at the same block.
+ * (`batchSize: 0` so it is a single eth_call), 1 getStorageAt per distinct hook.
+ * Storage cannot go through Multicall3; pool state values match `readPoolState` at the same block.
  */
 export async function readPoolStates(
   client: PublicClient, specs: readonly Univ4AllowlistedPool[], stats?: { rpcRequests: number },

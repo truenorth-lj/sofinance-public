@@ -144,12 +144,21 @@ export function resolveOpenRange(input: {
       requestedMinPrice, requestedMaxPrice, decimalsA, decimalsB, tickSpacing,
     ));
   }
+  const currentCentered = { tickLower, tickUpper };
   if (input.range.preset !== "custom" && input.range.centerOnParity) {
     const width = tickUpper - tickLower;
-    const center = nearestBoundary(exactTickFromUiPrice(1, decimalsA, decimalsB), tickSpacing);
+    const centerPrice = typeof input.range.centerPrice === "number" && Number.isFinite(input.range.centerPrice) && input.range.centerPrice > 0
+      ? input.range.centerPrice
+      : 1;
+    const center = nearestBoundary(exactTickFromUiPrice(centerPrice, decimalsA, decimalsB), tickSpacing);
     const bounds = usableTickBounds(tickSpacing);
     tickLower = Math.max(bounds.min, Math.min(center - Math.floor(width / tickSpacing / 2) * tickSpacing, bounds.max - width));
     tickUpper = tickLower + width;
+    // Fair-center first; if the on-chain tick is outside [lower, upper), keep the same-width current-price band.
+    if (!(tickLower <= tickCurrent && tickCurrent < tickUpper)) {
+      tickLower = currentCentered.tickLower;
+      tickUpper = currentCentered.tickUpper;
+    }
     requestedMinPrice = uiPriceBPerAFromTick(tickLower, decimalsA, decimalsB);
     requestedMaxPrice = uiPriceBPerAFromTick(tickUpper, decimalsA, decimalsB);
   }

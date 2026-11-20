@@ -6,6 +6,8 @@ vi.mock("server-only", () => ({}));
 import { createRhcClients, resetEvmRpcGuards } from "@sofinance/engine/rpc-evm/index";
 import { mockRhcChain, mockRhcTransport } from "@sofinance/engine/test-support/rhc-mock-rpc";
 import { discoverRhcUniv4Pools, resetRhcUniv4PoolsCache, takeGeckoTerminalSlot } from "./rhc-univ4-pools";
+import { rhcPoolView } from "./dex/uniswap-v4-rhc/pool-presentation";
+import { rhcDefaultOpenTicks } from "./rhc-open-range";
 
 const spcxOnly = UNIV4_RHC_ALLOWLISTED_POOLS.filter((p) => p.baseSymbol === "SPCX");
 beforeEach(() => { resetRhcUniv4PoolsCache(); resetEvmRpcGuards(); });
@@ -52,6 +54,18 @@ describe("discoverRhcUniv4Pools (mock Robinhood Chain RPC + DexScreener capture)
     const fetcher = (async () => new Response("busy", { status: 429 })) as unknown as typeof fetch;
     const { pools } = await discoverRhcUniv4Pools({ clients, fetcher, bypassCache: true, pools: spcxOnly });
     expect(pools[0]).toMatchObject({ status: "listed", estimatedApr: null });
+  });
+
+it("centers default open ticks on the on-chain tick from the summary path", async () => {
+    const clients = createRhcClients({ env: {}, transportFor: () => mockRhcTransport(mockRhcChain()) });
+    const result = await discoverRhcUniv4Pools({ clients, pools: spcxOnly, bypassCache: true });
+    const view = rhcPoolView(result.pools[0]!);
+    expect(view).not.toBeNull();
+    expect("multiplier0" in view! || "multiplier1" in view!).toBe(false);
+    const ticks = rhcDefaultOpenTicks(view!, 10)!;
+    expect(ticks.center).toBe(view!.tick);
+    expect(ticks.tickLower).toBe(view!.tick! - 10);
+    expect(ticks.tickUpper).toBe(view!.tick! + 10);
   });
 });
 

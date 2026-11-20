@@ -30,6 +30,8 @@ import { useTxPipeline } from "../transactions/use-tx-pipeline";
 import { feeLine, openRentLines, TxStatus, tokenAccountRentLine } from "../unified-positions/registry-tools";
 import { useWalletConnection } from "../wallet-connection";
 import { useTxWallet } from "../use-tx-wallet";
+import { formatRangeStatus } from "@/lib/position-label";
+import { unitCenterWithCurrentFallback } from "@/lib/open-range-center";
 
 /** Slippage for the swap legs of an open (code constant; PR10 rule: no new env flags). */
 const OPEN_SLIPPAGE_BPS = 50;
@@ -161,8 +163,8 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
   const [presetId, setPresetId] = useState<RangeAprPresetId | "">("");
   const [amount, setAmount] = useState("");
   const [centerOnParity, setCenterOnParity] = useState(true);
-  const parityUnit = payload?.parityUnit;
-  const canCenterOnParity = Number.isSafeInteger(parityUnit);
+  const centerUnit = payload?.centerUnit ?? payload?.parityUnit;
+  const canCenterOnParity = Number.isSafeInteger(centerUnit);
   const token = tokens.find((item) => item.id === tokenId) ?? tokens[0];
   const preferred = useMemo(() => preferredOpenPresetId(presets, apr), [presets, apr]);
   const preset = presets.find((item) => item.id === presetId && item.available)
@@ -187,9 +189,16 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
     if (raw !== null && have !== undefined && raw > BigInt(have)) { problem = `Not enough ${token.symbol}: your wallet has ${formatAmount(have, token.decimals)}.`; raw = null; }
   }
 
-  const parityLower = canCenterOnParity && preset ? parityUnit! - Math.floor(preset.units / 2) : null;
+  const usedCenter = canCenterOnParity && preset && centerOnParity
+    ? unitCenterWithCurrentFallback(
+      centerUnit!,
+      Number.isSafeInteger(payload?.currentUnit) ? payload!.currentUnit! : centerUnit!,
+      preset.units,
+    )
+    : null;
+  const parityLower = usedCenter !== null && preset ? usedCenter - Math.floor(preset.units / 2) : null;
   const request = token && preset && raw !== null
-    ? { poolId: pool.poolAddress, range: centerOnParity && parityLower !== null
+    ? { poolId: pool.poolAddress, range: parityLower !== null
       ? { kind: "units" as const, lower: parityLower, upper: parityLower + preset.units - 1 }
       : { kind: "preset" as const, presetId: preset.id }, input: { token: token.id, amountRaw: raw.toString() }, slippageBps: OPEN_SLIPPAGE_BPS }
     : null;
@@ -296,7 +305,9 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
         onMinPrice: () => {},
         onMaxPrice: () => {},
         apr: aprState,
-        quotedRange: null,
+        quotedRange: quoted?.range.tickLower !== undefined && quoted.range.tickUpper !== undefined
+          ? { tickLower: quoted.range.tickLower, tickUpper: quoted.range.tickUpper }
+          : null,
         capitalUsd: null,
         showCustom: false,
         unavailable,
@@ -312,6 +323,7 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
           {current && !current.value && !current.error ? <p role="status" className="flex items-center gap-2"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />Getting a quote…</p> : null}
           {current?.error ? <p role="alert">{current.error}</p> : null}
           {quoted ? <p>Range: {price(quoted.range.lowerPrice)} – {price(quoted.range.upperPrice)} ({quoted.range.units} {descriptor.meta.rangeUnit}s)</p> : null}
+          {quoted?.rangeSide ? <p data-testid="registry-open-range-status" title="In range means the current pool price is within your selected range and the position can collect trading fees. It stops collecting trading fees while the price is outside the range.">Status: {formatRangeStatus(quoted.rangeSide)}</p> : null}
           {rent.lines.length ? rent.lines.map((line) => <p key={line}>{line}</p>) : descriptor.meta.rent ? <p>{descriptor.meta.rent.disclosure}</p> : null}
           <p>{feeLine(descriptor.meta.feePolicy.open, "into the pool tokens")}{quoted && token && /^\d+$/.test(quoted.platformFeeRaw) && quoted.platformFeeRaw !== "0" ? ` About ${formatAmount(quoted.platformFeeRaw, token.decimals)} ${token.symbol} on this open.` : ""}</p>
           <p>{NETWORK_FEE_COPY} {SOL_RESERVE_COPY}</p>

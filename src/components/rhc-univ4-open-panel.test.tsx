@@ -124,18 +124,13 @@ describe("RhcUniv4OpenPanel", () => {
     expect(container.querySelector("[data-testid=wallet-address]")!.textContent).toContain("0x2222…2222");
     await act(async () => { button("Preview open (simulated)").click(); await new Promise(r => setTimeout(r, 0)); });
     const [, init] = (fetchMock.mock.calls as unknown as [string, RequestInit][]).find(c => !c[0].startsWith("/api/rhc-univ4-positions"))!;
-    expect(JSON.parse(init.body as string)).toMatchObject({ action: "prepare", user: USER, depositToken: SPCX, amount: "1000000000000000000", tickLower: -10, tickUpper: 10 });
+    expect(JSON.parse(init.body as string)).toMatchObject({ action: "prepare", user: USER, depositToken: SPCX, amount: "1000000000000000000", tickLower: -11, tickUpper: 9 });
     expect(container.querySelector("[data-testid=leftover-note]")).not.toBeNull();
     expect(text()).toContain("Step 1/3");
     expect([...container.querySelectorAll("li[data-step] button")].every(b => (b as HTMLButtonElement).disabled)).toBe(true);
     expect(methods.filter(m => !["eth_requestAccounts", "eth_chainId", "eth_getBalance", "eth_call"].includes(m))).toEqual([]);
-    const checkbox = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-    expect(checkbox.checked).toBe(true);
-    await act(async () => { checkbox.click(); });
-    expect(container.querySelector("[data-testid=open-preview]")).toBeNull();
-    await act(async () => { button("Preview open (simulated)").click(); await new Promise(r => setTimeout(r, 0)); });
-    const lastPrepare = (fetchMock.mock.calls as unknown as [string, RequestInit][]).filter(([url]) => url === "/api/rhc-univ4-open").at(-1)!;
-    expect(JSON.parse(lastPrepare[1].body as string)).toMatchObject({ tickLower: -11, tickUpper: 9 });
+    expect(container.querySelector('input[type="checkbox"]')).toBeNull();
+    expect(text()).not.toContain("Center range on the fair price");
   });
   it("blocks opening a delisted pool", () => {
     render(createElement(RhcUniv4OpenPanel, { pool: pool({ status: "delisted" }), signingEnabled: false }));
@@ -204,7 +199,7 @@ describe("RhcUniv4OpenPanel signing (preview flag on)", () => {
     expect(sign.params).toEqual([USER, JSON.stringify({ primaryType: "PermitSingle" })]);
     const [prep, fin] = p.bodies();
     expect(fin).toEqual({ ...prep, action: "finalize", attempt: 0, signature: SIG, permit: (prep0 as { permit: unknown }).permit });
-    expect(fin).toMatchObject({ poolId: pool().poolId, user: USER, depositToken: SPCX, amount: "1000000000000000000", tickLower: -10, tickUpper: 10 });
+    expect(fin).toMatchObject({ poolId: pool().poolId, user: USER, depositToken: SPCX, amount: "1000000000000000000", tickLower: -11, tickUpper: 9 });
     expect(p.sends()).toEqual([]);
     expect(p.stepButton("execute").disabled).toBe(false);
     await p.click("execute");
@@ -455,4 +450,30 @@ it("revokes a retained execute callback after its transaction has confirmed", as
   await p.click("execute");
   await act(async () => { await retained(); });
   expect(p.sends()).toHaveLength(1);
+});
+
+describe("prepare tick reconfirm", () => {
+  it("asks the user to confirm when prepare returns a tick that changes the displayed range", async () => {
+    (window as unknown as { ethereum: unknown }).ethereum = { request: vi.fn(async ({ method }: { method: string }) => {
+      return method === "eth_requestAccounts" ? [USER] : method === "eth_chainId" ? "0x1237" : null;
+    }) };
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ ...needsSig(false), plan: { ...plan, tick: 20 } }) }));
+    vi.stubGlobal("fetch", fetchMock);
+    // Fixture pool tick is -1, so displayed ticks are -11..9. A plan.tick of 20 implies 10..30.
+    render(createElement(RhcUniv4OpenPanel, { pool: pool(), signingEnabled: false }));
+    const button = (label: string) => [...container.querySelectorAll("button")].find(b => b.textContent === label)!;
+    await act(async () => { button("Connect wallet").click(); await new Promise(r => setTimeout(r, 300)); });
+    await act(async () => { button("Preview open (simulated)").click(); await new Promise(r => setTimeout(r, 0)); });
+    expect(container.querySelector("[data-testid=rhc-range-changed]")).not.toBeNull();
+    expect(text()).toContain("The on-chain tick moved to 20");
+    expect(container.querySelector("[data-testid=open-preview]")).toBeNull();
+    expect(container.querySelectorAll("li[data-step]")).toHaveLength(0);
+    const confirm = container.querySelector<HTMLButtonElement>("[data-testid=rhc-confirm-new-range]")!;
+    await act(async () => { confirm.click(); });
+    expect(container.querySelector("[data-testid=rhc-range-changed]")).toBeNull();
+    await act(async () => { button("Preview open (simulated)").click(); await new Promise(r => setTimeout(r, 0)); });
+    const lastPrepare = (fetchMock.mock.calls as unknown as [string, RequestInit][]).filter(([url]) => url === "/api/rhc-univ4-open").at(-1)!;
+    expect(JSON.parse(lastPrepare[1].body as string)).toMatchObject({ action: "prepare", tickLower: 10, tickUpper: 30 });
+    expect(container.querySelector("[data-testid=open-preview]")).not.toBeNull();
+  });
 });

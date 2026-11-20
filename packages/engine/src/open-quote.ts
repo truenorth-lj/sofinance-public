@@ -11,6 +11,7 @@ import { type BuildRoute } from "./swap/jupiter";
 import { jupiterRelayHint, setJupiterRelayHint } from "./jupiter/client";
 import { estimateOpenPositionRent } from "./open-rent";
 import { resolveOpenRange, type OpenRangeInput } from "./open-range";
+import { rangeWithFairCenter } from "./open-range-center";
 import { assertNativeInputFeeCoverage, depositFeePlan, feeSwapLeg, readSwapFeeConfig, type SwapFeeConfig } from "./swap";
 import { rpcConnection } from "./rpc";
 import { readOpenPoolState, type OpenPoolState, type OpenPositionSelection } from "./open-state";
@@ -98,7 +99,7 @@ export async function getOpenPositionQuoteBundle(
     throw new Error("Insufficient SOL, reserve at least 0.01 SOL to pay network fees and position rent");
   }
   const resolved = resolveOpenRange({
-    range,
+    range: rangeWithFairCenter(range, state),
     currentPrice: Number(state.price),
     tickCurrent: state.tickCurrent,
     sqrtPriceX64: state.sqrtPriceX64,

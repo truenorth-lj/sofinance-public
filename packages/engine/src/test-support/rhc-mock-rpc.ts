@@ -4,7 +4,7 @@ import {
 } from "viem";
 import fixture from "../fixtures/univ4-rhc-spcx-live.json";
 import { MULTICALL3_ADDRESS } from "../chains/robinhood";
-import { ERC20_METADATA_ABI, FEE_CONFIG_UPDATED_EVENT, MODIFY_LIQUIDITY_EVENT, STABLE_PAIR_HOOK_ABI, STATE_VIEW_ABI, SWAP_EVENT, UPGRADED_EVENT } from "../protocols/uniswap-v4/abi";
+import { ERC20_METADATA_ABI, FEE_CONFIG_UPDATED_EVENT, MODIFY_LIQUIDITY_EVENT, STABLE_PAIR_HOOK_ABI, STATE_VIEW_ABI, SWAP_EVENT, UPGRADED_EVENT, UI_MULTIPLIER_ABI } from "../protocols/uniswap-v4/abi";
 import { ERC1967_IMPLEMENTATION_SLOT, STABLE_PAIR_HOOK, UNIV4_RHC, UNIV4_RHC_ALLOWLISTED_POOLS } from "../protocols/uniswap-v4/constants";
 import { poolIdOf } from "../protocols/uniswap-v4/pool-key";
 
@@ -34,7 +34,7 @@ export type MockRhcChain = {
   dynamicFee: [number, number];
   feeConfig: [number, number, number, bigint];
   implementation: Address;
-  tokens: Record<string, { name: string; symbol: string; decimals: number }>;
+  tokens: Record<string, { name: string; symbol: string; decimals: number; uiMultiplier?: bigint }>;
   logs: MockLog[];
   /** Reject getLogs spanning more blocks than this, with the official RPC's message. */
   maxLogSpan?: bigint;
@@ -150,6 +150,11 @@ function answer(chain: MockRhcChain, call: Call): Hex | null {
     if (decoded?.functionName === "name") return encodeFunctionResult({ abi: ERC20_METADATA_ABI, functionName: "name", result: token.name });
     if (decoded?.functionName === "symbol") return encodeFunctionResult({ abi: ERC20_METADATA_ABI, functionName: "symbol", result: token.symbol });
     if (decoded?.functionName === "decimals") return encodeFunctionResult({ abi: ERC20_METADATA_ABI, functionName: "decimals", result: token.decimals });
+    const ui = tryDecode(UI_MULTIPLIER_ABI);
+    if (ui?.functionName === "uiMultiplier") {
+      if (token.uiMultiplier === undefined) return null;
+      return encodeFunctionResult({ abi: UI_MULTIPLIER_ABI, functionName: "uiMultiplier", result: token.uiMultiplier });
+    }
   }
   return null;
 }

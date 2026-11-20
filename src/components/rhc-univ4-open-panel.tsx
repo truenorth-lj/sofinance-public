@@ -4,7 +4,8 @@ import { evmClientFor, type OpenFlowResult, type PermitJson, type WalletBalances
   type RhcOpenAttempt, type RhcPoolView } from "@/lib/dex/evm-client";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { formatUnits, parseUnits } from "viem";
-import { exactTickFromUiPrice } from "@sofinance/engine/range-apr/tick-math";
+import { rhcDefaultOpenTicks, rhcRangeSide } from "@/lib/rhc-open-range";
+import { formatRangeStatus } from "@/lib/position-label";
 import {
   connectEvmWallet, discoverEvmWallets, ensureRobinhoodChain, guardedWalletRequest, SIGNING_DISABLED_MESSAGE, WalletRequestError,
 } from "@/lib/rhc-wallet/eip1193";
@@ -134,7 +135,12 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
   const [side, setSide] = useState<0 | 1>(0);
   const [amount, setAmount] = useState("1");
   const [halfWidth, setHalfWidth] = useState<number>(RANGE_PRESETS[0]);
-  const [centerOnParity, setCenterOnParity] = useState(true);
+  const [tickOverride, setTickOverride] = useState<number | null>(null);
+  const [rangeChanged, setRangeChanged] = useState<{
+    fromTick: number; toTick: number;
+    previous: { tickLower: number; tickUpper: number };
+    next: { tickLower: number; tickUpper: number };
+  } | null>(null);
   const [result, setResult] = useState<OpenFlowResult | null>(null);
   const [prepared, setPrepared] = useState<{ request: PrepareRequest } | null>(null);
   const [step, setStep] = useState<OpenStepId | null>(null);
@@ -148,8 +154,8 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
   const [walletChanged, setWalletChanged] = useState(false);
   // Only a command published by the current committed render may start work.
   const command = useMemo(() => ({ wallet, pool, signingEnabled, busy, walletChanged,
-    side, amount, halfWidth, centerOnParity, result, prepared, step, signed, exec }), [wallet, pool, signingEnabled, busy, walletChanged,
-    side, amount, halfWidth, centerOnParity, result, prepared, step, signed, exec]);
+    side, amount, halfWidth, result, prepared, step, signed, exec }), [wallet, pool, signingEnabled, busy, walletChanged,
+    side, amount, halfWidth, result, prepared, step, signed, exec]);
   const committedCommand = useRef<object | null>(null);
   useLayoutEffect(() => {
     committedCommand.current = command;
@@ -180,6 +186,7 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
     // A committed external wallet/pool change revokes the old preview as well as in-flight commands.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset form-owned transaction state at this identity boundary.
     setResult(null); setPrepared(null); setStep(null); setSigned(null); setExec(null); setSent(null);
+    setTickOverride(null); setRangeChanged(null);
     if (initialWallet || connectWallet) { setWallet(initialWallet); setWalletChanged(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `connectWallet` only marks the panel as following the shared session.
   }, [initialWallet, pool?.poolId]);
@@ -263,17 +270,25 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
       let wei: bigint;
       try { wei = parseUnits(amount.trim(), token.decimals); } catch { throw new Error("Enter a valid amount"); }
       if (wei <= 0n) throw new Error("Enter a valid amount");
-      // Listed Robinhood Chain pools use tick spacing 1. Equal UI prices need
-      // decimal normalization before choosing their nearest raw tick.
-      const center = centerOnParity ? Math.round(exactTickFromUiPrice(1, pool.token0.decimals, pool.token1.decimals)) : pool.tick;
+      // Listed Robinhood Chain pools use tick spacing 1. Always center on the current on-chain tick
+      // (or a prepare-returned tick the user has already confirmed).
+      const ticks = rhcDefaultOpenTicks({ ...pool, tick: tickOverride ?? pool.tick }, halfWidth);
+      if (!ticks) throw new Error("This pool's on-chain price is not available yet.");
       const request: PrepareRequest = { poolId: pool.poolId, user: wallet.address, depositToken: token.address, amount: wei.toString(),
-        tickLower: center - halfWidth, tickUpper: center + halfWidth };
+        tickLower: ticks.tickLower, tickUpper: ticks.tickUpper };
       const response = await fetch("/api/rhc-univ4-open", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "prepare", ...request }), signal: AbortSignal.timeout(30_000) });
       const body = await response.json().catch(() => null) as OpenFlowResult | { error?: string } | null;
       if (!current()) return;
       assertAvailable();
       if (body && "state" in body) {
+        const planTick = "plan" in body && typeof body.plan.tick === "number" ? body.plan.tick : null;
+        const next = planTick !== null ? rhcDefaultOpenTicks({ ...pool, tick: planTick }, halfWidth) : null;
+        if (next && (next.tickLower !== ticks.tickLower || next.tickUpper !== ticks.tickUpper)) {
+          setRangeChanged({ fromTick: ticks.center, toTick: planTick!, previous: { tickLower: ticks.tickLower, tickUpper: ticks.tickUpper }, next });
+          setResult(null); setPrepared(null); setStep(null);
+          return;
+        }
         setResult(body); setPrepared({ request });
         if (body.state === "needs_signature") setStep(body.approvalTx ? "approve" : "sign");
       }
@@ -430,7 +445,6 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
         reset();
       }}
       rangeSlot={<RhcRangeButtons halfWidth={halfWidth} onChange={(ticks) => { setHalfWidth(ticks); reset(); }} disabled={busy} />}
-      parityCenter={{ checked: centerOnParity, onChange: (checked) => { setCenterOnParity(checked); reset(); }, disabled: busy }}
       notes={<>
         {wallet && !walletChanged ? (
           <div className="mt-3 text-xs text-smoke">
@@ -448,6 +462,19 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
             <button type="button" disabled={busy} onClick={() => void recheck()} className="mt-2 underline disabled:opacity-40">Check original transaction</button>
           </> : null}
         </div> : null}
+        {rangeChanged ? (
+          <div className="mt-3 rounded-xl border border-amber-300/40 p-3 text-sm" role="status" data-testid="rhc-range-changed">
+            <p>The on-chain tick moved to {rangeChanged.toTick}. The range is now {rangeChanged.next.tickLower} to {rangeChanged.next.tickUpper} (was {rangeChanged.previous.tickLower}–{rangeChanged.previous.tickUpper}). Confirm to preview this range.</p>
+            <button type="button" disabled={busy} data-testid="rhc-confirm-new-range" onClick={() => { setTickOverride(rangeChanged.toTick); setRangeChanged(null); }} className="mt-2 underline disabled:opacity-40">Confirm new range</button>
+          </div>
+        ) : null}
+        {(() => {
+          const ticks = rangeChanged?.next ?? rhcDefaultOpenTicks({ ...pool, tick: tickOverride ?? pool.tick }, halfWidth);
+          const currentTick = rangeChanged?.toTick ?? (result && "plan" in result && typeof result.plan.tick === "number" ? result.plan.tick : (tickOverride ?? pool.tick));
+          if (!ticks || currentTick === null) return null;
+          const status = formatRangeStatus(rhcRangeSide(currentTick, ticks.tickLower, ticks.tickUpper));
+          return status ? <p className="mt-3 text-xs text-smoke" data-testid="rhc-open-range-status" title="In range means the current pool price is within your selected range and the position can collect trading fees. It stops collecting trading fees while the price is outside the range.">Status: {status}</p> : null;
+        })()}
         {error ? <p role="alert" className="mt-3 text-sm text-red-200">{error}</p> : null}
         {result ? <OpenPreview result={exec ?? result} pool={pool} /> : null}
         {result && result.state !== "failed" ? <StepList needsApproval={needsApproval} current={current} signingEnabled={signingEnabled} onStep={runStep} /> : null}
@@ -458,7 +485,7 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
       onConnect={() => { void connect(); }}
       submitLabel="Preview open (simulated)"
       onSubmit={() => { void preview(); }}
-      submitDisabled={!wallet || busy || hasPending || walletChanged || pool.status !== "listed" || pool.tick === null}
+      submitDisabled={!wallet || busy || hasPending || walletChanged || pool.status !== "listed" || pool.tick === null || rangeChanged !== null}
       submitBusy={busy}
     />
   </div>;

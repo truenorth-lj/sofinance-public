@@ -7,6 +7,7 @@ import type { TickRange } from "@/lib/range-apr/selection";
 import { RangePresetPicker } from "../range-apr/range-preset-picker";
 import type { PoolRangeAprState } from "../range-apr/use-pool-range-apr";
 import { OpenPositionChrome, OPEN_POSITION_SUBMIT } from "./open-position-chrome";
+import { CENTER_ON_FAIR_LABEL } from "@/lib/open-range-center";
 
 /** Shared subtitle: pair first, then the venue name. */
 export function venueSubtitle(pairLabel: string, venueName: string): string {
@@ -164,7 +165,7 @@ export function OpenPositionFormFields({
       {parityCenter ? <label className="mt-3 flex min-h-11 cursor-pointer items-center gap-2 text-xs text-cream/80">
         <input type="checkbox" checked={parityCenter.checked} disabled={parityCenter.disabled}
           onChange={(event) => parityCenter.onChange(event.target.checked)} className="size-4 accent-lemon" />
-        Center range on 1:1
+        {CENTER_ON_FAIR_LABEL}
       </label> : null}
       {rangeHint}
       {notes}
