@@ -7,7 +7,7 @@ import { GUIDE_PAGES } from "@/lib/guides";
 import { APP_ROUTES, BLOG_ROUTES, CANONICAL_SITE_URL, FAQ_ROUTE, GUIDE_ROUTES, LEGAL_ROUTES } from "@/lib/public-urls";
 import { config as proxyConfig } from "@/proxy";
 import robots, { AI_CRAWLER_USER_AGENTS } from "./robots";
-import { PUBLIC_COPY_UPDATED, TERMS_UPDATED, publicSitemapEntries, publicSitemapPaths, toSitemapUrls } from "./sitemap";
+import { PUBLIC_COPY_UPDATED, TERMS_UPDATED, publicSitemapEntries, publicSitemapPaths, revalidate as sitemapRevalidate, toSitemapUrls } from "./sitemap";
 
 function docsHrefsFromAppDir(root = resolve("src/app/docs")): string[] {
   const hrefs: string[] = [];
@@ -128,5 +128,18 @@ describe("SEO metadata routes", () => {
     const urls = toSitemapUrls(publicSitemapEntries("2026-11-20T00:00:00.000Z", extra)).map((entry) => entry.url);
     expect(urls).toContain(`${CANONICAL_SITE_URL}/pools/tsla-tslax`);
     expect(urls).toContain(`${CANONICAL_SITE_URL}/pools/tsla-tslax-meteora`);
+  });
+
+  it("exports an ISR revalidate window so /sitemap.xml can pick up new pool slugs without a redeploy", () => {
+    // Next only treats `export const revalidate = <number>` as the route segment config.
+    expect(sitemapRevalidate).toBe(900);
+    const sitemapSource = readFileSync(resolve("src/app/sitemap.ts"), "utf8");
+    expect(sitemapSource).toMatch(/export const revalidate = 900\b/);
+    expect(sitemapSource).not.toMatch(/force-dynamic/);
+    const snapshotSource = readFileSync(resolve("src/lib/homepage-pools-snapshot.ts"), "utf8");
+    const snapshotWindow = snapshotSource.match(/export const HOMEPAGE_POOLS_REVALIDATE_SECONDS = (\d+)/);
+    expect(Number(snapshotWindow?.[1])).toBe(sitemapRevalidate);
+    const poolPageSource = readFileSync(resolve("src/app/pools/[slug]/page.tsx"), "utf8");
+    expect(poolPageSource).toMatch(/export const revalidate = 900\b/);
   });
 });

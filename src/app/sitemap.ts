@@ -13,6 +13,15 @@ export const PUBLIC_COPY_UPDATED = "2026-10-30";
 /** Last legal-copy edit of /terms (#139). Later commits only swapped the marketing header. */
 export const TERMS_UPDATED = "2026-10-24";
 
+/**
+ * Same ISR window as /pools/[slug], the homepage, /app/rwa-pairs, and
+ * HOMEPAGE_POOLS_REVALIDATE_SECONDS. Without this, Next prerenders /sitemap.xml
+ * once per deploy and new pool slugs stay missing until the next build.
+ * This is ISR (at most one regeneration per window, and only if the sitemap is
+ * requested after it goes stale) — not per-request dynamic rendering.
+ */
+export const revalidate = 900;
+
 type SitemapEntry = {
   path: string;
   lastModified: string;
