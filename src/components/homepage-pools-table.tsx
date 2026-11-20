@@ -1,12 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, X } from "lucide-react";
 import {
   buildHomepagePools,
   homepageFullListCount,
   homepageRows,
-  RWA_PAIRS_DEFAULT_SELECT,
   updatedLabel,
   type HomepagePool,
   type HomepagePoolsSnapshot,
@@ -18,12 +16,11 @@ import { dexDescriptors, uiFor, openCapabilityFor } from "@/lib/dex/client";
 import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
 import { APP_ROUTES } from "@/lib/public-urls";
 import {
-  selectPools, unsupportedTokenReason,
-  type PoolChain, type SortDir, type SortKey, type UnifiedPool,
+  unsupportedTokenReason,
+  type PoolChain, type UnifiedPool,
 } from "@/lib/unified-pools/model";
 import type { Apr7dState } from "@/lib/unified-pools/apr7d";
 import type { RhcPoolSummary } from "@/lib/unified-pools/rows";
-import { cn } from "@/lib/cn";
 import { type OpenAction } from "./unified-pools/pool-list";
 import { PoolResults } from "./unified-pools/pool-results";
 import { usePoolsApr7d } from "./unified-pools/use-pools-apr7d";
@@ -184,27 +181,6 @@ export function useHomepagePools(initial?: HomepagePoolsSnapshot | null): Homepa
   return { pools, apr, apr7d, group, icons, updatedText: updatedLabel(updated), loading, error, retry };
 }
 
-
-/** Search box for the pools list (the hero's search edits the same query). */
-export function PoolSearchInput({ query, onQueryChange, placeholder, className, inputClassName, id, name }: {
-  query: string; onQueryChange: (query: string) => void; placeholder: string; className?: string; inputClassName?: string; id?: string; name?: string;
-}) {
-  return <div className={cn("flex items-center gap-3 border border-white/15 bg-white/[0.04] text-cream transition-colors focus-within:border-white/45", className)}>
-    <Search className="h-4 w-4 shrink-0 text-smoke" aria-hidden="true" />
-    <input id={id} name={name} type="search" value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder={placeholder}
-      aria-label="Search pools" autoComplete="off" spellCheck={false}
-      className={cn("min-w-0 flex-1 bg-transparent outline-none placeholder:text-smoke [&::-webkit-search-cancel-button]:hidden", inputClassName)} />
-    {query && <button type="button" onClick={() => onQueryChange("")} aria-label="Clear search" className="rounded-full p-1 text-smoke hover:text-cream">
-      <X className="h-4 w-4" aria-hidden="true" />
-    </button>}
-  </div>;
-}
-
-/** The full list's rows: `/app/rwa-pairs`' default view (no TVL floor, duplicates hidden) with the search and sort. */
-export function homepageListRows(data: Pick<HomepagePoolsData, "pools" | "apr7d" | "group">, query: string, sort: { key: SortKey; dir: SortDir }) {
-  if (!data.pools) return { pools: [], hiddenDuplicates: 0 };
-  return selectPools(data.pools, { ...RWA_PAIRS_DEFAULT_SELECT, filters: { ...RWA_PAIRS_DEFAULT_SELECT.filters, query }, sort, apr7d: data.apr7d, group: data.group });
-}
 
 /**
  * The homepage's single top-5 block: `PoolResults` in `mode="top"`.

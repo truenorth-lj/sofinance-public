@@ -5,6 +5,7 @@ import { LoaderCircle } from "lucide-react";
 import { HIGHEST_RANGE_APR_7D_HELP, HOMEPAGE_APR_DOCS_LINK_LABEL } from "@/lib/apr-labels/copy";
 import { APP_ROUTES, DOCS_ROUTES } from "@/lib/public-urls";
 import {
+  TOP_POOLS_ANCHOR_ID,
   TOP_POOLS_SUBTITLE,
   TOP_POOLS_TITLE,
   seeAllPoolsLabel,
@@ -85,7 +86,7 @@ function TopPoolResults({
   pools, apr, apr7d, actionFor, icons, totalCount, updatedText, loading, error, onRetry,
 }: TopPoolResultsProps) {
   return (
-    <section id="pools" className="scroll-mt-6 pt-14 sm:pt-20" aria-labelledby="top-pools-heading" data-testid="top-pools">
+    <section id={TOP_POOLS_ANCHOR_ID} className="scroll-mt-6 pt-14 sm:pt-20" aria-labelledby="top-pools-heading" data-testid="top-pools">
       <div className="flex flex-col gap-3 px-1 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 id="top-pools-heading" className="text-[clamp(1.6rem,2.8vw,2.25rem)] font-medium leading-[1.08] tracking-[-0.035em]">

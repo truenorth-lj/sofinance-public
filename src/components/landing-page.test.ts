@@ -38,25 +38,34 @@ describe("landing page copy and routes", () => {
     "src/app/manifest.ts",
   ];
 
-  it("leads with the market hero: headline, plain subhead, pool search and the self-custody line", () => {
-    expect(market).toContain('Hold your stocks. <span className="text-lemon">Collect fees.</span>');
-    expect(market).toContain("Pair two tokens of the same stock in one pool and collect a share of the swap fees.");
-    expect(market).toContain("Self-custodial · Solana + Robinhood Chain");
-    expect(market).toContain("0 keys on our servers · verifiable on Solscan and Blockscout");
-    expect(market).toContain('role="search"');
-    expect(market).toContain('placeholder="Search SPCX, TSLA, AAPL…"');
-    // Searching leaves the homepage for /app/rwa-pairs, carrying the query as ?q=.
-    expect(market).toContain("rwaPairsSearchHref");
-    expect(market).toContain("APP_ROUTES.rwaPairs");
-    expect(market).not.toContain("getElementById");
-    expect(market).not.toMatch(/pools? match/);
+  it("leads with the plan A hero: exact H1, subline, See pools, How it works, and three trust links", () => {
+    expect(market).toContain('Hold the stock. <span className="text-lemon">Collect the fees.</span>');
+    expect(market).toContain("Hold the stock. Collect the fees.");
+    expect(market).toContain("Put two tokens of the same stock, like TSLAx and TSLA, in one pool. Traders swap between them, and you collect a share of the swap fees.");
+    expect(market).toContain("See pools");
+    expect(market).toContain("How it works");
+    expect(market).toContain("GUIDE_ROUTES.whatIsSameStock");
+    expect(market).toContain("TOP_POOLS_ANCHOR_ID");
+    expect(market).toContain("Self-custodial: we never hold your keys");
+    expect(market).toContain("DOCS_ROUTES.security");
+    expect(market).toContain("Zero performance fee. 0.10% only when we swap.");
+    expect(market).toContain("GUIDE_ROUTES.fees");
+    expect(market).toContain("Solana + Robinhood Chain");
+    expect(market).toContain("DOCS_ROUTES.home");
+    // Hero search, pill and backdrop are gone; /app/rwa-pairs ?q= support lives on that page, not here.
+    expect(market).not.toContain("PoolSearchInput");
+    expect(market).not.toContain("hero-search");
+    expect(market).not.toContain("rwaPairsSearchHref");
+    expect(market).not.toContain("IconBackdrop");
+    expect(market).not.toContain("role=\"search\"");
+    expect(market).not.toMatch(/Hold your stocks|Collect fees\./);
     expect(market).not.toMatch(/audited|trustless|risk-free|fully automated|autonomous/i);
-    // "trading" is allowed only as "trading fees", never as a trading product.
-    for (const text of [src, market, table, results]) expect(text.replace(/trading fees/g, "")).not.toMatch(/\btrading\b/i);
+    // "trading" is allowed only as "trading fees", never as a trading product. "Traders" in the mandated subline is fine.
+    for (const text of [src, market, table, results]) expect(text.replace(/trading fees/g, "").replace(/\bTraders\b/g, "")).not.toMatch(/\btrading\b/i);
   });
 
-  it("orders the page like a market page: hero, stock cards, then the top-5 pools block", () => {
-    const order = ['data-testid="landing-hero"', "<StockCards", "<HomepageTopPools"].map((tag) => market.indexOf(tag));
+  it("orders the page like a market page: hero, then the top-5 pools block, then stock cards", () => {
+    const order = ['data-testid="landing-hero"', "<HomepageTopPools", "<StockCards"].map((tag) => market.indexOf(tag));
     expect(order.every((index) => index >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(market).not.toContain("<TopPoolsCard");
