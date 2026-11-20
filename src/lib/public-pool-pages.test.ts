@@ -90,7 +90,7 @@ describe("public pool page models", () => {
     expect(page?.path).toBe("/pools/tsla-tslax");
     expect(page?.dex).toBe("Raydium CLMM");
     expect(page?.apr7d).toBe("10.50%");
-    expect(page?.openInAppHref).toBe("/app/rwa-pairs?pool=tsla-raydium&open=1");
+    expect(page?.openInAppHref).toBe("/app/rwa-pairs?openPool=tsla-raydium");
     expect(findPublicPoolPageModel(snapshot, "not-a-pool")).toBeNull();
     expect(findPublicPoolPageModel(null, "tsla-tslax")).toBeNull();
   });

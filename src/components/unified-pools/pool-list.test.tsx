@@ -18,7 +18,7 @@ const pool = solanaPool({
 const render = () => {
   const html = renderToString(createElement(PoolTable, {
     pools: [pool], apr: { [pool.key]: { status: "ready", aprPct: 31.85 } } as never, sort: DEFAULT_SORT,
-    actionFor: () => ({ kind: "link" as const, href: "/app/rwa-pairs?pool=spcx-pool&open=1" }),
+    actionFor: () => ({ kind: "link" as const, href: "/app/rwa-pairs?openPool=spcx-pool" }),
   }));
   const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
   return doc;

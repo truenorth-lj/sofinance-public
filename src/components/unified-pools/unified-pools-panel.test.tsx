@@ -88,8 +88,8 @@ afterEach(() => {
 });
 
 const PROD: UnifiedPoolFlags = { orca: false, meteora: false, rhc: true };
-async function render(flags: UnifiedPoolFlags = PROD, props: { deepLinkPool?: string; initialQuery?: string; onOpenRhc?: (r: unknown) => void } = {}) {
-  await act(async () => { root.render(createElement(UnifiedPoolsPanel, { flags, onOpenRhc: props.onOpenRhc ?? vi.fn(), deepLinkPool: props.deepLinkPool, initialQuery: props.initialQuery })); });
+async function render(flags: UnifiedPoolFlags = PROD, props: { deepLinkPool?: string; deepLinkCalc?: string; initialQuery?: string; onOpenRhc?: (r: unknown) => void } = {}) {
+  await act(async () => { root.render(createElement(UnifiedPoolsPanel, { flags, onOpenRhc: props.onOpenRhc ?? vi.fn(), deepLinkPool: props.deepLinkPool, deepLinkCalc: props.deepLinkCalc, initialQuery: props.initialQuery })); });
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
 }
 const shown = () => [...container.querySelectorAll("[data-pool]")].map((el) => el.getAttribute("data-pool"));
@@ -258,6 +258,15 @@ describe("UnifiedPoolsPanel", () => {
     await render(PROD, { deepLinkPool: "spcxA" });
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
     expect(mocks.modal).toHaveBeenCalledWith("spcxA");
+    expect(mocks.connect).not.toHaveBeenCalled();
+    expect(mocks.calc).not.toHaveBeenCalled();
+  });
+
+  it("opens the share calculator for a ?calc= deep link and does not start Open", async () => {
+    await render(PROD, { deepLinkCalc: "spcxA" });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    expect(mocks.calc).toHaveBeenCalledWith("spcxA", "open");
+    expect(mocks.modal).not.toHaveBeenCalled();
     expect(mocks.connect).not.toHaveBeenCalled();
   });
 

@@ -163,7 +163,7 @@ describe("homepage pools: single top-5 block", () => {
     expect(container.querySelector("[data-testid=top-pools-cards]")!.className).toMatch(/md:grid-cols-3/);
     expect(container.querySelector('[data-testid="top-pools"] table')).toBeNull();
     expect(row!.querySelector("a[aria-label='Open position in SPCXx/SPCX']")!.getAttribute("href")).toBe("/app/rwa-pairs?openPool=spcx-pool");
-    expect(row!.querySelector("a[aria-label='Calculate shares for SPCXx/SPCX']")!.getAttribute("href")).toBe("/app/rwa-pairs?openPool=spcx-pool");
+    expect(row!.querySelector("a[aria-label='Calculate shares for SPCXx/SPCX']")!.getAttribute("href")).toBe("/app/rwa-pairs?calc=spcx-pool");
     expect(row!.querySelector("button[aria-label^='Open position']")).toBeNull();
     expect(row!.querySelector("button[aria-label^='Calculate']")).toBeNull();
     expect(container.querySelector("[role=dialog]")).toBeNull();

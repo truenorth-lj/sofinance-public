@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { LoaderCircle } from "lucide-react";
 import { HIGHEST_RANGE_APR_7D_HELP, HOMEPAGE_APR_DOCS_LINK_LABEL } from "@/lib/apr-labels/copy";
-import { APP_ROUTES, DOCS_ROUTES } from "@/lib/public-urls";
+import { APP_ROUTES, DOCS_ROUTES, buildCalculatePath } from "@/lib/public-urls";
 import {
   TOP_POOLS_ANCHOR_ID,
   TOP_POOLS_SUBTITLE,
@@ -139,20 +139,16 @@ function TopPoolResults({
         // card). Desktop: 3+2 grid. Five in one row does not fit in the homepage's 1280px shell without squeezing
         // these cards narrower than the app's own 3-column grid.
         <ul className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-3" data-testid="top-pools-cards">
-          {pools.map((pool) => {
-            const action = actionFor(pool);
-            const href = action.kind === "link" ? action.href : undefined;
-            return (
-              <PoolCard
-                key={pool.key}
-                pool={pool}
-                apr={cardAprState(apr[pool.key], apr7d(pool))}
-                action={action}
-                icons={icons}
-                calculateHref={href}
-              />
-            );
-          })}
+          {pools.map((pool) => (
+            <PoolCard
+              key={pool.key}
+              pool={pool}
+              apr={cardAprState(apr[pool.key], apr7d(pool))}
+              action={actionFor(pool)}
+              icons={icons}
+              calculateHref={buildCalculatePath(pool.poolAddress)}
+            />
+          ))}
         </ul>
       )}
 

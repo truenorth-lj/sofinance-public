@@ -89,11 +89,13 @@ export type OpenRhcRequest = { pool: RhcPoolView };
  * see `lib/unified-pools/model.ts` for the rule). Opening a Solana pool connects the Solana wallet and opens the
  * existing Create position modal; opening a Robinhood Chain pool asks the page to open its dialog on the nav's EVM wallet.
  */
-export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", initialQuery = "", header }: {
+export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", deepLinkCalc = "", initialQuery = "", header }: {
   flags: UnifiedPoolFlags;
   onOpenRhc: (request: OpenRhcRequest) => void;
   /** `?openPool=` from the URL: open this pool once it is listed. */
   deepLinkPool?: string;
+  /** `?calc=` from the URL: open the share calculator for this pool once it is listed. */
+  deepLinkCalc?: string;
   /** `?q=` from the URL (homepage hero search): prefill the list search. */
   initialQuery?: string;
   header?: ReactNode;
@@ -167,6 +169,18 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", initial
     }, 0);
     return () => window.clearTimeout(timer);
   }, [deepLinkPool, deepLinked, loading, pools, openPool]);
+
+  // Deep link (`/app/rwa-pairs?calc=…`, including from the homepage "Calculate shares" link): open the calculator once the pool is listed.
+  const [deepCalced, setDeepCalced] = useState(false);
+  useEffect(() => {
+    if (deepCalced || !deepLinkCalc || loading) return;
+    const pool = pools.find((item) => item.poolAddress === deepLinkCalc || item.poolAddress.toLowerCase() === deepLinkCalc.toLowerCase());
+    const timer = window.setTimeout(() => {
+      setDeepCalced(true);
+      if (pool) setCalcPool(pool);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [deepLinkCalc, deepCalced, loading, pools]);
 
   const refresh = () => {
     clearPoolRangeAprClientCache();
