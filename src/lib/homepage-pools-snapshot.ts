@@ -9,7 +9,7 @@ import { summarizeApr7d } from "@/lib/unified-pools/apr7d";
 import { RWA_PAIRS_LIST_QUERY } from "@/lib/rwa-pairs-list";
 import type { TokenIconMap } from "@/lib/token-icons/map";
 import type { RhcPoolSummary } from "@/lib/unified-pools/rows";
-import { buildHomepagePools, toHomepagePoolsSnapshot, type HomepagePool, type HomepagePoolsSnapshot, type HomepageSolanaRow } from "@/lib/homepage-pools";
+import { buildHomepagePools, collectedApr7d, toHomepagePoolsSnapshot, type HomepagePool, type HomepagePoolsSnapshot, type HomepageSolanaRow } from "@/lib/homepage-pools";
 
 /** Give up on one server snapshot read after this long; the page then falls back to the client fetch. */
 const SNAPSHOT_TIMEOUT_MS = 8_000;
@@ -49,9 +49,8 @@ async function readApr7d(refs: AprRef[]): Promise<Record<string, number>> {
     const state = summarizeApr7d(payload, ref.protocol, now);
     return state.status === "ready" ? ([ref.key, state.aprPct] as const) : null;
   }));
-  // Every read failing (store down) throws, so that result is never cached for the next 15 minutes.
-  if (refs.length > 0 && results.every((result) => result.status === "rejected")) throw new Error("APR snapshots unavailable");
-  return Object.fromEntries(results.flatMap((result) => (result.status === "fulfilled" && result.value ? [result.value] : [])));
+  // Empty or all-failed results throw, so unstable_cache does not pin {} for 15 minutes.
+  return collectedApr7d(refs, results);
 }
 
 /*
