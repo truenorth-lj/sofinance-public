@@ -10,6 +10,7 @@
  * fairPriceFromPool converts a Meteora price back to raw before the 2% gate.
  */
 
+import { uiFor } from "./dex/ui";
 import { poolPairLabelFromSymbols } from "./pool-names";
 
 export const FAIR_PRICE_MAX_RELATIVE_DIFF = 0.02;
@@ -111,7 +112,8 @@ export function rawPriceBPerA(pool: {
   multiplierB: number;
   priceBPerA: number;
 }): number {
-  if (pool.protocol === "meteora-dlmm") return pool.priceBPerA * (pool.multiplierA / pool.multiplierB);
+  const includesScaledUi = pool.protocol !== undefined && uiFor(pool.protocol).listPriceIncludesScaledUi === true;
+  if (includesScaledUi) return pool.priceBPerA * (pool.multiplierA / pool.multiplierB);
   return pool.priceBPerA;
 }
 

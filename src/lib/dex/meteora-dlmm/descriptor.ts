@@ -81,6 +81,8 @@ export const meteoraDlmmDescriptor: DexDescriptor = Object.freeze({
   ui: Object.freeze({
     rangeApr: Object.freeze({ route: "protocol" as const, cacheScope: "protocol" as const, rwaListRoute: "pool" as const }),
     openUi: "registry", useDescriptorPlanTerms: true,
+    /** datapi `current_price` includes the ScaledUiAmount multiplier. */
+    listPriceIncludesScaledUi: true,
     planOpenUnavailableReason: "Opening Meteora positions isn't available yet",
   }),
 } satisfies DexDescriptor);
