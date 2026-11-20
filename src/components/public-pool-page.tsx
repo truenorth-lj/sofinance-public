@@ -16,7 +16,7 @@ function Fact({ term, value }: { term: string; value: string }) {
   return (
     <div className="grid grid-cols-[8rem_1fr] gap-x-4 border-b border-white/10 py-3 sm:grid-cols-[10rem_1fr]">
       <dt className="text-sm text-cream/70">{term}</dt>
-      <dd className="text-sm text-cream">{value}</dd>
+      <dd className="text-sm text-cream" data-testid={term === "Share multiplier" ? "scaled-ui-fair" : undefined}>{value}</dd>
     </div>
   );
 }
@@ -104,6 +104,7 @@ export function PublicPoolPage({ model }: { model: PublicPoolPageModel }) {
             <Fact term="TVL" value={model.tvl} />
             <Fact term="24h volume" value={model.volume24h} />
             <Fact term={PUBLIC_POOL_APR_LABEL} value={model.apr7d} />
+            {model.scaledUiFair && <Fact term="Share multiplier" value={model.scaledUiFair} />}
           </dl>
           <p className="mt-3 text-sm leading-6 text-cream/70" data-testid="apr-help">{model.aprHelp}</p>
           <p className="mt-6 text-sm">

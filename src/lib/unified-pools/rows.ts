@@ -19,6 +19,9 @@ export type SolanaPoolRow = {
   tvlUsd: number | null;
   volume24hUsd: number | null;
   estimatedFeeAprPct: number | null;
+  priceBPerA?: number | null;
+  multiplierA?: number;
+  multiplierB?: number;
   token2022A: boolean;
   token2022B: boolean;
   freezeRisk: boolean;
@@ -46,6 +49,9 @@ export function solanaPool(row: SolanaPoolRow): UnifiedPool {
     tvlUsd: row.tvlUsd,
     volume24hUsd: row.volume24hUsd,
     poolFeeApr24hPct: row.estimatedFeeAprPct,
+    ...(row.priceBPerA !== undefined && row.priceBPerA !== null ? { priceBPerA: row.priceBPerA } : {}),
+    ...(row.multiplierA !== undefined ? { multiplierA: row.multiplierA } : {}),
+    ...(row.multiplierB !== undefined ? { multiplierB: row.multiplierB } : {}),
     ...(row.unsupported?.issues.length ? { unsupportedIssues: row.unsupported.issues } : {}),
   };
 }

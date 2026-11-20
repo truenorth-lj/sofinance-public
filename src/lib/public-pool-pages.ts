@@ -14,6 +14,7 @@ import {
   publicPoolPath,
 } from "@/lib/public-urls";
 import { pageMetadata } from "@/lib/seo";
+import { scaledUiFairNote } from "@/lib/fair-price";
 import { CHAIN_LABELS, type UnifiedPool } from "@/lib/unified-pools/model";
 
 const SLUG_TOKEN = /[^a-z0-9]+/g;
@@ -37,6 +38,7 @@ export type PublicPoolPageModel = {
   volume24h: string;
   apr7d: string;
   aprHelp: string;
+  scaledUiFair: string | null;
   openInAppHref: string;
   listHref: string;
 };
@@ -162,6 +164,7 @@ export function publicPoolPageModel(pool: HomepagePool, apr7dPct: number | null,
     volume24h: formatPoolUsd(pool.volume24hUsd),
     apr7d: formatAprPct(apr7dPct),
     aprHelp: HIGHEST_RANGE_APR_7D_HELP,
+    scaledUiFair: scaledUiFairNote(pool),
     openInAppHref: buildOpenPositionPath(pool.poolAddress),
     listHref: APP_ROUTES.rwaPairs,
   };

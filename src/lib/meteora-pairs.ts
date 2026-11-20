@@ -65,6 +65,7 @@ export function meteoraPairRow(pool: MeteoraPoolSummary<MeteoraPoolSpec>, facts:
     feeRate: pool.baseFeeRate,
     feeTierBps: pool.baseFeeBps,
     tvlUsd: pool.tvlUsd,
+    priceBPerA: pool.price,
     volume24hUsd: pool.volume24hUsd,
     // LP share (gross fees minus Meteora's on-chain protocol share).
     fees24hUsd: lpFees24hUsd,

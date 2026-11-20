@@ -100,7 +100,13 @@ export type RwaPairRow = {
   binStep?: number;
   /** Pools whose source publishes it: pool creation time, so history before it is not read. */
   poolCreatedAt?: string | null;
+  /** Raw UI price, token B per token A, when the source publishes it. */
+  priceBPerA?: number | null;
+  /** Effective ScaledUiAmount multipliers (1 when unknown or unset). */
+  multiplierA?: number;
+  multiplierB?: number;
 };
+
 
 
 export type DiscoverRwaPairsResult = {
@@ -146,6 +152,7 @@ type RaydiumPool = {
     feeApr?: unknown;
     apr?: unknown;
   };
+  price?: unknown;
 };
 
 type CacheEntry = {
@@ -284,6 +291,7 @@ function pairRowFromCandidate(
     freezeRiskA,
     freezeRiskB,
     freezeRisk: freezeRiskA || freezeRiskB,
+    priceBPerA: asNumber(pool.price),
   };
 }
 
@@ -613,7 +621,14 @@ export async function applyOnchainFreezeRisk(pairs: RwaPairRow[], connection?: C
     known += Number(a !== undefined) + Number(b !== undefined);
     const freezeRiskA = a?.freezeAuthority ?? pair.freezeRiskA;
     const freezeRiskB = b?.freezeAuthority ?? pair.freezeRiskB;
-    const row: RwaPairRow = { ...pair, freezeRiskA, freezeRiskB, freezeRisk: freezeRiskA || freezeRiskB };
+    const row: RwaPairRow = {
+      ...pair,
+      freezeRiskA,
+      freezeRiskB,
+      freezeRisk: freezeRiskA || freezeRiskB,
+      ...(a?.scaledUiMultiplier !== undefined ? { multiplierA: a.scaledUiMultiplier } : {}),
+      ...(b?.scaledUiMultiplier !== undefined ? { multiplierB: b.scaledUiMultiplier } : {}),
+    };
     const blocked = blockOf([[pair.mintA, a], [pair.mintB, b]]);
     if (blocked) row.blocked = blocked;
     const unsupported = unsupportedOf([[pair.mintA, a], [pair.mintB, b]]);
