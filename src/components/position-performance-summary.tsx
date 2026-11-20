@@ -11,6 +11,7 @@ import { formatUsd4dp } from "@/lib/format/usd";
 import { PositionAssetRow } from "./position-asset-row";
 import { PoolDailyAprChart } from "./pool-daily-apr-panel";
 import { StockPerformanceTiles } from "./stock-performance-tiles";
+import { poolPairLabelFromSymbols } from "@/lib/pool-names";
 import { formatHoldingTime, returnUnavailableReason } from "../lib/position-performance-display";
 import type { PositionPerformanceReport } from "../lib/position-performance-report";
 
@@ -62,7 +63,7 @@ export function PerformanceSummary({ data, embedded, metadata, showStockPerforma
           {/* Embedded (the Portfolio row's Performance detail): the row already shows the stock, shares and value, so only the
               price change vs fee income split is shown. */}
           {stock && showStockPerformance && <StockPerformanceTiles stock={stock} showHeader={!embedded}
-            pairLabel={tn?.symbolA && tn?.symbolB ? `${tn.symbolA} / ${tn.symbolB}` : null} />}
+            pairLabel={tn?.symbolA && tn?.symbolB ? poolPairLabelFromSymbols(tn.symbolA, tn.symbolB, " / ") : null} />}
           {!hasRecordedDeposits && <p role="status" className="rounded-2xl border border-white/20 bg-white/[0.04] p-3 text-xs leading-5 text-cream/80">No deposit history was found. Current inventory is available, but trading-fee APR needs opening or deposit records.</p>}
           <div className="grid gap-3 sm:grid-cols-2">
             <Stat label={holdingTime.label} value={holdingTime.value} description="Time since the earliest recorded position event." />

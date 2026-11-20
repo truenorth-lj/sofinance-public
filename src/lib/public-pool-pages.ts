@@ -6,7 +6,7 @@ import { formatPoolUsd } from "@/lib/format/usd";
 import { aprLookupFrom, type HomepagePool, type HomepagePoolsSnapshot } from "@/lib/homepage-pools";
 import { isSameStockPool } from "@/lib/pool-metrics/same-stock-pair";
 import type { JsonLd } from "@/lib/json-ld";
-import { formatFeeTier } from "@/lib/position-label";
+import { poolFeeTierLabel, poolPairLabel } from "@/lib/pool-names";
 import {
   APP_ROUTES,
   CANONICAL_SITE_URL,
@@ -139,15 +139,12 @@ export function seoPublicPools(snapshot: HomepagePoolsSnapshot | null): Homepage
   return snapshot ? snapshot.pools.filter(isSameStockPool) : [];
 }
 
-export function publicPoolPairLabel(pool: Pick<UnifiedPool, "symbolA" | "symbolB">): string {
-  return `$${pool.symbolA} / $${pool.symbolB}`;
-}
-
 export function publicPoolPageModel(pool: HomepagePool, apr7dPct: number | null, slug: string): PublicPoolPageModel {
-  const pairLabel = publicPoolPairLabel(pool);
+  const pairLabel = poolPairLabel(pool, " / ");
   const dex = publicDexLabel(pool.protocol);
   const chain = CHAIN_LABELS[pool.chain];
-  const title = `${pairLabel} on ${dex}`;
+  const title = `${pairLabel} pool on ${dex}`;
+  const feeTier = poolFeeTierLabel(pool.feeTierBps);
   const path = publicPoolPath(slug);
   return {
     slug,
@@ -155,12 +152,12 @@ export function publicPoolPageModel(pool: HomepagePool, apr7dPct: number | null,
     pool,
     pairLabel,
     title,
-    metaTitle: `${title} (${chain})`,
+    metaTitle: feeTier ? `${title}, ${feeTier} (${chain})` : `${title} (${chain})`,
     metaDescription:
-      `Facts for the ${pairLabel} same-stock pool on ${dex} (${chain}). ${HIGHEST_RANGE_APR_7D_HELP}`,
+      `${pairLabel} same-stock pool on ${dex} (${chain}): TVL, 24h volume and an estimated 7-day fee APR. Not a prediction. Fees not guaranteed.`,
     chain,
     dex,
-    feeTier: formatFeeTier(pool.feeTierBps) ?? dash,
+    feeTier: feeTier ?? dash,
     tvl: formatPoolUsd(pool.tvlUsd),
     volume24h: formatPoolUsd(pool.volume24hUsd),
     apr7d: formatAprPct(apr7dPct),

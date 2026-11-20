@@ -12,9 +12,10 @@ import {
   publicDexSlug,
   publicPoolJsonLd,
   publicPoolMetadata,
+  publicPoolPageModel,
   publicPoolPairBase,
-  publicPoolPairLabel,
 } from "./public-pool-pages";
+import { poolPairLabel } from "./pool-names";
 
 const pool = (extra: Partial<HomepagePool> & Pick<HomepagePool, "key" | "protocol" | "poolAddress" | "symbolA" | "symbolB">): HomepagePool => ({
   chain: "solana",
@@ -85,7 +86,7 @@ describe("public pool page models", () => {
 
   it("looks up a page by slug and returns null for an unknown slug", () => {
     const page = findPublicPoolPageModel(snapshot, "tsla-tslax");
-    expect(page?.title).toBe("$TSLAx / $TSLA on Raydium CLMM");
+    expect(page?.title).toBe("TSLAx / TSLA pool on Raydium CLMM");
     expect(page?.path).toBe("/pools/tsla-tslax");
     expect(page?.dex).toBe("Raydium CLMM");
     expect(page?.apr7d).toBe("10.50%");
@@ -103,8 +104,11 @@ describe("public pool page models", () => {
 
   it("builds unique metadata, breadcrumbs, and copy that uses 7d APR once", () => {
     const page = findPublicPoolPageModel(snapshot, "tsla-tslax-meteora")!;
-    expect(publicPoolPairLabel(page.pool)).toBe("$TSLAx / $TSLA");
-    expect(page.metaDescription).toContain(HIGHEST_RANGE_APR_7D_HELP);
+    expect(poolPairLabel(page.pool, " / ")).toBe("TSLAx / TSLA");
+    expect(page.pairLabel).toBe("TSLAx / TSLA");
+    expect(page.metaTitle).toBe("TSLAx / TSLA pool on Meteora DLMM, 25 bps (Solana)");
+    expect(page.metaDescription.length).toBeLessThanOrEqual(155);
+    expect(page.metaDescription).toContain("Fees not guaranteed");
     expect(page.aprHelp).toBe(HIGHEST_RANGE_APR_7D_HELP);
     const metadata = publicPoolMetadata(page);
     expect(metadata.alternates?.canonical).toBe("/pools/tsla-tslax-meteora");
@@ -192,5 +196,66 @@ describe("public pool page models", () => {
     expect(antRow?.apr7d).toBe("—");
     expect(antPage?.apr7d).toBe("—");
     expect(antPage?.apr7d).toBe(antRow?.apr7d);
+  });
+
+  it("includes the fee in the document title so same-pair fee tiers stay unique", () => {
+    const one = pool({ key: "solana:spcx-1", protocol: "raydium-clmm", poolAddress: "spcx-1", symbolA: "SPCXx", symbolB: "SPCX", feeTierBps: 1 });
+    const five = pool({ key: "solana:spcx-5", protocol: "raydium-clmm", poolAddress: "spcx-5", symbolA: "SPCXx", symbolB: "SPCX", feeTierBps: 5 });
+    const onePage = publicPoolPageModel(one, 10, "spcx-spcxx-raydium-1bps");
+    const fivePage = publicPoolPageModel(five, 11, "spcx-spcxx-raydium-5bps");
+    expect(onePage.metaTitle).toBe("SPCXx / SPCX pool on Raydium CLMM, 1 bps (Solana)");
+    expect(fivePage.metaTitle).toBe("SPCXx / SPCX pool on Raydium CLMM, 5 bps (Solana)");
+    expect(onePage.metaTitle).not.toBe(fivePage.metaTitle);
+    expect(onePage.feeTier).toBe("1 bps");
+    expect(fivePage.feeTier).toBe("5 bps");
+  });
+
+  it("omits the fee from the document title when the fee tier is missing", () => {
+    const rhc = pool({
+      key: "robinhood:0xspcx",
+      chain: "robinhood",
+      protocol: "uniswap-v4-rhc",
+      poolAddress: "0xspcx",
+      symbolA: "SPCX",
+      symbolB: "SPCXon",
+      pairLabel: "SPCX/SPCXon",
+      feeTierBps: null,
+    });
+    const page = publicPoolPageModel(rhc, 9, "spcx-spcxon");
+    expect(page.pairLabel).toBe("SPCX / SPCXon");
+    expect(page.title).toBe("SPCX / SPCXon pool on Uniswap v4");
+    expect(page.metaTitle).toBe("SPCX / SPCXon pool on Uniswap v4 (Robinhood Chain)");
+    expect(page.feeTier).toBe("—");
+    expect(page.metaDescription.length).toBeLessThanOrEqual(155);
+  });
+
+  it("uses pairLabel order even when symbolA/symbolB are flipped, and matches the SSR table card", () => {
+    const flipped = pool({
+      key: "solana:tsla-flipped",
+      protocol: "raydium-clmm",
+      poolAddress: "tsla-flipped",
+      symbolA: "TSLA",
+      symbolB: "TSLAx",
+      pairLabel: "TSLAx/TSLA",
+      feeTierBps: 5,
+    });
+    const snap: HomepagePoolsSnapshot = { pools: [flipped], apr7d: { [flipped.key]: 8 }, updated: [] };
+    const page = findPublicPoolPageModel(snap, "tsla-tslax")!;
+    const row = publicPoolRows(snap)[0];
+    expect(page.pairLabel).toBe("TSLAx / TSLA");
+    expect(row?.pairLabel).toBe(page.pairLabel);
+    expect(page.feeTier).toBe("5 bps");
+    expect(row?.feeTier).toBe(page.feeTier);
+  });
+
+  it("keeps every pool-page pairLabel equal to the SSR table card, with descriptions at most 155 characters", () => {
+    const pages = listPublicPoolPageModels(snapshot);
+    const rows = publicPoolRows(snapshot);
+    expect(pages.length).toBe(rows.length);
+    for (const page of pages) {
+      const row = rows.find((item) => item.key === page.pool.key);
+      expect(row?.pairLabel, page.slug).toBe(page.pairLabel);
+      expect(page.metaDescription.length, page.metaDescription).toBeLessThanOrEqual(155);
+    }
   });
 });
