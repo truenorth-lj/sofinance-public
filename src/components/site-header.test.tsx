@@ -79,10 +79,11 @@ describe("SiteHeader", () => {
     expect(html).toContain('height="36"');
     expect(html).toContain("h-9 w-9 max-w-none shrink-0 object-contain");
     expect(html).toContain("flex h-9 w-9 shrink-0 items-center justify-center overflow-visible");
-    expect(html).toContain("flex shrink-0 items-center gap-2.5");
-    expect(html).toContain("gap-2.5");
+    expect(html).toContain("flex shrink-0 items-center gap-2");
+    expect(html).toContain("sm:gap-2.5");
     expect(html).toContain("font-display");
-    expect(html).toContain("text-[20px]");
+    expect(html).toContain("text-[16px]");
+    expect(html).toContain("sm:text-[20px]");
     expect(html).toContain("font-bold");
     expect(html).toContain("text-cream");
     expect(html).toContain("SoFinance");

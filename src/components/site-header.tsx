@@ -60,6 +60,7 @@ export function SiteHeader({
               aria-expanded={menuOpen}
               aria-controls={menuId}
               onClick={() => setMenuOpen((open) => !open)}
+              aria-label="Menu"
               data-testid="nav-menu"
               className={cn(
                 pill,
@@ -68,7 +69,8 @@ export function SiteHeader({
               )}
             >
               {menuOpen ? <CloseIcon className="h-4 w-4" aria-hidden="true" /> : <Menu className="h-4 w-4" aria-hidden="true" />}
-              Menu
+              {/* The word is 375+ only: at 360 the row is already flush, and CI fonts overflow the page. */}
+              <span className="max-[374px]:hidden">Menu</span>
             </button>
           </div>
         </div>
