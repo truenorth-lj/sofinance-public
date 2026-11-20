@@ -1,8 +1,8 @@
 ---
 title: "How to collect xStocks xPoints with SoFinance: step-by-step"
-description: "A screen-by-screen walkthrough: register for xPoints, open a same-stock LP with SoFinance (it builds the Raydium position for you), then check your points."
+description: "A screen-by-screen walkthrough: register for xPoints, open a same-stock LP with SoFinance (it builds the Raydium or Meteora position for you), then check your points."
 datePublished: "2026-10-27"
-dateModified: "2026-10-30"
+dateModified: "2026-11-20"
 hero:
   src: /blog/xstocks-xpoints/hero.png
   alt: xPoints activity tiers — Hold, Lend, Provide liquidity
@@ -10,7 +10,7 @@ hero:
 
 xStocks are tokenized equities on Solana. The issuer's **xPoints** program tracks onchain activity with those tokens. On the points dashboard, **providing liquidity** is the highest tier — above hold and lend.
 
-SoFinance is a self-custodial tool that opens a same-stock LP for you: you pick the pair and amount, sign once, and **SoFinance builds the Raydium LP position under the hood**. The position NFT lands in your wallet. You can also **collect trading fees** from swaps that hit your in-range position — separate from points.
+SoFinance is a self-custodial tool that opens a same-stock LP for you: you pick the pool and amount, approve in your wallet, and **SoFinance builds the Raydium or Meteora LP position under the hood**. The position belongs to your wallet. You can also **collect trading fees** from swaps that hit your in-range position — separate from points.
 
 ![xPoints activity tiers — Hold, Lend, Provide liquidity](/blog/xstocks-xpoints/03_xpoints_dashboard.png)
 
@@ -45,7 +45,7 @@ What is on the record:
 
 **Bottom line for readers:** there is a **strong chance** — and the market **widely expects** — that xPoints convert into a **future airdrop**. **Not confirmed by xStocks.** No amount, date, or token is promised.
 
-How that ties to SoFinance: under the published ladder, **providing liquidity** is the highest activity tier. We are a self-custodial tool that opens a **same-stock** LP (Backpack stock token × matching xStock); **SoFinance builds the Raydium LP under the hood**, the position NFT lands in your wallet, and you can **collect trading fees** while in range — separate from points. Confirm eligible activity on the xPoints dashboard after you open. Risks: [/docs/risks](https://sofinancelab.xyz/docs/risks).
+How that ties to SoFinance: under the published ladder, **providing liquidity** is the highest activity tier. We are a self-custodial tool that opens a **same-stock** LP (Backpack stock token × matching xStock); **SoFinance builds the Raydium or Meteora LP under the hood**, the position belongs to your wallet, and you can **collect trading fees** while in range — separate from points. Confirm eligible activity on the xPoints dashboard after you open. Risks: [/docs/risks](https://sofinancelab.xyz/docs/risks).
 
 **Our referral (disclosed):** https://defi.xstocks.fi/points?ref=SOFINANCE
 
@@ -63,52 +63,45 @@ Choose **Solana** (Phantom or Solflare):
 
 ## 2. Open SoFinance
 
-Go to [https://sofinancelab.xyz](https://sofinancelab.xyz) and click **Open app**.
+Go to [https://sofinancelab.xyz](https://sofinancelab.xyz) and click **See pools** (or **Pools** in the top menu).
 
-![SoFinance home — Open app](/blog/xstocks-xpoints/steps/step03_sofinance_home_hero.png)
+![SoFinance home: See pools](/blog/xstocks-xpoints/steps/step03_home_see_pools.png)
 
 ## 3. Connect your wallet
 
-In the app, click **Connect wallet**. Tick **Terms of Service**, then **Continue to wallet**.
+Open **Portfolio** and click **Connect wallet**. Tick **Terms of Service**, then click **Continue to wallet** and pick your Solana wallet (Phantom, Solflare, Backpack and others).
 
-![App landing — Connect wallet](/blog/xstocks-xpoints/steps/step04_app_landing_positions_empty.png)
+![Portfolio: Connect wallet](/blog/xstocks-xpoints/steps/step04_portfolio_connect.png)
 
-![Before you connect — tick Terms, Continue to wallet](/blog/xstocks-xpoints/steps/step05_app_before_you_connect_modal.png)
+![Before you connect: tick Terms, then Continue to wallet](/blog/xstocks-xpoints/steps/step05_before_you_connect.png)
 
-## 4. Find SPCXx/SPCX on RWA pairs
+## 4. Find SPCXx/SPCX on Pools
 
-Open **RWA pairs**. Type **SPCX** in **Search token** (or scroll) to find **SPCXx/SPCX**. **Hide duplicate pools** is on by default, so you see one card for the pair: the pool with the highest estimated 7-day APR. Its fee tier (**1 bps** or **5 bps**) is on the card. To compare both pools, click **Show all pools (N hidden)**.
+Open [Pools](https://sofinancelab.xyz/pools). Each card shows the pair, chain, DEX, an **Est. APR · 7d**, TVL, 24h volume and the fee tier.
 
-![RWA pairs list](/blog/xstocks-xpoints/steps/step06_rwa_pairs_header_first_cards.png)
+![Pools: one card per pool, with Open position and Calculate shares. Card APRs are 7-day estimates as of 20 Nov 2026 (UTC). Not a prediction. Fees not guaranteed.](/blog/xstocks-xpoints/steps/step06_pools_list.png)
 
-![SPCXx/SPCX — one card per pair; Show all pools reveals the other fee tier](/blog/xstocks-xpoints/steps/step07_rwa_pairs_spcx_1bps_card.png)
+Type **SPCX** in the **Search tokens** box. When one DEX on one chain has more than one pool for the same pair, the list shows only the pool with the highest estimated 7-day APR. Click **Show duplicates (N)** to see the others. On 20 Nov 2026 the search showed two SPCXx/SPCX cards on Solana (Meteora and Raydium, both **1 bps**) plus the Robinhood Chain SPCX/SPCXon pool, and **Show duplicates (1)** revealed the Raydium **5 bps** pool.
 
-## 5. Optional: Plan this pool
+![Search tokens: SPCX. Two SPCXx/SPCX pools on Solana and one on Robinhood Chain. APRs are 7-day estimates as of 20 Nov 2026 (UTC). Not a prediction. Fees not guaranteed.](/blog/xstocks-xpoints/steps/step07_pools_search_spcx.png)
 
-Click **Plan this pool** to see an estimate for your amount and days (based on historical data, not a prediction). When ready, click **Create a position in this pool**.
+## 5. Optional: Calculate shares
 
-![Plan — amount and days](/blog/xstocks-xpoints/steps/step10_plan_amount_input_and_chart.png)
+Click **Calculate shares** on a card to compare holding SPCX on its own (HODL) with holding it in the pool (HODL + more shares) for an amount and a number of days. It is a best case built from the pool's past fees, not a forecast. Fees not guaranteed. When you're ready, click **Open position** in the same dialog.
 
-## 6. Create position
+## 6. Open position
 
-Or click **Create position** on the pair card. Choose an input asset (**SOL**, **USDC**, or a pool token), an amount, and a range (**Best** is the suggested default — here **Micro ±0.02%**). Then continue.
+Or click **Open position** on the card. Choose an input asset (**USDC** or one of the pool tokens), an amount, and a price range. **Best** is the suggested default: the range with the highest estimated fee APR over the last 7 days (here **Micro ±0.02%**). The dialog lists the position rent, the 0.1% platform fee on the part we swap, and how many approvals your wallet will ask for.
 
-![Create position — SPCXx/SPCX, Best = Micro ±0.02%, ~36% est. fee APR (not a prediction; one pool snapshot)](/blog/xstocks-xpoints/steps/step08_create_position_modal_spcx.png)
+![Open position: SPCXx/SPCX on Meteora, Best = Micro ±0.02%, ~16% est. fee APR (last 7 days, ~$1,000 deposit, as of 20 Nov 2026 UTC). Not a prediction. Fees not guaranteed.](/blog/xstocks-xpoints/steps/step08_open_position_dialog.png)
 
-## 7. Approve once in your wallet
+## 7. Approve in your wallet
 
-Approve the transaction in your wallet. SoFinance swaps as needed and **builds the Raydium LP position for you**; the position NFT lands in your wallet.
+Click **Connect wallet** (if you haven't yet), then approve each transaction in your wallet. The dialog tells you how many there are, for example 2 for this pool. SoFinance swaps as needed and **builds the Raydium or Meteora LP position for you**. The position belongs to your wallet. We don't show the wallet approval screens here: always check what you sign in your own wallet.
 
+## 8. Track it in Portfolio
 
-## 8. Track it in the app
-
-Open [/app](https://sofinancelab.xyz/app). Under **My positions** / **Performance** you can add liquidity, compound collected trading fees, or withdraw — you sign every time.
-
-Numbers below are **this one position’s figures only** (not a promise or forecast).
-
-![My positions + Performance — this position: 30.47 holding days, est. trading-fee APR 20.29%, fees 0.598370 SPCX](/blog/xstocks-xpoints/steps/step14_positions_performance_full.png)
-
-![Performance detail — same position: results and exit estimate](/blog/xstocks-xpoints/steps/step14b_performance_detail.png)
+Open [Portfolio](https://sofinancelab.xyz/app/portfolio). Under **All positions** you can add liquidity, compound collected trading fees, or withdraw. You sign every time. The **Performance** view shows each position's holding days, collected trading fees and an exit estimate. Those figures are for your own position only, not a promise or forecast.
 
 ## 9. Check your xPoints
 
