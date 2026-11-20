@@ -124,7 +124,7 @@ describe("RhcUniv4OpenPanel", () => {
     expect(container.querySelector("[data-testid=wallet-address]")!.textContent).toContain("0x2222…2222");
     await act(async () => { button("Preview open (simulated)").click(); await new Promise(r => setTimeout(r, 0)); });
     const [, init] = (fetchMock.mock.calls as unknown as [string, RequestInit][]).find(c => !c[0].startsWith("/api/rhc-univ4-positions"))!;
-    expect(JSON.parse(init.body as string)).toMatchObject({ action: "prepare", user: USER, depositToken: SPCX, amount: "1000000000000000000", tickLower: -10, tickUpper: 10 });
+    expect(JSON.parse(init.body as string)).toMatchObject({ action: "prepare", user: USER, depositToken: SPCX, amount: "1000000000000000000", tickLower: -11, tickUpper: 9 });
     expect(container.querySelector("[data-testid=leftover-note]")).not.toBeNull();
     expect(text()).toContain("Step 1/3");
     expect([...container.querySelectorAll("li[data-step] button")].every(b => (b as HTMLButtonElement).disabled)).toBe(true);
@@ -204,7 +204,7 @@ describe("RhcUniv4OpenPanel signing (preview flag on)", () => {
     expect(sign.params).toEqual([USER, JSON.stringify({ primaryType: "PermitSingle" })]);
     const [prep, fin] = p.bodies();
     expect(fin).toEqual({ ...prep, action: "finalize", attempt: 0, signature: SIG, permit: (prep0 as { permit: unknown }).permit });
-    expect(fin).toMatchObject({ poolId: pool().poolId, user: USER, depositToken: SPCX, amount: "1000000000000000000", tickLower: -10, tickUpper: 10 });
+    expect(fin).toMatchObject({ poolId: pool().poolId, user: USER, depositToken: SPCX, amount: "1000000000000000000", tickLower: -11, tickUpper: 9 });
     expect(p.sends()).toEqual([]);
     expect(p.stepButton("execute").disabled).toBe(false);
     await p.click("execute");

@@ -17,12 +17,24 @@ import { bpsFeeStrategy } from "../fees";
 import { meteoraDlmmDescriptor } from "./descriptor";
 import type { PositionPerformanceReport } from "@/lib/position-performance-report";
 import {
-  buildMeteoraCloseRefund, buildMeteoraDeposit, buildMeteoraSetup, meteoraBinUiPrice, meteoraOpenRent, meteoraRequestRange, ownerPoolTokenAccountsExist,
+  buildMeteoraCloseRefund, buildMeteoraDeposit, buildMeteoraSetup, meteoraBinIdAtPrice, meteoraBinUiPrice, meteoraOpenRent, meteoraRequestRange, ownerPoolTokenAccountsExist,
   depositIntermediateRentAllowance, meteoraOpenPresets, meteoraOpenSolParts, planMeteoraOpen, readMeteoraPool, assertEmptyOwnedPosition, type MeteoraOpenDeps, type MeteoraPoolState,
 } from "./open.server";
 import { buildMeteoraAdd, buildMeteoraClaim, buildMeteoraCompound, buildMeteoraWithdraw, quoteMeteoraAdd } from "./manage.server";
 import { meteoraDepositMinimum, type MeteoraLegQuote, type MeteoraUsdPrices } from "./minimum.server";
 import { listedMeteoraPool, type MeteoraPoolList } from "./pools.server";
+import { openRangeCenterPrice } from "@/lib/open-range-center";
+
+function meteoraQuotedRange(pool: MeteoraPoolState, lowerBinId: number, upperBinId: number) {
+  const { binStep } = pool.lbPair;
+  return {
+    lowerPrice: meteoraBinUiPrice(lowerBinId, binStep, pool.decimalsX, pool.decimalsY),
+    upperPrice: meteoraBinUiPrice(upperBinId + 1, binStep, pool.decimalsX, pool.decimalsY),
+    units: upperBinId - lowerBinId + 1,
+    tickLower: lowerBinId * binStep,
+    tickUpper: (upperBinId + 1) * binStep,
+  };
+}
 
 /**
  * The report fields the Performance tab draws (`PositionPerformanceReport`), and nothing else: the raw event history,
@@ -166,14 +178,10 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
         meteoraDepositMinimum(plan, request.owner, options.quoteLeg, options.usdPrices),
       ]);
       const parts = meteoraOpenSolParts(rent.totalLamports, allowance);
-      const { binStep } = pool.lbPair;
       return {
         poolId: request.poolId,
-        range: {
-          lowerPrice: meteoraBinUiPrice(plan.lowerBinId, binStep, pool.decimalsX, pool.decimalsY),
-          upperPrice: meteoraBinUiPrice(plan.upperBinId + 1, binStep, pool.decimalsX, pool.decimalsY),
-          units: plan.width,
-        },
+        range: meteoraQuotedRange(pool, plan.lowerBinId, plan.upperBinId),
+        rangeSide: meteoraRangeSide(pool.lbPair.activeId, plan.lowerBinId, plan.upperBinId),
         steps: 2,
         rent: { refundableLamports: rent.positionLamports.toString(), nonRefundableLamports: "0", tokenAccountLamports: rent.tokenAccountLamports.toString() },
         platformFeeRaw: plan.platformFeeRaw.toString(),
@@ -186,12 +194,9 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
       return {
         poolId: request.poolId,
         range: priced
-          ? {
-            lowerPrice: meteoraBinUiPrice(range!.lowerBinId, pool!.lbPair.binStep, pool!.decimalsX, pool!.decimalsY),
-            upperPrice: meteoraBinUiPrice(range!.upperBinId + 1, pool!.lbPair.binStep, pool!.decimalsX, pool!.decimalsY),
-            units: range!.upperBinId - range!.lowerBinId + 1,
-          }
+          ? meteoraQuotedRange(pool!, range!.lowerBinId, range!.upperBinId)
           : { lowerPrice: 0, upperPrice: 0, units: 0 },
+        rangeSide: priced ? meteoraRangeSide(pool!.lbPair.activeId, range!.lowerBinId, range!.upperBinId) : undefined,
         steps: 2,
         rent: { refundableLamports: "0", nonRefundableLamports: "0" },
         platformFeeRaw: "0",
@@ -308,9 +313,17 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
     // On-chain only (pool + both mints): works when the volume / APR feed is down, so opening never depends on it.
     openRanges: (poolId: string) => guarded(async (): Promise<OpenRanges> => {
       const pool = await readMeteoraPool(deps(), poolId);
-      // UI Y/X = (1 + binStep / 10_000)^binId * 10^(decimalsX - decimalsY).
-      const parityUnit = Math.round((pool.decimalsY - pool.decimalsX) * Math.LN10 / Math.log1p(pool.lbPair.binStep / 10_000));
-      return { poolId, decimals: { [pool.lbPair.tokenXMint]: pool.decimalsX, [pool.lbPair.tokenYMint]: pool.decimalsY }, presets: meteoraOpenPresets(pool), parityUnit };
+      // UI Y/X = (1 + binStep / 10_000)^binId * 10^(decimalsX - decimalsY). From the on-chain active bin, never the API.
+      const { activeId, binStep } = pool.lbPair;
+      const parityUnit = meteoraBinIdAtPrice(1, binStep, pool.decimalsX, pool.decimalsY);
+      const onChainPriceBPerA = meteoraBinUiPrice(activeId, binStep, pool.decimalsX, pool.decimalsY);
+      const centerPrice = openRangeCenterPrice({
+        multiplierA: pool.multiplierX,
+        multiplierB: pool.multiplierY,
+        onChainPriceBPerA,
+      });
+      const centerUnit = meteoraBinIdAtPrice(centerPrice, binStep, pool.decimalsX, pool.decimalsY);
+      return { poolId, decimals: { [pool.lbPair.tokenXMint]: pool.decimalsX, [pool.lbPair.tokenYMint]: pool.decimalsY }, presets: meteoraOpenPresets(pool), parityUnit, centerUnit };
     }),
     previewWithdraw: async () => { throw notYet(descriptor.capabilities.exitPreview); },
     prepareOpen: (request: OpenRequest, context: StepContext) => guarded(() => open(request, context)),

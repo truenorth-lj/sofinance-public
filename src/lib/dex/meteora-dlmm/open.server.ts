@@ -6,6 +6,7 @@ import { ComputeBudgetProgram, PublicKey, TransactionMessage, VersionedTransacti
 import { decodeLbPair, type LbPairState } from "@sofinance/engine/protocols/meteora/accounts";
 import { METEORA_DLMM_PROGRAM_ID, SPL_TOKEN_PROGRAM_ID } from "@sofinance/engine/protocols/meteora/constants";
 import { decodeMeteoraPosition, isMeteoraPositionAccount, meteoraPositionLiquidity, type MeteoraPosition } from "@sofinance/engine/protocols/meteora/position";
+import { scaledUiMultiplierFromMint } from "@sofinance/engine/scaled-ui-multiplier";
 import {
   meteoraAddLiquidityByStrategy2Instruction, meteoraClosePosition2Instruction, meteoraInitializePositionInstruction, meteoraMaxActiveBinSlippage, meteoraSpotSplit,
 } from "@sofinance/engine/protocols/meteora/open";
@@ -73,6 +74,8 @@ export type MeteoraPoolState = {
   decimalsX: number;
   decimalsY: number;
   slot: number;
+  multiplierX?: number;
+  multiplierY?: number;
 };
 
 export type MeteoraOpenPlan = {
@@ -108,6 +111,12 @@ export function meteoraBinUiPrice(binId: number, binStep: number, decimalsX: num
   return (1 + binStep / 10_000) ** binId * 10 ** (decimalsX - decimalsY);
 }
 
+/** Nearest bin id whose lower-edge raw UI price (Y per X) is `price`. Uses on-chain binStep and mint decimals only. */
+export function meteoraBinIdAtPrice(price: number, binStep: number, decimalsX: number, decimalsY: number) {
+  if (!(price > 0) || !(binStep > 0)) throw new Error("Price and bin step must be positive");
+  return Math.round(Math.log(price / 10 ** (decimalsX - decimalsY)) / Math.log1p(binStep / 10_000));
+}
+
 const RESTRICTION_TEXT: Record<MeteoraMintRestriction, string> = {
   transfer_hook: "runs its issuer's transfer hook on every transfer",
   paused: "has transfers paused by its issuer",
@@ -135,7 +144,13 @@ export function assertMeteoraPoolMintsUsable(
       throw new DexError("TOKEN_RESTRICTED", `This pool's token ${short(address)} ${restrictions.map((r) => RESTRICTION_TEXT[r]).join(" and ")}, so SoFinance can't move it safely. Nothing was built.`);
     }
   }
-  return { tokenProgramX, tokenProgramY, decimalsX: checked[0]!.mint.decimals, decimalsY: checked[1]!.mint.decimals };
+  const multiplierX = scaledUiMultiplierFromMint(checked[0]!.mint);
+  const multiplierY = scaledUiMultiplierFromMint(checked[1]!.mint);
+  return {
+    tokenProgramX, tokenProgramY, decimalsX: checked[0]!.mint.decimals, decimalsY: checked[1]!.mint.decimals,
+    ...(multiplierX !== undefined ? { multiplierX } : {}),
+    ...(multiplierY !== undefined ? { multiplierY } : {}),
+  };
 }
 
 /** Pool (listed + on-chain LbPair) and both mints, one batched read. */

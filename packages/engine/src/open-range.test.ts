@@ -170,4 +170,16 @@ describe("open-position range / tick math", () => {
       expect(rangeInputFromFields("micro")).toEqual({ preset: "micro" });
     });
   });
+
+  it("centers a preset on an explicit centerPrice instead of 1", () => {
+    const tickCurrent = 46120;
+    const pool = { currentPrice: uiPriceBPerAFromTick(tickCurrent, 6, 8), tickCurrent,
+      sqrtPriceX64: TickUtil.getSqrtPriceAtTick(tickCurrent).toString(), decimalsA: 6, decimalsB: 8, tickSpacing: 10 };
+    const parity = resolveOpenRange({ ...pool, range: { preset: "standard", centerOnParity: true } });
+    const fair = resolveOpenRange({ ...pool, range: { preset: "standard", centerOnParity: true, centerPrice: 0.992581 } });
+    expect(fair.tickUpper - fair.tickLower).toBe(parity.tickUpper - parity.tickLower);
+    expect(fair.tickLower).not.toBe(parity.tickLower);
+    expect(fair.priceLower).toBeLessThan(0.992581);
+    expect(fair.priceUpper).toBeGreaterThan(0.992581);
+  });
 });

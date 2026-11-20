@@ -4,7 +4,8 @@ import { evmClientFor, type OpenFlowResult, type PermitJson, type WalletBalances
   type RhcOpenAttempt, type RhcPoolView } from "@/lib/dex/evm-client";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { formatUnits, parseUnits } from "viem";
-import { exactTickFromUiPrice } from "@sofinance/engine/range-apr/tick-math";
+import { rhcDefaultOpenTicks, rhcRangeSide } from "@/lib/rhc-open-range";
+import { formatRangeStatus } from "@/lib/position-label";
 import {
   connectEvmWallet, discoverEvmWallets, ensureRobinhoodChain, guardedWalletRequest, SIGNING_DISABLED_MESSAGE, WalletRequestError,
 } from "@/lib/rhc-wallet/eip1193";
@@ -265,9 +266,10 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
       if (wei <= 0n) throw new Error("Enter a valid amount");
       // Listed Robinhood Chain pools use tick spacing 1. Equal UI prices need
       // decimal normalization before choosing their nearest raw tick.
-      const center = centerOnParity ? Math.round(exactTickFromUiPrice(1, pool.token0.decimals, pool.token1.decimals)) : pool.tick;
+      const ticks = rhcDefaultOpenTicks(pool, halfWidth, centerOnParity);
+      if (!ticks) throw new Error("This pool's on-chain price is not available yet.");
       const request: PrepareRequest = { poolId: pool.poolId, user: wallet.address, depositToken: token.address, amount: wei.toString(),
-        tickLower: center - halfWidth, tickUpper: center + halfWidth };
+        tickLower: ticks.tickLower, tickUpper: ticks.tickUpper };
       const response = await fetch("/api/rhc-univ4-open", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "prepare", ...request }), signal: AbortSignal.timeout(30_000) });
       const body = await response.json().catch(() => null) as OpenFlowResult | { error?: string } | null;
@@ -448,6 +450,12 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
             <button type="button" disabled={busy} onClick={() => void recheck()} className="mt-2 underline disabled:opacity-40">Check original transaction</button>
           </> : null}
         </div> : null}
+        {(() => {
+          const ticks = rhcDefaultOpenTicks(pool, halfWidth, centerOnParity);
+          if (!ticks || pool.tick === null) return null;
+          const status = formatRangeStatus(rhcRangeSide(pool.tick, ticks.tickLower, ticks.tickUpper));
+          return status ? <p className="mt-3 text-xs text-smoke" data-testid="rhc-open-range-status" title="In range means the current pool price is within your selected range and the position can collect trading fees. It stops collecting trading fees while the price is outside the range.">Status: {status}</p> : null;
+        })()}
         {error ? <p role="alert" className="mt-3 text-sm text-red-200">{error}</p> : null}
         {result ? <OpenPreview result={exec ?? result} pool={pool} /> : null}
         {result && result.state !== "failed" ? <StepList needsApproval={needsApproval} current={current} signingEnabled={signingEnabled} onStep={runStep} /> : null}

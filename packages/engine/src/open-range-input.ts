@@ -1,7 +1,7 @@
 import { DEFAULT_OPEN_RANGE_PRESET, type OpenRangePreset } from "./open-range-presets";
 
 export type OpenRangeInput =
-  | { preset: Exclude<OpenRangePreset, "custom">; centerOnParity?: boolean }
+  | { preset: Exclude<OpenRangePreset, "custom">; centerOnParity?: boolean; centerPrice?: number }
   | { preset: "custom"; minPrice: string; maxPrice: string };
 
 

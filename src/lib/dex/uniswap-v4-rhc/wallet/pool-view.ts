@@ -8,5 +8,7 @@ export type RhcPoolView = {
   price: number | null;
   token0: { address: string; symbol: string; decimals: number };
   token1: { address: string; symbol: string; decimals: number };
+  multiplier0?: number;
+  multiplier1?: number;
   estimatedApr: Univ4PoolApr | null;
 };

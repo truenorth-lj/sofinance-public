@@ -109,7 +109,7 @@ describe("RegistryOpenModal", () => {
     await render({ ranges: { ...ranges, parityUnit: 46054 } });
     const checkbox = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
     expect(checkbox.checked).toBe(true);
-    expect(checkbox.parentElement!.textContent).toContain("Center range on 1:1");
+    expect(checkbox.parentElement!.textContent).toContain("Center range on the fair price");
     const aprText = container.querySelector('[data-testid="range-apr-headline"]')!.textContent;
     await type("1");
     const latestQuote = () => calls.filter((call) => call.url.endsWith("/quote-open")).at(-1)!.body as { request: { range: unknown } };

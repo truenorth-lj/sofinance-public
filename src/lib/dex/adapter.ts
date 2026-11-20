@@ -75,7 +75,9 @@ export type AddQuote = {
 
 export type OpenQuote = {
   poolId: string;
-  range: { lowerPrice: number; upperPrice: number; units: number };
+  range: { lowerPrice: number; upperPrice: number; units: number; tickLower?: number; tickUpper?: number };
+  /** Whether the on-chain price sits inside the range that will be opened. */
+  rangeSide?: "below" | "inside" | "above";
   steps: number;
   rent: RentQuote | null;
   /** Fee the platform takes on this open, in the input token's raw units. */
@@ -107,6 +109,11 @@ export type OpenRanges = {
   presets: OpenRangePreset[];
   /** Nearest protocol unit to UI price 1:1, when the adapter offers parity centering. */
   parityUnit?: number;
+  /**
+   * Default center unit when the "fair price" control is on: the unit of `fairPriceFor`,
+   * or the on-chain current unit when that returns null. Derived from on-chain state only.
+   */
+  centerUnit?: number;
 };
 
 export type ExitPreview = { outputs: { token: string; amountRaw: string }[]; platformFeeRaw: string };
