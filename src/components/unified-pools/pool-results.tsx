@@ -28,6 +28,8 @@ type Shared = {
   apr: Readonly<Record<string, Apr7dState | undefined>>;
   actionFor: (pool: UnifiedPool) => OpenAction;
   icons?: TokenIconMap;
+  /** Server-built `pool.key → /pools/<slug>` map; missing keys stay unlinked. */
+  detailHrefs?: Readonly<Record<string, string>>;
 };
 
 export type FullPoolResultsProps = Shared & {
@@ -60,13 +62,13 @@ export function PoolResults(props: PoolResultsProps) {
   return props.mode === "full" ? <FullPoolResults {...props} /> : <TopPoolResults {...props} />;
 }
 
-function FullPoolResults({ view, pools, apr, actionFor, sort, onSort, icons, onCalculate }: FullPoolResultsProps) {
+function FullPoolResults({ view, pools, apr, actionFor, sort, onSort, icons, onCalculate, detailHrefs }: FullPoolResultsProps) {
   return view === "cards"
     ? <ul className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3" data-testid="pools-cards">
         {pools.map((pool) => <PoolCard key={pool.key} pool={pool} apr={apr[pool.key]} action={actionFor(pool)} icons={icons}
-          onCalculate={() => onCalculate(pool)} />)}
+          onCalculate={() => onCalculate(pool)} detailHref={detailHrefs?.[pool.key]} />)}
       </ul>
-    : <PoolTable pools={pools} apr={apr} actionFor={actionFor} sort={sort} onSort={onSort} icons={icons} />;
+    : <PoolTable pools={pools} apr={apr} actionFor={actionFor} sort={sort} onSort={onSort} icons={icons} detailHrefs={detailHrefs} />;
 }
 
 /**
@@ -83,7 +85,7 @@ export function cardAprState(state: Apr7dState | undefined, saved: number | null
 }
 
 function TopPoolResults({
-  pools, apr, apr7d, actionFor, icons, totalCount, updatedText, loading, error, onRetry,
+  pools, apr, apr7d, actionFor, icons, totalCount, updatedText, loading, error, onRetry, detailHrefs,
 }: TopPoolResultsProps) {
   return (
     <section id={TOP_POOLS_ANCHOR_ID} className="scroll-mt-6 pt-14 sm:pt-20" aria-labelledby="top-pools-heading" data-testid="top-pools">
@@ -147,6 +149,7 @@ function TopPoolResults({
               action={actionFor(pool)}
               icons={icons}
               calculateHref={buildCalculatePath(pool.poolAddress)}
+              detailHref={detailHrefs?.[pool.key]}
             />
           ))}
         </ul>

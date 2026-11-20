@@ -12,6 +12,7 @@ import {
   publicDexSlug,
   publicPoolJsonLd,
   publicPoolMetadata,
+  publicPoolDetailHrefs,
   publicPoolPageModel,
   publicPoolPairBase,
 } from "./public-pool-pages";
@@ -152,6 +153,12 @@ describe("public pool page models", () => {
       "/pools/tsla-tslax",
       "/pools/tsla-tslax-meteora",
     ]);
+    expect(publicPoolDetailHrefs(withStable)).toEqual({
+      [ray.key]: "/pools/tsla-tslax",
+      [met.key]: "/pools/tsla-tslax-meteora",
+    });
+    expect(publicPoolDetailHrefs(withStable)[stable.key]).toBeUndefined();
+    expect(publicPoolDetailHrefs(null)).toEqual({});
   });
 
   it("shows the same 7d APR as the SSR table for a pool in the snapshot, and — only when that pool has no 7d value", () => {

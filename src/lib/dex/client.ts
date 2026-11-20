@@ -3,10 +3,7 @@
  * `@/lib/dex/types`); native EVM wallet bindings use the separate `./evm-client` entry.
  * This metadata entry carries no server code, SDK or protocol module.
  */
-import { DEX_DESCRIPTORS } from "./descriptors";
-import { createDexDescriptorRegistry } from "./registry";
-
-export const dexDescriptors = createDexDescriptorRegistry(DEX_DESCRIPTORS);
+export { dexDescriptors } from "./descriptor-registry";
 
 export { rangeAprRequestTarget, type RangeAprProtocol, type RangeAprOptions } from "./range-apr-client-policy";
 

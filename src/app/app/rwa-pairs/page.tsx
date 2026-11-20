@@ -3,6 +3,7 @@ import { PublicPoolsTable } from "@/components/public-pools-table";
 import { PoolsPage } from "@/components/unified-pools/pools-page";
 import { loadHomepagePoolsSnapshot } from "@/lib/homepage-pools-snapshot";
 import { serializeJsonLd } from "@/lib/json-ld";
+import { publicPoolDetailHrefs } from "@/lib/public-pool-pages";
 import { publicPoolsItemListJsonLd } from "@/lib/public-pools-table";
 import { parseCalcParam, parseOpenPoolParam, firstQueryValue } from "@/lib/public-urls";
 import { unifiedPoolFlags } from "@/lib/unified-pools/flags";
@@ -27,6 +28,7 @@ export default async function RwaPairsPage({ searchParams }: {
   const initialQuery = firstQueryValue(query.q);
   const { rhcSigning, ...flags } = unifiedPoolFlags();
   const snapshot = await loadHomepagePoolsSnapshot();
+  const detailHrefs = publicPoolDetailHrefs(snapshot);
   const itemList = publicPoolsItemListJsonLd(snapshot);
   return (
     <>
@@ -39,7 +41,7 @@ export default async function RwaPairsPage({ searchParams }: {
       <HideOnMount>
         <PublicPoolsTable snapshot={snapshot} />
       </HideOnMount>
-      <PoolsPage flags={flags} rhcSigningEnabled={rhcSigning} deepLinkPool={deepLinkPool || undefined} deepLinkCalc={deepLinkCalc || undefined} initialQuery={initialQuery || undefined} />
+      <PoolsPage flags={flags} rhcSigningEnabled={rhcSigning} deepLinkPool={deepLinkPool || undefined} deepLinkCalc={deepLinkCalc || undefined} initialQuery={initialQuery || undefined} detailHrefs={detailHrefs} />
     </>
   );
 }

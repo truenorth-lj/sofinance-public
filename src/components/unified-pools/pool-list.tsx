@@ -9,6 +9,7 @@ import { formatPoolUsd } from "@/lib/format/usd";
 import type { TokenIconMap } from "@/lib/token-icons/map";
 import type { Apr7dState } from "@/lib/unified-pools/apr7d";
 import { CHAIN_LABELS, isLowTvl, LOW_TVL_LABEL, LOW_TVL_USD, NOT_SUPPORTED_LABEL, PROTOCOL_LABELS, type PoolChain, type SortDir, type SortKey, type UnifiedPool } from "@/lib/unified-pools/model";
+import type { OpenAction } from "@/lib/unified-pools/open-action";
 import { InfoTip } from "../info-tip";
 import { PairTokenIcons } from "../pair-token-icons";
 import { dataDaysLabel, MIN_DATA_DAYS } from "@/lib/min-data-days";
@@ -86,11 +87,7 @@ function Apr7dPill({ state, size, text }: { state: Apr7dState | undefined; size:
       state?.status === "ready" ? "bg-lemon text-ink" : size === "lg" ? "bg-ink/10 text-ink/70" : "bg-white/[0.06] text-cream/70")}>{text}</span>;
 }
 
-export type OpenAction = { kind: "open"; onOpen: () => void } | { kind: "link"; href: string } | { kind: "none"; reason: string }
-  /** A greyed, disabled Open button with the reason shown next to it (e.g. Meteora pools). */
-  | { kind: "disabled"; reason: string }
-  /** The pool's tokens use a setting opening does not handle yet: a greyed "Not supported yet" with the reason as its tooltip. */
-  | { kind: "unsupported"; reason: string };
+export type { OpenAction } from "@/lib/unified-pools/open-action";
 
 export function OpenButton({ action, label, compact, iconOnlyBelowMd }: {
   action: OpenAction; label: string; compact?: boolean;
@@ -170,8 +167,10 @@ const wideOnly = "max-md:hidden";
  * Est. APR · 7d and an icon-only Open are shown, so the table fits the screen with no horizontal scroll.
  */
 /** One list row on `/app/rwa-pairs` and the homepage "All pools" table. */
-export function PoolTableRow({ pool, apr, action, icons, highlight = false }: {
+export function PoolTableRow({ pool, apr, action, icons, highlight = false, detailHref }: {
   pool: UnifiedPool; apr: Apr7dState | undefined; action: OpenAction; icons?: TokenIconMap; highlight?: boolean;
+  /** When set, the pair name links to the public pool page. */
+  detailHref?: string;
 }) {
   return <tr data-pool={pool.key} data-chain={pool.chain} data-highlighted={highlight ? "true" : undefined}
     className={cn("border-b border-white/[0.06] last:border-0", highlight && "bg-white/[0.04]")}>
@@ -180,7 +179,9 @@ export function PoolTableRow({ pool, apr, action, icons, highlight = false }: {
         <PairTokenIcons pair={iconPair(pool)} icons={icons} chain={pool.chain} ringClassName="ring-char" iconClassName="h-8 w-8 text-xs max-md:h-6 max-md:w-6 max-md:text-[10px]" />
         <div className="min-w-0">
           {/* Below 768px the pair may break after the "/" so long pairs fit. */}
-          <p className="whitespace-nowrap font-medium text-cream max-md:whitespace-normal max-md:leading-tight">{pairWithBreak(pool.pairLabel)}</p>
+          {detailHref
+            ? <Link href={detailHref} className="whitespace-nowrap font-medium text-cream underline decoration-white/25 underline-offset-2 hover:decoration-cream max-md:whitespace-normal max-md:leading-tight">{pairWithBreak(pool.pairLabel)}</Link>
+            : <p className="whitespace-nowrap font-medium text-cream max-md:whitespace-normal max-md:leading-tight">{pairWithBreak(pool.pairLabel)}</p>}
           <p className="hidden max-w-[8rem] truncate text-xs text-smoke sm:block max-md:hidden" title={`${pool.nameA} / ${pool.nameB}`}>{pool.nameA} / {pool.nameB}</p>
           <p className="mt-0.5 whitespace-nowrap text-xs tabular-nums text-smoke md:hidden" data-testid="tvl-narrow">TVL {money(pool.tvlUsd)}</p>
           {/* Below 768px the Protocol column is hidden: the badge tells the same pair on two protocols apart. */}
@@ -197,7 +198,7 @@ export function PoolTableRow({ pool, apr, action, icons, highlight = false }: {
   </tr>;
 }
 
-export function PoolTable({ pools, apr, actionFor, sort, onSort, icons, highlightKey, testId = "pools-table" }: {
+export function PoolTable({ pools, apr, actionFor, sort, onSort, icons, highlightKey, testId = "pools-table", detailHrefs }: {
   pools: readonly UnifiedPool[]; apr: Readonly<Record<string, Apr7dState | undefined>>; actionFor: (pool: UnifiedPool) => OpenAction;
   sort: { key: SortKey; dir: SortDir };
   /** Omit for a fixed order: headers are plain labels instead of sort buttons. */
@@ -206,6 +207,8 @@ export function PoolTable({ pools, apr, actionFor, sort, onSort, icons, highligh
   /** Pool key to mark (e.g. a shared link's pool). */
   highlightKey?: string;
   testId?: string;
+  /** Server-built `pool.key → /pools/<slug>` map; missing keys stay unlinked. */
+  detailHrefs?: Readonly<Record<string, string>>;
 }) {
   // `relative` keeps the absolutely positioned sr-only labels inside this scroller (else they widen the page on phones).
   return <div className="relative mt-3 overflow-x-auto rounded-surface border border-white/12 bg-char">
@@ -231,7 +234,7 @@ export function PoolTable({ pools, apr, actionFor, sort, onSort, icons, highligh
         <th scope="col" className={cn("px-3 py-3", narrow)}><span className="sr-only">Open</span></th>
       </tr></thead>
       <tbody>{pools.map((pool) => (
-        <PoolTableRow key={pool.key} pool={pool} apr={apr[pool.key]} action={actionFor(pool)} icons={icons} highlight={pool.key === highlightKey} />
+        <PoolTableRow key={pool.key} pool={pool} apr={apr[pool.key]} action={actionFor(pool)} icons={icons} highlight={pool.key === highlightKey} detailHref={detailHrefs?.[pool.key]} />
       ))}</tbody>
     </table>
   </div>;

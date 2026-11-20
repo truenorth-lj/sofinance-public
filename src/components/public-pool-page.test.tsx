@@ -61,4 +61,44 @@ describe("PublicPoolPage (HTML without JS)", () => {
     expect(html).not.toContain("<!--$!-->");
     vi.unstubAllEnvs();
   });
+
+  it("shows Open position and Calculate shares for a supported Solana pool, and drops the old text CTA", () => {
+    expect(markup).toContain('aria-label="Open position in TSLAx / TSLA"');
+    expect(markup).toContain('href="/app/rwa-pairs?openPool=tsla-raydium"');
+    expect(markup).toContain('aria-label="Calculate shares for TSLAx / TSLA"');
+    expect(markup).toContain('href="/app/rwa-pairs?calc=tsla-raydium"');
+    expect(markup).toContain("Open position");
+    expect(markup).toContain("Calculate shares");
+    expect(markup).toContain("All pools");
+    expect(markup).not.toContain("Open this pool in the app");
+    expect(markup).not.toContain("All same-stock pools");
+  });
+});
+
+describe("PublicPoolPage calculator support", () => {
+  it("omits Calculate shares on a Robinhood Chain pool page and keeps Open position", () => {
+    const rhc: HomepagePool = {
+      key: "robinhood:0xnvda",
+      chain: "robinhood",
+      protocol: "uniswap-v4-rhc",
+      poolAddress: "0xnvda",
+      pairLabel: "NVDA/NVDAon",
+      symbolA: "NVDA",
+      symbolB: "NVDAon",
+      nameA: "NVDA",
+      nameB: "NVDAon",
+      mintA: "0xa",
+      mintB: "0xb",
+      feeTierBps: null,
+      tvlUsd: 80_000,
+      volume24hUsd: 2_000,
+      poolFeeApr24hPct: 12,
+    };
+    const html = renderToStaticMarkup(createElement(PublicPoolPage, { model: publicPoolPageModel(rhc, 8.2, "nvda-nvdaon") }));
+    expect(html).toContain('aria-label="Open position in NVDA / NVDAon"');
+    expect(html).toContain('href="/app/rwa-pairs?openPool=0xnvda"');
+    expect(html).toContain("Open position");
+    expect(html).not.toContain("Calculate shares");
+    expect(html).not.toContain("?calc=");
+  });
 });

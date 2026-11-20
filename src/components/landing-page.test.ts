@@ -25,6 +25,7 @@ describe("landing page copy and routes", () => {
   const table = readFileSync(resolve("src/components/homepage-pools-table.tsx"), "utf8");
   const results = readFileSync(resolve("src/components/unified-pools/pool-results.tsx"), "utf8");
   const urls = readFileSync(resolve("src/lib/public-urls.ts"), "utf8");
+  const openAction = readFileSync(resolve("src/lib/unified-pools/open-action.ts"), "utf8");
   const copyFiles = [
     "src/components/landing-page.tsx",
     "src/components/homepage-market.tsx",
@@ -175,7 +176,9 @@ describe("landing page copy and routes", () => {
     expect(footer).toContain("DOCS_ROUTES.home");
     expect(footer).toContain("DOCS_ROUTES.risks");
     expect(footer).toContain("BLOG_ROUTES.home");
-    expect(table).toContain("buildOpenPositionPath");
+    expect(openAction).toContain("buildOpenPositionPath");
+    expect(src).toContain("publicPoolDetailHrefs");
+    expect(src).toContain("detailHrefs={detailHrefs}");
     // Native/generic capability refusal is covered by the homepage DOM and open-dispatch handler tests.
     expect(urls).toContain("?openPool=");
     expect(results).toContain("buildCalculatePath");

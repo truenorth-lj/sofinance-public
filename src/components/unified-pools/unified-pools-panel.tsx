@@ -10,6 +10,7 @@ import {
   type PoolChain, type PoolFilters, type SortKey, type UnifiedPool, type UnifiedProtocol,
 } from "@/lib/unified-pools/model";
 import { rhcPool, rhcPoolView, solanaPool, type RhcPoolSummary, type SolanaPoolRow } from "@/lib/unified-pools/rows";
+import { poolSupportsCalculator } from "@/lib/unified-pools/plan-support";
 import { OpenPositionModal } from "../open-position-modal";
 import { clearPoolRangeAprClientCache, loadPoolRangeApr, type RangeAprProtocol } from "../range-apr/pool-range-apr-client";
 import type { PoolRangeAprPayload } from "@/lib/range-apr/types";
@@ -89,16 +90,18 @@ export type OpenRhcRequest = { pool: RhcPoolView };
  * see `lib/unified-pools/model.ts` for the rule). Opening a Solana pool connects the Solana wallet and opens the
  * existing Create position modal; opening a Robinhood Chain pool asks the page to open its dialog on the nav's EVM wallet.
  */
-export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", deepLinkCalc = "", initialQuery = "", header }: {
+export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", deepLinkCalc = "", initialQuery = "", header, detailHrefs }: {
   flags: UnifiedPoolFlags;
   onOpenRhc: (request: OpenRhcRequest) => void;
   /** `?openPool=` from the URL: open this pool once it is listed. */
   deepLinkPool?: string;
-  /** `?calc=` from the URL: open the share calculator for this pool once it is listed. */
+  /** `?calc=` from the URL: open the share calculator when this pool supports it; otherwise ignored. */
   deepLinkCalc?: string;
   /** `?q=` from the URL (homepage hero search): prefill the list search. */
   initialQuery?: string;
   header?: ReactNode;
+  /** Server-built `pool.key → /pools/<slug>` map; missing keys stay unlinked. */
+  detailHrefs?: Readonly<Record<string, string>>;
 }) {
   const { connected, connect } = useWalletConnection();
   const { loaded, errors, loading, refreshKey, refresh: reloadSources } = usePoolSources(flags);
@@ -177,7 +180,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", deepLin
     const pool = pools.find((item) => item.poolAddress === deepLinkCalc || item.poolAddress.toLowerCase() === deepLinkCalc.toLowerCase());
     const timer = window.setTimeout(() => {
       setDeepCalced(true);
-      if (pool) setCalcPool(pool);
+      if (pool && poolSupportsCalculator(pool)) setCalcPool(pool);
     }, 0);
     return () => window.clearTimeout(timer);
   }, [deepLinkCalc, deepCalced, loading, pools]);
@@ -251,7 +254,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", deepLin
 
     {selected.pools.length > 0 && (
       <PoolResults mode="full" view={view} pools={selected.pools} apr={apr} actionFor={actionFor} sort={sort} onSort={onSort}
-        icons={loaded.icons} onCalculate={(pool) => setCalcPool(pool)} />
+        icons={loaded.icons} onCalculate={(pool) => { if (poolSupportsCalculator(pool)) setCalcPool(pool); }} detailHrefs={detailHrefs} />
     )}
 
     {calcPool && <ShareCalcDialog key={calcPool.key} pool={calcPool} open={actionFor(calcPool)} onClose={closeCalc} />}

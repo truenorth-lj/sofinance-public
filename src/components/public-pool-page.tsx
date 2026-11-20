@@ -3,10 +3,14 @@ import { SiteFooter } from "@/components/site-footer";
 import { InkShell } from "@/components/ink";
 import { PageHeader } from "@/components/page-header";
 import { SiteHeader } from "@/components/site-header";
-import { DOCS_ROUTES, GUIDE_ROUTES } from "@/lib/public-urls";
+import { cn } from "@/lib/cn";
+import { DOCS_ROUTES, GUIDE_ROUTES, buildCalculatePath } from "@/lib/public-urls";
 import { HOMEPAGE_APR_DOCS_LINK_LABEL } from "@/lib/apr-labels/copy";
 import { PUBLIC_POOL_APR_LABEL, type PublicPoolPageModel } from "@/lib/public-pool-pages";
 import { PUBLIC_POOLS_H1 } from "@/lib/public-pools-table";
+import { openAction } from "@/lib/unified-pools/open-action";
+import { NOT_SUPPORTED_LABEL } from "@/lib/unified-pools/model";
+import { poolSupportsCalculator } from "@/lib/unified-pools/plan-support";
 
 function Fact({ term, value }: { term: string; value: string }) {
   return (
@@ -17,8 +21,49 @@ function Fact({ term, value }: { term: string; value: string }) {
   );
 }
 
+const pill =
+  "inline-flex h-11 min-h-11 items-center justify-center rounded-full px-4 text-sm font-semibold outline-none focus-visible:shadow-[0_0_0_3px_var(--color-lilac)]";
+const openPill = cn(pill, "bg-lemon text-ink transition-colors hover:bg-[#fff27f]");
+const calcPill = cn(pill, "border border-white/30 text-cream transition-colors hover:border-cream");
+
+function OpenPositionControl({ model }: { model: PublicPoolPageModel }) {
+  const action = openAction(model.pool);
+  const label = model.pairLabel;
+  if (action.kind === "link") {
+    return (
+      <Link href={action.href} className={openPill} aria-label={`Open position in ${label}`}>
+        Open position
+      </Link>
+    );
+  }
+  if (action.kind === "disabled") {
+    return (
+      <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1" data-testid="open-disabled">
+        <button type="button" disabled aria-disabled="true" title={action.reason}
+          aria-label={`Open position in ${label}: ${action.reason}`}
+          className={cn(openPill, "cursor-not-allowed opacity-45 hover:bg-lemon")}>
+          Open position
+        </button>
+        <span className="text-xs text-cream/70">{action.reason}</span>
+      </span>
+    );
+  }
+  if (action.kind === "unsupported") {
+    return (
+      <span data-testid="open-unsupported" aria-disabled="true" title={action.reason}
+        className="inline-flex h-11 cursor-not-allowed items-center gap-1.5 rounded-full border border-white/20 px-4 text-sm font-semibold text-cream/60">
+        <span>{NOT_SUPPORTED_LABEL}</span>
+        <span className="sr-only">: {action.reason}</span>
+      </span>
+    );
+  }
+  if (action.kind === "none") return <span className="text-xs text-cream/70">{action.reason}</span>;
+  return null;
+}
+
 /** Server-rendered public pool page: facts from the cached snapshot, no per-request RPC. */
 export function PublicPoolPage({ model }: { model: PublicPoolPageModel }) {
+  const showCalculate = poolSupportsCalculator(model.pool);
   return (
     <InkShell>
       <SiteHeader />
@@ -37,6 +82,18 @@ export function PublicPoolPage({ model }: { model: PublicPoolPageModel }) {
           </ol>
         </nav>
         <PageHeader title={model.title} subline={model.aprHelp} />
+        <div className="mt-4 flex flex-wrap items-center gap-3" data-testid="pool-page-actions">
+          <OpenPositionControl model={model} />
+          {showCalculate && (
+            <Link
+              href={buildCalculatePath(model.pool.poolAddress)}
+              className={calcPill}
+              aria-label={`Calculate shares for ${model.pairLabel}`}
+            >
+              Calculate shares
+            </Link>
+          )}
+        </div>
         <section aria-labelledby="pool-facts-heading" className="mt-3 rounded-[28px] border border-white/12 bg-char p-6 sm:p-8">
           <h2 id="pool-facts-heading" className="text-lg font-semibold tracking-[-0.02em] text-cream">Pool facts</h2>
           <dl className="mt-4">
@@ -49,12 +106,8 @@ export function PublicPoolPage({ model }: { model: PublicPoolPageModel }) {
             <Fact term={PUBLIC_POOL_APR_LABEL} value={model.apr7d} />
           </dl>
           <p className="mt-6 text-sm">
-            <Link href={model.openInAppHref} className="underline decoration-cream/40 underline-offset-2 hover:decoration-cream">
-              Open this pool in the app
-            </Link>
-            {" · "}
             <Link href={model.listHref} className="underline decoration-cream/40 underline-offset-2 hover:decoration-cream">
-              All same-stock pools
+              All pools
             </Link>
             {" · "}
             <Link href={GUIDE_ROUTES.learn} className="underline decoration-cream/40 underline-offset-2 hover:decoration-cream">
