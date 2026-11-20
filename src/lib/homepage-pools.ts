@@ -12,6 +12,8 @@ export const HOMEPAGE_MIN_TVL_USD = LOW_TVL_USD;
 export const HOMEPAGE_MIN_TVL_NOTE = "Pools under $5k TVL are not shown.";
 /** Homepage top-5 heading (PR-c). */
 export const TOP_POOLS_TITLE = "Top pools";
+/** Stable homepage anchor for the top-5 block (hero "See pools" and in-page #pools links). */
+export const TOP_POOLS_ANCHOR_ID = "pools";
 /** The only place the homepage names the 7d estimated APR (PR-c copy rule). */
 export const TOP_POOLS_SUBTITLE = "Pools over $5k TVL, ranked by 7d estimated APR.";
 /** "See all N pools →" on the homepage, where N is the full /app/rwa-pairs default-list count. */

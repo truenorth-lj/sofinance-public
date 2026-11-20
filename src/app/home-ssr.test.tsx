@@ -87,6 +87,31 @@ describe("homepage server render", () => {
   const topAprs = (html: string) => [...poolsHtml(html).matchAll(/data-testid="apr7d"[^>]*>([^<]+)/g)].map((match) => match[1]);
   const rhcKey = (index: number) => `robinhood:${UNIV4_RHC_ALLOWLISTED_POOLS[index]!.poolId.toLowerCase()}`;
   const fullListCount = (solana: number, hidden = 0) => solana + UNIV4_RHC_ALLOWLISTED_POOLS.length - hidden;
+  const h1sOf = (html: string) => [...html.matchAll(/<h1[^>]*>([\s\S]*?)<\/h1>/g)].map((match) => (match[1] ?? "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim());
+  const sectionOrder = (html: string) => (
+    [
+      ["landing-hero", html.indexOf('data-testid="landing-hero"')],
+      ["top-pools", html.indexOf('data-testid="top-pools"')],
+      ["stock-card-gainers", html.indexOf('data-testid="stock-card-gainers"')],
+      ["stock-card-stocks", html.indexOf('data-testid="stock-card-stocks"')],
+    ] as const
+  ).filter(([, index]) => index >= 0).sort((a, b) => a[1] - b[1]).map(([name]) => name);
+  const expectHero = (html: string) => {
+    expect(h1sOf(html)).toEqual(["Hold the stock. Collect the fees."]);
+    expect(html).toContain("Put two tokens of the same stock, like TSLAx and TSLA, in one pool. Traders swap between them, and you collect a share of the swap fees.");
+    expect(html).toMatch(/href="#pools"[^>]*>See pools</);
+    expect(html).toMatch(/href="\/learn\/what-is-a-same-stock-lp-pool"[^>]*>How it works</);
+    expect(html).toContain('href="/docs/security"');
+    expect(html).toContain("Self-custodial: we never hold your keys");
+    expect(html).toContain('href="/fees"');
+    expect(html).toContain("Zero performance fee. 0.10% only when we swap.");
+    expect(html).toMatch(/href="\/docs"/);
+    expect(html).toContain("Solana + Robinhood Chain");
+    expect(sectionOrder(html)).toEqual(["landing-hero", "top-pools", "stock-card-gainers", "stock-card-stocks"]);
+    expect(html).not.toContain("hero-search");
+    expect(html).not.toContain('role="search"');
+    expect(html).toContain('"@type":"SoftwareApplication"');
+  };
 
   it("prerenders no top-5 rows when every 7-day APR read fails, still links See all N, and keeps JSON-LD", async () => {
     mocks.getRwaPairs.mockResolvedValue(storeResult);
@@ -103,6 +128,7 @@ describe("homepage server render", () => {
     // No saved APR: pools with no 7-day APR are excluded from the top 5 (they still count in See all N).
     expect(topRows(html)).toEqual([]);
     expect(html).toContain("No pools to show right now.");
+    expectHero(html);
     expect(html).toContain("Top pools");
     expect(html).toContain("Pools over $5k TVL, ranked by 7d estimated APR.");
     expect(html).not.toContain("All pools");
@@ -139,6 +165,7 @@ describe("homepage server render", () => {
     expect(html).not.toContain(`${robinhood}on/${robinhood}`);
     expect(html).toContain("Robinhood Chain");
     expect(html).toContain('data-testid="chain-badge"');
+    expectHero(html);
     expect(html).toContain("Top pools");
     expect(html).toContain("Pools over $5k TVL, ranked by 7d estimated APR.");
     expect(html).not.toContain("All pools");

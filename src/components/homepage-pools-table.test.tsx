@@ -14,10 +14,8 @@ import type { PoolRangeAprState } from "./range-apr/use-pool-range-apr";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let search = "";
-const navigation = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(search),
-  useRouter: () => ({ push: navigation.push }),
   usePathname: () => "/",
 }));
 const mocks = vi.hoisted(() => ({
@@ -75,7 +73,6 @@ let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   search = "";
-  navigation.push.mockReset();
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -140,13 +137,6 @@ const tvlOf = (row: Element) => {
   throw new Error("TVL not found");
 };
 const statusText = () => [...container.querySelectorAll("[role='status']")].map((node) => node.textContent).join(" | ");
-/** Types into a search box the way React sees it (native setter + input event). */
-async function typeInto(input: HTMLInputElement, value: string) {
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-}
 const sol = (address: string) => `solana:${address}`;
 const rhcKey = (index: number) => `robinhood:${UNIV4_RHC_ALLOWLISTED_POOLS[index]!.poolId.toLowerCase()}`;
 const ready = (aprs: Parameters<typeof cardPayloadWithAprs>[0]): PoolRangeAprState => ({ status: "ready", data: cardPayloadWithAprs(aprs) });
@@ -349,39 +339,42 @@ describe("homepage pools: single top-5 block", () => {
     expect(container.querySelectorAll("[data-highlighted]")).toHaveLength(0);
   });
 
-  it("Enter in the hero search goes to /app/rwa-pairs carrying the query, and does not scroll to #pools", async () => {
+  it("has exactly one h1, the plan A copy, See pools pointing at #pools, How it works, and the three trust links", async () => {
     mocks.aprFor.mockImplementation(() => ready({ micro: 5 }));
     jsonOk({ pairs: [pair({ poolAddress: "spcx-pool" })] });
     await mount();
-    const scrolled = vi.fn();
-    container.querySelector<HTMLElement>("#pools")!.scrollIntoView = scrolled;
-    const hero = container.querySelector<HTMLInputElement>("#hero-search")!;
-    expect(hero.getAttribute("name")).toBe("q");
-    expect(hero.form!.getAttribute("action")).toBe("/app/rwa-pairs");
-    expect(hero.form!.getAttribute("method")).toBe("get");
-    hero.focus();
-    await typeInto(hero, "spcx");
-    await act(async () => { hero.form!.requestSubmit(); });
-    expect(navigation.push).toHaveBeenCalledTimes(1);
-    expect(navigation.push).toHaveBeenCalledWith("/app/rwa-pairs?q=spcx");
-    expect(scrolled).not.toHaveBeenCalled();
-    expect(container.querySelector("#pools-search")).toBeNull();
+    const headings = [...container.querySelectorAll("h1")];
+    expect(headings).toHaveLength(1);
+    expect(headings[0]!.textContent).toBe("Hold the stock. Collect the fees.");
+    const hero = container.querySelector("[data-testid=landing-hero]")!;
+    expect(hero.textContent).toContain("Put two tokens of the same stock, like TSLAx and TSLA, in one pool. Traders swap between them, and you collect a share of the swap fees.");
+    const see = container.querySelector("[data-testid=hero-see-pools]")!;
+    expect(see.textContent).toBe("See pools");
+    expect(see.getAttribute("href")).toBe("#pools");
+    expect(container.querySelector("#pools")!.getAttribute("data-testid")).toBe("top-pools");
+    const how = container.querySelector("[data-testid=hero-how-it-works]")!;
+    expect(how.textContent).toBe("How it works");
+    expect(how.getAttribute("href")).toBe("/learn/what-is-a-same-stock-lp-pool");
+    const trust = [...container.querySelectorAll("[data-testid=hero-trust] a")].map((a) => [a.textContent, a.getAttribute("href")]);
+    expect(trust).toEqual([
+      ["Self-custodial: we never hold your keys", "/docs/security"],
+      ["Zero performance fee. 0.10% only when we swap.", "/fees"],
+      ["Solana + Robinhood Chain", "/docs"],
+    ]);
+    expect(container.querySelector("#hero-search")).toBeNull();
+    expect(container.querySelector("[role=search]")).toBeNull();
     expect(container.querySelector("[data-testid=hero-search-matches]")).toBeNull();
   });
 
-  it("the line under the hero search stays the trust line and never reports a match count", async () => {
+  it("orders the sections hero, then Top pools, then the stock cards", async () => {
     mocks.aprFor.mockImplementation(() => ready({ micro: 5 }));
     jsonOk({ pairs: [pair({ poolAddress: "spcx-pool" })] });
     await mount();
-    const line = () => container.querySelector("[data-testid=landing-hero] p:last-of-type")!;
-    expect(line().textContent).toContain("0 keys on our servers");
-    await typeInto(container.querySelector<HTMLInputElement>("#hero-search")!, "spcx");
-    expect(line().textContent).toContain("0 keys on our servers");
-    expect(container.textContent).not.toMatch(/pools? match/);
-    expect(container.querySelector("[data-testid=hero-search-matches]")).toBeNull();
+    const ids = [...container.querySelectorAll("[data-testid=landing-hero], [data-testid=top-pools], [data-testid=stock-card-gainers], [data-testid=stock-card-stocks]")].map((el) => el.getAttribute("data-testid"));
+    expect(ids).toEqual(["landing-hero", "top-pools", "stock-card-gainers", "stock-card-stocks"]);
   });
 
-  it("nests the stock cards' corners from the outside in; the hero search is a pill", async () => {
+  it("nests the stock cards' corners from the outside in", async () => {
     mocks.aprFor.mockImplementation(() => ready({ micro: 5 }));
     jsonOk({ pairs: [pair({ poolAddress: "spcx-pool" })] });
     await mount();
@@ -393,8 +386,7 @@ describe("homepage pools: single top-5 block", () => {
       expect(panel.className, id).toMatch(/\brounded-inset\b.*\bp-1\b/);
       expect(panel.querySelector(".min-h-16")!.className, id).toMatch(/\brounded-lg\b.*\bpy-2\b/);
     }
-    expect(container.querySelector("#hero-search")!.parentElement!.className).toMatch(/\brounded-full\b/);
-    expect(container.querySelector("#hero-search")!.className).toMatch(/(^|\s)text-base(\s|$)/);
+    expect(container.querySelector("#hero-search")).toBeNull();
     expect(container.querySelector("#pools-search")).toBeNull();
   });
 
@@ -405,23 +397,6 @@ describe("homepage pools: single top-5 block", () => {
     const icons = rowsOf()[0]!.querySelector("[data-testid=pair-token-icons]")!;
     expect([...icons.querySelectorAll("[class]")].some((el) => el.className.includes("h-10 w-10"))).toBe(true);
     expect(icons.querySelectorAll(":scope > span")).toHaveLength(2);
-  });
-
-  it("the hero search does not filter the top 5; submitting an empty query goes to /app/rwa-pairs", async () => {
-    mocks.aprFor.mockImplementation(() => ready({ micro: 5 }));
-    jsonOk({ pairs: [
-      pair({ poolAddress: "spcx-pool" }),
-      pair({ poolAddress: "tsla-pool", symbolA: "TSLAx", symbolB: "TSLA", wrappedSymbol: "TSLAx", plainSymbol: "TSLA", nameA: "Tesla xStock", nameB: "Tesla", tvlUsd: 90_000 }),
-    ] });
-    await mount();
-    const hero = container.querySelector<HTMLInputElement>("#hero-search")!;
-    expect(hero.getAttribute("placeholder")).toBe("Search SPCX, TSLA, AAPL…");
-    await typeInto(hero, "tesla");
-    expect(keysOf()).toEqual([sol("spcx-pool"), sol("tsla-pool")]);
-    expect(container.querySelector("[data-testid=hero-search-matches]")).toBeNull();
-    await typeInto(hero, "");
-    await act(async () => { hero.form!.requestSubmit(); });
-    expect(navigation.push).toHaveBeenCalledWith("/app/rwa-pairs");
   });
 
   it("renders the server snapshot at once, refreshes it from the API, and keeps it when the refresh fails", async () => {
