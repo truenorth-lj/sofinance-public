@@ -37,6 +37,22 @@ describe("/app/rwa-pairs page", () => {
     expect(both).toEqual({ ...plain, initialQuery: "spcx", deepLinkPool: "abc" });
   });
 
+  it("parses ?openPool=, ?calc=, and the legacy ?pool=&open=1 open link", async () => {
+    const plain = poolsPageProps(await RwaPairsPage({ searchParams: Promise.resolve({}) }) as ReactElement);
+    expect(poolsPageProps(await RwaPairsPage({ searchParams: Promise.resolve({ openPool: "abc" }) }) as ReactElement))
+      .toEqual({ ...plain, deepLinkPool: "abc" });
+    expect(poolsPageProps(await RwaPairsPage({ searchParams: Promise.resolve({ pool: "legacy", open: "1" }) }) as ReactElement))
+      .toEqual({ ...plain, deepLinkPool: "legacy" });
+    expect(poolsPageProps(await RwaPairsPage({ searchParams: Promise.resolve({ pool: "legacy" }) }) as ReactElement))
+      .toEqual(plain);
+    expect(poolsPageProps(await RwaPairsPage({ searchParams: Promise.resolve({ openPool: "abc", pool: "legacy", open: "1" }) }) as ReactElement))
+      .toEqual({ ...plain, deepLinkPool: "abc" });
+    expect(poolsPageProps(await RwaPairsPage({ searchParams: Promise.resolve({ calc: "xyz" }) }) as ReactElement))
+      .toEqual({ ...plain, deepLinkCalc: "xyz" });
+    expect(poolsPageProps(await RwaPairsPage({ searchParams: Promise.resolve({ calc: "xyz", openPool: "abc" }) }) as ReactElement))
+      .toEqual({ ...plain, deepLinkCalc: "xyz", deepLinkPool: "abc" });
+  });
+
   it("uses a single Pools h1 and no InkHero; the crawler table is an h2", () => {
     const page = readFileSync(resolve("src/components/unified-pools/pools-page.tsx"), "utf8");
     expect(page).not.toContain("InkHero");

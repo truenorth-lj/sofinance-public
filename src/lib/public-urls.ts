@@ -56,7 +56,12 @@ export function buildSignUrl(signToken: string): string {
 }
 
 export function buildOpenPositionPath(poolId: string): string {
-  return `${APP_ROUTES.rwaPairs}?pool=${encodeURIComponent(poolId)}&open=1`;
+  return `${APP_ROUTES.rwaPairs}?openPool=${encodeURIComponent(poolId)}`;
+}
+
+/** Deep link that opens the share calculator for a pool on /app/rwa-pairs. */
+export function buildCalculatePath(poolId: string): string {
+  return `${APP_ROUTES.rwaPairs}?calc=${encodeURIComponent(poolId)}`;
 }
 
 /** Deep link that opens the add-liquidity modal on /app/rwa-pairs. */
@@ -123,9 +128,32 @@ export const LEGAL_ROUTES = {
   terms: "/terms",
 } as const;
 
-/** Public, indexable per-pool pages (SSR facts; the app still opens via ?pool=&open=1). */
+/** Public, indexable per-pool pages (SSR facts; the app still opens via ?openPool=). */
 export const POOLS_PATH = "/pools";
 
 export function publicPoolPath(slug: string): string {
   return `${POOLS_PATH}/${slug}`;
+}
+
+type QueryValue = string | string[] | undefined;
+
+export function firstQueryValue(value: QueryValue): string {
+  return Array.isArray(value) ? value[0] || "" : value || "";
+}
+
+/**
+ * Canonical `?openPool=<id>`, or the legacy `?pool=<id>&open=1` form still used by old MCP and shared links.
+ * `?openPool=` wins when both are present. `?pool=` alone does not open.
+ */
+export function parseOpenPoolParam(query: {
+  openPool?: QueryValue;
+  pool?: QueryValue;
+  open?: QueryValue;
+}): string {
+  return firstQueryValue(query.openPool) || (firstQueryValue(query.open) === "1" ? firstQueryValue(query.pool) : "");
+}
+
+/** `?calc=<id>`: open the share calculator for that pool once it is listed. */
+export function parseCalcParam(query: { calc?: QueryValue }): string {
+  return firstQueryValue(query.calc);
 }

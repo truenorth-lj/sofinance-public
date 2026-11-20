@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { APP_ROUTES, CANONICAL_SITE_URL, SIGN_PATH, buildOpenPositionUrl, buildPlanPath, buildSignPath, buildSignUrl, getCanonicalSiteUrl, getPublicBaseUrl } from "./public-urls";
+import { APP_ROUTES, CANONICAL_SITE_URL, SIGN_PATH, buildCalculatePath, buildOpenPositionPath, buildOpenPositionUrl, buildPlanPath, buildSignPath, buildSignUrl, getCanonicalSiteUrl, getPublicBaseUrl, parseCalcParam, parseOpenPoolParam } from "./public-urls";
 
 describe("public app URLs", () => {
   const originalAppUrl = process.env.NEXT_PUBLIC_APP_URL;
@@ -51,7 +51,7 @@ describe("public app URLs", () => {
       else process.env.VERCEL_ENV = env;
       expect(getPublicBaseUrl()).toBe(CANONICAL_SITE_URL);
       expect(buildSignUrl("tok")).toBe("https://sofinancelab.xyz/app/sign/tok");
-      expect(buildOpenPositionUrl("Pool1")).toBe("https://sofinancelab.xyz/app/rwa-pairs?pool=Pool1&open=1");
+      expect(buildOpenPositionUrl("Pool1")).toBe("https://sofinancelab.xyz/app/rwa-pairs?openPool=Pool1");
     }
   });
 
@@ -67,8 +67,28 @@ describe("public app URLs", () => {
     delete process.env.NEXT_PUBLIC_APP_URL;
     delete process.env.VERCEL_URL;
     expect(buildOpenPositionUrl("Pool1111111111111111111111111111111111111")).toBe(
-      "/app/rwa-pairs?pool=Pool1111111111111111111111111111111111111&open=1",
+      "/app/rwa-pairs?openPool=Pool1111111111111111111111111111111111111",
     );
+    expect(buildOpenPositionPath("Pool 1")).toBe("/app/rwa-pairs?openPool=Pool%201");
+    expect(buildCalculatePath("Pool1111111111111111111111111111111111111")).toBe(
+      "/app/rwa-pairs?calc=Pool1111111111111111111111111111111111111",
+    );
+    expect(buildCalculatePath("Pool 1")).toBe("/app/rwa-pairs?calc=Pool%201");
+  });
+
+  it("parses ?openPool=, ?calc=, and the legacy ?pool=&open=1 open link", () => {
+    expect(parseOpenPoolParam({ openPool: "abc" })).toBe("abc");
+    expect(parseOpenPoolParam({ pool: "legacy", open: "1" })).toBe("legacy");
+    expect(parseOpenPoolParam({ pool: "legacy" })).toBe("");
+    expect(parseOpenPoolParam({ open: "1" })).toBe("");
+    expect(parseOpenPoolParam({ openPool: "abc", pool: "legacy", open: "1" })).toBe("abc");
+    expect(parseOpenPoolParam({ openPool: ["first", "second"] })).toBe("first");
+    expect(parseOpenPoolParam({ pool: ["legacy"], open: ["1"] })).toBe("legacy");
+    expect(parseOpenPoolParam({})).toBe("");
+    expect(parseCalcParam({ calc: "abc" })).toBe("abc");
+    expect(parseCalcParam({ calc: ["first", "second"] })).toBe("first");
+    expect(parseCalcParam({})).toBe("");
+    expect(parseCalcParam({ calc: "" })).toBe("");
   });
 
   it("uses NEXT_PUBLIC_APP_URL or the production origin for SEO URLs", () => {

@@ -42,7 +42,7 @@ describe("PublicPoolPage (HTML without JS)", () => {
     expect(markup).toContain("10.50%");
     expect(markup).toContain("Fees not guaranteed");
     expect(markup).toContain("past 7 days");
-    expect(markup).toContain('href="/app/rwa-pairs?pool=tsla-raydium&amp;open=1"');
+    expect(markup).toContain('href="/app/rwa-pairs?openPool=tsla-raydium"');
     expect(markup).toContain('href="/app/rwa-pairs"');
     expect(markup).toContain('href="/learn"');
     expect(markup).toMatch(/aria-label="Breadcrumb"/);

@@ -4,7 +4,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const seen = vi.hoisted(() => ({ openRhc: null as null | ((r: { pool: unknown }) => void), deepLink: [] as (string | undefined)[], initialQuery: [] as (string | undefined)[],
+const seen = vi.hoisted(() => ({ openRhc: null as null | ((r: { pool: unknown }) => void), deepLink: [] as (string | undefined)[], deepLinkCalc: [] as (string | undefined)[], initialQuery: [] as (string | undefined)[],
   panel: vi.fn<(props: Record<string, unknown>) => void>() }));
 vi.mock("../ink", () => ({
   InkShell: ({ children }: { children: unknown }) => createElement("main", null, children as never),
@@ -13,8 +13,8 @@ vi.mock("../site-header", () => ({ SiteHeader: () => null }));
 vi.mock("../site-footer", () => ({ SiteFooter: () => null }));
 vi.mock("../wallet-connection", () => ({ useWalletConnection: () => ({ address: null, connected: false, connect: vi.fn(), disconnect: vi.fn() }) }));
 vi.mock("./unified-pools-panel", () => ({
-  UnifiedPoolsPanel: (props: { onOpenRhc: (r: { pool: unknown }) => void; deepLinkPool?: string; initialQuery?: string }) => {
-    seen.openRhc = props.onOpenRhc; seen.deepLink.push(props.deepLinkPool); seen.initialQuery.push(props.initialQuery); return createElement("section", { id: "pools" });
+  UnifiedPoolsPanel: (props: { onOpenRhc: (r: { pool: unknown }) => void; deepLinkPool?: string; deepLinkCalc?: string; initialQuery?: string }) => {
+    seen.openRhc = props.onOpenRhc; seen.deepLink.push(props.deepLinkPool); seen.deepLinkCalc.push(props.deepLinkCalc); seen.initialQuery.push(props.initialQuery); return createElement("section", { id: "pools" });
   },
 }));
 vi.mock("../rhc-univ4-open-panel", () => ({ RhcUniv4OpenPanel: (props: Record<string, unknown>) => {
@@ -34,7 +34,7 @@ let container: HTMLDivElement; let root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
-  seen.openRhc = null; seen.deepLink = []; seen.initialQuery = []; seen.panel.mockReset();
+  seen.openRhc = null; seen.deepLink = []; seen.deepLinkCalc = []; seen.initialQuery = []; seen.panel.mockReset();
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
 
@@ -57,6 +57,12 @@ describe("PoolsPage (/app/rwa-pairs)", () => {
     await act(async () => { root.render(createElement(EvmWalletProvider, { enabled: false, session: createEvmSession({ discover }) },
       createElement(PoolsPage, { flags: { orca: false, meteora: false, rhc: true }, rhcSigningEnabled: true, initialQuery: "tesla" }))); });
     expect(seen.initialQuery.at(-1)).toBe("tesla");
+  });
+
+  it("passes a calc deep link through to the pool list", async () => {
+    await act(async () => { root.render(createElement(EvmWalletProvider, { enabled: false, session: createEvmSession({ discover }) },
+      createElement(PoolsPage, { flags: { orca: false, meteora: false, rhc: true }, rhcSigningEnabled: true, deepLinkCalc: "spcxA" }))); });
+    expect(seen.deepLinkCalc.at(-1)).toBe("spcxA");
   });
 
   it("lists the pools, passes the deep link, and opens a Robinhood Chain pool in a MetaMask dialog with no Solana content", async () => {

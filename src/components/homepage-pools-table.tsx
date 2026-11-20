@@ -14,7 +14,7 @@ import {
 import { isRhcUniv4DiscoveryEnabled } from "@/lib/protocol-flags";
 import { dexDescriptors, uiFor, openCapabilityFor } from "@/lib/dex/client";
 import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
-import { APP_ROUTES } from "@/lib/public-urls";
+import { buildOpenPositionPath } from "@/lib/public-urls";
 import {
   unsupportedTokenReason,
   type PoolChain, type UnifiedPool,
@@ -38,14 +38,6 @@ type RhcResponse = { pools?: RhcPoolSummary[]; fetchedAt?: string; snapshot?: { 
 const RHC_POOLS_URL = "/api/protocol-pools?protocol=uniswap-v4-rhc";
 
 /**
- * Where Open goes: the pool on `/app/rwa-pairs` with `?openPool=…`, which opens that pool's own flow there (Raydium:
- * Create position; Robinhood Chain and registry DEXes such as Meteora: their dialog).
- */
-function openPoolHref(pool: Pick<HomepagePool, "poolAddress">) {
-  return `${APP_ROUTES.rwaPairs}?openPool=${encodeURIComponent(pool.poolAddress)}`;
-}
-
-/**
  * Open as on `/app/rwa-pairs`: tokens not supported yet say so; a registry or hidden registry DEX
  * (`openUi: "registry"` or `"none"`, today Meteora and Orca) is disabled when its `open` capability is
  * unsupported. Native-modal availability follows the native capability record; other pools keep
@@ -61,7 +53,7 @@ const openAction = (pool: UnifiedPool): OpenAction => {
     const open = openCapabilityFor(dexDescriptors.descriptorFor(pool.protocol));
     if (open && !open.supported) return { kind: "disabled", reason: open.reason };
   }
-  return { kind: "link", href: openPoolHref(pool) };
+  return { kind: "link", href: buildOpenPositionPath(pool.poolAddress) };
 };
 
 type ChainPools = Partial<Record<PoolChain, HomepagePool[]>>;

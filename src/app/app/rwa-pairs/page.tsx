@@ -4,6 +4,7 @@ import { PoolsPage } from "@/components/unified-pools/pools-page";
 import { loadHomepagePoolsSnapshot } from "@/lib/homepage-pools-snapshot";
 import { serializeJsonLd } from "@/lib/json-ld";
 import { publicPoolsItemListJsonLd } from "@/lib/public-pools-table";
+import { parseCalcParam, parseOpenPoolParam, firstQueryValue } from "@/lib/public-urls";
 import { unifiedPoolFlags } from "@/lib/unified-pools/flags";
 
 /**
@@ -14,16 +15,16 @@ export const revalidate = 900;
 
 /**
  * The pools page: Solana + Robinhood Chain pools in one list. `?openPool=<id>` opens that pool (where `/app/rhc` and old
- * `/app?openPool=` links are redirected); the older `?pool=<id>&open=1` link (MCP `openPositionUrl`, homepage) still works.
+ * `/app?openPool=` links are redirected). `?calc=<id>` opens the share calculator. Legacy open links still parse.
  * `?q=` prefills the list search (the homepage hero search submits here).
  */
 export default async function RwaPairsPage({ searchParams }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const query = await searchParams;
-  const first = (value: string | string[] | undefined) => Array.isArray(value) ? value[0] || "" : value || "";
-  const deepLinkPool = first(query.openPool) || (first(query.open) === "1" ? first(query.pool) : "");
-  const initialQuery = first(query.q);
+  const deepLinkPool = parseOpenPoolParam(query);
+  const deepLinkCalc = parseCalcParam(query);
+  const initialQuery = firstQueryValue(query.q);
   const { rhcSigning, ...flags } = unifiedPoolFlags();
   const snapshot = await loadHomepagePoolsSnapshot();
   const itemList = publicPoolsItemListJsonLd(snapshot);
@@ -38,7 +39,7 @@ export default async function RwaPairsPage({ searchParams }: {
       <HideOnMount>
         <PublicPoolsTable snapshot={snapshot} />
       </HideOnMount>
-      <PoolsPage flags={flags} rhcSigningEnabled={rhcSigning} deepLinkPool={deepLinkPool || undefined} initialQuery={initialQuery || undefined} />
+      <PoolsPage flags={flags} rhcSigningEnabled={rhcSigning} deepLinkPool={deepLinkPool || undefined} deepLinkCalc={deepLinkCalc || undefined} initialQuery={initialQuery || undefined} />
     </>
   );
 }
