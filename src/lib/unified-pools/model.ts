@@ -12,7 +12,7 @@
  * higher 24h volume, then the pool address (so the choice is stable).
  */
 
-import { chainAddressKey } from "@/lib/dex/address-key";
+import { chainAddressKey, sameChainAddress } from "@/lib/dex/address-key";
 
 export type PoolChain = "solana" | "robinhood";
 export type UnifiedProtocol = "raydium-clmm" | "orca-whirlpool" | "meteora-dlmm" | "uniswap-v4-rhc";
@@ -51,6 +51,12 @@ export type UnifiedPool = {
    */
   unsupportedIssues?: readonly string[];
 };
+
+/** Resolve a pool URL parameter, giving exact matches priority over chain-specific matches. */
+export function findDeepLinkedPool(pools: readonly UnifiedPool[], address: string): UnifiedPool | undefined {
+  return pools.find((pool) => pool.poolAddress === address)
+    ?? pools.find((pool) => sameChainAddress(pool.chain, pool.poolAddress, address));
+}
 
 /** Estimated highest range APR (7-day average), percent; null when the pool has none (yet). */
 export type Apr7dLookup = (pool: UnifiedPool) => number | null;

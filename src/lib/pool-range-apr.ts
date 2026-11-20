@@ -212,7 +212,7 @@ export async function loadVolumeProfile(
   if (!economics) throw new Error(`Pool economics unavailable from ${economicsSource.name}`);
   const sources = [economicsSource.source];
   const issues: string[] = [];
-  const candles: RawCandle[] | null = hourly.ok ? orientCandles(parseGeckoHourlyCandles(hourly.body), economics.mintA, economics.mintB) : null;
+  const candles: RawCandle[] | null = hourly.ok ? orientCandles(network, parseGeckoHourlyCandles(hourly.body), economics.mintA, economics.mintB) : null;
   let dailySample: VolumeProfile["daily"] = null, dailyObservedAt: string | null = null;
   if (daily) {
     dailySample = daily.ok ? averageDailyVolume(parseGeckoDailyVolumes(daily.body), nowSeconds) : null;

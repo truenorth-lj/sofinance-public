@@ -13,6 +13,8 @@
  * - Robinhood Chain: the checked-in `rhc-tokens.json`, regenerated offline by `scripts/rhc-token-registry.ts`
  *   (Robinhood asset registry + Ondo factory, each token's issuer beacon checked on chain).
  */
+import { sameChainAddress } from "@/lib/dex/address-key";
+
 export type RegistryChain = "solana" | "robinhood";
 
 export type TokenVerification =
@@ -40,10 +42,10 @@ export type RegistryToken = {
 
 export type RegistryPair<T extends RegistryToken = RegistryToken> = { underlying: string; a: T; b: T };
 
-/** The pairing rule: same chain, same underlying, different issuer. */
+/** The pairing rule: same chain and underlying, distinct token addresses and issuers. */
 export function isSameAssetPair(a: RegistryToken, b: RegistryToken): boolean {
   return a.chain === b.chain && a.underlying === b.underlying && a.issuer !== b.issuer
-    && a.address.toLowerCase() !== b.address.toLowerCase();
+    && !sameChainAddress(a.chain, a.address, b.address);
 }
 
 /**
