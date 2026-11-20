@@ -3,6 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LiquidityMathUtil } from "@raydium-io/raydium-sdk-v2";
 
 vi.mock("server-only", () => ({}));
+vi.mock("@sofinance/engine/token-prices", () => ({
+  // These tests isolate the small-leg allocator; the market-value floor has its own integration tests.
+  fetchTokenPricesUsd: vi.fn(async (mints: string[]) => new Map(mints.map(mint => [mint, { price: 57.95, source: "jupiter" }]))),
+}));
 vi.mock("@sofinance/engine/selected-state", () => ({ readSelectedPositionState: vi.fn() }));
 vi.mock("@sofinance/engine/swap/jupiter", async (importOriginal) => ({
   ...await importOriginal<typeof import("@sofinance/engine/swap/jupiter")>(),

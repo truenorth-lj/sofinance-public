@@ -22,6 +22,12 @@ import { tokenSymbol } from "./position-label";
 import { withSelectedRouteRetries } from "./selected-route-retry";
 import { CROSS_LIQUIDITY_BAND_MESSAGE, CROSS_POSITION_RANGE_MESSAGE } from "@sofinance/engine/liquidity-band";
 import { projectTargetPoolSqrt } from "@sofinance/engine/target-pool-projection";
+import { fetchTokenPricesUsd } from "@sofinance/engine/token-prices";
+import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
+import { DEX_DESCRIPTORS } from "@/lib/dex/descriptors";
+import { createDexDescriptorRegistry } from "@/lib/dex/registry";
+import { raydiumClmmDescriptor } from "@/lib/dex/raydium-clmm/descriptor";
+import { AddValueBlockedError, assessAddValue } from "@/lib/dex/add-value-guard";
 
 const MIN_JUPITER_SWAP = minJupiterSwapAmount(SLIPPAGE_BPS);
 /**
@@ -88,6 +94,46 @@ function smallLegMovesPrice(state: SelectedPositionState, minorityIsA: boolean):
   const minorityMint = minorityIsA ? state.mintA : state.mintB, majorityMint = minorityIsA ? state.mintB : state.mintA;
   return new SmallLegMovesPriceError({ minorityMint, majorityMint }, formatSmallLegMovesPriceMessage({
     minority: tokenSymbol(minorityMint), majority: tokenSymbol(majorityMint) }));
+}
+
+/** Server-safe view of the registered descriptors (client.ts would pull the browser tx pipeline into prepare). */
+const dexDescriptors = createDexDescriptorRegistry(DEX_DESCRIPTORS);
+
+/** Independent USD price reader; never derives prices from the swap quote being checked. */
+export type UsdPriceReader = (mints: string[]) => Promise<Map<string, number>>;
+const marketUsdPrices: UsdPriceReader = async (mints) => {
+  const quotes = await fetchTokenPricesUsd(mints, fetch, getJupiterApiKey());
+  // Do not use a pool-derived fallback (including DexScreener): it could be the very pool being checked.
+  return new Map([...quotes].flatMap(([mint, quote]) => quote.source === "jupiter" ? [[mint, quote.price] as const] : []));
+};
+
+type SelectedQuoteOptions = { buildTransactions?: boolean; includeResale?: boolean; signal?: AbortSignal;
+  budget?: JupiterRetryBudget; connection?: Connection; state?: SelectedPositionState; prices?: UsdPriceReader };
+
+/** The range is at most one tick-spacing step wide. */
+export function isNarrowRange(state: Pick<SelectedPositionState, "tickLower" | "tickUpper" | "tickSpacing">): boolean {
+  const width = state.tickUpper - state.tickLower;
+  return Number.isFinite(width) && width > 0 && width <= state.tickSpacing;
+}
+
+/** Runs even when the swap routes skip this pool. Never uses the target pool's price or the displayed pool fallback. */
+async function assertAddValue(state: SelectedPositionState, input: bigint,
+  amounts: { requiredA: bigint; requiredB: bigint; outA: bigint; outB: bigint }, options: SelectedQuoteOptions) {
+  // Selected-position Add is the Raydium CLMM flow; the id comes from its descriptor, the floor from the registry.
+  const floorBps = dexDescriptors.descriptorFor(raydiumClmmDescriptor.id)?.meta.addValueFloorBps;
+  if (floorBps === undefined) return;
+  const prices = await (options.prices ?? marketUsdPrices)([state.inputMint, state.mintA, state.mintB]);
+  options.signal?.throwIfAborted();
+  const usd = (mint: string) => prices.get(mint) ?? null;
+  const a = (raw: bigint) => ({ raw, decimals: state.decimalsA, usd: usd(state.mintA) });
+  const b = (raw: bigint) => ({ raw, decimals: state.decimalsB, usd: usd(state.mintB) });
+  const result = assessAddValue({
+    floorBps, narrowRange: isNarrowRange(state),
+    input: { raw: input, decimals: state.inputDecimals, usd: usd(state.inputMint) },
+    deposit: [a(amounts.requiredA), b(amounts.requiredB)],
+    buffer: [a(amounts.outA - amounts.requiredA), b(amounts.outB - amounts.requiredB)],
+  });
+  if (result.kind !== "ok") throw new AddValueBlockedError(result.kind, result.message);
 }
 
 type SwapLeg = { inputMint: string; outputMint: string; spend: bigint; feeAmount: bigint; feeInRoute?: boolean; minOut: bigint; route: QuoteRoute | null };
@@ -167,8 +213,7 @@ export async function getSelectedQuoteBundle(
   wallet: string, selection: PositionSelection, amount: string,
   requestedFloorBps = DEFAULT_RESALE_FLOOR_BPS, requestedToleranceBps = DEFAULT_ADD_TOLERANCE_BPS,
   jupiter?: JupiterRouteConstraints,
-  options: { buildTransactions?: boolean; includeResale?: boolean; signal?: AbortSignal;
-    budget?: JupiterRetryBudget; connection?: Connection; state?: SelectedPositionState } = {},
+  options: SelectedQuoteOptions = {},
 ) {
   try {
     return await getSelectedQuoteBundleOnce(
@@ -182,8 +227,7 @@ async function getSelectedQuoteBundleOnce(
   wallet: string, selection: PositionSelection, amount: string,
   requestedFloorBps: number, requestedToleranceBps: number,
   jupiter: JupiterRouteConstraints | undefined,
-  options: { buildTransactions?: boolean; includeResale?: boolean; signal?: AbortSignal;
-    budget?: JupiterRetryBudget; connection?: Connection; state?: SelectedPositionState },
+  options: SelectedQuoteOptions,
 ) {
   const floorBps = parseResaleFloorBps(requestedFloorBps);
   const toleranceBps = parseAddToleranceBps(requestedToleranceBps);
@@ -299,6 +343,7 @@ async function getSelectedQuoteBundleOnce(
   const requiredA = BigInt(amounts.amountA.toString());
   const requiredB = BigInt(amounts.amountB.toString());
   if (requiredA > outA || requiredB > outB) throw new Error("amountMax exceeds conservative swap minOut");
+  await assertAddValue(state, grossRequested, { requiredA, requiredB, outA, outB }, options);
   const amountMaxA = padAmountMax(requiredA, outA, toleranceBps);
   const amountMaxB = padAmountMax(requiredB, outB, toleranceBps);
   // Value everything the wallet ends up with: the position deposit plus the
@@ -346,8 +391,7 @@ async function getSelectedQuoteBundleOnce(
 export async function searchSelectedQuoteBundle(
   wallet: string, selection: PositionSelection, amount: string,
   requestedFloorBps = DEFAULT_RESALE_FLOOR_BPS, requestedToleranceBps = DEFAULT_ADD_TOLERANCE_BPS,
-  options: { buildTransactions?: boolean; includeResale?: boolean; signal?: AbortSignal;
-    budget?: JupiterRetryBudget; connection?: Connection; state?: SelectedPositionState } = {},
+  options: SelectedQuoteOptions = {},
 ) {
   const state = options.state ?? await readSelectedPositionState(wallet, selection, options.connection, false, { displayPrices: false });
   try {

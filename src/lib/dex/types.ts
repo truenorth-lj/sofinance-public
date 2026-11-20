@@ -100,6 +100,11 @@ export type DexMeta = {
    * line the Compound panel shows before signing; omitted when the protocol has none.
    */
   inRangeDepositPoolFee?: string;
+  /**
+   * Add value guard (`add-value-guard.ts`): block an Add before signing when the deposit plus the wallet leftover is
+   * worth less than this share (bps) of the input at independent USD prices. Omitted = no such check for this DEX.
+   */
+  addValueFloorBps?: number;
 };
 
 /** Unified-positions capabilities plus the two this contract adds. */

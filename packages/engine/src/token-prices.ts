@@ -30,6 +30,12 @@ export const JUPITER_PRICE_KEYED_SPACING_MS = 1_000;
 export const DEXSCREENER_PRICE_SPACING_MS = 220;
 
 const PRICE_FETCH_TIMEOUT_MS = 5_000;
+/**
+ * One short retry after a failed Jupiter Price request (429 / 5xx / timeout / network) before falling back. Each
+ * attempt goes through `jupiterPacer`, so the retry waits the full key spacing (1s keyed, 2s keyless) and never
+ * exceeds 1 rps; a successful response (even one that omits a mint) is never retried.
+ */
+export const JUPITER_PRICE_ATTEMPTS = 2;
 
 export type TokenPriceSource = "jupiter" | "dexscreener" | "raydium";
 export type TokenPriceQuote = {
@@ -166,36 +172,45 @@ async function fetchJupiterPriceBatch(
   fetcher: typeof fetch,
   apiKey?: string,
 ): Promise<{ prices: Map<string, TokenPriceQuote>; failed: boolean }> {
-  const prices = new Map<string, TokenPriceQuote>();
-  try {
-    activeJupiterApiKey = apiKey;
-    const body = await jupiterPacer.pace(() => jupiterRequest<Record<string, { usdPrice?: number | string; priceChange24h?: unknown; liquidity?: unknown } | null>>({
-      path: JUPITER_PRICE_V3_PATH,
-      query: { ids: mints.join(",") },
-      fetcher,
-      apiKey,
-      cacheKey: `price:${[...mints].sort().join(",")}`,
-      cacheTtlMs: TOKEN_PRICE_TTL_MS,
-      // One attempt: 429 / 5xx / timeout fall through to DexScreener instead of spending more of the shared quota.
-      retry: { maxAttempts: 1, budgetMs: PRICE_FETCH_TIMEOUT_MS },
-      signal: AbortSignal.timeout(PRICE_FETCH_TIMEOUT_MS),
-    }));
-    for (const mint of mints) {
-      const row = body[mint];
-      const value = parseUsd(row?.usdPrice, true);
-      if (value !== null) {
-        const quote: TokenPriceQuote = { price: value, source: "jupiter" };
-        const change = finiteMetadata(row?.priceChange24h);
-        const liquidity = finiteMetadata(row?.liquidity);
-        if (change !== undefined) quote.priceChange24hPct = change;
-        if (liquidity !== undefined) quote.liquidityUsd = liquidity;
-        prices.set(mint, quote);
-      }
+  activeJupiterApiKey = apiKey;
+  for (let attempt = 1; attempt <= JUPITER_PRICE_ATTEMPTS; attempt += 1) {
+    try {
+      const body = await jupiterPacer.pace(() => jupiterRequest<Record<string, { usdPrice?: number | string; priceChange24h?: unknown; liquidity?: unknown } | null>>({
+        path: JUPITER_PRICE_V3_PATH,
+        query: { ids: mints.join(",") },
+        fetcher,
+        apiKey,
+        cacheKey: `price:${[...mints].sort().join(",")}`,
+        cacheTtlMs: TOKEN_PRICE_TTL_MS,
+        // The client does not retry; the paced loop above does, at most JUPITER_PRICE_ATTEMPTS times.
+        retry: { maxAttempts: 1, budgetMs: PRICE_FETCH_TIMEOUT_MS },
+        signal: AbortSignal.timeout(PRICE_FETCH_TIMEOUT_MS),
+      }));
+      return { prices: parseJupiterPrices(body, mints), failed: false };
+    } catch {
+      // Fall through to the next paced attempt, then to DexScreener.
     }
-    return { prices, failed: false };
-  } catch {
-    return { prices, failed: true };
   }
+  return { prices: new Map(), failed: true };
+}
+
+function parseJupiterPrices(
+  body: Record<string, { usdPrice?: number | string; priceChange24h?: unknown; liquidity?: unknown } | null>,
+  mints: string[],
+): Map<string, TokenPriceQuote> {
+  const prices = new Map<string, TokenPriceQuote>();
+  for (const mint of mints) {
+    const row = body[mint];
+    const value = parseUsd(row?.usdPrice, true);
+    if (value === null) continue;
+    const quote: TokenPriceQuote = { price: value, source: "jupiter" };
+    const change = finiteMetadata(row?.priceChange24h);
+    const liquidity = finiteMetadata(row?.liquidity);
+    if (change !== undefined) quote.priceChange24hPct = change;
+    if (liquidity !== undefined) quote.liquidityUsd = liquidity;
+    prices.set(mint, quote);
+  }
+  return prices;
 }
 
 async function fetchDexScreenerPriceBatch(mints: string[], fetcher: typeof fetch): Promise<unknown> {
@@ -274,7 +289,7 @@ async function loadTokenPricesUsd(
  * a free key raises the spacing to 1 rps. This module does not write Vercel env.
  *
  * DexScreener (`GET /tokens/v1/solana/{mints}`, up to 30 ids) is used only when the Jupiter request
- * itself fails (429, 5xx, timeout, network). A successful Jupiter response that omits a mint leaves
+ * itself fails (429, 5xx, timeout, network) twice: one paced retry (`JUPITER_PRICE_ATTEMPTS`) comes first. A successful Jupiter response that omits a mint leaves
  * that mint missing — it is not filled from DexScreener. Pair pick: see `pickDexScreenerUsdPrice`.
  * Successful prices cache for 10s; failed lookups are not cached. Identical in-flight requests share
  * one promise. Never throws.

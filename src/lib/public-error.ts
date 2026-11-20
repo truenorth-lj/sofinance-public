@@ -23,6 +23,7 @@ import {
   SmallLegMovesPriceError,
 } from "./selected-amount-error";
 import { SolInputDisabledError } from "./sol-input-policy";
+import { AddValueBlockedError } from "./dex/add-value-guard";
 
 const PUBLIC_ERROR_LIMIT = 220;
 
@@ -117,6 +118,7 @@ export function publicErrorCode(error: unknown): string | undefined {
   }
   if (isAmountTooSmallError(error)) return AMOUNT_TOO_SMALL_CODE;
   if (error instanceof SmallLegMovesPriceError) return error.code;
+  if (error instanceof AddValueBlockedError) return error.code;
   if (error instanceof SolInputDisabledError) return error.code;
   // Engine CompoundInsufficientSolError; matched by code so client bundles need not load the simulator.
   if (error instanceof Error && (error as { code?: unknown }).code === INSUFFICIENT_SOL_CODE) return INSUFFICIENT_SOL_CODE;
@@ -143,6 +145,8 @@ export function sanitizePublicError(error: unknown, fallback: string): string {
   if (isAmountTooSmallError(error)) return AMOUNT_TOO_SMALL_MESSAGE;
   // Already plain English with token names and the next step.
   if (error instanceof SmallLegMovesPriceError) return truncate(sanitizeDetail(error.message), 400);
+  // Plain amounts and the next step; checked against independent prices before anything is built.
+  if (error instanceof AddValueBlockedError) return truncate(sanitizeDetail(error.message), 400);
   if (error instanceof JupiterHttpError && error.status === 400) {
     return truncate(sanitizeDetail(jupiterClientErrorMessage(error)));
   }

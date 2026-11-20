@@ -1,5 +1,6 @@
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import { NOT_AVAILABLE_MESSAGE, SUPPORTED, unsupported } from "@/lib/unified-positions/model";
+import { ADD_VALUE_FLOOR_BPS } from "../add-value-guard";
 import { NO_FEE_POLICY } from "../fees";
 import type { DexDescriptor, FeePolicy } from "../types";
 
@@ -54,6 +55,8 @@ export const raydiumClmmDescriptor: DexDescriptor = Object.freeze({
     positionCosigner: "nft-mint" as const,
     addressCase: "exact" as const,
     feePolicy: RAYDIUM_CLMM_FEE_POLICY,
+    /** Selected-position Add (USDC / SOL / pool token in) is valued at independent prices before signing. */
+    addValueFloorBps: ADD_VALUE_FLOOR_BPS,
     depositInputs: Object.freeze({
       poolTokens: true,
       extra: Object.freeze([
