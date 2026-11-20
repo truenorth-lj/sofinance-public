@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { HarvestAccountManagement } from "../compound-panel";
-import { InkFooter, InkNav, InkShell } from "../ink";
+import { InkShell } from "../ink";
+import { SiteFooter } from "../site-footer";
+import { SiteHeader } from "../site-header";
 import { useCompoundController } from "../use-compound-controller";
 import { useTokenMetadata } from "../use-token-metadata";
 import { useWalletConnection } from "../wallet-connection";
@@ -25,7 +27,7 @@ export function RecoveryPage({ positionKey = "" }: { positionKey?: string }) {
   const tokenLabel = (mint: string) => metadata[mint]?.symbol || shortAddress(mint);
   const back = positionKey ? `${APP_ROUTES.home}?position=${encodeURIComponent(positionKey)}` : APP_ROUTES.home;
   return <InkShell>
-    <InkNav wallet={address} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
+    <SiteHeader variant="app" wallet={address} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
     <section aria-labelledby="recovery-heading" data-testid="harvest-recovery-page" className="mt-5 rounded-[28px] border border-white/12 bg-char p-5 text-xs text-smoke sm:p-7">
       <Link href={back} className="text-xs font-semibold text-cream/80 underline underline-offset-2 hover:opacity-70">← Back to Portfolio</Link>
       <h1 id="recovery-heading" className="mt-3 text-xl font-semibold text-cream">Recover leftover compound balances</h1>
@@ -36,6 +38,6 @@ export function RecoveryPage({ positionKey = "" }: { positionKey?: string }) {
         <button type="button" onClick={connect} disabled={restoring} aria-busy={restoring || undefined} className="rounded-full bg-lemon px-4 py-2 text-sm font-semibold text-ink transition-colors hover:bg-[#fff27f] disabled:cursor-wait disabled:opacity-60">{restoring ? "Connecting…" : "Connect wallet"}</button>
       </div> : <HarvestAccountManagement controller={compound} tokenLabel={tokenLabel} standalone />}
     </section>
-    <InkFooter />
+    <SiteFooter variant="app" />
   </InkShell>;
 }

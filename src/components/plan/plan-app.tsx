@@ -13,7 +13,8 @@ import { effectiveExit, planPoolTerms, projectPoolPlan } from "@/lib/lp-plan-poo
 import { lowPlanApr, pairLabelSymbols, planShareSymbol } from "@/lib/lp-plan-shares";
 import { dexDescriptors, uiFor } from "@/lib/dex/client";
 import { APP_ROUTES } from "@/lib/public-urls";
-import { InkNav } from "@/components/ink";
+import { SiteFooter } from "@/components/site-footer";
+import { SiteHeader } from "@/components/site-header";
 import { useWalletConnection } from "@/components/wallet-connection";
 import { ComparisonChart } from "./comparison-chart";
 import { IntentSentence, type IntentField } from "./intent-sentence";
@@ -130,7 +131,7 @@ export function PlanApp() {
   return (
     <div className="min-h-screen bg-canvas text-cream">
       <div className="mx-auto max-w-[1280px] px-3 pb-16 pt-3 sm:px-5 sm:pt-5">
-        <InkNav wallet={wallet.address} connected={wallet.connected} restoring={wallet.restoring} onConnect={wallet.connect} onDisconnect={wallet.disconnect} />
+        <SiteHeader variant="app" wallet={wallet.address} connected={wallet.connected} restoring={wallet.restoring} onConnect={wallet.connect} onDisconnect={wallet.disconnect} />
 
         <main className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-12">
           <section
@@ -191,6 +192,7 @@ export function PlanApp() {
           </Link>
           .
         </p>
+        <SiteFooter variant="app" />
       </div>
     </div>
   );

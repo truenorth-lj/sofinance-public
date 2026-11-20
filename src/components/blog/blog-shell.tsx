@@ -2,10 +2,9 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import { InkShell } from "@/components/ink";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
-import { APP_ROUTES, BLOG_ROUTES, DOCS_ROUTES } from "@/lib/public-urls";
-import { EXTERNAL_LINK_PROPS, SOCIAL_LINKS } from "@/lib/social-links";
-import { XIcon } from "@/components/x-icon";
+import { APP_ROUTES } from "@/lib/public-urls";
 
 export function BlogAppCta() {
   return (
@@ -35,32 +34,7 @@ export function BlogShell({ children }: { children: ReactNode }) {
     <InkShell>
       <SiteHeader />
       {children}
-      <footer className="mt-6 flex flex-col gap-4 px-2 py-6 font-data text-[11px] uppercase tracking-[0.12em] text-smoke sm:flex-row sm:items-center sm:justify-between">
-        <p>SoFinance · Self-custodial Raydium CLMM tool</p>
-        <div className="flex flex-wrap items-center gap-5">
-          <Link href={APP_ROUTES.home} className="transition-colors hover:text-cream">
-            App
-          </Link>
-          <Link href={BLOG_ROUTES.home} className="transition-colors hover:text-cream">
-            Blog
-          </Link>
-          <Link href={DOCS_ROUTES.home} className="transition-colors hover:text-cream">
-            Docs
-          </Link>
-          <Link href={DOCS_ROUTES.risks} className="transition-colors hover:text-cream">
-            Risks
-          </Link>
-          <a
-            href={SOCIAL_LINKS.x.href}
-            {...EXTERNAL_LINK_PROPS}
-            aria-label={SOCIAL_LINKS.x.ariaLabel}
-            className="inline-flex items-center gap-1.5 transition-colors hover:text-cream"
-          >
-            <XIcon className="h-3 w-3" />
-            {SOCIAL_LINKS.x.label}
-          </a>
-        </div>
-      </footer>
+      <SiteFooter variant="marketing" />
     </InkShell>
   );
 }

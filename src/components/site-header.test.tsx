@@ -14,28 +14,44 @@ import TermsPage from "@/app/terms/page";
 import NotFound from "@/app/not-found";
 
 const hrefs = (html: string) => [...html.matchAll(/href="([^"]*)"/g)].map((m) => m[1]);
+const labels = (html: string) => [...html.matchAll(/href="[^"]*"[^>]*>([^<]+)<\/a>/g)].map((m) => m[1]);
 
 describe("SiteHeader", () => {
-  it("links Pools to the homepage list (in-page on the homepage) and AI agents to the app's agent page", () => {
-    const home = hrefs(renderToStaticMarkup(createElement(SiteHeader, { onHomepage: true })));
-    expect(home).toEqual(expect.arrayContaining(["/", "#pools", "/learn", "/app/ai", "/blog", "/app/portfolio"]));
-    const other = hrefs(renderToStaticMarkup(createElement(SiteHeader)));
-    expect(other).toEqual(expect.arrayContaining(["/", "/#pools", "/learn", "/app/ai", "/blog", "/app/portfolio"]));
-    expect(other).not.toContain("#pools");
-    expect(home.join(" ")).toContain("/learn");
-    // The homepage has no agents section any more.
-    expect([...home, ...other].some((href) => href?.endsWith("#agents"))).toBe(false);
+  it("lists Pools, Portfolio, Learn, AI agents, then Blog on marketing pages; Pools always goes to the list page", () => {
+    const marketing = renderToStaticMarkup(createElement(SiteHeader, { variant: "marketing" }));
+    const marketingHrefs = hrefs(marketing);
+    expect(marketingHrefs).toEqual(expect.arrayContaining(["/", "/app/rwa-pairs", "/app/portfolio", "/learn", "/app/ai", "/blog"]));
+    expect(marketingHrefs).not.toContain("#pools");
+    expect(marketingHrefs).not.toContain("/#pools");
+    const marketingNav = marketing.match(/<nav[\s\S]*?<\/nav>/)![0];
+    expect(labels(marketingNav)).toEqual(["Pools", "Portfolio", "Learn", "AI agents", "Blog"]);
+    expect(marketing).toContain('data-testid="nav-menu"');
+    expect(marketing).toContain("AI agents");
+    expect(marketing).not.toContain("Use AI");
+    expect(marketing).not.toMatch(/hidden flex-1 sm:flex/);
   });
 
-  it("has Portfolio in the nav and no Open app; only the homepage has the wallet button (it connects in place)", () => {
-    const home = renderToStaticMarkup(createElement(SiteHeader, { onHomepage: true }));
-    const other = renderToStaticMarkup(createElement(SiteHeader));
-    for (const html of [home, other]) {
+  it("omits Blog on the app variant and keeps the App nav label", () => {
+    const app = renderToStaticMarkup(createElement(SiteHeader, { variant: "app" }));
+    expect(hrefs(app)).toEqual(expect.arrayContaining(["/", "/app/rwa-pairs", "/app/portfolio", "/learn", "/app/ai"]));
+    expect(hrefs(app)).not.toContain("/blog");
+    expect(app).toContain('aria-label="App"');
+    expect(app).not.toContain('aria-label="Sections"');
+    const appNav = app.match(/<nav[\s\S]*?<\/nav>/)![0];
+    expect(labels(appNav)).toEqual(["Pools", "Portfolio", "Learn", "AI agents"]);
+    expect(app).not.toContain("Use AI");
+    expect(app).not.toContain('data-testid="home-wallet"');
+  });
+
+  it("puts Connect wallet on every marketing page and never an Open app button", () => {
+    const marketing = renderToStaticMarkup(createElement(SiteHeader, { variant: "marketing" }));
+    const app = renderToStaticMarkup(createElement(SiteHeader, { variant: "app" }));
+    for (const html of [marketing, app]) {
       expect(html).toMatch(/<a[^>]*href="\/app\/portfolio"[^>]*>Portfolio<\/a>/);
       expect(html).not.toContain("Open app");
     }
-    expect(home).toMatch(/<button[^>]*data-testid="home-wallet"[^>]*>Connect wallet<\/button>/);
-    expect(other).not.toContain('data-testid="home-wallet"');
+    expect(marketing).toMatch(/<button[^>]*data-testid="home-wallet"[^>]*>Connect wallet<\/button>/);
+    expect(app).not.toContain('data-testid="home-wallet"');
   });
 
   it("is the header on the blog, docs, FAQ, terms and 404 pages, not the app bar", () => {
@@ -49,12 +65,15 @@ describe("SiteHeader", () => {
     for (const [name, el] of Object.entries(pages)) {
       const html = renderToStaticMarkup(el);
       expect(html, name).toContain('data-testid="site-header"');
+      expect(html, name).toContain('data-testid="site-footer"');
+      expect(html, name).toContain('data-testid="home-wallet"');
       expect(html, name).not.toContain('aria-label="App"');
     }
   });
 
-  it("renders a bare cream squircle H mark and wordmark, with no lemon capsule", () => {
+  it("renders a bare cream squircle H mark and wordmark, with no lemon capsule, and the logo always goes home", () => {
     const html = renderToStaticMarkup(createElement(SiteHeader));
+    expect(html).toContain('href="/"');
     expect(html).toContain('src="/navbar-mark-squircle-cream.svg"');
     expect(html).toContain('width="36"');
     expect(html).toContain('height="36"');
@@ -79,9 +98,16 @@ describe("SiteHeader", () => {
     expect(svg).not.toContain('preserveAspectRatio="none"');
   });
 
-  it("the homepage renders SiteHeader and the app bar has no Blog tab", () => {
-    expect(readFileSync(resolve("src/components/landing-page.tsx"), "utf8")).toContain("<SiteHeader onHomepage />");
+  it("the homepage and marketing pages render SiteHeader; the app header has no Blog tab", () => {
+    expect(readFileSync(resolve("src/components/landing-page.tsx"), "utf8")).toContain('<SiteHeader variant="marketing" />');
+    const header = readFileSync(resolve("src/components/site-header.tsx"), "utf8");
+    expect(header).toContain('variant === "marketing"');
+    expect(header).toContain("BLOG_ROUTES.home");
+    expect(header).toContain('label: "AI agents"');
+    expect(header).not.toContain('label: "Use AI"');
+    expect(header).not.toContain("#pools");
     const nav = readFileSync(resolve("src/components/ink/InkNav.tsx"), "utf8");
     expect(nav).not.toMatch(/label: "Blog"/);
+    expect(nav).not.toContain("BLOG_ROUTES");
   });
 });

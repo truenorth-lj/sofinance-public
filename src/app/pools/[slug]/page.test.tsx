@@ -11,7 +11,7 @@ const { notFound, loadHomepagePoolsSnapshot } = vi.hoisted(() => ({
   loadHomepagePoolsSnapshot: vi.fn(),
 }));
 
-vi.mock("next/navigation", () => ({ notFound }));
+vi.mock("next/navigation", () => ({ notFound, usePathname: () => "/pools/tsla-tslax" }));
 vi.mock("@/lib/homepage-pools-snapshot", () => ({ loadHomepagePoolsSnapshot }));
 
 import PublicPoolSlugPage, { generateMetadata, generateStaticParams } from "./page";

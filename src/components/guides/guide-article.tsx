@@ -1,13 +1,13 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { InkHero, InkShell } from "@/components/ink";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { GUIDE_RISK_LINE, guideJsonLd, type GuideBlock, type GuidePage } from "@/lib/guides";
 import { serializeJsonLd } from "@/lib/json-ld";
-import { APP_ROUTES, DOCS_ROUTES, FAQ_ROUTE, GUIDE_ROUTES, LEGAL_ROUTES } from "@/lib/public-urls";
+import { DOCS_ROUTES } from "@/lib/public-urls";
 
 const card = "mt-3 rounded-[28px] border border-white/12 bg-char p-6 sm:p-8";
-const footerLink = "transition-colors hover:text-cream";
 
 function Block({ block }: { block: GuideBlock }) {
   if (block.kind === "p") return <p className="mt-2 text-sm leading-7 text-cream/85">{block.text}</p>;
@@ -16,21 +16,6 @@ function Block({ block }: { block: GuideBlock }) {
     <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-7 text-cream/85">{items}</ol>
   ) : (
     <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-7 text-cream/85">{items}</ul>
-  );
-}
-
-/** Footer shared by the guide pages and the /learn index. */
-export function GuideFooter() {
-  return (
-    <footer className="mt-6 flex flex-wrap items-center gap-5 px-2 py-4 font-data text-[11px] uppercase tracking-[0.12em] text-smoke">
-      <Link href="/" className={footerLink}>Home</Link>
-      <Link href={APP_ROUTES.rwaPairs} className={footerLink}>Pools</Link>
-      <Link href={GUIDE_ROUTES.fees} className={footerLink}>Pricing</Link>
-      <Link href={GUIDE_ROUTES.learn} className={footerLink}>Learn</Link>
-      <Link href={DOCS_ROUTES.gettingStarted} className={footerLink}>Docs</Link>
-      <Link href={FAQ_ROUTE} className={footerLink}>FAQ</Link>
-      <Link href={LEGAL_ROUTES.terms} className={footerLink}>Terms of Service</Link>
-    </footer>
   );
 }
 
@@ -79,7 +64,7 @@ export function GuideArticle({ page, children }: { page: GuidePage; children?: R
           </p>
         </article>
       </main>
-      <GuideFooter />
+      <SiteFooter variant="marketing" />
     </InkShell>
   );
 }

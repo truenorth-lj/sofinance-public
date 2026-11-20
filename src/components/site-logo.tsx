@@ -3,8 +3,7 @@ import { cn } from "@/lib/cn";
 
 /**
  * Shared header mark: the cream H1 squircle at 36×36 beside a 20px bold Host Grotesk
- * "SoFinance" wordmark in cream. Used by the marketing header and the in-app nav.
- * `href` defaults to the marketing homepage; the app bar passes the app home route.
+ * "SoFinance" wordmark in cream. Used by SiteHeader. The logo always goes to the marketing homepage.
  */
 export function SiteLogo({ href = "/", className }: { href?: string; className?: string }) {
   return (

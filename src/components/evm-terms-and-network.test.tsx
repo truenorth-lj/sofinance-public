@@ -182,12 +182,12 @@ describe("wrong network", () => {
 
   it("the nav keeps the address button with no Wrong network tag, no chain tag and no switch on another network", async () => {
     await onOtherNetwork(nav());
-    const header = q("header")!;
+    const chrome = q("[data-testid=nav-wallets]")!;
     expect(q("[data-testid=nav-evm-wallet]")!.textContent).toBe("0xb95b…1b04");
     expect(q("[data-testid=nav-evm-wallet]")!.dataset.connected).toBe("true");
     expect(q("[data-testid=nav-evm-switch]")).toBeNull();
-    expect(header.textContent).not.toContain("Wrong network");
-    expect(header.textContent).not.toMatch(/RHC/);
+    expect(chrome.textContent).not.toContain("Wrong network");
+    expect(chrome.textContent).not.toMatch(/RHC/);
     expect(wallet.calls).not.toContain("wallet_switchEthereumChain");
     // The address button still disconnects (no prompt, no switch).
     await click(q("[data-testid=nav-evm-wallet]"));
@@ -201,7 +201,7 @@ describe("wrong network", () => {
     expect(wallet.calls).toContain("wallet_switchEthereumChain");
     expect(live.evm.chainId).toBe(4663);
     expect(q("[data-testid=nav-evm-wallet]")!.textContent).toBe("0xb95b…1b04RHC");
-    expect(q("header")!.textContent).not.toContain("Wrong network");
+    expect(q("[data-testid=nav-wallets]")!.textContent).not.toContain("Wrong network");
     noWalletPrompt();
   });
 

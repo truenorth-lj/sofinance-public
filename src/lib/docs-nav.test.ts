@@ -42,16 +42,19 @@ describe("docs routes and copy guards", () => {
     expect(blob).toContain("two steps");
   });
 
-  it("wires Docs into InkNav and landing", () => {
+  it("wires Docs into the shared footer, not the header", () => {
     const nav = readFileSync(resolve("src/components/ink/InkNav.tsx"), "utf8");
+    const header = readFileSync(resolve("src/components/site-header.tsx"), "utf8");
+    const footer = readFileSync(resolve("src/components/site-footer.tsx"), "utf8");
     const landing = readFileSync(resolve("src/components/landing-page.tsx"), "utf8");
-    // 11/4: Docs left the app top bar for the app footer (InkFooter); the landing page keeps it in its footer.
+    // 11/4: Docs is not in the top bar; it lives in SiteFooter. Blog stays on marketing chrome only.
     expect(nav).not.toContain("DOCS_ROUTES.home");
-    expect(readFileSync(resolve("src/components/ink/InkFooter.tsx"), "utf8")).toContain("DOCS_ROUTES.home");
+    expect(header).not.toContain("DOCS_ROUTES");
+    expect(footer).toContain("DOCS_ROUTES.home");
     expect(nav).not.toContain("BLOG_ROUTES.home");
-    expect(readFileSync(resolve("src/components/site-header.tsx"), "utf8")).toContain("BLOG_ROUTES.home");
-    expect(landing).toContain("DOCS_ROUTES.home");
-    expect(landing).toContain("BLOG_ROUTES.home");
+    expect(header).toContain("BLOG_ROUTES.home");
+    expect(footer).toContain("BLOG_ROUTES.home");
+    expect(landing).toContain("<SiteFooter variant=\"marketing\" />");
   });
 
   it("links APR explanations and open confirm to docs pages", () => {

@@ -1,6 +1,8 @@
 "use client";
 
-import { InkHero, InkShell, InkNav, InkCard, InkFooter } from "@/components/ink";
+import { InkHero, InkShell, InkCard } from "@/components/ink";
+import { SiteFooter } from "@/components/site-footer";
+import { SiteHeader } from "@/components/site-header";
 import { useWalletConnection } from "@/components/wallet-connection";
 import { McpConnectionCard } from "@/components/mcp-connection-card";
 import { Wallet, Sparkles, Code, Link as LinkIcon } from "lucide-react";
@@ -10,7 +12,7 @@ export default function AIManagementPage() {
 
   return (
     <InkShell maxWidth="5xl">
-      <InkNav wallet={wallet} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
+      <SiteHeader variant="app" wallet={wallet} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
 
       <InkHero
         label="Use AI"
@@ -187,7 +189,7 @@ export default function AIManagementPage() {
           </InkCard>
         </div>
       )}
-      <InkFooter />
+      <SiteFooter variant="app" />
     </InkShell>
   );
 }

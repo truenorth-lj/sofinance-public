@@ -114,7 +114,7 @@ describe("InkNav wallets", () => {
     expect(evm()!.textContent).toBe("0xb95b…1b04");
     expect(evm()!.dataset.connected).toBe("true");
     expect(container.querySelector("[data-testid=nav-evm-switch]")).toBeNull();
-    expect(container.querySelector("header")!.textContent).not.toContain("Wrong network");
+    expect(container.textContent).not.toContain("Wrong network");
     expect(evm()!.getAttribute("aria-label")).toBe("EVM wallet 0xb95b…1b04, connected. Disconnect");
     expect(sol().dataset.connected).toBe("true");
     await act(async () => { listeners.get("accountsChanged")!([]); });

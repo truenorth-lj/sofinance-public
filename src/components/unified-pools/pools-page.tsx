@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { InkFooter, InkHero, InkNav, InkShell } from "../ink";
+import { InkHero, InkShell } from "../ink";
+import { SiteFooter } from "../site-footer";
+import { SiteHeader } from "../site-header";
 import type { RhcPoolView } from "../rhc-univ4-open-panel";
 import { useWalletConnection } from "../wallet-connection";
 import { RhcOpenDialog } from "./rhc-open-dialog";
@@ -19,10 +21,10 @@ export function PoolsPage({ flags, rhcSigningEnabled, deepLinkPool }: {
   const { address, connected, restoring, connect, disconnect } = useWalletConnection();
   const [rhcOpen, setRhcOpen] = useState<RhcPoolView | null>(null);
   return <InkShell>
-    <InkNav wallet={address} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
+    <SiteHeader variant="app" wallet={address} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
     <InkHero label="Pools" title="RWA pairs on Solana and Robinhood Chain" />
     <UnifiedPoolsPanel flags={flags} deepLinkPool={deepLinkPool} onOpenRhc={({ pool }) => setRhcOpen(pool)} />
     {rhcOpen && <RhcOpenDialog pool={rhcOpen} signingEnabled={rhcSigningEnabled} onClose={() => setRhcOpen(null)} />}
-    <InkFooter />
+    <SiteFooter variant="app" />
   </InkShell>;
 }

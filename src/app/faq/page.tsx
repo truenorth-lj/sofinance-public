@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { InkHero, InkShell } from "@/components/ink";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { FAQ_RISK_LINE, FAQ_SECTIONS, faqJsonLd } from "@/lib/faq";
 import { serializeJsonLd } from "@/lib/json-ld";
-import { APP_ROUTES, CANONICAL_SITE_URL, DOCS_ROUTES, FAQ_ROUTE, GUIDE_ROUTES, LEGAL_ROUTES } from "@/lib/public-urls";
+import { CANONICAL_SITE_URL, DOCS_ROUTES, FAQ_ROUTE } from "@/lib/public-urls";
 import { pageMetadata } from "@/lib/seo";
 
 export const dynamic = "force-static";
@@ -57,14 +58,7 @@ export default function FaqPage() {
           before you open a position.
         </p>
       </main>
-      <footer className="mt-6 flex flex-wrap items-center gap-5 px-2 py-4 font-data text-[11px] uppercase tracking-[0.12em] text-smoke">
-        <Link href="/" className="transition-colors hover:text-cream">Home</Link>
-        <Link href={APP_ROUTES.rwaPairs} className="transition-colors hover:text-cream">Pools</Link>
-        <Link href={DOCS_ROUTES.gettingStarted} className="transition-colors hover:text-cream">Docs</Link>
-        <Link href={GUIDE_ROUTES.learn} className="transition-colors hover:text-cream">Learn</Link>
-        <Link href={GUIDE_ROUTES.fees} className="transition-colors hover:text-cream">Pricing</Link>
-        <Link href={LEGAL_ROUTES.terms} className="transition-colors hover:text-cream">Terms of Service</Link>
-      </footer>
+      <SiteFooter variant="marketing" />
     </InkShell>
   );
 }

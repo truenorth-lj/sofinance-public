@@ -5,7 +5,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { VersionedTransaction } from "@solana/web3.js";
 import { LoaderCircle, CircleAlert, CheckCircle2 } from "lucide-react";
-import { InkHero, InkShell, InkCard, InkNav } from "@/components/ink";
+import { InkHero, InkShell, InkCard } from "@/components/ink";
+import { SiteFooter } from "@/components/site-footer";
+import { SiteHeader } from "@/components/site-header";
 import { useWalletConnection } from "@/components/wallet-connection";
 import { useTxWallet } from "@/components/use-tx-wallet";
 import { notSentRetryMessage } from "@/lib/public-error";
@@ -256,7 +258,7 @@ export default function SignPage() {
 
   return (
     <InkShell>
-      <InkNav wallet={wallet} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
+      <SiteHeader variant="app" wallet={wallet} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
       
       <div className="mx-auto max-w-3xl">
       <InkHero label="Sign" title="Sign transaction">
@@ -413,6 +415,7 @@ export default function SignPage() {
         </button>
       </div>
       </div>
+      <SiteFooter variant="app" />
     </InkShell>
   );
 }
