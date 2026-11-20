@@ -452,8 +452,9 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
         </div> : null}
         {(() => {
           const ticks = rhcDefaultOpenTicks(pool, halfWidth, centerOnParity);
-          if (!ticks || pool.tick === null) return null;
-          const status = formatRangeStatus(rhcRangeSide(pool.tick, ticks.tickLower, ticks.tickUpper));
+          const currentTick = result && "plan" in result && typeof result.plan.tick === "number" ? result.plan.tick : pool.tick;
+          if (!ticks || currentTick === null) return null;
+          const status = formatRangeStatus(rhcRangeSide(currentTick, ticks.tickLower, ticks.tickUpper));
           return status ? <p className="mt-3 text-xs text-smoke" data-testid="rhc-open-range-status" title="In range means the current pool price is within your selected range and the position can collect trading fees. It stops collecting trading fees while the price is outside the range.">Status: {status}</p> : null;
         })()}
         {error ? <p role="alert" className="mt-3 text-sm text-red-200">{error}</p> : null}

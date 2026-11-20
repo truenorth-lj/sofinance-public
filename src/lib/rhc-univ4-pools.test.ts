@@ -6,6 +6,8 @@ vi.mock("server-only", () => ({}));
 import { createRhcClients, resetEvmRpcGuards } from "@sofinance/engine/rpc-evm/index";
 import { mockRhcChain, mockRhcTransport } from "@sofinance/engine/test-support/rhc-mock-rpc";
 import { discoverRhcUniv4Pools, resetRhcUniv4PoolsCache, takeGeckoTerminalSlot } from "./rhc-univ4-pools";
+import { rhcPoolView } from "./dex/uniswap-v4-rhc/pool-presentation";
+import { rhcDefaultOpenTicks } from "./rhc-open-range";
 
 const spcxOnly = UNIV4_RHC_ALLOWLISTED_POOLS.filter((p) => p.baseSymbol === "SPCX");
 beforeEach(() => { resetRhcUniv4PoolsCache(); resetEvmRpcGuards(); });
@@ -52,6 +54,24 @@ describe("discoverRhcUniv4Pools (mock Robinhood Chain RPC + DexScreener capture)
     const fetcher = (async () => new Response("busy", { status: 429 })) as unknown as typeof fetch;
     const { pools } = await discoverRhcUniv4Pools({ clients, fetcher, bypassCache: true, pools: spcxOnly });
     expect(pools[0]).toMatchObject({ status: "listed", estimatedApr: null });
+  });
+
+it("carries uiMultiplier from the host summary path through rhcPoolView into the default open ticks", async () => {
+    const chain = mockRhcChain();
+    const robinhood = spcxOnly[0]!.currency0.address.toLowerCase();
+    chain.tokens[robinhood] = { ...chain.tokens[robinhood]!, uiMultiplier: 1000775159164630595n };
+    const clients = createRhcClients({ env: {}, transportFor: () => mockRhcTransport(chain) });
+    const result = await discoverRhcUniv4Pools({ clients, pools: spcxOnly, bypassCache: true });
+    expect(result.pools[0]!.token0.uiMultiplier).toBeCloseTo(1.000775159164630595, 12);
+    expect(result.pools[0]!.token1.uiMultiplier).toBe(1);
+    const view = rhcPoolView(result.pools[0]!);
+    expect(view).not.toBeNull();
+    expect(view!.multiplier0).toBeCloseTo(1.000775159164630595, 12);
+    expect(view!.multiplier1).toBe(1);
+    const ticks = rhcDefaultOpenTicks(view!, 10, true)!;
+    const parity = rhcDefaultOpenTicks({ ...view!, multiplier0: 1, multiplier1: 1 }, 10, true)!;
+    expect(ticks.center).not.toBe(parity.center);
+    expect(ticks.tickUpper - ticks.tickLower).toBe(parity.tickUpper - parity.tickLower);
   });
 });
 

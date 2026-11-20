@@ -50,6 +50,8 @@ export type OpenPlanView = {
   iterations: number;
   sqrtPriceBeforeX96: string;
   sqrtPriceAfterX96: string;
+  /** On-chain tick re-read during prepare/finalize, not the (possibly stale) list-view tick. */
+  tick: number;
   blockNumber: string;
   /** TAKE_PORTION recipient: the configured EVM fee wallet (`RHC_UNIV4_FEE_WALLET`). */
   feeRecipient: Address;
@@ -115,7 +117,7 @@ function planView(req: OpenRequest, ctx: OpenContext, a: OpenAmounts, feeRecipie
     kind: a.kind, depositToken: req.depositToken, amountIn: a.amountIn.toString(), swapIn: a.swapIn.toString(), quoteOut: a.quoteOut.toString(),
     minOut: a.minOut.toString(), fee: a.fee.toString(), liquidity: a.liquidity.toString(), amount0Max: a.amount0Max.toString(), amount1Max: a.amount1Max.toString(),
     priceTolBps: a.priceTolBps, slippageBps: Number(a.slippageBps), ticksCrossed: a.ticksCrossed, iterations: a.iterations,
-    sqrtPriceBeforeX96: ctx.state.sqrtPriceX96.toString(), sqrtPriceAfterX96: a.sqrtPriceAfterX96.toString(), blockNumber: ctx.blockNumber.toString(),
+    sqrtPriceBeforeX96: ctx.state.sqrtPriceX96.toString(), sqrtPriceAfterX96: a.sqrtPriceAfterX96.toString(), tick: ctx.state.tick, blockNumber: ctx.blockNumber.toString(),
     feeRecipient,
   };
 }

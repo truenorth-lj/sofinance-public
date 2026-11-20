@@ -20,10 +20,8 @@ export function rhcDefaultOpenTicks(
   if (centerOnFair) {
     const onChainPriceBPerA = uiPriceFromTick(pool.tick, pool.token0.decimals, pool.token1.decimals);
     const centerPrice = openRangeCenterPrice({
-      symbolA: pool.token0.symbol,
-      symbolB: pool.token1.symbol,
-      multiplierA: pool.multiplier0,
-      multiplierB: pool.multiplier1,
+      multiplierA: pool.multiplier0 ?? 1,
+      multiplierB: pool.multiplier1 ?? 1,
       onChainPriceBPerA,
     });
     center = Math.round(exactTickFromUiPrice(centerPrice, pool.token0.decimals, pool.token1.decimals));

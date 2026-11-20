@@ -17,6 +17,11 @@ export const ERC20_METADATA_ABI = parseAbi([
   "function decimals() view returns (uint8)",
 ]);
 
+/** Robinhood-issued stock tokens on chain 4663; Ondo tokens do not implement this. Returns 1e18-scaled units. */
+export const UI_MULTIPLIER_ABI = parseAbi([
+  "function uiMultiplier() view returns (uint256)",
+]);
+
 /** PoolManager events (v4-core IPoolManager). */
 export const SWAP_EVENT = parseAbiItem("event Swap(bytes32 indexed id, address indexed sender, int128 amount0, int128 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick, uint24 fee)");
 export const MODIFY_LIQUIDITY_EVENT = parseAbiItem("event ModifyLiquidity(bytes32 indexed id, address indexed sender, int24 tickLower, int24 tickUpper, int256 liquidityDelta, bytes32 salt)");

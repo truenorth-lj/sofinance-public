@@ -31,6 +31,9 @@ function meteoraQuotedRange(pool: MeteoraPoolState, lowerBinId: number, upperBin
     lowerPrice: meteoraBinUiPrice(lowerBinId, binStep, pool.decimalsX, pool.decimalsY),
     upperPrice: meteoraBinUiPrice(upperBinId + 1, binStep, pool.decimalsX, pool.decimalsY),
     units: upperBinId - lowerBinId + 1,
+    // APR display encoding on the DLMM grid: price = (1 + binStep/10000)^(tick/binStep).
+    // That equals Uniswap 1-bps tick math only when binStep is 1 (today's listed RWA pools).
+    // TODO: if a listed pool uses binStep !== 1, confirm range-APR consumers still treat tick/binStep as a bin id.
     tickLower: lowerBinId * binStep,
     tickUpper: (upperBinId + 1) * binStep,
   };
