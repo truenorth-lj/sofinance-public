@@ -59,8 +59,12 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Migrate public schema
+        run: pnpm exec vitest run src/db/public-migrate.integration.test.ts --maxWorkers=1
+        env:
+          RWA_DB_TEST_URL: postgres://sofinance:ci-only-password@127.0.0.1:5432/sofinance
       - name: PostgreSQL integration tests
-        run: pnpm exec vitest run src/db/migrations.integration.test.ts src/lib/rwa-database.integration.test.ts src/lib/rwa-postgres-store.integration.test.ts src/lib/position-history-postgres-store.integration.test.ts --maxWorkers=4
+        run: pnpm exec vitest run src/db/migrations.integration.test.ts src/lib/rwa-database.integration.test.ts src/lib/rwa-postgres-store.integration.test.ts src/lib/position-history-postgres-store.integration.test.ts src/lib/stock-entry-price-postgres-store.integration.test.ts --maxWorkers=4
         env:
           RWA_DB_TEST_URL: postgres://sofinance:ci-only-password@127.0.0.1:5432/sofinance
 
