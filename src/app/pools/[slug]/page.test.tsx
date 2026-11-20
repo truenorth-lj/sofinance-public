@@ -14,7 +14,7 @@ const { notFound, loadHomepagePoolsSnapshot } = vi.hoisted(() => ({
 vi.mock("next/navigation", () => ({ notFound }));
 vi.mock("@/lib/homepage-pools-snapshot", () => ({ loadHomepagePoolsSnapshot }));
 
-import PublicPoolSlugPage, { generateMetadata, generateStaticParams } from "./page";
+import PublicPoolSlugPage, { dynamicParams, generateMetadata, generateStaticParams } from "./page";
 
 const pool = (extra: Partial<HomepagePool> & Pick<HomepagePool, "key" | "protocol" | "poolAddress" | "symbolA" | "symbolB">): HomepagePool => ({
   chain: "solana",
@@ -46,6 +46,10 @@ describe("/pools/[slug]", () => {
     loadHomepagePoolsSnapshot.mockReset();
     loadHomepagePoolsSnapshot.mockResolvedValue(snapshot);
     vi.stubEnv("NEXT_PUBLIC_REOWN_PROJECT_ID", "test-reown-id");
+  });
+
+  it("keeps dynamicParams on so slugs missing from generateStaticParams still 200", () => {
+    expect(dynamicParams).toBe(true);
   });
 
   it("prebuilds the snapshot slugs and 404s an unknown slug", async () => {
@@ -87,17 +91,20 @@ describe("/pools/[slug]", () => {
     expect(html).not.toContain("10.00%");
   });
 
-  it("still shows — for a genuinely missing 7d value and still prerenders the other slugs", async () => {
+  it("prerenders only slugs with a ready 7d APR when the map is partial; a genuine miss still renders — with 200", async () => {
     loadHomepagePoolsSnapshot.mockResolvedValue({
       ...snapshot,
       apr7d: { "solana:tsla-meteora": 11 },
     });
     const params = await generateStaticParams();
-    expect(params.map((row) => row.slug).sort()).toEqual(["tsla-tslax", "tsla-tslax-meteora"]);
+    expect(params.map((row) => row.slug)).toEqual(["tsla-tslax-meteora"]);
+    expect(params.map((row) => row.slug)).not.toContain("tsla-tslax");
     const missing = renderToStaticMarkup(await PublicPoolSlugPage({ params: Promise.resolve({ slug: "tsla-tslax" }) }) as ReactElement);
     const ready = renderToStaticMarkup(await PublicPoolSlugPage({ params: Promise.resolve({ slug: "tsla-tslax-meteora" }) }) as ReactElement);
+    expect(missing).toContain("7d APR");
     expect(missing).toContain("—");
     expect(missing).not.toContain("10.00%");
     expect(ready).toContain("11.00%");
+    expect(notFound).not.toHaveBeenCalled();
   });
 });
