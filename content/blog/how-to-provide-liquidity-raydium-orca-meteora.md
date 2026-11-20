@@ -195,7 +195,7 @@ Yes. The two tokens can drift apart in price, the issuers can freeze or restrict
 
 ## Where SoFinance fits
 
-SoFinance is a self-custodial tool for same-stock positions on Raydium CLMM and Meteora DLMM on Solana, and Uniswap v4 on Robinhood Chain. You can open a position from a single token, see a suggested range based on recent fee data, and sign in your own wallet. The position stays a standard Raydium or Meteora position, so you can also manage it directly on that venue. We charge 0.10% only when we swap tokens for you; see [Pricing](/fees). We do not support Orca today. The full pool list is on the [pools page](/app/rwa-pairs).
+SoFinance is a self-custodial tool for same-stock positions on Raydium CLMM and Meteora DLMM on Solana, and Uniswap v4 on Robinhood Chain. You can open a position from a single token, see a suggested range based on recent fee data, and sign in your own wallet. The position stays a standard Raydium or Meteora position, so you can also manage it directly on that venue. We charge 0.10% only when we swap tokens for you; see [Pricing](/fees). We do not support Orca today. The full pool list is on the [pools page](/pools).
 
 ---
 
