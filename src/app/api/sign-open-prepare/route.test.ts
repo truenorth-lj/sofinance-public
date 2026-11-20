@@ -1,12 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/dex", async original => ({ ...await original<typeof import("@/lib/dex")>(), prepareOpen: vi.fn() }));
-vi.mock("@sofinance/engine/config/server-env", async original => ({
-  ...await original<typeof import("@sofinance/engine/config/server-env")>(), getSigningSecret: vi.fn(),
-}));
-
-import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { prepareOpen, MCP_OPEN_PREPARE } from "@/lib/dex";
 import { createSignToken, type PendingSignPayload } from "@/lib/pending-sign-token";
 import { jsonRequest, SIGNING_SECRET, testKeypair } from "@/lib/test-support/send-fixtures";
@@ -25,9 +20,12 @@ const post = (body: unknown) => POST(jsonRequest("http://localhost/api/sign-open
 
 describe("POST /api/sign-open-prepare", () => {
   beforeEach(() => {
-    vi.mocked(getSigningSecret).mockReturnValue(SIGNING_SECRET);
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", SIGNING_SECRET);
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET_PREVIOUS", undefined);
     vi.mocked(prepareOpen).mockReset().mockResolvedValue({ summary: { nftMint } as never, permit: "fresh", unsignedTransaction: preparedTx });
   });
+
+  afterEach(() => vi.unstubAllEnvs());
 
   it("re-prepares with the token's HMAC-bound inputs, the browser mint public key and the MCP profile", async () => {
     const response = await post({ token: await createSignToken(payload(), SIGNING_SECRET), nftMint });
@@ -39,7 +37,9 @@ describe("POST /api/sign-open-prepare", () => {
 
   it("adds a /api/tx-send permit for the re-prepared transaction even though the MCP profile issues none", async () => {
     // prepareOpen (MCP profile) returns no sendPermit; the sign page still relays (mint co-signs after the wallet).
-    const response = await post({ token: await createSignToken(payload(), SIGNING_SECRET), nftMint });
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET_PREVIOUS", "previous-signing-secret");
+    const response = await post({ token: await createSignToken(payload(), "previous-signing-secret"), nftMint });
+    expect(response.status).toBe(200);
     const { sendPermit } = await response.json() as { sendPermit?: string };
     expect(sendPermit).toMatch(/^[0-9a-f]{64}$/);
     expect(verifyTxSendPermit(SIGNING_SECRET, wallet, Buffer.from(preparedTx, "base64"), sendPermit)).toBe(true);

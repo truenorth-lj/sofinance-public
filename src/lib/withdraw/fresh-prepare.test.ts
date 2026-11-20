@@ -10,7 +10,7 @@ const transaction = buildTransaction({ payer });
 const fresh = testKeypair(9).publicKey.toBase58();
 
 beforeEach(() => {
-  vi.stubEnv("JUPITER_API_KEY", SIGNING_SECRET);
+  vi.stubEnv("SOFINANCE_SIGNING_SECRET", SIGNING_SECRET);
 });
 
 it("restamps the blockhash and re-issues the permit without changing instructions", async () => {

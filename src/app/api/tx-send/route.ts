@@ -2,7 +2,7 @@ import "@/lib/engine-host";
 import { VersionedTransaction } from "@solana/web3.js";
 import nacl from "tweetnacl";
 import { apiError } from "@/lib/api-response";
-import { getSigningSecret } from "@sofinance/engine/config/server-env";
+import { getSigningSecrets } from "@sofinance/engine/config/server-env";
 import { rpcConnection } from "@sofinance/engine/rpc";
 import { exceedsTxSizeLimit, isZeroSignature } from "@sofinance/engine/transaction-limits";
 import { assertWalletReturnedTransaction } from "@sofinance/engine/wallet-returned-tx";
@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     const prepared = decode(body?.unsignedTransaction, "prepared transaction");
     const payer = prepared.message.staticAccountKeys[0]?.toBase58();
     const preparedBytes = Buffer.from(String(body.unsignedTransaction), "base64");
-    if (!payer || !verifyTxSendPermit(getSigningSecret(), payer, preparedBytes, body?.sendPermit)) {
+    if (!payer || !getSigningSecrets().some(secret => verifyTxSendPermit(secret, payer, preparedBytes, body?.sendPermit))) {
       throw new Error("This transaction was not prepared by SoFinance, so it was not sent");
     }
     assertWalletReturnedTransaction(prepared, transaction, payer);

@@ -11,7 +11,7 @@ import { readOpenPoolState } from "@sofinance/engine/open-state";
 import { simulateAndVerifyOpenTransaction } from "@sofinance/engine/open-simulation";
 import { rpcConnection } from "@sofinance/engine/rpc";
 import type { OpenPositionSummary } from "@sofinance/engine/open-types";
-import { getSigningSecret } from "@sofinance/engine/config/server-env";
+import { getSigningSecrets } from "@sofinance/engine/config/server-env";
 import { exceedsTxSizeLimit, isZeroSignature } from "@sofinance/engine/transaction-limits";
 import { assertWalletReturnedTransaction } from "@/lib/wallet-returned-guard";
 import { broadcastSignedTransaction } from "@/lib/broadcast-signed-transaction";
@@ -119,11 +119,12 @@ export async function submitOpenPositionFromParts(input: {
   const prepared = input.unsignedTransaction
     ? VersionedTransaction.deserialize(Buffer.from(input.unsignedTransaction, "base64"))
     : transaction;
-  if (!verifyOpenPositionPermit(getSigningSecret(), {
+  const permitInput = {
     wallet: input.wallet,
     message: Buffer.from(prepared.message.serialize()).toString("base64"),
     summary: input.summary,
-  }, input.permit)) {
+  };
+  if (!getSigningSecrets().some(secret => verifyOpenPositionPermit(secret, permitInput, input.permit))) {
     throw new Error("Transaction does not match simulated open-position authorization");
   }
   if (input.unsignedTransaction) assertWalletReturnedTransaction(prepared, transaction, input.wallet);

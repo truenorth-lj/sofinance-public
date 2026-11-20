@@ -1,6 +1,6 @@
 // Mints /app/sign/<token> tokens exactly like src/lib/pending-sign-token.ts (deflate + base64url + HMAC-SHA256),
 // so the hermetic lane does not need the server to prepare anything. The secret is the CI-only dummy value that
-// the test server is started with (JUPITER_API_KEY is the signing secret today). Never use a real key here.
+// the test server is started with (`SOFINANCE_SIGNING_SECRET`). Use a fixture key here.
 import { createHmac } from "node:crypto";
 import { deflateSync } from "node:zlib";
 

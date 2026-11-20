@@ -73,7 +73,8 @@ Copy `.env.example` → `.env.local`. Comments in that file are the source of tr
 
 | Variable | Role |
 |----------|------|
-| `JUPITER_API_KEY` | Jupiter quotes plus HMAC secret for permits, sign tokens, and MCP tokens |
+| `JUPITER_API_KEY` | Jupiter HTTP API key and legacy signing fallback if the dedicated signing secret is unset |
+| `SOFINANCE_SIGNING_SECRET` | Server-only HMAC key for transaction permits, sign links, and MCP tokens |
 | `NEXT_PUBLIC_REOWN_PROJECT_ID` | Wallet connect in the web UI ([Reown dashboard](https://dashboard.reown.com/)) |
 | `NEXT_PUBLIC_APP_URL` | Absolute MCP and sign-link URLs (local: `http://localhost:3000`; production auto-detects `VERCEL_URL`) |
 
@@ -83,6 +84,7 @@ Copy `.env.example` → `.env.local`. Comments in that file are the source of tr
 
 | Variable | Role |
 |----------|------|
+| `SOFINANCE_SIGNING_SECRET_PREVIOUS` | Server-only second verification key during a signing-secret rotation |
 | `NEXT_PUBLIC_SOLANA_RPC_URL` | Browser wallet RPC only; must be a public endpoint, never a key |
 | `SOFINANCE_FEE_WALLET` / `SOFINANCE_FEE_BPS` | Optional protocol fee; **server-only, never `NEXT_PUBLIC_`**. Default 10 bps, max 100. Unset wallet = fee 0, no transfer added. Details: [Protocol swap fee](#protocol-swap-fee). |
 | `RHC_UNIV4_FEE_WALLET` | Robinhood Chain (4663) Uniswap v4 open fee recipient (10 bps `TAKE_PORTION` of the swap output); **server-only, never `NEXT_PUBLIC_`**. Must be an EIP-55 checksummed EVM address. Unset or invalid = every RHC open fails closed (`fee-wallet-unconfigured`, "Fee wallet not configured"). |
@@ -92,6 +94,15 @@ Copy `.env.example` → `.env.local`. Comments in that file are the source of tr
 | `NEXT_PUBLIC_POSTHOG_KEY` / `NEXT_PUBLIC_POSTHOG_HOST` | Optional PostHog product analytics. Unset key = complete client no-op. The browser always sends to the first-party relay `/lumen` (Next.js rewrite); the host only picks the upstream region and defaults to `https://us.i.posthog.com`. |
 
 See [Growth analytics](#growth-analytics) for event names.
+
+### Rotate the signing secret
+
+1. Roll out the code with the existing keys first. With `SOFINANCE_SIGNING_SECRET` unset, new signatures still use `JUPITER_API_KEY`.
+2. Generate a separate random secret with `openssl rand -hex 32`. To stage a rolling rotation, set `SOFINANCE_SIGNING_SECRET_PREVIOUS` to this new value on every issuer and verifier while keeping the current signing configuration. Wait for all instances to pick up the change.
+3. Set `SOFINANCE_SIGNING_SECRET` to the new value and `SOFINANCE_SIGNING_SECRET_PREVIOUS` to the old signing key (the old `JUPITER_API_KEY` on the first rotation). During this rollout, both configurations can verify signatures from either key.
+4. After the last old-key issuer stops, wait at least 24 hours for existing MCP tokens to expire and let any in-flight two-stage withdrawals and pending transaction reconciliation finish. Then unset `SOFINANCE_SIGNING_SECRET_PREVIOUS`. With the dedicated signing key configured, Jupiter credentials can rotate independently.
+
+Keep both signing variables server-only. If you operate local stdio MCP with browser sign links, apply the rotation on those MCP hosts and the web app that verifies the links.
 
 ### Run
 
@@ -203,7 +214,7 @@ Kept on both web API and MCP paths:
 ```bash
 pnpm install
 cp .env.example .env.local
-# Server-only: SOLANA_RPC_URL, JUPITER_API_KEY
+# Server-only: SOLANA_RPC_URL, JUPITER_API_KEY, SOFINANCE_SIGNING_SECRET
 # Optional protocol fee: SOFINANCE_FEE_WALLET + SOFINANCE_FEE_BPS (default 10, max 100). Unset wallet = fee 0.
 # Public: NEXT_PUBLIC_REOWN_PROJECT_ID (and optional NEXT_PUBLIC_SOLANA_RPC_URL without secrets)
 pnpm dev --webpack --hostname 127.0.0.1
@@ -213,7 +224,7 @@ pnpm dev --webpack --hostname 127.0.0.1
 pnpm lint && pnpm typecheck && pnpm test && pnpm build
 ```
 
-Never commit `.env.local`, mnemonics, or API keys. Do not prefix `SOLANA_RPC_URL` / `JUPITER_API_KEY` / `SOFINANCE_FEE_WALLET` / `SOFINANCE_FEE_BPS` with `NEXT_PUBLIC_`.
+Keep `.env.local`, mnemonics, and keys out of Git. Keep the RPC URL, Jupiter key, signing secrets, and fee configuration server-only.
 
 ### Protocol swap fee
 
@@ -341,7 +352,8 @@ Cursor / Claude config for local stdio:
       "env": {
         "SOLANA_RPC_URL": "https://your-solana-rpc",
         "JUPITER_API_KEY": "your-jupiter-key",
-        "NEXT_PUBLIC_APP_URL": "https://sofinancelab.xyz"
+        "SOFINANCE_SIGNING_SECRET": "your-signing-secret",
+        "NEXT_PUBLIC_APP_URL": "http://localhost:3000"
       }
     }
   }
@@ -352,9 +364,7 @@ Or: `pnpm mcp:start` with env already exported.
 
 **Agent flow:** `list_positions` → `quote_add_liquidity` → `prepare_transaction` → wallet signs `unsignedTransaction` → `submit_signed_transaction` with `{ signedTransaction, ...submitArgs }`. Compound: `quote_compound` / `prepare_compound_transaction` → sign → `submit_compound_transaction` with the complete `summary`. Open position: `list_rwa_pairs` → `quote_open_position` → `prepare_open_position` → sign → `submit_open_position` with the complete `summary`.
 
-**Sign deep-link:** After `prepare_transaction`, `prepare_compound_transaction`, or `prepare_open_position`, the agent receives a `signUrl` (e.g. `https://sofinancelab.xyz/app/sign/<token>`) that can be opened in a browser. Legacy `/sign/<token>` URLs permanently redirect to `/app/sign/<token>`. The token is a self-contained, HMAC-signed, compressed payload containing the unsigned transaction, permit, and submit arguments. With the correct wallet connected via Reown AppKit, the user reviews the transaction summary and signs with one click. The signed transaction is automatically submitted via the existing re-verification and broadcast paths. This bridges the gap for agents that can prepare transactions but delegate signing to the user's wallet UI. Sign tokens expire after 60-120 seconds (matching permit/blockhash lifetime). The token is verified server-side using `JUPITER_API_KEY` as the HMAC secret, so MCP (local/remote) and Vercel (production) can share the same signing mechanism without shared memory.
-
-`JUPITER_API_KEY` is used for Jupiter swap quotes, permit HMACs, sign token HMACs, and MCP token HMACs. Quotes expire quickly; always re-prepare before signing.
+**Sign deep-link:** After `prepare_transaction`, `prepare_compound_transaction`, or `prepare_open_position`, the agent receives a `signUrl` (e.g. `https://sofinancelab.xyz/app/sign/<token>`) that can be opened in a browser. Legacy `/sign/<token>` URLs permanently redirect to `/app/sign/<token>`. The token is a self-contained, HMAC-signed, compressed payload containing the unsigned transaction, permit, and submit arguments. With the correct wallet connected via Reown AppKit, the user reviews the transaction summary and signs with one click. The signed transaction is automatically submitted via the existing re-verification and broadcast paths. This bridges the gap for agents that can prepare transactions but delegate signing to the user's wallet UI. Sign tokens expire after 60-120 seconds (matching permit/blockhash lifetime). The web verifier must share the signing configuration of the MCP server that issues the link. Quotes expire quickly; always re-prepare before signing.
 
 ## Growth analytics
 

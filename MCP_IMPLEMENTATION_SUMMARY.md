@@ -94,6 +94,7 @@ cp .env.example .env.local
 # Edit .env.local and set:
 #   SOLANA_RPC_URL=your-solana-rpc-url
 #   JUPITER_API_KEY=your-jupiter-api-key
+#   SOFINANCE_SIGNING_SECRET=your-signing-secret
 
 # Run MCP server
 pnpm mcp:start
@@ -115,7 +116,8 @@ pnpm mcp:dev
       "args": ["tsx", "/absolute/path/to/sofinance/src/mcp/server.ts"],
       "env": {
         "SOLANA_RPC_URL": "your-rpc-url",
-        "JUPITER_API_KEY": "your-api-key"
+        "JUPITER_API_KEY": "your-api-key",
+        "SOFINANCE_SIGNING_SECRET": "your-signing-secret"
       }
     }
   }
@@ -137,7 +139,8 @@ Add to Cursor MCP settings:
     "cwd": "/absolute/path/to/sofinance",
     "env": {
       "SOLANA_RPC_URL": "your-rpc-url",
-      "JUPITER_API_KEY": "your-api-key"
+      "JUPITER_API_KEY": "your-api-key",
+      "SOFINANCE_SIGNING_SECRET": "your-signing-secret"
     }
   }
 }

@@ -1,6 +1,6 @@
 import "server-only";
 import { VersionedTransaction } from "@solana/web3.js";
-import { getSigningSecret } from "@sofinance/engine/config/server-env";
+import { getSigningSecrets } from "@sofinance/engine/config/server-env";
 import { exceedsTxSizeLimit } from "@sofinance/engine/transaction-limits";
 import { verifyTxLandedPermit } from "@/lib/tx-send/permit";
 
@@ -21,7 +21,7 @@ export function parsePermittedTx(body: Record<string, unknown> | null) {
   if (exceedsTxSizeLimit(bytes.length)) throw new Error("Invalid transaction input");
   const transaction = VersionedTransaction.deserialize(bytes);
   const wallet = transaction.message.staticAccountKeys[0]?.toBase58();
-  if (!wallet || !verifyTxLandedPermit(getSigningSecret(), wallet, bytes, lastValidBlockHeight, landedPermit)) {
+  if (!wallet || !getSigningSecrets().some(secret => verifyTxLandedPermit(secret, wallet, bytes, lastValidBlockHeight, landedPermit))) {
     throw new Error("This transaction was not prepared by SoFinance");
   }
   return { transaction, wallet, landedPermit, lastValidBlockHeight: lastValidBlockHeight as number };

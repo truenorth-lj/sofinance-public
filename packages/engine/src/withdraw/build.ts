@@ -18,7 +18,7 @@ import { retargetSwapSource, swapRouteInstructions } from "../swap/instructions"
 import type { BuildRoute } from "../swap/jupiter";
 import { defaultRpcConnection, rpcConnection } from "../rpc";
 import { estimateFeeForMessage, WITHDRAW_FEE_ESTIMATE_MESSAGE } from "../rpc/fee-estimate";
-import { getSigningSecret } from "../config/server-env";
+import { getSigningSecret, getSigningSecrets } from "../config/server-env";
 import { simulateAtContextSlot, simulateWithdraw } from "./simulation";
 import { withdrawPermit } from "./permit";
 import { assertImpactConfirmed, impactFlags, percentToBps, principalMinimum, capReceivedAmount, shouldSwap, targetUSDCToBps, transactionCount } from "./quote";
@@ -196,7 +196,9 @@ async function buildSwapStage(raw: WithdrawPrepareRequest, connection: Connectio
     const { VersionedTransaction } = await import("@solana/web3.js");
     const first = VersionedTransaction.deserialize(Buffer.from(previous.unsignedTransaction, "base64"));
     const original = previous.summary;
-    if (!withdrawPermit.verify(getSigningSecret(), { wallet: raw.wallet, message: Buffer.from(first.message.serialize()).toString("base64"), summary: original }, previous.permit) || original.wallet !== raw.wallet || original.positionMint !== raw.positionMint || original.stage !== "withdraw")
+    const permitInput = { wallet: raw.wallet, message: Buffer.from(first.message.serialize()).toString("base64"), summary: original };
+    if (!getSigningSecrets().some(secret => withdrawPermit.verify(secret, permitInput, previous.permit)) ||
+        original.wallet !== raw.wallet || original.positionMint !== raw.positionMint || original.stage !== "withdraw")
         throw new Error("Invalid first transaction authorization");
     const receipt = await connection.getTransaction(raw.tx1Signature, { commitment: "finalized", maxSupportedTransactionVersion: 0 });
     // Permit stays bound to the prepared first-stage message. The landed tx may

@@ -3,7 +3,7 @@ import "server-only";
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import nacl from "tweetnacl";
-import { getSigningSecret } from "@sofinance/engine/config/server-env";
+import { getSigningSecrets } from "@sofinance/engine/config/server-env";
 import { isSingleWalletSignedTransaction } from "@sofinance/engine/transaction-limits";
 import { rpcConnection } from "@sofinance/engine/rpc";
 import { sendUntilObserved } from "@/lib/send-until-valid";
@@ -27,7 +27,8 @@ export async function submitWithdraw(input: {
         ? VersionedTransaction.deserialize(Buffer.from(input.unsignedTransaction, "base64"))
         : transaction;
     const summary = input.summary;
-    if (!withdrawPermit.verify(getSigningSecret(), { wallet: input.wallet, message: Buffer.from(prepared.message.serialize()).toString("base64"), summary }, input.permit))
+    const permitInput = { wallet: input.wallet, message: Buffer.from(prepared.message.serialize()).toString("base64"), summary };
+    if (!getSigningSecrets().some(secret => withdrawPermit.verify(secret, permitInput, input.permit)))
         throw new Error("Withdrawal authorization does not match transaction");
     if (input.unsignedTransaction) assertWalletReturnedTransaction(prepared, transaction, input.wallet);
     assertImpactConfirmed(summary, input.confirmHighImpact);

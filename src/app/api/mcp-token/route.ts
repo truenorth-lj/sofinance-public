@@ -8,7 +8,7 @@ import {
   parseChallengeNonce,
   consumeChallengeNonce,
 } from "@/lib/mcp-auth";
-import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
+import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { captureApiRouteError } from "@/lib/sentry/capture";
 import { CANONICAL_SITE_URL, getPublicBaseUrl } from "@/lib/public-urls";
 
@@ -138,7 +138,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const secret = getJupiterApiKey();
+    const secret = getSigningSecret();
     if (!secret) {
       return NextResponse.json(
         { error: "Server configuration error: JUPITER_API_KEY not set" },

@@ -23,7 +23,7 @@ import {
 } from "./test-support/send-fixtures";
 
 beforeEach(() => {
-  vi.stubEnv("JUPITER_API_KEY", SIGNING_SECRET);
+  vi.stubEnv("SOFINANCE_SIGNING_SECRET", SIGNING_SECRET);
   vi.spyOn(console, "error").mockImplementation(() => {});
   vi.mocked(simulateAndVerifyRecovery).mockResolvedValue(undefined as never);
   vi.mocked(simulateAndVerifyCleanupBatch).mockResolvedValue({ unitsConsumed: 1 });

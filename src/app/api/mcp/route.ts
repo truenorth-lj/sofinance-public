@@ -6,7 +6,7 @@ import { publicToolError } from "@/mcp/public-tool-error";
 import { sanitizePublicError } from "@/lib/public-error";
 import { captureApiRouteError } from "@/lib/sentry/capture";
 import { dispatchTool, isPublicTool, type McpDispatchContext } from "@/mcp/dispatch";
-import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
+import { getSigningSecrets } from "@sofinance/engine/config/server-env";
 import { PUBLIC_TOOL_NAMES } from "@/mcp/tool-definitions";
 import {
   SERVER_INFO, authSteps, isSupportedProtocolVersion, mcpSetupUrl, negotiateProtocolVersion, serverInstructions,
@@ -186,7 +186,7 @@ export async function POST(request: NextRequest) {
       if (!authHeader || !authHeader.startsWith("Bearer ")) return unauthorized(id ?? null, "missing");
 
       const token = authHeader.slice(7);
-      const secret = getJupiterApiKey();
+      const [secret, previousSecret] = getSigningSecrets();
       if (!secret) {
         return NextResponse.json(
           createJsonRpcError(id ?? null, -32002, "Server configuration error"),
@@ -194,7 +194,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const wallet = verifyMcpToken(token, secret)?.wallet;
+      const wallet = verifyMcpToken(token, secret, previousSecret)?.wallet;
       if (!wallet) return unauthorized(id ?? null, "invalid");
       context = { surface: "mcp-http", tokenWallet: wallet };
     }

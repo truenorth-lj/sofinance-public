@@ -8,6 +8,7 @@
 //
 // Keys the engine currently understands (all optional unless a feature needs them):
 //   JUPITER_API_KEY, E2E_KEYLESS_JUPITER, JUPITER_* (base URLs / logging),
+//   SOFINANCE_SIGNING_SECRET, SOFINANCE_SIGNING_SECRET_PREVIOUS,
 //   SOFINANCE_FEE_WALLET, SOFINANCE_FEE_BPS,
 //   SOLANA_RPC_URL, SOLANA_RPC_PROVIDERS, RPC_* (provider selection, logging).
 // RPC connections can also be injected per call (every builder accepts a `connection` option).
