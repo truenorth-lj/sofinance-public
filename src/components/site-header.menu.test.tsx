@@ -51,4 +51,36 @@ describe("SiteHeader mobile menu", () => {
     await act(async () => { nav.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
     expect(nav.className).toContain("hidden");
   });
+
+  it("at 375 the mobile row is logo first and Menu last (order classes are sm: only)", async () => {
+    await render("marketing");
+    const header = container.querySelector<HTMLElement>("[data-testid=site-header]")!;
+    const row = header.querySelector(":scope > div")!;
+    const children = [...row.children] as HTMLElement[];
+    const logo = children[0];
+    const trailing = children[1];
+    expect(logo).toBeDefined();
+    expect(trailing).toBeDefined();
+    if (!logo || !trailing) throw new Error("mobile row must have logo then wallet+Menu");
+    // DOM order is the visual order below sm: an un-prefixed order-1 on the logo would sort it after
+    // the wallet group (default order 0) once sm:contents is not applied.
+    expect(logo.getAttribute("href")).toBe("/");
+    expect(logo.textContent).toContain("SoFinance");
+    expect(logo.className.split(/\s+/)).not.toContain("order-1");
+    expect(logo.className).toContain("sm:order-1");
+    expect(trailing.className).toContain("ml-auto");
+    expect(trailing.className).toContain("sm:order-3");
+    expect(trailing.className.split(/\s+/)).not.toContain("order-1");
+    const trailingKids = [...trailing.children] as HTMLElement[];
+    const menu = trailing.querySelector<HTMLElement>("[data-testid=nav-menu]")!;
+    expect(menu).not.toBeNull();
+    expect(trailingKids.at(-1)).toBe(menu);
+    // Left-to-right in the header row: logo, then the trailing group that ends with Menu.
+    const tree = [...header.querySelectorAll("a, button")].filter((el) => {
+      const nav = el.closest("nav");
+      return !nav || !nav.className.split(/\s+/).includes("hidden");
+    });
+    expect(tree[0]).toBe(logo);
+    expect(tree.at(-1)).toBe(menu);
+  });
 });

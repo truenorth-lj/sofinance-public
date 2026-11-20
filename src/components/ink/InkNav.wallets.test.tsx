@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Nav wallets: "Solana wallet" and "EVM wallet" are separate buttons with separate state. Connecting or disconnecting
+// Nav wallets: "Solana" and "EVM" are separate buttons with separate state. Connecting or disconnecting
 // one never touches the other.
 import { act, createElement, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -53,8 +53,8 @@ describe("InkNav wallets", () => {
   it("shows two separate buttons when neither is connected", async () => {
     localStorage.setItem("sofi:evm-wallet:v1", JSON.stringify({ disconnected: true }));
     await render();
-    expect(sol().textContent).toBe("Solana wallet");
-    expect(evm()!.textContent).toBe("EVM wallet");
+    expect(sol().textContent).toBe("Solana");
+    expect(evm()!.textContent).toBe("EVM");
     expect(sol().dataset.connected).toBe("false");
     expect(evm()!.dataset.connected).toBe("false");
   });

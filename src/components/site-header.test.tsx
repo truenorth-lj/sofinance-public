@@ -98,6 +98,13 @@ describe("SiteHeader", () => {
     expect(svg).not.toContain('preserveAspectRatio="none"');
   });
 
+  it("keeps the app header on /app/sign/[token] and does not render a footer", () => {
+    const sign = readFileSync(resolve("src/app/app/sign/[token]/page.tsx"), "utf8");
+    expect(sign).toContain("<SiteHeader variant=\"app\"");
+    expect(sign).not.toContain("SiteFooter");
+    expect(sign).not.toContain("site-footer");
+  });
+
   it("the homepage and marketing pages render SiteHeader; the app header has no Blog tab", () => {
     expect(readFileSync(resolve("src/components/landing-page.tsx"), "utf8")).toContain('<SiteHeader variant="marketing" />');
     const header = readFileSync(resolve("src/components/site-header.tsx"), "utf8");

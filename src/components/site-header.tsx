@@ -43,9 +43,12 @@ export function SiteHeader({
   return (
     <>
       <header data-testid="site-header" className="flex flex-wrap items-center gap-2">
-        {/* One mobile row: logo, wallet, Menu. sm+ lets the nav sit between the logo and the wallet. */}
+        {/* Mobile row is DOM order: logo, then wallet + Menu (Menu last) with ml-auto on the right.
+            Order classes are sm: only: below sm the wrapper is a real flex container, and an un-prefixed
+            order-1 on the logo would sort it after the wallet group (default order 0). sm+ uses contents
+            so logo / nav / wallet join the header flex as sm:order-1 / sm:order-2 / sm:order-3. */}
         <div className="flex w-full items-center gap-2 sm:contents">
-          <SiteLogo className="order-1" />
+          <SiteLogo className="sm:order-1" />
           <div className="ml-auto flex min-w-0 items-center gap-2 sm:order-3 sm:ml-0">
             {variant === "marketing" ? (
               <HomepageConnectButton />

@@ -6,7 +6,6 @@ import { useParams, useRouter } from "next/navigation";
 import { VersionedTransaction } from "@solana/web3.js";
 import { LoaderCircle, CircleAlert, CheckCircle2 } from "lucide-react";
 import { InkHero, InkShell, InkCard } from "@/components/ink";
-import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { useWalletConnection } from "@/components/wallet-connection";
 import { useTxWallet } from "@/components/use-tx-wallet";
@@ -415,7 +414,6 @@ export default function SignPage() {
         </button>
       </div>
       </div>
-      <SiteFooter variant="app" />
     </InkShell>
   );
 }

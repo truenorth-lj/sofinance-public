@@ -20,6 +20,12 @@ describe("InkNav wallet slot", () => {
     expect(src).not.toContain("APP_ROUTES.ai");
     expect(src).not.toContain("APP_ROUTES.plan");
     expect(src).not.toContain("next/link");
+    // Presentational labels: short "Solana" / "EVM", never CSS-truncated text.
+    expect(src).toContain(': "Solana"}');
+    expect(src).toContain(': "EVM"}');
+    expect(src).not.toContain("truncate");
+    expect(src).not.toContain("Solana wallet\}");
+    expect(src).not.toContain("EVM wallet\}");
   });
 });
 
