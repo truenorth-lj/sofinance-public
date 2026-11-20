@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { PublicPoolPage } from "@/components/public-pool-page";
-import { snapshotFailedToLoadAprs } from "@/lib/homepage-pools";
+import { aprLookupFrom, snapshotFailedToLoadAprs } from "@/lib/homepage-pools";
 import { loadHomepagePoolsSnapshot } from "@/lib/homepage-pools-snapshot";
 import { serializeJsonLd } from "@/lib/json-ld";
 import {
@@ -22,7 +22,13 @@ export async function generateStaticParams() {
   // dynamicParams + ISR will fill each page on first request once the snapshot cache is warm.
   // (Calling noStore() here would mark the whole route per-request dynamic.)
   if (snapshotFailedToLoadAprs(snapshot)) return [];
-  return listPublicPoolPageModels(snapshot).map((page) => ({ slug: page.slug }));
+  // A partial APR map must not prerender the missing slugs with "—"; those pages would stay
+  // stale until the next ISR refresh. Only slugs with a ready 7d APR are prerendered;
+  // the rest (including genuine misses like ant-antx-meteora) fill on first request.
+  const lookup = snapshot ? aprLookupFrom(snapshot.apr7d) : () => null;
+  return listPublicPoolPageModels(snapshot)
+    .filter((page) => lookup(page.pool) !== null)
+    .map((page) => ({ slug: page.slug }));
 }
 
 export async function generateMetadata({ params }: PageProps) {
