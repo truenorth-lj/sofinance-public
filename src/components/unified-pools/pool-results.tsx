@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { LoaderCircle } from "lucide-react";
 import { HIGHEST_RANGE_APR_7D_HELP, HOMEPAGE_APR_DOCS_LINK_LABEL } from "@/lib/apr-labels/copy";
-import { formatAprPct } from "@/lib/apr-labels/format-apr";
 import { APP_ROUTES, DOCS_ROUTES } from "@/lib/public-urls";
 import {
   TOP_POOLS_SUBTITLE,
@@ -12,16 +11,13 @@ import {
 } from "@/lib/homepage-pools";
 import type { TokenIconMap } from "@/lib/token-icons/map";
 import type { Apr7dState } from "@/lib/unified-pools/apr7d";
-import {
-  PROTOCOL_LABELS,
-  type Apr7dLookup,
-  type SortDir,
-  type SortKey,
-  type UnifiedPool,
+import type {
+  Apr7dLookup,
+  SortDir,
+  SortKey,
+  UnifiedPool,
 } from "@/lib/unified-pools/model";
-import { cn } from "@/lib/cn";
-import { PairTokenIcons } from "../pair-token-icons";
-import { NEW_POOL_LABEL, ChainBadge, PoolTable, iconPair, money, type OpenAction } from "./pool-list";
+import { PoolTable, type OpenAction } from "./pool-list";
 import { PoolCard } from "./pool-card";
 
 export type PoolResultsMode = "top" | "full";
@@ -73,23 +69,16 @@ function FullPoolResults({ view, pools, apr, actionFor, sort, onSort, icons, onC
 }
 
 /**
- * The figure the top-5 row prints: the live estimate once it is ready, otherwise the server snapshot so crawlers
- * already see the number in the HTML. A known miss or a new pool keeps their labels; only an unknown value is "…".
+ * APR state the homepage cards print: the live estimate once it is ready (or a known miss / new pool),
+ * otherwise a ready state from the server snapshot so crawlers already see the number in the HTML.
+ * Snapshot values have no range label until the client estimate loads.
  */
-export function displayedTopApr(state: Apr7dState | undefined, saved: number | null): string {
-  if (state?.status === "ready") return formatAprPct(state.aprPct);
-  if (state?.status === "new") return NEW_POOL_LABEL;
-  if (state?.status === "missing") return "—";
-  return typeof saved === "number" && Number.isFinite(saved) ? formatAprPct(saved) : (state?.status === "loading" || !state ? "…" : "—");
-}
-
-function rangeOf(state: Apr7dState | undefined): string | null {
-  return state?.status === "ready" ? state.rangeLabel : null;
-}
-
-function aprTitle(state: Apr7dState | undefined): string {
-  const range = rangeOf(state);
-  return range ? `Best range: ${range}. ${HIGHEST_RANGE_APR_7D_HELP}` : HIGHEST_RANGE_APR_7D_HELP;
+export function cardAprState(state: Apr7dState | undefined, saved: number | null): Apr7dState | undefined {
+  if (state?.status === "ready" || state?.status === "new" || state?.status === "missing") return state;
+  if (typeof saved === "number" && Number.isFinite(saved)) {
+    return { status: "ready", aprPct: saved, rangeLabel: "", lowConfidence: false, avgDailyVolumeUsd: null };
+  }
+  return state;
 }
 
 function TopPoolResults({
@@ -145,23 +134,25 @@ function TopPoolResults({
       )}
 
       {pools.length > 0 && (
-        <div className="mt-6 overflow-x-auto" data-testid="top-pools-table">
-          <table className="w-full min-w-[36rem] border-collapse text-left text-sm">
-            <thead>
-              <tr className="border-b border-white/15">
-                <th scope="col" className="px-3 py-3 font-data text-[10px] font-normal uppercase tracking-[0.12em] text-smoke">Pool</th>
-                <th scope="col" className="px-3 py-3 font-data text-[10px] font-normal uppercase tracking-[0.12em] text-smoke">Chain</th>
-                <th scope="col" className="px-3 py-3 text-right font-data text-[10px] font-normal uppercase tracking-[0.12em] text-smoke">TVL</th>
-                <th scope="col" className="px-3 py-3 text-right font-data text-[10px] font-normal uppercase tracking-[0.12em] text-smoke">APR</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pools.map((pool, index) => (
-                <TopPoolRow key={pool.key} pool={pool} rank={index + 1} state={apr[pool.key]} saved={apr7d(pool)} action={actionFor(pool)} icons={icons} />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        // Mobile: one-column stack (the same card as /app/rwa-pairs, shown in full — no sideways scroll of a tall
+        // card). Desktop: 3+2 grid. Five in one row does not fit in the homepage's 1280px shell without squeezing
+        // these cards narrower than the app's own 3-column grid.
+        <ul className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-3" data-testid="top-pools-cards">
+          {pools.map((pool) => {
+            const action = actionFor(pool);
+            const href = action.kind === "link" ? action.href : undefined;
+            return (
+              <PoolCard
+                key={pool.key}
+                pool={pool}
+                apr={cardAprState(apr[pool.key], apr7d(pool))}
+                action={action}
+                icons={icons}
+                calculateHref={href}
+              />
+            );
+          })}
+        </ul>
       )}
 
       {(pools.length > 0 || error) && (
@@ -180,44 +171,5 @@ function TopPoolResults({
         </div>
       )}
     </section>
-  );
-}
-
-function TopPoolRow({ pool, rank, state, saved, action, icons }: {
-  pool: UnifiedPool; rank: number; state: Apr7dState | undefined; saved: number | null; action: OpenAction; icons?: TokenIconMap;
-}) {
-  const range = rangeOf(state);
-  const href = action.kind === "link" ? action.href : null;
-  const reason = action.kind === "link" || action.kind === "open" ? "" : action.reason;
-  return (
-    <tr
-      data-pool={pool.key}
-      data-chain={pool.chain}
-      data-testid={href ? "top-pool-row" : "top-pool-unavailable"}
-      title={reason || undefined}
-      className={cn("relative border-b border-white/10", href && "transition-colors hover:bg-white/[0.05]")}
-    >
-      <td className="px-3 py-3">
-        <span className="flex items-center gap-3">
-          <span className="w-4 shrink-0 font-data text-xs text-smoke">{rank}</span>
-          <PairTokenIcons pair={iconPair(pool)} icons={icons} chain={pool.chain} ringClassName="ring-char" layout="stacked" />
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-semibold text-cream">{pool.pairLabel}</span>
-            <span className="block truncate font-data text-[11px] uppercase tracking-[0.08em] text-smoke">{PROTOCOL_LABELS[pool.protocol]}</span>
-          </span>
-        </span>
-        {href ? (
-          <Link href={href} aria-label={`Open position in ${pool.pairLabel}`} className="absolute inset-0 outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--color-lilac)]">
-            <span className="sr-only">: open position</span>
-          </Link>
-        ) : reason ? <span className="sr-only">: {reason}</span> : null}
-      </td>
-      <td className="px-3 py-3"><ChainBadge chain={pool.chain} tone="dark" /></td>
-      <td className="relative px-3 py-3 text-right font-data text-sm tabular-nums text-cream" data-testid="top-pool-tvl">{money(pool.tvlUsd)}</td>
-      <td className="relative px-3 py-3 text-right">
-        <span data-testid="top-pool-apr" className="font-data text-sm tabular-nums text-cream" title={aprTitle(state)}>{displayedTopApr(state, saved)}</span>
-        {range ? <span className="sr-only">, {range} range</span> : null}
-      </td>
-    </tr>
   );
 }

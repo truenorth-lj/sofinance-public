@@ -14,8 +14,11 @@ import type { PoolRangeAprState } from "./range-apr/use-pool-range-apr";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let search = "";
+const navigation = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(search),
+  useRouter: () => ({ push: navigation.push }),
+  usePathname: () => "/",
 }));
 const mocks = vi.hoisted(() => ({
   aprFor: vi.fn<(poolId: string, protocol?: string) => PoolRangeAprState>(() => ({ status: "loading" })),
@@ -72,6 +75,7 @@ let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   search = "";
+  navigation.push.mockReset();
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -125,10 +129,16 @@ const rhcSummary = (index: number, tvlUsd: number): RhcPoolSummary => {
 };
 
 
-/** The homepage's single top-5 block. */
-const rowsOf = () => [...container.querySelectorAll('[data-testid="top-pools"] tbody tr[data-pool]')];
+/** The homepage's single top-5 block (the same PoolCard as /app/rwa-pairs). */
+const rowsOf = () => [...container.querySelectorAll('[data-testid="top-pools-cards"] [data-pool]')];
 const keysOf = () => rowsOf().map((row) => row.getAttribute("data-pool"));
-const aprOf = (row: Element) => row.querySelector("[data-testid='top-pool-apr']")!;
+const aprOf = (row: Element) => row.querySelector("[data-testid='apr7d']")!;
+const tvlOf = (row: Element) => {
+  for (const node of row.querySelectorAll("dl > div")) {
+    if (node.querySelector("dt")?.textContent === "TVL") return node.querySelector("dd")!;
+  }
+  throw new Error("TVL not found");
+};
 const statusText = () => [...container.querySelectorAll("[role='status']")].map((node) => node.textContent).join(" | ");
 /** Types into a search box the way React sees it (native setter + input event). */
 async function typeInto(input: HTMLInputElement, value: string) {
@@ -156,14 +166,17 @@ describe("homepage pools: single top-5 block", () => {
     expect(row!.getAttribute("data-pool")).toBe(sol("spcx-pool"));
     expect(row!.textContent).toContain("SPCXx/SPCX");
     expect(row!.textContent).toContain("Raydium");
-    expect(row!.querySelector("[data-testid='top-pool-tvl']")!.textContent).toBe("$256.9k");
+    expect(tvlOf(row!).textContent).toBe("$256.9k");
     expect(aprOf(row!).textContent).toBe("81.00%");
     expect(row!.querySelector("[data-testid='chain-badge']")!.textContent).toBe("Solana");
-    const headers = [...container.querySelectorAll('[data-testid="top-pools"] thead th')].map((th) => th.textContent);
-    expect(headers).toEqual(["Pool", "Chain", "TVL", "APR"]);
-    expect(headers).not.toContain("7d APR");
+    expect(container.querySelector("[data-testid=top-pools-cards]")!.className).toMatch(/grid-cols-1/);
+    expect(container.querySelector("[data-testid=top-pools-cards]")!.className).toMatch(/md:grid-cols-3/);
+    expect(container.querySelector('[data-testid="top-pools"] table')).toBeNull();
     expect(row!.querySelector("a[aria-label='Open position in SPCXx/SPCX']")!.getAttribute("href")).toBe("/app/rwa-pairs?openPool=spcx-pool");
-    expect(row!.querySelectorAll("button")).toHaveLength(0);
+    expect(row!.querySelector("a[aria-label='Calculate shares for SPCXx/SPCX']")!.getAttribute("href")).toBe("/app/rwa-pairs?openPool=spcx-pool");
+    expect(row!.querySelector("button[aria-label^='Open position']")).toBeNull();
+    expect(row!.querySelector("button[aria-label^='Calculate']")).toBeNull();
+    expect(container.querySelector("[role=dialog]")).toBeNull();
     const viewAll = container.querySelector("[data-testid='homepage-view-all']")!;
     expect(viewAll.getAttribute("href")).toBe("/app/rwa-pairs");
     expect(viewAll.textContent).toBe("See all 1 pool →");
@@ -241,8 +254,7 @@ describe("homepage pools: single top-5 block", () => {
     expect(keysOf()).toEqual([sol("meta-big"), sol("tsla-pool")]);
     const firstApr = aprOf(rowsOf()[0]!);
     expect(firstApr.textContent).toBe("40.00%");
-    expect(firstApr.getAttribute("title")).toMatch(/^Best range: Micro\. Estimated from the past 7 days/);
-    expect(rowsOf()[0]!.textContent).toContain(", Micro range");
+    expect(rowsOf()[0]!.querySelector("[data-testid=highest-range]")!.textContent).toBe("Micro");
     expect(mocks.aprFor.mock.calls.map(([poolId]) => poolId).sort()).toEqual(["meta-big", "meta-tiny", "small-pool", "tsla-pool"]);
     // Full list: tiny META wins the pair, plus tsla and small (Low TVL) = 3 (1 duplicate hidden).
     expect(container.querySelector("[data-testid=homepage-view-all]")!.textContent).toBe("See all 3 pools →");
@@ -337,31 +349,36 @@ describe("homepage pools: single top-5 block", () => {
     expect(container.querySelectorAll("[data-highlighted]")).toHaveLength(0);
   });
 
-  it("Enter in the hero search scrolls to the top-5 block (the list search is gone with the all-pools section)", async () => {
+  it("Enter in the hero search goes to /app/rwa-pairs carrying the query, and does not scroll to #pools", async () => {
     mocks.aprFor.mockImplementation(() => ready({ micro: 5 }));
     jsonOk({ pairs: [pair({ poolAddress: "spcx-pool" })] });
     await mount();
     const scrolled = vi.fn();
     container.querySelector<HTMLElement>("#pools")!.scrollIntoView = scrolled;
     const hero = container.querySelector<HTMLInputElement>("#hero-search")!;
+    expect(hero.getAttribute("name")).toBe("q");
+    expect(hero.form!.getAttribute("action")).toBe("/app/rwa-pairs");
+    expect(hero.form!.getAttribute("method")).toBe("get");
     hero.focus();
     await typeInto(hero, "spcx");
     await act(async () => { hero.form!.requestSubmit(); });
-    expect(scrolled).toHaveBeenCalledTimes(1);
+    expect(navigation.push).toHaveBeenCalledTimes(1);
+    expect(navigation.push).toHaveBeenCalledWith("/app/rwa-pairs?q=spcx");
+    expect(scrolled).not.toHaveBeenCalled();
     expect(container.querySelector("#pools-search")).toBeNull();
-    expect(document.activeElement).toBe(hero);
+    expect(container.querySelector("[data-testid=hero-search-matches]")).toBeNull();
   });
 
-  it("the line under the hero search grows out of the field only after typing, never on page load", async () => {
+  it("the line under the hero search stays the trust line and never reports a match count", async () => {
     mocks.aprFor.mockImplementation(() => ready({ micro: 5 }));
     jsonOk({ pairs: [pair({ poolAddress: "spcx-pool" })] });
     await mount();
-    const line = () => container.querySelector("[data-testid=landing-hero] [aria-live=polite] > span")!;
+    const line = () => container.querySelector("[data-testid=landing-hero] p:last-of-type")!;
     expect(line().textContent).toContain("0 keys on our servers");
-    expect(line().className).not.toContain("animate-emerge");
     await typeInto(container.querySelector<HTMLInputElement>("#hero-search")!, "spcx");
-    expect(line().textContent).toContain("1 pool matches");
-    expect(line().className).toContain("motion-safe:animate-emerge");
+    expect(line().textContent).toContain("0 keys on our servers");
+    expect(container.textContent).not.toMatch(/pools? match/);
+    expect(container.querySelector("[data-testid=hero-search-matches]")).toBeNull();
   });
 
   it("nests the stock cards' corners from the outside in; the hero search is a pill", async () => {
@@ -381,16 +398,16 @@ describe("homepage pools: single top-5 block", () => {
     expect(container.querySelector("#pools-search")).toBeNull();
   });
 
-  it("top-5 rows show the pair as one stacked 32 px icon", async () => {
+  it("top-5 cards use the same pair icons as the /app/rwa-pairs card", async () => {
     mocks.aprFor.mockImplementation(() => ready({ micro: 5 }));
     jsonOk({ pairs: [pair({ poolAddress: "spcx-pool" })] });
     await mount();
     const icons = rowsOf()[0]!.querySelector("[data-testid=pair-token-icons]")!;
-    expect(icons.className).toContain("h-8 w-8");
+    expect([...icons.querySelectorAll("[class]")].some((el) => el.className.includes("h-10 w-10"))).toBe(true);
     expect(icons.querySelectorAll(":scope > span")).toHaveLength(2);
   });
 
-  it("the hero search reports how many pools in the full list match and does not filter the top 5", async () => {
+  it("the hero search does not filter the top 5; submitting an empty query goes to /app/rwa-pairs", async () => {
     mocks.aprFor.mockImplementation(() => ready({ micro: 5 }));
     jsonOk({ pairs: [
       pair({ poolAddress: "spcx-pool" }),
@@ -400,8 +417,11 @@ describe("homepage pools: single top-5 block", () => {
     const hero = container.querySelector<HTMLInputElement>("#hero-search")!;
     expect(hero.getAttribute("placeholder")).toBe("Search SPCX, TSLA, AAPL…");
     await typeInto(hero, "tesla");
-    expect(container.querySelector("[data-testid=hero-search-matches]")!.textContent).toContain("1 pool matches");
     expect(keysOf()).toEqual([sol("spcx-pool"), sol("tsla-pool")]);
+    expect(container.querySelector("[data-testid=hero-search-matches]")).toBeNull();
+    await typeInto(hero, "");
+    await act(async () => { hero.form!.requestSubmit(); });
+    expect(navigation.push).toHaveBeenCalledWith("/app/rwa-pairs");
   });
 
   it("renders the server snapshot at once, refreshes it from the API, and keeps it when the refresh fails", async () => {
@@ -477,8 +497,8 @@ describe("homepage pools: single top-5 block", () => {
     const orca = rowsOf().find((row) => row.getAttribute("data-pool") === sol("orca-pool"));
     expect(orca).toBeTruthy();
     expect(orca!.textContent).toContain("Orca");
-    expect(orca!.getAttribute("data-testid")).toBe("top-pool-unavailable");
-    expect(orca!.querySelector("a[href^='/app/rwa-pairs']")).toBeNull();
+    expect(orca!.querySelector("[data-testid=open-disabled]")).not.toBeNull();
+    expect(orca!.querySelector("a[aria-label^='Open position']")).toBeNull();
     const rhc = rowsOf().find((row) => row.getAttribute("data-pool") === rhcKey(0));
     expect(rhc).toBeTruthy();
     expect(rhc!.querySelector("a[href^='/app/rwa-pairs']")!.getAttribute("href")).toBe(`/app/rwa-pairs?openPool=${UNIV4_RHC_ALLOWLISTED_POOLS[0]!.poolId}`);

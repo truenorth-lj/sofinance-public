@@ -21,8 +21,8 @@ export const POOLS_PAGE_SUBLINE = PUBLIC_POOLS_SSR_HEADING;
  * Robinhood Chain pool opens its dialog on the nav's EVM wallet (asking to connect it when none is connected).
  * `?openPool=<id>` (also where `/app/rhc` and old `/app?openPool=` links land) opens that pool once it is listed.
  */
-export function PoolsPage({ flags, rhcSigningEnabled, deepLinkPool }: {
-  flags: UnifiedPoolFlags; rhcSigningEnabled: boolean; deepLinkPool?: string;
+export function PoolsPage({ flags, rhcSigningEnabled, deepLinkPool, initialQuery }: {
+  flags: UnifiedPoolFlags; rhcSigningEnabled: boolean; deepLinkPool?: string; initialQuery?: string;
 }) {
   const { address, connected, restoring, connect, disconnect } = useWalletConnection();
   const [rhcOpen, setRhcOpen] = useState<RhcPoolView | null>(null);
@@ -32,7 +32,7 @@ export function PoolsPage({ flags, rhcSigningEnabled, deepLinkPool }: {
       <h1 className="text-xl font-semibold text-cream sm:text-2xl">{POOLS_PAGE_TITLE}</h1>
       <p className="mt-1 text-sm text-smoke">{POOLS_PAGE_SUBLINE}</p>
     </div>
-    <UnifiedPoolsPanel flags={flags} deepLinkPool={deepLinkPool} onOpenRhc={({ pool }) => setRhcOpen(pool)} />
+    <UnifiedPoolsPanel flags={flags} deepLinkPool={deepLinkPool} initialQuery={initialQuery} onOpenRhc={({ pool }) => setRhcOpen(pool)} />
     {rhcOpen && <RhcOpenDialog pool={rhcOpen} signingEnabled={rhcSigningEnabled} onClose={() => setRhcOpen(null)} />}
     <SiteFooter variant="app" />
   </InkShell>;

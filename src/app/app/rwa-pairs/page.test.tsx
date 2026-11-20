@@ -29,6 +29,14 @@ describe("/app/rwa-pairs page", () => {
     expect(deepLink).toEqual({ ...plain, deepLinkPool: "abc" });
   });
 
+  it("passes ?q= through as initialQuery so the list search is prefilled, including with a deep link", async () => {
+    const plain = poolsPageProps(await RwaPairsPage({ searchParams: Promise.resolve({}) }) as ReactElement);
+    const withQuery = poolsPageProps(await RwaPairsPage({ searchParams: Promise.resolve({ q: "tesla" }) }) as ReactElement);
+    expect(withQuery).toEqual({ ...plain, initialQuery: "tesla" });
+    const both = poolsPageProps(await RwaPairsPage({ searchParams: Promise.resolve({ q: "spcx", openPool: "abc" }) }) as ReactElement);
+    expect(both).toEqual({ ...plain, initialQuery: "spcx", deepLinkPool: "abc" });
+  });
+
   it("uses a single Pools h1 and no InkHero; the crawler table is an h2", () => {
     const page = readFileSync(resolve("src/components/unified-pools/pools-page.tsx"), "utf8");
     expect(page).not.toContain("InkHero");

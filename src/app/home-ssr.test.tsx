@@ -8,7 +8,7 @@ import type { RhcPoolSummary } from "@/lib/unified-pools/rows";
 // Server HTML must carry pool names (crawlers and AI fetchers do not run the client fetch).
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ unstable_cache: <T extends (...args: never[]) => unknown>(fn: T) => fn }));
-vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(), usePathname: () => "/" }));
+vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(), usePathname: () => "/", useRouter: () => ({ push: () => {} }) }));
 const mocks = vi.hoisted(() => ({ getRwaPairs: vi.fn(), getRhcPoolsSnapshot: vi.fn(), getPoolAprSnapshot: vi.fn(), getRhcAprSnapshot: vi.fn() }));
 vi.mock("@/lib/rwa-store", () => ({ getRwaPairs: mocks.getRwaPairs, getPoolAprSnapshot: mocks.getPoolAprSnapshot }));
 vi.mock("@/lib/rhc-snapshot", () => ({ getRhcPoolsSnapshot: mocks.getRhcPoolsSnapshot, getRhcAprSnapshot: mocks.getRhcAprSnapshot }));
@@ -83,8 +83,8 @@ beforeEach(() => {
 
 describe("homepage server render", () => {
   const poolsHtml = (html: string) => html.slice(html.indexOf('data-testid="top-pools"') >= 0 ? html.indexOf('data-testid="top-pools"') : html.indexOf('id="pools"'));
-  const topRows = (html: string) => [...poolsHtml(html).matchAll(/<tr[^>]*data-pool="([^"]+)"/g)].map((match) => match[1]);
-  const topAprs = (html: string) => [...poolsHtml(html).matchAll(/data-testid="top-pool-apr"[^>]*>([^<]+)/g)].map((match) => match[1]);
+  const topRows = (html: string) => [...poolsHtml(html).matchAll(/<li[^>]*data-pool="([^"]+)"/g)].map((match) => match[1]);
+  const topAprs = (html: string) => [...poolsHtml(html).matchAll(/data-testid="apr7d"[^>]*>([^<]+)/g)].map((match) => match[1]);
   const rhcKey = (index: number) => `robinhood:${UNIV4_RHC_ALLOWLISTED_POOLS[index]!.poolId.toLowerCase()}`;
   const fullListCount = (solana: number, hidden = 0) => solana + UNIV4_RHC_ALLOWLISTED_POOLS.length - hidden;
 
@@ -145,6 +145,9 @@ describe("homepage server render", () => {
     // One duplicate Solana SPCX pair is hidden in the full list.
     expect(html).toContain(`See all ${fullListCount(storeResult.pairs.length + 1, 1)} pools →`);
     expect(html).toContain(`/app/rwa-pairs?openPool=spcx-hot`);
+    expect(html).toContain('data-testid="top-pools-cards"');
+    expect(poolsHtml(html)).not.toContain("<table");
+    expect(html).toContain("Open position");
     expect(html).toContain('"@type":"Organization"');
     expect(html).toContain('"@type":"WebSite"');
   });
@@ -162,7 +165,7 @@ describe("homepage server render", () => {
     expect(html).toContain(`See all ${UNIV4_RHC_ALLOWLISTED_POOLS.length} pools →`);
   });
 
-  it("falls back to the client-loaded table when both snapshot reads fail", async () => {
+  it("falls back to the client-loaded block when both snapshot reads fail", async () => {
     mocks.getRwaPairs.mockRejectedValue(new Error("store down"));
     mocks.getRhcPoolsSnapshot.mockRejectedValue(new Error("store down"));
     const { default: Home } = await import("./page");

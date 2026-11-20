@@ -15,6 +15,7 @@ export const revalidate = 900;
 /**
  * The pools page: Solana + Robinhood Chain pools in one list. `?openPool=<id>` opens that pool (where `/app/rhc` and old
  * `/app?openPool=` links are redirected); the older `?pool=<id>&open=1` link (MCP `openPositionUrl`, homepage) still works.
+ * `?q=` prefills the list search (the homepage hero search submits here).
  */
 export default async function RwaPairsPage({ searchParams }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -22,6 +23,7 @@ export default async function RwaPairsPage({ searchParams }: {
   const query = await searchParams;
   const first = (value: string | string[] | undefined) => Array.isArray(value) ? value[0] || "" : value || "";
   const deepLinkPool = first(query.openPool) || (first(query.open) === "1" ? first(query.pool) : "");
+  const initialQuery = first(query.q);
   const { rhcSigning, ...flags } = unifiedPoolFlags();
   const snapshot = await loadHomepagePoolsSnapshot();
   const itemList = publicPoolsItemListJsonLd(snapshot);
@@ -36,7 +38,7 @@ export default async function RwaPairsPage({ searchParams }: {
       <HideOnMount>
         <PublicPoolsTable snapshot={snapshot} />
       </HideOnMount>
-      <PoolsPage flags={flags} rhcSigningEnabled={rhcSigning} deepLinkPool={deepLinkPool || undefined} />
+      <PoolsPage flags={flags} rhcSigningEnabled={rhcSigning} deepLinkPool={deepLinkPool || undefined} initialQuery={initialQuery || undefined} />
     </>
   );
 }

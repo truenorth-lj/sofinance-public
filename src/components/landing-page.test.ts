@@ -45,8 +45,11 @@ describe("landing page copy and routes", () => {
     expect(market).toContain("0 keys on our servers · verifiable on Solscan and Blockscout");
     expect(market).toContain('role="search"');
     expect(market).toContain('placeholder="Search SPCX, TSLA, AAPL…"');
-    // Searching scrolls to the pools list on the page; it never leaves the homepage.
-    expect(market).toContain('getElementById("pools")');
+    // Searching leaves the homepage for /app/rwa-pairs, carrying the query as ?q=.
+    expect(market).toContain("rwaPairsSearchHref");
+    expect(market).toContain("APP_ROUTES.rwaPairs");
+    expect(market).not.toContain("getElementById");
+    expect(market).not.toMatch(/pools? match/);
     expect(market).not.toMatch(/audited|trustless|risk-free|fully automated|autonomous/i);
     // "trading" is allowed only as "trading fees", never as a trading product.
     for (const text of [src, market, table, results]) expect(text.replace(/trading fees/g, "")).not.toMatch(/\btrading\b/i);
@@ -174,6 +177,9 @@ describe("landing page copy and routes", () => {
     expect(results).toContain('mode === "full"');
     expect(results).toContain("<PoolTable");
     expect(results).toContain('data-testid="pools-cards"');
+    expect(results).toContain("<PoolCard");
+    expect(results).toContain('data-testid="top-pools-cards"');
+    expect(results).toContain("md:grid-cols-3");
     expect(results).toContain("See all");
     expect(results).toContain("TOP_POOLS_TITLE");
     expect(results).not.toMatch(/same-stock/i);

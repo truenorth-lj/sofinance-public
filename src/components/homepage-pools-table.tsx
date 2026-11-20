@@ -186,12 +186,12 @@ export function useHomepagePools(initial?: HomepagePoolsSnapshot | null): Homepa
 
 
 /** Search box for the pools list (the hero's search edits the same query). */
-export function PoolSearchInput({ query, onQueryChange, placeholder, className, inputClassName, id }: {
-  query: string; onQueryChange: (query: string) => void; placeholder: string; className?: string; inputClassName?: string; id?: string;
+export function PoolSearchInput({ query, onQueryChange, placeholder, className, inputClassName, id, name }: {
+  query: string; onQueryChange: (query: string) => void; placeholder: string; className?: string; inputClassName?: string; id?: string; name?: string;
 }) {
   return <div className={cn("flex items-center gap-3 border border-white/15 bg-white/[0.04] text-cream transition-colors focus-within:border-white/45", className)}>
     <Search className="h-4 w-4 shrink-0 text-smoke" aria-hidden="true" />
-    <input id={id} type="search" value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder={placeholder}
+    <input id={id} name={name} type="search" value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder={placeholder}
       aria-label="Search pools" autoComplete="off" spellCheck={false}
       className={cn("min-w-0 flex-1 bg-transparent outline-none placeholder:text-smoke [&::-webkit-search-cancel-button]:hidden", inputClassName)} />
     {query && <button type="button" onClick={() => onQueryChange("")} aria-label="Clear search" className="rounded-full p-1 text-smoke hover:text-cream">

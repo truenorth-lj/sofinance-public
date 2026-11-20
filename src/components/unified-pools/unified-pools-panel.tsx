@@ -89,17 +89,22 @@ export type OpenRhcRequest = { pool: RhcPoolView };
  * see `lib/unified-pools/model.ts` for the rule). Opening a Solana pool connects the Solana wallet and opens the
  * existing Create position modal; opening a Robinhood Chain pool asks the page to open its dialog on the nav's EVM wallet.
  */
-export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header }: {
+export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", initialQuery = "", header }: {
   flags: UnifiedPoolFlags;
   onOpenRhc: (request: OpenRhcRequest) => void;
   /** `?openPool=` from the URL: open this pool once it is listed. */
   deepLinkPool?: string;
+  /** `?q=` from the URL (homepage hero search): prefill the list search. */
+  initialQuery?: string;
   header?: ReactNode;
 }) {
   const { connected, connect } = useWalletConnection();
   const { loaded, errors, loading, refreshKey, refresh: reloadSources } = usePoolSources(flags);
   const [view, setView] = useState<"cards" | "list">("cards");
-  const [filters, setFilters] = useState<PoolFilters>(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState<PoolFilters>(() => {
+    const query = initialQuery.trim();
+    return query ? { ...DEFAULT_FILTERS, query } : DEFAULT_FILTERS;
+  });
   const [showAll, setShowAll] = useState(false);
   const [sort, setSort] = useState(DEFAULT_SORT);
   const [openPair, setOpenPair] = useState<OpenPositionPair | null>(null);

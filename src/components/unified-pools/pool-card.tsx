@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { CARD_RANGE_APR_7D_HELP } from "@/lib/apr-labels/copy";
 import { cn } from "@/lib/cn";
 import { dexDescriptors, uiFor } from "@/lib/dex/client";
@@ -44,10 +45,12 @@ const cardEyebrow = "font-data text-[10px] uppercase tracking-[0.12em] text-ink/
  * full name is the title). The narrowest cards (phones, and the three-column grid below 2xl) use a smaller name and icons.
  */
 
-export function PoolCard({ pool, apr, action, icons, onCalculate }: {
+export function PoolCard({ pool, apr, action, icons, onCalculate, calculateHref }: {
   pool: UnifiedPool; apr: Apr7dState | undefined; action: OpenAction; icons: TokenIconMap | undefined;
   /** Opens the share calculator over the list (only offered where the DEX's `plan` capability is supported). */
-  onCalculate: () => void;
+  onCalculate?: () => void;
+  /** When set (homepage), Calculate is a link into the app instead of opening the in-page dialog. */
+  calculateHref?: string;
 }) {
   const ready = apr?.status === "ready" ? apr : null;
   const volumeNote = ready ? volumeDivergenceNote(pool.volume24hUsd, ready.avgDailyVolumeUsd) : null;
@@ -64,7 +67,7 @@ export function PoolCard({ pool, apr, action, icons, onCalculate }: {
   const plan = (useRegisteredPlan ? dexDescriptors.descriptorFor(pool.protocol)?.capabilities.plan : null) ?? (ui.planFallback ?? null);
   // Stock pools count shares; the stablecoin pool has no stock, so its button just says Calculate.
   const calcLabel = planShareSymbol(pairLabelSymbols(pool.pairLabel)) ? "Calculate shares" : "Calculate";
-  return <li className="flex min-w-0 flex-col rounded-[28px] bg-cream p-6 text-ink" data-pool={pool.key}>
+  return <li className="flex min-w-0 flex-col rounded-[28px] bg-cream p-6 text-ink" data-pool={pool.key} data-chain={pool.chain}>
     <div className="flex flex-wrap items-center gap-1.5"><ChainBadge chain={pool.chain} /><span className={cn(chip, "border border-ink/25")}>{PROTOCOL_LABELS[pool.protocol]}</span>
       {isLowTvl(pool) && apr?.status !== "new" && <LowTvlTag tone="light" />}</div>
     <div className="mt-4 flex items-start justify-between gap-3">
@@ -109,10 +112,15 @@ export function PoolCard({ pool, apr, action, icons, onCalculate }: {
     <div className="mt-auto flex flex-wrap items-center gap-3 pt-5">
       <OpenButton action={action} label={pool.pairLabel} />
       {/* `border-beam` (globals.css): a quiet streak of light circling the border; still for reduced motion. */}
-      {plan?.supported && <button type="button" onClick={onCalculate} aria-haspopup="dialog" aria-label={`${calcLabel} for ${pool.pairLabel}`}
-        className="border-beam inline-flex h-11 items-center rounded-full border border-ink/25 px-4 text-sm font-semibold outline-none transition-colors hover:border-ink/60 focus-visible:shadow-[0_0_0_3px_var(--color-lilac)]">
-        {calcLabel}
-      </button>}
+      {plan?.supported && (calculateHref
+        ? <Link href={calculateHref} aria-label={`${calcLabel} for ${pool.pairLabel}`}
+          className="border-beam inline-flex h-11 items-center rounded-full border border-ink/25 px-4 text-sm font-semibold outline-none transition-colors hover:border-ink/60 focus-visible:shadow-[0_0_0_3px_var(--color-lilac)]">
+          {calcLabel}
+        </Link>
+        : <button type="button" onClick={onCalculate} aria-haspopup="dialog" aria-label={`${calcLabel} for ${pool.pairLabel}`}
+          className="border-beam inline-flex h-11 items-center rounded-full border border-ink/25 px-4 text-sm font-semibold outline-none transition-colors hover:border-ink/60 focus-visible:shadow-[0_0_0_3px_var(--color-lilac)]">
+          {calcLabel}
+        </button>)}
       {plan && !plan.supported && <span aria-disabled="true" title={plan.reason} data-testid="plan-unavailable"
         className="inline-flex h-11 cursor-not-allowed items-center rounded-full border border-ink/15 px-4 text-sm font-semibold text-ink/40">
         {calcLabel}<span className="sr-only">: {plan.reason}</span>
