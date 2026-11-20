@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { InkHero, InkShell } from "@/components/ink";
+import { InkShell } from "@/components/ink";
+import { PageHeader } from "@/components/page-header";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { FAQ_RISK_LINE, FAQ_SECTIONS, faqJsonLd } from "@/lib/faq";
@@ -24,13 +25,16 @@ export default function FaqPage() {
         dangerouslySetInnerHTML={{ __html: serializeJsonLd(faqJsonLd(`${CANONICAL_SITE_URL}${FAQ_ROUTE}`)) }}
       />
       <SiteHeader />
-      <main className="mt-3">
-        <InkHero label="FAQ" title="Questions about same-stock LP" stacked>
-          <p>
-            How liquidity providers collect trading fees, what tokenized stocks are, and where SoFinance fits.
-            For step-by-step guides, see the <Link href={DOCS_ROUTES.gettingStarted} className="text-lemon underline underline-offset-2">docs</Link>.
-          </p>
-        </InkHero>
+      <main>
+        <PageHeader
+          title="Questions about same-stock LP"
+          subline={
+            <>
+              How liquidity providers collect trading fees, what tokenized stocks are, and where SoFinance fits.
+              For step-by-step guides, see the <Link href={DOCS_ROUTES.gettingStarted} className="text-lemon underline underline-offset-2">docs</Link>.
+            </>
+          }
+        />
 
         {FAQ_SECTIONS.map((section) => (
           <section

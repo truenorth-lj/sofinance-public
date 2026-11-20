@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BlogAppCta } from "@/components/blog/blog-shell";
+import { PageHeader } from "@/components/page-header";
 import {
   articleCanonicalPath,
   blogIndexJsonLd,
@@ -22,18 +23,10 @@ export default function BlogIndexPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: serializeJsonLd(blogIndexJsonLd(articles)) }}
       />
-      <header className="mt-3 rounded-[28px] bg-cream p-6 text-ink sm:p-9">
-        <span className="inline-flex h-6 items-center rounded-full border border-ink/70 px-2.5 font-data text-[10px] uppercase tracking-[0.14em]">
-          Blog
-        </span>
-        <h1 className="mt-6 max-w-[16ch] text-[clamp(2.1rem,5vw,3.6rem)] font-medium leading-[1.02] tracking-[-0.04em]">
-          Notes on on-chain market making
-        </h1>
-        <p className="mt-6 max-w-2xl border-t border-ink/20 pt-5 text-base leading-7 text-ink/70">
-          Long-form writing from SoFinance. How AMMs evolved, what negative gamma costs an LP, and
-          how same-stock pools fit on that map.
-        </p>
-      </header>
+      <PageHeader
+        title="Notes on on-chain market making"
+        subline="Long-form writing from SoFinance. How AMMs evolved, what negative gamma costs an LP, and how same-stock pools fit on that map."
+      />
 
       <ul className="mt-3 grid gap-3">
         {articles.map((article) => (
