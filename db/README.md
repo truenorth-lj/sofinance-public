@@ -53,14 +53,28 @@ Only URL `sslmode=require|verify-ca|verify-full`, `sslrootcert=system`, and
 startup parsing. The TLS setting is independently enforced; this client does not
 claim SCRAM channel-binding support.
 
-`vercel.json` declares GET `/api/internal/rwa-refresh` at `*/15 * * * *` UTC. Native
-GET remains disabled unless `SOFINANCE_RWA_NATIVE_CRON_ENABLED=true`. Both methods
-require Bearer `CRON_SECRET`, refresh enablement and a non-preview deployment.
-GET ignores query parameters (including force) and takes no body; POST keeps its
-strict JSON contract and authorized force option. Tick cadence is 15 minutes;
-discovery/APR due cadences remain 15/5 minutes, so APR is not refreshed every five
-minutes by this cron. Daily observations remain 08:10–09:10 Asia/Taipei; missed
-windows remain missing, never fabricated.
+Two clocks call `/api/internal/rwa-refresh`. They are not the same schedule.
+
+`vercel.json` schedules GET `/api/internal/rwa-refresh` at `15 */4 * * *`
+(minute 15, every 4 hours, UTC). The route accepts that GET only when
+`SOFINANCE_RWA_NATIVE_CRON_ENABLED=true`, `SOFINANCE_RWA_REFRESH_ENABLED=true`,
+the Bearer `CRON_SECRET` matches and is at least 32 characters, and the deployment
+is not a preview (`VERCEL_ENV` is unset or `production`). GET ignores the query
+string and has no body.
+
+The gateway process (`scripts/rwa-data-service.ts`) is the 15-minute tick. When
+`SOFINANCE_RWA_SCHEDULER_ENABLED=true` and `SOFINANCE_RWA_REFRESH_URL` is set, it
+POSTs `{}` to that HTTPS URL every `DEFAULT_RWA_SCHEDULER_INTERVAL_MS` (900000;
+override with `SOFINANCE_RWA_SCHEDULER_INTERVAL_MS`). The POST is accepted only
+when `SOFINANCE_RWA_REFRESH_ENABLED=true`, the Bearer `CRON_SECRET` is valid, and
+the deployment is not a preview. `SOFINANCE_RWA_NATIVE_CRON_ENABLED` does not apply
+to POST. POST requires a strict JSON object and may set `force`.
+
+Discovery stays due every 15 minutes and APR every 5 minutes by default
+(`SOFINANCE_RWA_DISCOVERY_INTERVAL_MS`, `SOFINANCE_RWA_APR_INTERVAL_MS`). A probe
+runs a job only when that job is already due, so neither clock refreshes APR every
+five minutes. A pool's Taipei-day history row is the first successful refresh at
+or after 08:00 Asia/Taipei; a day with no such refresh stays missing.
 
 Token icons use `rwa_token_icon` (`drizzle/0002_token-icons.sql`): one row per token
 (`chain`, `address`) holding an icon link (never an image file) and its `source`. The
@@ -102,12 +116,20 @@ failure is verified). Pending history and errors are never cached. MCP callers
 can use `refreshHistory` and `historyAfterSignatures` for the same guarantee.
 
 Opt-in integration tests create and remove only disposable schemas in the
-dedicated database:
+dedicated database. `src/db/public-migrate.integration.test.ts` is the exception:
+it calls `runRwaMigrations(..., "migrate")` on `public` (advisory lock, `drizzle`
+ledger, committed SQL) and repeats that call. Point `RWA_DB_TEST_URL` at a fresh
+`sofinance` database, or one whose `public` schema is already fully migrated.
+Run that file alone first; it shares the migration advisory lock with
+`src/db/migrations.integration.test.ts`.
 
 ```sh
-RWA_DB_TEST_URL='<test connection>' pnpm exec vitest run \
+RWA_DB_TEST_URL='<test connection>' pnpm exec vitest run --maxWorkers=1 \
+  src/db/public-migrate.integration.test.ts
+RWA_DB_TEST_URL='<test connection>' pnpm exec vitest run --maxWorkers=4 \
   src/db/migrations.integration.test.ts \
+  src/lib/rwa-database.integration.test.ts \
   src/lib/rwa-postgres-store.integration.test.ts \
   src/lib/position-history-postgres-store.integration.test.ts \
-  src/lib/rwa-database.integration.test.ts
+  src/lib/stock-entry-price-postgres-store.integration.test.ts
 ```
