@@ -47,13 +47,14 @@ export default function DocsGettingStartedPage() {
       <h2>Open your first position</h2>
       <ol>
         <li>
-          Connect a Solana wallet on the{" "}
+          Connect a Solana or EVM wallet on the{" "}
           <Link href={APP_ROUTES.home}>App</Link>.
         </li>
         <li>
-          Browse same-asset RWA pairs on{" "}
-          <Link href={APP_ROUTES.rwaPairs}>RWA pairs</Link>, or pick an existing position under
-          Positions.
+          Browse{" "}
+          <Link href={APP_ROUTES.rwaPairs}>Pools</Link>
+          {" "}(Raydium, Meteora and Robinhood Chain), or pick an existing position under{" "}
+          <Link href={APP_ROUTES.home}>Portfolio</Link>.
         </li>
         <li>
           Review the quote, estimated fees, and range. Read{" "}

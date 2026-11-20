@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "SoFinance",
     short_name: "SoFinance",
     description:
-      "A self-custodial tool to manage your Raydium CLMM positions. Every transaction is simulated and signed by you in your wallet.",
+      "A self-custodial tool to open and manage LP positions on Solana and Robinhood Chain. Every transaction is simulated and signed by you in your wallet.",
     start_url: "/",
     display: "standalone",
     background_color: "#050505",

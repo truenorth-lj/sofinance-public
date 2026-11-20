@@ -74,7 +74,7 @@ export default function AIManagementPage() {
                     Step 3: Start using AI agents
                   </h2>
                   <p className="mt-2 text-sm leading-6 text-smoke">
-                    Your AI agent will be able to list positions and RWA pairs, quote add-liquidity /
+                    Your AI agent will be able to list positions and pools, quote add-liquidity /
                     compound / open-position, and prepare unsigned transactions (14 MCP tools). When
                     ready to sign, open the provided link with your wallet connected for one-click approval.
                   </p>
