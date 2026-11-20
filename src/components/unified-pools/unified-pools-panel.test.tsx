@@ -252,11 +252,11 @@ describe("UnifiedPoolsPanel", () => {
     expect(mocks.connect).not.toHaveBeenCalled();
   });
 
-  it("opens the deep-linked Robinhood Chain pool (/app/rhc redirect)", async () => {
+  it.each([rhcSpec.poolId, rhcSpec.poolId.toUpperCase()])("opens the deep-linked Robinhood Chain pool for %s", async (deepLinkPool) => {
     const onOpenRhc = vi.fn();
-    await render(PROD, { onOpenRhc, deepLinkPool: rhcSpec.poolId });
+    await render(PROD, { onOpenRhc, deepLinkPool });
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
-    expect(onOpenRhc).toHaveBeenCalledTimes(1);
+    expect(onOpenRhc).toHaveBeenCalledExactlyOnceWith({ pool: expect.objectContaining({ poolId: rhcSpec.poolId }) });
   });
 
   it("opens a deep-linked Solana pool's Create position without popping the wallet (old ?pool=&open=1 links)", async () => {
@@ -273,6 +273,25 @@ describe("UnifiedPoolsPanel", () => {
     expect(mocks.calc).toHaveBeenCalledWith("spcxA", "open");
     expect(mocks.modal).not.toHaveBeenCalled();
     expect(mocks.connect).not.toHaveBeenCalled();
+  });
+
+  it.each(["deepLinkPool", "deepLinkCalc"])("ignores a Solana %s with the wrong case", async (link) => {
+    await render(PROD, { [link]: "spcxa" });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    expect(shown()).toContain("solana:spcxA");
+    expect(mocks.modal).not.toHaveBeenCalled();
+    expect(mocks.calc).not.toHaveBeenCalled();
+  });
+
+  it("opens the exact Solana pool when a case variant appears earlier in the list", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ pairs: [row("spcxa", "SPCXx", "SPCX", "x1", "s1"), row("spcxA", "SPCXx", "SPCX", "x1", "s1")] }),
+    })));
+    await render({ ...PROD, rhc: false }, { deepLinkPool: "spcxA", deepLinkCalc: "spcxA" });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    expect(mocks.modal).toHaveBeenCalledWith("spcxA");
+    expect(mocks.calc).toHaveBeenCalledWith("spcxA", "open");
   });
 
   it("silently ignores ?calc= for a Robinhood Chain pool and does not open the calculator", async () => {

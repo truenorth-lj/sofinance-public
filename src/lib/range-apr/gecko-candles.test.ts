@@ -35,19 +35,19 @@ describe("orientCandles", () => {
   const candles = parseGeckoHourlyCandles(body([[3600, 2, 4, 1, 2, 9]]));
 
   it("keeps prices when Gecko's base is the pool's A token", () => {
-    expect(orientCandles(candles, A, B)).toEqual(candles.candles);
+    expect(orientCandles("solana", candles, A, B)).toEqual(candles.candles);
   });
 
   it("inverts prices and swaps high/low when Gecko's base is the pool's B token", () => {
-    const [flipped] = orientCandles(candles, B, A)!;
+    const [flipped] = orientCandles("solana", candles, B, A)!;
     expect(flipped).toEqual({ time: 3600, open: 0.5, high: 1, low: 0.25, close: 0.5, volume: 9 });
   });
 
   it("returns null when the tokens do not match the pool", () => {
-    expect(orientCandles(candles, A, "other")).toBeNull();
-    expect(orientCandles(parseGeckoHourlyCandles(null), A, B)).toBeNull();
+    expect(orientCandles("solana", candles, A, "other")).toBeNull();
+    expect(orientCandles("solana", candles, A.toLowerCase(), B)).toBeNull();
+    expect(orientCandles("solana", parseGeckoHourlyCandles(null), A, B)).toBeNull();
   });
-});
 
   it("matches checksummed EVM addresses against Gecko's lowercase meta (RHC)", () => {
     const geckoBase = "0x9b8294f24453379aa87c807ab82bf1d5722153fc";
@@ -56,7 +56,8 @@ describe("orientCandles", () => {
     const currency1 = "0x9B8294F24453379aa87C807ab82bf1d5722153Fc";
     const evm = parseGeckoHourlyCandles(body([[3600, 2, 4, 1, 2, 9]], geckoBase, geckoQuote));
     // Gecko base = currency1 → invert to B-per-A of the v4 pool
-    const [flipped] = orientCandles(evm, currency0, currency1)!;
+    const [flipped] = orientCandles("robinhood", evm, currency0, currency1)!;
     expect(flipped).toEqual({ time: 3600, open: 0.5, high: 1, low: 0.25, close: 0.5, volume: 9 });
-    expect(orientCandles(evm, currency1, currency0)).toEqual(evm.candles);
+    expect(orientCandles("robinhood", evm, currency1, currency0)).toEqual(evm.candles);
   });
+});

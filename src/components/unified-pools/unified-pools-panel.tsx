@@ -6,7 +6,7 @@ import { ArrowDownUp, ChevronDown, LayoutGrid, List, LoaderCircle, RefreshCw, Se
 import { cn } from "@/lib/cn";
 import { dexDescriptors, fetchOpenRanges, type OpenRanges } from "@/lib/dex/client";
 import {
-  CHAIN_LABELS, DEFAULT_FILTERS, DEFAULT_SORT, FIRST_CLICK_DIR, PROTOCOL_LABELS, selectPools, TVL_FILTER_PRESETS,
+  CHAIN_LABELS, DEFAULT_FILTERS, DEFAULT_SORT, findDeepLinkedPool, FIRST_CLICK_DIR, PROTOCOL_LABELS, selectPools, TVL_FILTER_PRESETS,
   type PoolChain, type PoolFilters, type SortKey, type UnifiedPool, type UnifiedProtocol,
 } from "@/lib/unified-pools/model";
 import { rhcPool, rhcPoolView, solanaPool, type RhcPoolSummary, type SolanaPoolRow } from "@/lib/unified-pools/rows";
@@ -161,7 +161,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", deepLin
   const [deepLinked, setDeepLinked] = useState(false);
   useEffect(() => {
     if (deepLinked || !deepLinkPool || loading) return;
-    const pool = pools.find((item) => item.poolAddress === deepLinkPool || item.poolAddress.toLowerCase() === deepLinkPool.toLowerCase());
+    const pool = findDeepLinkedPool(pools, deepLinkPool);
     const timer = window.setTimeout(() => {
       setDeepLinked(true);
       if (!pool) return;
@@ -177,7 +177,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", deepLin
   const [deepCalced, setDeepCalced] = useState(false);
   useEffect(() => {
     if (deepCalced || !deepLinkCalc || loading) return;
-    const pool = pools.find((item) => item.poolAddress === deepLinkCalc || item.poolAddress.toLowerCase() === deepLinkCalc.toLowerCase());
+    const pool = findDeepLinkedPool(pools, deepLinkCalc);
     const timer = window.setTimeout(() => {
       setDeepCalced(true);
       if (pool && poolSupportsCalculator(pool)) setCalcPool(pool);

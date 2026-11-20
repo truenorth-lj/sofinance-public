@@ -4,6 +4,8 @@
  * volume column is in quote-token units, so only its relative size is used (USD volume comes from the
  * daily series). Raydium's A/B order can be the reverse of Gecko's base/quote: `orientCandles` fixes it.
  */
+import { sameChainAddress, type AddressChain } from "@/lib/dex/address-key";
+
 export type RawCandle = {
   time: number;
   open: number;
@@ -59,19 +61,13 @@ export function parseGeckoHourlyCandles(body: unknown): GeckoHourlyCandles {
  * `baseAddress === mintA` (price already B per A); when base is B the price is A per B and is inverted.
  * Returns null when the pool's tokens cannot be matched.
  */
-/** Solana mints are case-sensitive base58; EVM (0x…) addresses are case-insensitive. */
-function sameMint(left: string | null, right: string): boolean {
-  if (!left) return false;
-  if (left.startsWith("0x") || right.startsWith("0x")) return left.toLowerCase() === right.toLowerCase();
-  return left === right;
-}
-
 export function orientCandles(
-  parsed: GeckoHourlyCandles, mintA: string, mintB: string,
+  chain: AddressChain, { baseAddress, quoteAddress, candles }: GeckoHourlyCandles, mintA: string, mintB: string,
 ): RawCandle[] | null {
-  if (sameMint(parsed.baseAddress, mintA) && sameMint(parsed.quoteAddress, mintB)) return parsed.candles;
-  if (sameMint(parsed.baseAddress, mintB) && sameMint(parsed.quoteAddress, mintA)) {
-    return parsed.candles.map((candle) => ({
+  if (!baseAddress || !quoteAddress) return null;
+  if (sameChainAddress(chain, baseAddress, mintA) && sameChainAddress(chain, quoteAddress, mintB)) return candles;
+  if (sameChainAddress(chain, baseAddress, mintB) && sameChainAddress(chain, quoteAddress, mintA)) {
+    return candles.map((candle) => ({
       ...candle,
       open: 1 / candle.open, close: 1 / candle.close, high: 1 / candle.low, low: 1 / candle.high,
     }));
