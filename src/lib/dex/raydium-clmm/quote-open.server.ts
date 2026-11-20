@@ -8,13 +8,17 @@ import { APP_OPEN_QUOTE, type QuoteOpen } from "../open-prepare";
 
 export const quoteRaydiumOpen: QuoteOpen = async (command, profile) => {
   const { wallet, selection, amount, floorBps, toleranceBps } = command;
-  const snapshot = await cachedOpenPoolState(wallet, selection);
-  const range = rangeWithFairCenter(command.range, snapshot);
   // App preview preserves its relay-round cache and prepare's first route budget.
   // MCP keeps its complete quote/build and original engine defaults.
-  const result = profile === APP_OPEN_QUOTE
-    ? await getOpenPositionQuoteBundle(wallet, selection, amount, range, floorBps, toleranceBps,
-      { maxAccounts: JUPITER_MAX_ACCOUNTS.wide }, snapshot, "parallel", { build: false })
-    : await getOpenPositionQuoteBundle(wallet, selection, amount, range, floorBps, toleranceBps, undefined, snapshot);
+  // Fair centering is also applied inside getOpenPositionQuoteBundle after the on-chain snapshot is read.
+  if (profile === APP_OPEN_QUOTE) {
+    const snapshot = await cachedOpenPoolState(wallet, selection);
+    const result = await getOpenPositionQuoteBundle(
+      wallet, selection, amount, rangeWithFairCenter(command.range, snapshot), floorBps, toleranceBps,
+      { maxAccounts: JUPITER_MAX_ACCOUNTS.wide }, snapshot, "parallel", { build: false },
+    );
+    return result.quote;
+  }
+  const result = await getOpenPositionQuoteBundle(wallet, selection, amount, command.range, floorBps, toleranceBps);
   return result.quote;
 };

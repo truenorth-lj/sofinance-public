@@ -1,5 +1,5 @@
-import type { OpenRangeInput } from "@sofinance/engine/open-range";
 import { fairPriceFor } from "./fair-price";
+export { rangeWithFairCenter } from "@sofinance/engine/open-range-center";
 
 /**
  * Default open-range center, as raw token-B per token-A.
@@ -23,32 +23,6 @@ export function openRangeCenterPrice(input: {
     price: input.onChainPriceBPerA,
   });
   return fair ? fair.fair : input.onChainPriceBPerA;
-}
-
-/** Apply fair (or on-chain fallback) centering when the user left the fair-center control on. */
-export function rangeWithFairCenter(
-  range: OpenRangeInput,
-  pool: {
-    symbolA?: string | null;
-    symbolB?: string | null;
-    multiplierA?: number;
-    multiplierB?: number;
-    price: string | number;
-  },
-): OpenRangeInput {
-  if (range.preset === "custom" || !range.centerOnParity) return range;
-  const onChainPriceBPerA = Number(pool.price);
-  return {
-    ...range,
-    centerOnParity: true,
-    centerPrice: openRangeCenterPrice({
-      symbolA: pool.symbolA ?? undefined,
-      symbolB: pool.symbolB ?? undefined,
-      multiplierA: pool.multiplierA,
-      multiplierB: pool.multiplierB,
-      onChainPriceBPerA,
-    }),
-  };
 }
 
 /** Label for the default-on control that recenters the open range. */
