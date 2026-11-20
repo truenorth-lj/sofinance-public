@@ -170,7 +170,7 @@ const TSLA: GuidePage = {
       id: "why-swaps",
       question: "Why do traders swap between TSLA and TSLAx?",
       blocks: [
-        p("Traders swap between TSLA and TSLAx because the two tokens come from different issuers, with different venues, buyers and redemption routes, so their prices drift slightly apart. Arbitrage and routing swaps close that gap, and every swap pays the pool fee to the LPs whose range is active. Because both tokens track the same share, the pool price usually stays close to 1:1, which makes narrow ranges practical."),
+        p("Traders swap between TSLA and TSLAx because the two tokens come from different issuers, with different venues, buyers and redemption routes, so their prices drift slightly apart. Arbitrage and routing swaps close that gap, and every swap pays the pool fee to the LPs whose range is active. Because both tokens track the same share, the pool price usually stays in a narrow band, which makes narrow ranges practical. Some tokens use a share multiplier, so the fair pool price can sit slightly away from 1."),
       ],
     },
     {
@@ -364,9 +364,9 @@ const WHAT_IS: GuidePage = {
     },
     {
       id: "near-one",
-      question: "Why does a same-stock pool trade near 1:1?",
+      question: "Why does a same-stock pool usually trade close to even?",
       blocks: [
-        p("A same-stock pool trades near 1:1 because both tokens represent the same share, so neither should be worth much more than the other. Small premiums and discounts still appear when one version has more buyers or is easier to redeem, and those gaps are what swaps close. Because the price moves in a narrow band, LPs can use tight concentrated ranges."),
+        p("A same-stock pool usually trades close to even because both tokens represent the same share, so neither should be worth much more than the other. Small premiums and discounts still appear when one version has more buyers or is easier to redeem, and those gaps are what swaps close. Some tokens use a share multiplier, so the fair pool price can sit slightly away from 1. Because the price moves in a narrow band, LPs can use tight concentrated ranges."),
       ],
     },
     {
@@ -380,7 +380,7 @@ const WHAT_IS: GuidePage = {
       id: "vs-normal",
       question: "How is a same-stock pool different from a stock/USDC pool?",
       blocks: [
-        p("A same-stock pool pairs two versions of one stock, while a stock/USDC pool pairs a stock with a dollar token. In a stock/USDC pool the relative price moves every time the stock moves, so impermanent loss and out-of-range time are usually larger. In a same-stock pool the relative price stays near 1:1, but your position still holds stock tokens, so its dollar value moves with the share price."),
+        p("A same-stock pool pairs two versions of one stock, while a stock/USDC pool pairs a stock with a dollar token. In a stock/USDC pool the relative price moves every time the stock moves, so impermanent loss and out-of-range time are usually larger. In a same-stock pool the relative price usually stays in a narrow band, but your position still holds stock tokens, so its dollar value moves with the share price."),
       ],
     },
     {
@@ -499,7 +499,7 @@ const IMPERMANENT_LOSS: GuidePage = {
   heroLabel: "Learn",
   title: "Impermanent loss on same-stock pools",
   intro:
-    "Same-stock pools usually trade near 1:1, so impermanent loss tends to be small, but it is not zero. Here is when it happens and how to think about it.",
+    "Same-stock pools usually trade in a narrow band, so impermanent loss tends to be small, but it is not zero. Here is when it happens and how to think about it.",
   qas: [
     {
       id: "what",
@@ -512,7 +512,7 @@ const IMPERMANENT_LOSS: GuidePage = {
       id: "applies",
       question: "Does impermanent loss apply to same-stock pools?",
       blocks: [
-        p("Yes, impermanent loss applies to same-stock pools, but usually less than in a stock/USDC pool, because the two tokens track the same share and trade near 1:1. It appears whenever one issuer's token trades at a premium or discount to the other, for example TSLAx a little below TSLA."),
+        p("Yes, impermanent loss applies to same-stock pools, but usually less than in a stock/USDC pool, because the two tokens track the same share and usually trade in a narrow band. It appears whenever one issuer's token trades at a premium or discount to the other, for example TSLAx a little below TSLA. Some tokens use a share multiplier, so the fair pool price can sit slightly away from 1."),
       ],
     },
     {
@@ -532,7 +532,7 @@ const IMPERMANENT_LOSS: GuidePage = {
       id: "example",
       question: "How big can impermanent loss get in a narrow range?",
       blocks: [
-        p("In a narrow range, the worst case is that the price crosses your whole range and your position ends up entirely in the cheaper token. Illustration, not a prediction: with a Wide range of about ±1% opened at 1:1, if TSLAx falls to 1% below TSLA and stays there, the position holds only TSLAx and is worth about 0.25% less than holding the original mix. A narrower range reaches that point after a smaller move."),
+        p("In a narrow range, the worst case is that the price crosses your whole range and your position ends up entirely in the cheaper token. Illustration, not a prediction: with a Wide range of about ±1% opened at the current pool price, if TSLAx falls 1% below that price and stays there, the position holds only TSLAx and is worth about 0.25% less than holding the original mix. A narrower range reaches that point after a smaller move."),
       ],
     },
     {

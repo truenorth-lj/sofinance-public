@@ -151,6 +151,12 @@ export type DexUi = {
    * Omitted or true = fetch when the signer matches (Meteora today; the default must stay unchanged).
    */
   listPositions?: boolean;
+  /**
+   * When true, the list/API pool price already includes the ScaledUiAmount multiplier
+   * (share-UI B per share-UI A). Convert back to raw before comparing to fair = multA/multB.
+   * Omitted or false = the price is decimals-only raw (Raydium and the default).
+   */
+  listPriceIncludesScaledUi?: boolean;
 };
 
 /** Existing native transports use their own contracts while the generic adapter rolls out. */

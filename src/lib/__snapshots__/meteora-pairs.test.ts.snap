@@ -20,6 +20,7 @@ exports[`Meteora pair rows > maps the captured cbBTC/WBTC pool to a read-only me
   "plainSymbol": "WBTC",
   "poolAddress": "53oyyjgybx6dH7i5aGeKfBUi3xPJQDeBkaENPri57x2H",
   "preferredTags": false,
+  "priceBPerA": 1.0016012005601815,
   "protocol": "meteora-dlmm",
   "qualificationA": "allowlist",
   "qualificationB": "allowlist",

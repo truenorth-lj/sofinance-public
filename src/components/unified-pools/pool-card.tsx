@@ -11,6 +11,7 @@ import { unavailableReasonText } from "@/lib/range-apr/format";
 import { pairIssuerLabel } from "@/lib/rwa-pair-names";
 import type { TokenIconMap } from "@/lib/token-icons/map";
 import { planShareSymbol, pairLabelSymbols } from "@/lib/lp-plan-shares";
+import { scaledUiFairNote } from "@/lib/fair-price";
 import { isLowTvl, PROTOCOL_LABELS, type UnifiedPool } from "@/lib/unified-pools/model";
 import { poolPlanCapability } from "@/lib/unified-pools/plan-support";
 import { InfoTip } from "../info-tip";
@@ -61,6 +62,7 @@ export function PoolCard({ pool, apr, action, icons, onCalculate, calculateHref,
   const freshness = apr && apr.status !== "loading" ? apr.freshness : undefined;
   const ui = uiFor(pool.protocol);
   const chain = chainMeta(pool.chain);
+  const scaledNote = scaledUiFairNote(pool);
   const externalUrl = ui.externalPoolUrl?.(pool.poolAddress);
   const plan = poolPlanCapability(pool);
   // Stock pools count shares; the stablecoin pool has no stock, so its button just says Calculate.
@@ -76,6 +78,7 @@ export function PoolCard({ pool, apr, action, icons, onCalculate, calculateHref,
             ? <Link href={detailHref} className="underline decoration-ink/30 underline-offset-2 hover:decoration-ink">{pool.pairLabel}</Link>
             : pool.pairLabel}</h3>
           <p className="truncate text-xs text-ink/65" title={`${pool.nameA} / ${pool.nameB}`}>{pairIssuerLabel(pool.nameA, pool.nameB)}</p>
+          {scaledNote && <p className="mt-1 text-xs leading-5 text-ink/65" data-testid="scaled-ui-fair">{scaledNote}</p>}
         </div>
       </div>
       {/* The APR pill with its ⓘ beside it on one row; what the number is lives in the ⓘ, not in a label line. */}

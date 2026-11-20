@@ -1,9 +1,10 @@
 import "@/lib/engine-host";
 import "server-only";
 
-import { unpackMint } from "@solana/spl-token";
+import { getScaledUiAmountConfig, unpackMint } from "@solana/spl-token";
 import { PublicKey, type Connection } from "@solana/web3.js";
 import { mintBlockReasons, poolMintIssues, type MintBlockReason } from "@sofinance/engine/token-safety";
+import { effectiveScaledUiMultiplier } from "./fair-price";
 
 const TOKEN_PROGRAMS = new Set(["TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"]);
 
@@ -23,6 +24,8 @@ export type MintSafety = {
   blockReasons: MintBlockReason[];
   /** Mint settings the open path does not handle yet (the engine's `poolMintIssues`, its `unsupportedExtensions`). */
   unsupported?: string[];
+  /** Effective Token-2022 ScaledUiAmount multiplier when the mint has a finite config; omitted otherwise. */
+  scaledUiMultiplier?: number;
 };
 
 /**
@@ -43,13 +46,18 @@ export async function readMintSafety(connection: Connection, mints: readonly str
     if (!info || !TOKEN_PROGRAMS.has(info.owner.toBase58())) return;
     let freezeAuthority: boolean;
     try { freezeAuthority = mintDataHasFreezeAuthority(info.data); } catch { return; /* left out */ }
-    let blockReasons: MintBlockReason[] = [], unsupported: string[] = [];
+    let blockReasons: MintBlockReason[] = [], unsupported: string[] = [], scaledUiMultiplier: number | undefined;
     try {
       const mint = unpackMint(new PublicKey(unique[index]!), info, info.owner);
       blockReasons = mintBlockReasons(mint);
       unsupported = poolMintIssues(mint);
+      const scaled = getScaledUiAmountConfig(mint);
+      if (scaled) {
+        const multiplier = effectiveScaledUiMultiplier(scaled);
+        if (Number.isFinite(multiplier) && multiplier > 0) scaledUiMultiplier = multiplier;
+      }
     } catch { /* base layout only */ }
-    result.set(unique[index]!, { freezeAuthority, blockReasons, unsupported });
+    result.set(unique[index]!, { freezeAuthority, blockReasons, unsupported, ...(scaledUiMultiplier !== undefined ? { scaledUiMultiplier } : {}) });
   });
   return result;
 }

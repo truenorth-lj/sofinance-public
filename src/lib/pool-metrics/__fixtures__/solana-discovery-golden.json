@@ -44,7 +44,8 @@
    "token2022B": true,
    "freezeRiskA": true,
    "freezeRiskB": true,
-   "freezeRisk": true
+   "freezeRisk": true,
+   "priceBPerA": 0.9995505966131164
   },
   {
    "poolAddress": "8ug1sF47mzUxYhbnpGwYCf3bgb3TtrnwhABfdAfgtRfU",
@@ -91,7 +92,8 @@
    "token2022B": true,
    "freezeRiskA": true,
    "freezeRiskB": true,
-   "freezeRisk": true
+   "freezeRisk": true,
+   "priceBPerA": 1.0034843119852956
   },
   {
    "poolAddress": "4gzWX5biAZxQsb2GhWPGds2YR6bgMowcGUS3SuWjejtY",
@@ -138,7 +140,8 @@
    "token2022B": true,
    "freezeRiskA": true,
    "freezeRiskB": true,
-   "freezeRisk": true
+   "freezeRisk": true,
+   "priceBPerA": 0.9966254176215996
   },
   {
    "poolAddress": "6g65bzgeTNLeq9ubXPKvw7huT1s9JjMDjmbYYVkY1jCZ",
@@ -183,7 +186,8 @@
    "token2022B": true,
    "freezeRiskA": true,
    "freezeRiskB": true,
-   "freezeRisk": true
+   "freezeRisk": true,
+   "priceBPerA": 0.9943556390287738
   },
   {
    "poolAddress": "DFphRgRLFyufhFGUnM3p82TJaSHQPaedRWvFWRUgFDEy",
@@ -230,7 +234,8 @@
    "token2022B": true,
    "freezeRiskA": true,
    "freezeRiskB": true,
-   "freezeRisk": true
+   "freezeRisk": true,
+   "priceBPerA": 1.0016673200085622
   },
   {
    "poolAddress": "9nnephnEJQsBgUbHsDebKpf7vpC9S9Q6T5q1rYQQSoxT",
@@ -275,7 +280,8 @@
    "token2022B": true,
    "freezeRiskA": true,
    "freezeRiskB": true,
-   "freezeRisk": true
+   "freezeRisk": true,
+   "priceBPerA": 0.9989581415886251
   },
   {
    "poolAddress": "FW2YA6rDDS7CkvLo3QoE7iWziWdqaWLU9gAveoyvZfy9",
@@ -321,7 +327,8 @@
    "token2022B": true,
    "freezeRiskA": true,
    "freezeRiskB": true,
-   "freezeRisk": true
+   "freezeRisk": true,
+   "priceBPerA": 1.0030667612611741
   },
   {
    "poolAddress": "6upkM7TLLAvZhZwvQAM99S7LZYk14y6hC2xWPszxh2x2",
@@ -367,7 +374,8 @@
    "token2022B": true,
    "freezeRiskA": true,
    "freezeRiskB": true,
-   "freezeRisk": true
+   "freezeRisk": true,
+   "priceBPerA": 1.0036643390066144
   },
   {
    "poolAddress": "FjUosHaSbH6XWodwzNfq2bFeSJkmdLkwi66zBjzc8KKS",
@@ -414,7 +422,8 @@
    "token2022B": true,
    "freezeRiskA": true,
    "freezeRiskB": true,
-   "freezeRisk": true
+   "freezeRisk": true,
+   "priceBPerA": 0.9990344536279918
   },
   {
    "poolAddress": "85YT66QaFFzFZgvR9YAjKiR1ECuKkyYiswwMa5CqBogy",
@@ -461,7 +470,8 @@
    "token2022B": true,
    "freezeRiskA": true,
    "freezeRiskB": true,
-   "freezeRisk": true
+   "freezeRisk": true,
+   "priceBPerA": 1.003949489827213
   },
   {
    "poolAddress": "6jUkfJtnKw9VL1gcbcy3dGo4YRBmDsfpqUgha5VoqSWW",
@@ -508,7 +518,8 @@
    "token2022B": true,
    "freezeRiskA": true,
    "freezeRiskB": true,
-   "freezeRisk": true
+   "freezeRisk": true,
+   "priceBPerA": 0.9963414554485319
   },
   {
    "poolAddress": "CxEUkLtuPsmiVgmnaCnEM7Ki6yzLiuP8wE7dVKUTWXdQ",
@@ -555,7 +566,8 @@
    "token2022B": true,
    "freezeRiskA": true,
    "freezeRiskB": true,
-   "freezeRisk": true
+   "freezeRisk": true,
+   "priceBPerA": 1.0002834942697993
   },
   {
    "poolAddress": "BZtgQEyS6eXUXicYPHecYQ7PybqodXQMvkjUbP4R8mUU",
@@ -588,7 +600,8 @@
    "token2022B": false,
    "freezeRiskA": true,
    "freezeRiskB": true,
-   "freezeRisk": true
+   "freezeRisk": true,
+   "priceBPerA": 1.0010203913058704
   },
   {
    "poolAddress": "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro",
@@ -634,7 +647,8 @@
    "token2022B": true,
    "freezeRiskA": true,
    "freezeRiskB": true,
-   "freezeRisk": true
+   "freezeRisk": true,
+   "priceBPerA": 0.9998298202410433
   },
   {
    "poolAddress": "3ofY6ksvi5m2wRfKmYebCm4EoCWbciWgimaiieeL36hW",
@@ -680,7 +694,8 @@
    "token2022B": true,
    "freezeRiskA": true,
    "freezeRiskB": true,
-   "freezeRisk": true
+   "freezeRisk": true,
+   "priceBPerA": 1.0000557979250393
   },
   {
    "poolAddress": "5MBpNcWTqiWy3pZX17pYfgP2ZxrSkok4naQWLj3XLDLY",
@@ -727,7 +742,8 @@
    "token2022B": true,
    "freezeRiskA": true,
    "freezeRiskB": true,
-   "freezeRisk": true
+   "freezeRisk": true,
+   "priceBPerA": 0.9995075556555307
   },
   {
    "poolAddress": "4bMbJzxWyiokwyQC4ndST5sJv6Qnb4viyACzhyFUgRbd",
@@ -774,7 +790,8 @@
    "token2022B": true,
    "freezeRiskA": true,
    "freezeRiskB": true,
-   "freezeRisk": true
+   "freezeRisk": true,
+   "priceBPerA": 1.0004975185913927
   },
   {
    "poolAddress": "Dk8jvXxpjdNEHQWXHcW1uKpUFTyhkAuSxqonqAv7d9sD",
@@ -821,7 +838,8 @@
    "token2022B": true,
    "freezeRiskA": true,
    "freezeRiskB": true,
-   "freezeRisk": true
+   "freezeRisk": true,
+   "priceBPerA": 0.9997636370458435
   }
  ],
  "freezeRiskSource": "tags",

@@ -41,12 +41,12 @@ export const FAQ_SECTIONS: readonly FaqSection[] = [
       {
         question: "What is impermanent loss, and does it apply to same-stock pools?",
         answer:
-          "Impermanent loss is the gap between holding two tokens and providing them as liquidity: as the relative price moves, the pool shifts your position toward the token that got cheaper. In a same-stock pool such as MSTR/MSTRx both tokens track the same share, so the relative price usually stays near 1:1, but the two issuers' tokens can still trade at a premium or discount to each other. That gap, plus smart contract risk, means LP in a same-stock pool can still lose money compared with holding.",
+          "Impermanent loss is the gap between holding two tokens and providing them as liquidity: as the relative price moves, the pool shifts your position toward the token that got cheaper. In a same-stock pool such as MSTR/MSTRx both tokens track the same share, so the relative price usually stays close, but the two issuers' tokens can still trade at a premium or discount, and some tokens use a share multiplier, so the fair pool price can sit slightly away from 1. That gap, plus smart contract risk, means LP in a same-stock pool can still lose money compared with holding.",
       },
       {
         question: "What is a same-stock pool, like MSTR/MSTRx or SPCX/SPCXx?",
         answer:
-          "It is a pool where both sides are the same underlying stock from two issuers. On Solana that is a Backpack Securities token (for example MSTR) paired with the xStocks token (for example MSTRx) on Raydium or Meteora. On Robinhood Chain it is a Robinhood stock token paired with the Ondo Global Markets token for the same stock (for example NVDA/NVDAon) on Uniswap v4. Traders swap between the two versions, and each swap pays the pool fee. Because both tokens track the same share, the price stays close to 1:1, which makes tight ranges practical.",
+          "It is a pool where both sides are the same underlying stock from two issuers. On Solana that is a Backpack Securities token (for example MSTR) paired with the xStocks token (for example MSTRx) on Raydium or Meteora. On Robinhood Chain it is a Robinhood stock token paired with the Ondo Global Markets token for the same stock (for example NVDA/NVDAon) on Uniswap v4. Traders swap between the two versions, and each swap pays the pool fee. Because both tokens track the same share, the relative price usually stays in a narrow band, which makes tight ranges practical. Some tokens use a share multiplier, so the fair pool price can sit slightly away from 1.",
       },
     ],
   },

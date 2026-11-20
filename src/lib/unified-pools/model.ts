@@ -42,6 +42,10 @@ export type UnifiedPool = {
   feeTierBps: number | null;
   tvlUsd: number | null;
   volume24hUsd: number | null;
+  /** Raw UI price, token B per token A, when known. */
+  priceBPerA?: number | null;
+  multiplierA?: number;
+  multiplierB?: number;
   /** Estimated pool fee APR from the last 24h, percent. */
   poolFeeApr24hPct: number | null;
   /**
