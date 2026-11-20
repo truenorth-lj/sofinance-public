@@ -56,18 +56,12 @@ describe("discoverRhcUniv4Pools (mock Robinhood Chain RPC + DexScreener capture)
     expect(pools[0]).toMatchObject({ status: "listed", estimatedApr: null });
   });
 
-it("reads uiMultiplier on the summary path but default open ticks stay centered on the on-chain tick", async () => {
-    const chain = mockRhcChain();
-    const robinhood = spcxOnly[0]!.currency0.address.toLowerCase();
-    chain.tokens[robinhood] = { ...chain.tokens[robinhood]!, uiMultiplier: 1000775159164630595n };
-    const clients = createRhcClients({ env: {}, transportFor: () => mockRhcTransport(chain) });
+it("centers default open ticks on the on-chain tick from the summary path", async () => {
+    const clients = createRhcClients({ env: {}, transportFor: () => mockRhcTransport(mockRhcChain()) });
     const result = await discoverRhcUniv4Pools({ clients, pools: spcxOnly, bypassCache: true });
-    expect(result.pools[0]!.token0.uiMultiplier).toBeCloseTo(1.000775159164630595, 12);
-    expect(result.pools[0]!.token1.uiMultiplier).toBeUndefined();
     const view = rhcPoolView(result.pools[0]!);
     expect(view).not.toBeNull();
-    expect(view!.multiplier0).toBeUndefined();
-    expect(view!.multiplier1).toBeUndefined();
+    expect("multiplier0" in view! || "multiplier1" in view!).toBe(false);
     const ticks = rhcDefaultOpenTicks(view!, 10)!;
     expect(ticks.center).toBe(view!.tick);
     expect(ticks.tickLower).toBe(view!.tick! - 10);

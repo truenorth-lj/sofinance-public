@@ -30,19 +30,9 @@ describe("uniswap-v4-rhc discovery (mock RPC replaying the 2026-10-29 capture)",
     // 50.5 pips × $36.54 / $48,711.43 × 365 ≈ 0.00138 %.
     expect(pool!.estimatedApr!.feeRatePct).toBeCloseTo(0.00505, 6);
     expect(pool!.estimatedApr!.estimatedPoolFeeAprPct).toBeCloseTo(0.00505 / 100 * 36.54 / 48711.43 * 365 * 100, 9);
-    // RPC: 1 block + 1 state multicall + 1 storage read + 1 uiMultiplier multicall; never eth_getLogs.
-    expect(chain.calls.map(call => call.method).sort()).toEqual(["eth_call", "eth_call", "eth_getBlockByNumber", "eth_getStorageAt"]);
+    // RPC: 1 block + 1 state multicall + 1 storage read; never eth_getLogs.
+    expect(chain.calls.map(call => call.method).sort()).toEqual(["eth_call", "eth_getBlockByNumber", "eth_getStorageAt"]);
   });
-
-  it("reads Robinhood uiMultiplier from current state and leaves a token without the function unset", async () => {
-    const chain = mockRhcChain();
-    const robinhood = SPCX.currency0.address.toLowerCase();
-    chain.tokens[robinhood] = { ...chain.tokens[robinhood]!, uiMultiplier: 1000775159164630595n };
-    const [pool] = await discoverUniv4RhcPools({ pools: [SPCX], clients: clientsFor(chain) });
-    expect(pool!.token0.uiMultiplier).toBeCloseTo(1.000775159164630595, 12);
-    expect(pool!.token1.uiMultiplier).toBeUndefined();
-  });
-
 
   it("auto-delists from current state when the hook implementation changes (no event scan needed)", async () => {
     const chain = mockRhcChain();
@@ -110,16 +100,16 @@ describe("readPoolStates (batched) matches per-pool readPoolState on the pinned 
     batchedChain.poolState = chain.poolState;
     const { states, rpcRequests } = await readPoolStates(raw(batchedChain), UNIV4_RHC_ALLOWLISTED_POOLS);
     expect(states).toEqual(expected);
-    expect(rpcRequests).toBe(4);
-    expect(batchedChain.calls.map(call => call.method).sort()).toEqual(["eth_call", "eth_call", "eth_getBlockByNumber", "eth_getStorageAt"]);
-    expect(batchedChain.calls).toHaveLength(4);
+    expect(rpcRequests).toBe(3);
+    expect(batchedChain.calls.map(call => call.method).sort()).toEqual(["eth_call", "eth_getBlockByNumber", "eth_getStorageAt"]);
+    expect(batchedChain.calls).toHaveLength(3);
     expect(states[0]!.slot0!.tick).toBe(chain.tick);
     expect(states[1]!.slot0!.tick).toBe(3);
     expect(states.every(state => state.blockNumber === expected[0]!.blockNumber)).toBe(true);
 
     const stats: { rpcRequests: number; pools: number; fallback?: true }[] = [];
     await discoverUniv4RhcPools({ pools: UNIV4_RHC_ALLOWLISTED_POOLS, clients: createRhcClients({ env: {}, transportFor: () => mockRhcTransport(mockRhcChain()) }), onStateRpc: s => stats.push(s) });
-    expect(stats).toEqual([{ rpcRequests: 4, pools: 11 }]);
+    expect(stats).toEqual([{ rpcRequests: 3, pools: 11 }]);
   });
 
   it("falls back to the per-pool loop when the batch throws: same summaries as the old path, and one failed pool delists only itself", async () => {
@@ -156,7 +146,7 @@ describe("readPoolStates (batched) matches per-pool readPoolState on the pinned 
       onStateRpc: s => statsRecovered.push(s),
     });
     expect(recovered).toEqual(expectedAll);
-    expect(statsRecovered).toEqual([{ rpcRequests: 1 + UNIV4_RHC_ALLOWLISTED_POOLS.length * 3 + 1, pools: 11, fallback: true }]);
+    expect(statsRecovered).toEqual([{ rpcRequests: 1 + UNIV4_RHC_ALLOWLISTED_POOLS.length * 3, pools: 11, fallback: true }]);
 
     const failedIndex = 0; // SPCX is the only pool this fixture lists
     let batchFailed = false;
@@ -181,6 +171,6 @@ describe("readPoolStates (batched) matches per-pool readPoolState on the pinned 
       status: "delisted", poolId: UNIV4_RHC_ALLOWLISTED_POOLS[failedIndex]!.poolId,
     });
     expect(summaries.filter((_, index) => index !== failedIndex)).toEqual(expectedAll.filter((_, index) => index !== failedIndex));
-    expect(stats).toEqual([{ rpcRequests: 1 + (UNIV4_RHC_ALLOWLISTED_POOLS.length - 1) * 3 + 2 + 1, pools: 11, fallback: true }]);
+    expect(stats).toEqual([{ rpcRequests: 1 + (UNIV4_RHC_ALLOWLISTED_POOLS.length - 1) * 3 + 2, pools: 11, fallback: true }]);
   });
 });

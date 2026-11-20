@@ -464,8 +464,7 @@ export function RhcUniv4OpenPanel({ pool, signingEnabled, receiptPoll, initialWa
         </div> : null}
         {rangeChanged ? (
           <div className="mt-3 rounded-xl border border-amber-300/40 p-3 text-sm" role="status" data-testid="rhc-range-changed">
-            <p>鏈上 tick 已變動，區間改為 {rangeChanged.next.tickLower}–{rangeChanged.next.tickUpper}（原本 {rangeChanged.previous.tickLower}–{rangeChanged.previous.tickUpper}）。請確認後重新預覽。</p>
-            <p className="mt-1 text-cream/80">The on-chain tick moved to {rangeChanged.toTick}. The range is now {rangeChanged.next.tickLower} to {rangeChanged.next.tickUpper} (was {rangeChanged.previous.tickLower}–{rangeChanged.previous.tickUpper}). Confirm to preview this range.</p>
+            <p>The on-chain tick moved to {rangeChanged.toTick}. The range is now {rangeChanged.next.tickLower} to {rangeChanged.next.tickUpper} (was {rangeChanged.previous.tickLower}–{rangeChanged.previous.tickUpper}). Confirm to preview this range.</p>
             <button type="button" disabled={busy} data-testid="rhc-confirm-new-range" onClick={() => { setTickOverride(rangeChanged.toTick); setRangeChanged(null); }} className="mt-2 underline disabled:opacity-40">Confirm new range</button>
           </div>
         ) : null}

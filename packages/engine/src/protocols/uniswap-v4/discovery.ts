@@ -1,5 +1,5 @@
 import { getAddress, isAddressEqual, type Address, type Hex, type PublicClient } from "viem";
-import { ERC20_METADATA_ABI, STABLE_PAIR_HOOK_ABI, STATE_VIEW_ABI, UI_MULTIPLIER_ABI } from "./abi";
+import { ERC20_METADATA_ABI, STABLE_PAIR_HOOK_ABI, STATE_VIEW_ABI } from "./abi";
 import { ERC1967_IMPLEMENTATION_SLOT, STABLE_PAIR_HOOK, UNIV4_RHC, UNIV4_RHC_ALLOWLISTED_POOLS, type StableFeeConfig, type Univ4AllowlistedPool } from "./constants";
 import { poolAprFromMarket, type Univ4MarketData, type Univ4PoolApr } from "./market-data";
 import { addressFromSlot, decodeHookPermissions, hookPermissionBits, isSortedPair, poolIdOf, type PoolKey } from "./pool-key";
@@ -11,7 +11,7 @@ import { addressFromSlot, decodeHookPermissions, hookPermissionBits, isSortedPai
  * (`market-data.ts`) and RPC is used for current state only.
  */
 
-export type TokenMetadata = { address: Address; name: string; symbol: string; decimals: number; uiMultiplier?: number };
+export type TokenMetadata = { address: Address; name: string; symbol: string; decimals: number };
 
 export type RawPoolState = {
   blockNumber: bigint;
@@ -36,14 +36,6 @@ const tokenContracts = (address: Address) => [
   { address, abi: ERC20_METADATA_ABI, functionName: "symbol" },
   { address, abi: ERC20_METADATA_ABI, functionName: "decimals" },
 ] as const;
-
-/** 1e18 units = multiplier 1. Used by Robinhood-issued tokens' `uiMultiplier()`. */
-export const UI_MULTIPLIER_SCALE = 10n ** 18n;
-
-export function effectiveUiMultiplier(raw: bigint | null): number | undefined {
-  if (raw === null || raw <= 0n) return undefined;
-  return Number(raw) / Number(UI_MULTIPLIER_SCALE);
-}
 
 /** StateView + hook + ERC-20 metadata calls for one pool (10 eth_calls, decoded in this order). */
 export const POOL_STATE_CONTRACTS_PER_POOL = 10;
@@ -100,32 +92,6 @@ async function counted<T>(stats: { rpcRequests: number } | undefined, work: () =
 }
 
 
-/** One extra Multicall3 over unique token addresses. Revert, 0, or a failed multicall leaves uiMultiplier unset (never defaulted to 1). */
-async function attachUiMultipliers(
-  client: PublicClient,
-  specs: readonly Univ4AllowlistedPool[],
-  states: RawPoolState[],
-  stats?: { rpcRequests: number },
-): Promise<RawPoolState[]> {
-  const addresses = [...new Map(specs.flatMap(spec => [spec.currency0.address, spec.currency1.address]).map(address => [address.toLowerCase(), address])).values()];
-  if (addresses.length === 0) return states;
-  const results = await counted(stats, () => client.multicall({
-    allowFailure: true,
-    batchSize: 0,
-    contracts: addresses.map(address => ({ address, abi: UI_MULTIPLIER_ABI, functionName: "uiMultiplier" as const })),
-  }));
-  const byAddress = new Map(addresses.map((address, index) => [address.toLowerCase(), effectiveUiMultiplier(ok<bigint>(results[index]!))]));
-  return states.map((state, index) => {
-    const spec = specs[index]!;
-    const apply = (token: TokenMetadata | null, address: Address): TokenMetadata | null => {
-      if (!token) return token;
-      const uiMultiplier = byAddress.get(address.toLowerCase());
-      return uiMultiplier === undefined ? token : { ...token, uiMultiplier };
-    };
-    return { ...state, token0: apply(state.token0, spec.currency0.address), token1: apply(state.token1, spec.currency1.address) };
-  });
-}
-
 /** Current pool state: 1 block header + 1 multicall + 1 storage read (all at `latest`). Used for a single pool at transaction time. */
 export async function readPoolState(
   client: PublicClient, spec: Univ4AllowlistedPool, stats?: { rpcRequests: number },
@@ -138,9 +104,7 @@ export async function readPoolState(
 
 /**
  * Current state of many allowlisted pools at one latest block: 1 getBlock, 1 Multicall3
- * (`batchSize: 0` so it is a single eth_call), 1 getStorageAt per distinct hook,
- * then 1 Multicall3 for unique-token `uiMultiplier()` (listing only; the transaction-time
- * `readPoolState` path stays at the original 3 JSON-RPC requests so recorded open captures still replay).
+ * (`batchSize: 0` so it is a single eth_call), 1 getStorageAt per distinct hook.
  * Storage cannot go through Multicall3; pool state values match `readPoolState` at the same block.
  */
 export async function readPoolStates(
@@ -162,11 +126,7 @@ export async function readPoolStates(
     const start = index * POOL_STATE_CONTRACTS_PER_POOL;
     return rawPoolStateFrom(block, spec, results.slice(start, start + POOL_STATE_CONTRACTS_PER_POOL), words.get(spec.hooks.toLowerCase()));
   });
-  let withMultipliers = states;
-  try {
-    withMultipliers = await attachUiMultipliers(client, specs, states, local);
-  } catch { /* listing still works; missing uiMultiplier stays unset */ }
-  return { states: withMultipliers, rpcRequests: local.rpcRequests - before };
+  return { states, rpcRequests: local.rpcRequests - before };
 }
 
 export type Univ4CheckId =
@@ -323,9 +283,6 @@ export async function discoverUniv4RhcPools(options: DiscoverUniv4Options): Prom
         states.push(unreadPoolState());
       }
     }
-    try {
-      states = await attachUiMultipliers(options.clients.state, pools, states, rpc);
-    } catch { /* listing still works; missing uiMultiplier stays unset */ }
   }
   options.onStateRpc?.({ rpcRequests: rpc.rpcRequests, pools: pools.length, ...(fallback ? { fallback: true as const } : {}) });
   const markets = await Promise.all(pools.map(spec => options.marketData ? options.marketData(spec).catch(() => null) : Promise.resolve(null)));

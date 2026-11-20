@@ -19,6 +19,6 @@ export type { RhcNative } from "./unified-positions/sources/rhc";
 
 /** The subset of `Univ4PoolSummary` the list needs (the client gets it from `/api/protocol-pools?protocol=uniswap-v4-rhc`). */
 export type RhcPoolSummary = Pick<Univ4PoolSummary, "poolId" | "status" | "tick" | "price" | "estimatedApr" | "warnings"> & {
-  token0: Pick<Univ4PoolSummary["token0"], "name" | "symbol" | "uiMultiplier">;
-  token1: Pick<Univ4PoolSummary["token1"], "name" | "symbol" | "uiMultiplier">;
+  token0: Pick<Univ4PoolSummary["token0"], "name" | "symbol">;
+  token1: Pick<Univ4PoolSummary["token1"], "name" | "symbol">;
 };
