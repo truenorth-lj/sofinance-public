@@ -5,14 +5,16 @@ import { InkShell } from "@/components/ink";
 import { PageHeader } from "@/components/page-header";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
-import { DOCS_ROUTES } from "@/lib/public-urls";
+import { DOCS_ROUTES, LEGAL_ROUTES } from "@/lib/public-urls";
+import { pageMetadata } from "@/lib/seo";
 import { SOCIAL_LINKS } from "@/lib/social-links";
 import { TERMS_JURISDICTION_EN, TERMS_LAST_UPDATED } from "@/lib/terms-content";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Terms of Service",
   description: "Terms of Service for SoFinance, a self-custodial software interface for Raydium CLMM positions on Solana.",
-};
+  path: LEGAL_ROUTES.terms,
+});
 
 function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return <section aria-labelledby={id} className="border-t border-white/10 pt-6 first:border-t-0 first:pt-0">
@@ -24,6 +26,7 @@ function Section({ id, title, children }: { id: string; title: string; children:
 export default function TermsPage() {
   return <InkShell>
     <SiteHeader />
+    <main id="main">
     <PageHeader title="Terms of Service" subline={<>Last updated {TERMS_LAST_UPDATED}</>} />
     <article className="mt-3 space-y-6 rounded-[28px] border border-white/12 bg-char p-6 sm:p-9">
       <Section id="acceptance" title="1. Acceptance of these Terms">
@@ -107,6 +110,7 @@ export default function TermsPage() {
         <p>Questions about these Terms can be sent to <a href={SOCIAL_LINKS.x.href} target="_blank" rel="noreferrer">SoFinance on X</a>.</p>
       </Section>
     </article>
+    </main>
     <SiteFooter variant="marketing" />
   </InkShell>;
 }

@@ -19,5 +19,10 @@ export function unifiedAppRedirect(pathname: string, search = ""): string | null
     const pools = openPoolRedirect(new URLSearchParams(search).get("openPool"));
     return pools ?? `/app/portfolio${search ? `?${search.replace(/^\?/, "")}` : ""}`;
   }
+  if (pathname === "/app/position-performance") {
+    const params = new URLSearchParams(search);
+    params.set("view", "performance");
+    return `/app/portfolio?${params}`;
+  }
   return null;
 }

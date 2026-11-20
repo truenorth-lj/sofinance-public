@@ -18,7 +18,7 @@ export function LandingPage({ initialPools = null, initialStocks = null }: { ini
         <SiteHeader variant="marketing" />
       </div>
 
-      <main>
+      <main id="main">
         {/* The fallback is what prerendered HTML contains (useSearchParams bails out to the client), so it renders
             the server snapshots: crawlers see stock and pool names and stats, not loading lines. */}
         <Suspense fallback={<HomepageMarketView initialPools={initialPools} initialStocks={initialStocks} detailHrefs={detailHrefs} />}>

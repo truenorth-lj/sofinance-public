@@ -23,7 +23,7 @@ export default function LearnIndexPage() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(learnIndexJsonLd()) }} />
       <InkShell>
       <SiteHeader />
-      <main>
+      <main id="main">
         <PageHeader
           title="Same-stock LP, explained"
           subline="Short guides that answer the common questions first: what a same-stock pool is, how to open a position, impermanent loss, pricing, and worked use cases."

@@ -67,7 +67,7 @@ export function PublicPoolPage({ model }: { model: PublicPoolPageModel }) {
   return (
     <InkShell>
       <SiteHeader />
-      <main className="mt-3">
+      <main id="main" className="mt-3">
         <nav aria-label="Breadcrumb" className="mb-3 text-sm text-cream/70">
           <ol className="flex flex-wrap items-center gap-2">
             <li><Link href="/" className="underline decoration-cream/40 underline-offset-2 hover:decoration-cream">Home</Link></li>
@@ -81,7 +81,7 @@ export function PublicPoolPage({ model }: { model: PublicPoolPageModel }) {
             <li className="text-cream">{model.title}</li>
           </ol>
         </nav>
-        <PageHeader title={model.title} subline={model.aprHelp} />
+        <PageHeader title={model.title} subline={`${model.chain} · ${model.dex} · ${model.feeTier} fee tier`} />
         <div className="mt-4 flex flex-wrap items-center gap-3" data-testid="pool-page-actions">
           <OpenPositionControl model={model} />
           {showCalculate && (
@@ -105,6 +105,7 @@ export function PublicPoolPage({ model }: { model: PublicPoolPageModel }) {
             <Fact term="24h volume" value={model.volume24h} />
             <Fact term={PUBLIC_POOL_APR_LABEL} value={model.apr7d} />
           </dl>
+          <p className="mt-3 text-sm leading-6 text-cream/70" data-testid="apr-help">{model.aprHelp}</p>
           <p className="mt-6 text-sm">
             <Link href={model.listHref} className="underline decoration-cream/40 underline-offset-2 hover:decoration-cream">
               All pools

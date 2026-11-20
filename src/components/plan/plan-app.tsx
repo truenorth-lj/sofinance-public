@@ -133,7 +133,7 @@ export function PlanApp() {
       <div className="mx-auto max-w-[1280px] px-3 pb-16 pt-3 sm:px-5 sm:pt-5">
         <SiteHeader variant="app" wallet={wallet.address} connected={wallet.connected} restoring={wallet.restoring} onConnect={wallet.connect} onDisconnect={wallet.disconnect} />
 
-        <main className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-12">
+        <main id="main" className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-12">
           <section
             aria-labelledby="plan-heading"
             className="animate-rise rounded-[28px] bg-cream p-6 text-ink motion-reduce:animate-none sm:p-9 lg:col-span-12"
