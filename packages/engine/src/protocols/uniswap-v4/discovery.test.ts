@@ -34,13 +34,13 @@ describe("uniswap-v4-rhc discovery (mock RPC replaying the 2026-10-29 capture)",
     expect(chain.calls.map(call => call.method).sort()).toEqual(["eth_call", "eth_call", "eth_getBlockByNumber", "eth_getStorageAt"]);
   });
 
-  it("reads Robinhood uiMultiplier from current state and defaults a token without the function to 1", async () => {
+  it("reads Robinhood uiMultiplier from current state and leaves a token without the function unset", async () => {
     const chain = mockRhcChain();
     const robinhood = SPCX.currency0.address.toLowerCase();
     chain.tokens[robinhood] = { ...chain.tokens[robinhood]!, uiMultiplier: 1000775159164630595n };
     const [pool] = await discoverUniv4RhcPools({ pools: [SPCX], clients: clientsFor(chain) });
     expect(pool!.token0.uiMultiplier).toBeCloseTo(1.000775159164630595, 12);
-    expect(pool!.token1.uiMultiplier).toBe(1);
+    expect(pool!.token1.uiMultiplier).toBeUndefined();
   });
 
 

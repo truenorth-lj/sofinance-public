@@ -3,7 +3,8 @@ import { TickUtil } from "@raydium-io/raydium-sdk-v2";
 import { resolveOpenRange } from "@sofinance/engine/open-range";
 import { uiPriceBPerAFromTick } from "@sofinance/engine/position-performance-math";
 import { exactTickFromUiPrice } from "@sofinance/engine/range-apr/tick-math";
-import { openRangeCenterPrice } from "./open-range-center";
+import { openRangeCenterPrice, unitBand, unitCenterWithCurrentFallback, tickRangeContainsCurrent } from "./open-range-center";
+import { OPEN_RANGE_PRESETS } from "@sofinance/engine/open-range-presets";
 import { fairPriceFor } from "./fair-price";
 
 /** Standard (±0.3%) default, the ticks that get signed when the fair-center control is on. */
@@ -157,5 +158,122 @@ describe("default standard range before/after fair centering", () => {
     expect(after.tickLower).toBe(onChainCenter.tickLower);
     expect(after.tickUpper).toBe(onChainCenter.tickUpper);
     expect(after.tickLower).not.toBe(parity.tickLower);
+  });
+});
+
+
+const PRESET_IDS = ["micro", "tight", "standard", "wide"] as const;
+
+function resolvePreset(preset: (typeof PRESET_IDS)[number], input: {
+  currentPrice: number;
+  tickCurrent: number;
+  decimalsA: number;
+  decimalsB: number;
+  tickSpacing: number;
+  centerPrice?: number;
+  centerOnParity?: boolean;
+}) {
+  const sqrtPriceX64 = TickUtil.getSqrtPriceAtTick(input.tickCurrent).toString();
+  return resolveOpenRange({
+    range: {
+      preset,
+      centerOnParity: input.centerOnParity ?? true,
+      ...(input.centerPrice !== undefined ? { centerPrice: input.centerPrice } : {}),
+    },
+    currentPrice: input.currentPrice,
+    tickCurrent: input.tickCurrent,
+    sqrtPriceX64,
+    decimalsA: input.decimalsA,
+    decimalsB: input.decimalsB,
+    tickSpacing: input.tickSpacing,
+  });
+}
+
+describe("fair-center then current-price fallback", () => {
+  it("unitCenterWithCurrentFallback keeps the fair center when current is inside the inclusive band, otherwise recenters", () => {
+    expect(unitBand(45980, 10)).toEqual({ lower: 45975, upper: 45984 });
+    expect(unitCenterWithCurrentFallback(45980, 45980, 10)).toBe(45980);
+    expect(unitCenterWithCurrentFallback(45980, 45984, 10)).toBe(45980);
+    expect(unitCenterWithCurrentFallback(45980, 45992, 10)).toBe(45992);
+  });
+
+  it("covers every preset for NVDAx, SPYx (including the Tight counterexample), SNDK, and multiplier-1", () => {
+    const spyxTight = {
+      name: "SPYx",
+      fairUnit: 45980,
+      tickCurrent: 45992,
+      decimalsA: 6,
+      decimalsB: 8,
+      tickSpacing: 10,
+    };
+    const cases = [
+      spyxTight,
+      { name: "NVDAx", fairUnit: 46037, tickCurrent: 46041, decimalsA: 6, decimalsB: 8, tickSpacing: 1 },
+      { name: "SNDK", fairUnit: 0, tickCurrent: 2, decimalsA: 6, decimalsB: 8, tickSpacing: 10 },
+      { name: "multiplier-1", fairUnit: 0, tickCurrent: 1, decimalsA: 6, decimalsB: 8, tickSpacing: 10 },
+    ] as const;
+
+    for (const pool of cases) {
+      const currentPrice = uiPriceBPerAFromTick(pool.tickCurrent, pool.decimalsA, pool.decimalsB);
+      const fairPrice = uiPriceBPerAFromTick(pool.fairUnit, pool.decimalsA, pool.decimalsB);
+      for (const preset of PRESET_IDS) {
+        const label = `${pool.name} ${preset}`;
+        const after = resolvePreset(preset, {
+          currentPrice,
+          tickCurrent: pool.tickCurrent,
+          decimalsA: pool.decimalsA,
+          decimalsB: pool.decimalsB,
+          tickSpacing: pool.tickSpacing,
+          centerPrice: fairPrice,
+        });
+        expect(tickRangeContainsCurrent(after.tickLower, after.tickUpper, pool.tickCurrent), label).toBe(true);
+
+        const units = (after.tickUpper - after.tickLower) / pool.tickSpacing;
+        const used = unitCenterWithCurrentFallback(pool.fairUnit, pool.tickCurrent, units);
+        if (pool.name === "SPYx" && preset === "tight") {
+          expect(used, label).toBe(pool.tickCurrent);
+          const currentCentered = resolvePreset(preset, {
+            currentPrice,
+            tickCurrent: pool.tickCurrent,
+            decimalsA: pool.decimalsA,
+            decimalsB: pool.decimalsB,
+            tickSpacing: pool.tickSpacing,
+            centerOnParity: false,
+          });
+          expect(after.tickLower, label).toBe(currentCentered.tickLower);
+          expect(after.tickUpper, label).toBe(currentCentered.tickUpper);
+        } else {
+          // Wider presets (and NVDAx Tight, whose 4-unit gap still fits) stay on the fair center.
+          const fairBand = unitBand(pool.fairUnit, units);
+          const currentInsideFair = pool.tickCurrent >= fairBand.lower && pool.tickCurrent <= fairBand.upper;
+          if (currentInsideFair) expect(used, label).toBe(pool.fairUnit);
+        }
+      }
+    }
+  });
+
+  it("SPYx Tight counterexample: fair 45980, current 45992 is outside the fair Tight band", () => {
+    const currentPrice = uiPriceBPerAFromTick(45992, 6, 8);
+    const fairPrice = uiPriceBPerAFromTick(45980, 6, 8);
+    const tight = resolvePreset("tight", {
+      currentPrice, tickCurrent: 45992, decimalsA: 6, decimalsB: 8, tickSpacing: 10, centerPrice: fairPrice,
+    });
+    const standard = resolvePreset("standard", {
+      currentPrice, tickCurrent: 45992, decimalsA: 6, decimalsB: 8, tickSpacing: 10, centerPrice: fairPrice,
+    });
+    const currentCenteredTight = resolvePreset("tight", {
+      currentPrice, tickCurrent: 45992, decimalsA: 6, decimalsB: 8, tickSpacing: 10, centerOnParity: false,
+    });
+    expect(tickRangeContainsCurrent(tight.tickLower, tight.tickUpper, 45992)).toBe(true);
+    expect(tight.tickLower).toBe(currentCenteredTight.tickLower);
+    expect(tight.tickUpper).toBe(currentCenteredTight.tickUpper);
+    expect(tickRangeContainsCurrent(standard.tickLower, standard.tickUpper, 45992)).toBe(true);
+    // Standard is wide enough to keep the fair center.
+    const fairCenteredStandard = resolvePreset("standard", {
+      currentPrice, tickCurrent: 45980, decimalsA: 6, decimalsB: 8, tickSpacing: 10, centerPrice: fairPrice,
+    });
+    expect(standard.tickLower).toBe(fairCenteredStandard.tickLower);
+    expect(standard.tickUpper).toBe(fairCenteredStandard.tickUpper);
+    expect(OPEN_RANGE_PRESETS.map((p) => p.id)).toEqual(["tight", "standard", "wide"]);
   });
 });

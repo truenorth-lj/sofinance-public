@@ -100,7 +100,7 @@ async function counted<T>(stats: { rpcRequests: number } | undefined, work: () =
 }
 
 
-/** One extra Multicall3 over unique token addresses; Ondo (and any revert) stays unset and evaluatePool defaults it to 1. */
+/** One extra Multicall3 over unique token addresses. Revert, 0, or a failed multicall leaves uiMultiplier unset (never defaulted to 1). */
 async function attachUiMultipliers(
   client: PublicClient,
   specs: readonly Univ4AllowlistedPool[],
@@ -165,7 +165,7 @@ export async function readPoolStates(
   let withMultipliers = states;
   try {
     withMultipliers = await attachUiMultipliers(client, specs, states, local);
-  } catch { /* listing still works; evaluatePool defaults a missing uiMultiplier to 1 */ }
+  } catch { /* listing still works; missing uiMultiplier stays unset */ }
   return { states: withMultipliers, rpcRequests: local.rpcRequests - before };
 }
 
@@ -268,8 +268,8 @@ export function evaluatePool(spec: Univ4AllowlistedPool, state: RawPoolState, ma
     status: delistReasons.length === 0 ? "listed" : "delisted",
     delistReasons,
     checks,
-    token0: { ...(state.token0 ?? { address: spec.currency0.address, name: "", symbol: spec.currency0.symbol, decimals: spec.currency0.decimals }), issuer: spec.currency0.issuer, uiMultiplier: state.token0?.uiMultiplier ?? 1 },
-    token1: { ...(state.token1 ?? { address: spec.currency1.address, name: "", symbol: spec.currency1.symbol, decimals: spec.currency1.decimals }), issuer: spec.currency1.issuer, uiMultiplier: state.token1?.uiMultiplier ?? 1 },
+    token0: { ...(state.token0 ?? { address: spec.currency0.address, name: "", symbol: spec.currency0.symbol, decimals: spec.currency0.decimals }), issuer: spec.currency0.issuer },
+    token1: { ...(state.token1 ?? { address: spec.currency1.address, name: "", symbol: spec.currency1.symbol, decimals: spec.currency1.decimals }), issuer: spec.currency1.issuer },
     hooks: getAddress(spec.hooks),
     hookImplementation: state.implementation,
     hookPermissions: decodeHookPermissions(spec.hooks),
@@ -325,7 +325,7 @@ export async function discoverUniv4RhcPools(options: DiscoverUniv4Options): Prom
     }
     try {
       states = await attachUiMultipliers(options.clients.state, pools, states, rpc);
-    } catch { /* evaluatePool defaults a missing uiMultiplier to 1 */ }
+    } catch { /* listing still works; missing uiMultiplier stays unset */ }
   }
   options.onStateRpc?.({ rpcRequests: rpc.rpcRequests, pools: pools.length, ...(fallback ? { fallback: true as const } : {}) });
   const markets = await Promise.all(pools.map(spec => options.marketData ? options.marketData(spec).catch(() => null) : Promise.resolve(null)));

@@ -31,6 +31,7 @@ import { feeLine, openRentLines, TxStatus, tokenAccountRentLine } from "../unifi
 import { useWalletConnection } from "../wallet-connection";
 import { useTxWallet } from "../use-tx-wallet";
 import { formatRangeStatus } from "@/lib/position-label";
+import { unitCenterWithCurrentFallback } from "@/lib/open-range-center";
 
 /** Slippage for the swap legs of an open (code constant; PR10 rule: no new env flags). */
 const OPEN_SLIPPAGE_BPS = 50;
@@ -188,9 +189,16 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
     if (raw !== null && have !== undefined && raw > BigInt(have)) { problem = `Not enough ${token.symbol}: your wallet has ${formatAmount(have, token.decimals)}.`; raw = null; }
   }
 
-  const parityLower = canCenterOnParity && preset ? centerUnit! - Math.floor(preset.units / 2) : null;
+  const usedCenter = canCenterOnParity && preset && centerOnParity
+    ? unitCenterWithCurrentFallback(
+      centerUnit!,
+      Number.isSafeInteger(payload?.currentUnit) ? payload!.currentUnit! : centerUnit!,
+      preset.units,
+    )
+    : null;
+  const parityLower = usedCenter !== null && preset ? usedCenter - Math.floor(preset.units / 2) : null;
   const request = token && preset && raw !== null
-    ? { poolId: pool.poolAddress, range: centerOnParity && parityLower !== null
+    ? { poolId: pool.poolAddress, range: parityLower !== null
       ? { kind: "units" as const, lower: parityLower, upper: parityLower + preset.units - 1 }
       : { kind: "preset" as const, presetId: preset.id }, input: { token: token.id, amountRaw: raw.toString() }, slippageBps: OPEN_SLIPPAGE_BPS }
     : null;

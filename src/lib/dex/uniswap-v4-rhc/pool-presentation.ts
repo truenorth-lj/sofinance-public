@@ -57,7 +57,5 @@ export function rhcPoolView(summary: RhcPoolSummary): RhcPoolView | null {
     poolId: spec.poolId, status: summary.status, tick: summary.tick, price: summary.price, estimatedApr: summary.estimatedApr,
     token0: { address: spec.currency0.address, symbol: spec.currency0.symbol, decimals: spec.currency0.decimals },
     token1: { address: spec.currency1.address, symbol: spec.currency1.symbol, decimals: spec.currency1.decimals },
-    multiplier0: summary.token0.uiMultiplier ?? 1,
-    multiplier1: summary.token1.uiMultiplier ?? 1,
   };
 }

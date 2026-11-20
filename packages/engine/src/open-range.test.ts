@@ -6,27 +6,31 @@ import {
 } from "./open-range";
 
 describe("open-position range / tick math", () => {
-  it.each(["micro", "tight", "standard", "wide"] as const)("centers %s on decimal-adjusted parity while retaining its width", preset => {
+  it.each(["micro", "tight", "standard", "wide"] as const)("centers %s on decimal-adjusted parity when the current tick stays in that band", preset => {
     const tickCurrent = 46120;
     const pool = { currentPrice: uiPriceBPerAFromTick(tickCurrent, 6, 8), tickCurrent,
       sqrtPriceX64: TickUtil.getSqrtPriceAtTick(tickCurrent).toString(), decimalsA: 6, decimalsB: 8, tickSpacing: 10 };
     const market = resolveOpenRange({ ...pool, range: { preset } });
     const parity = resolveOpenRange({ ...pool, range: { preset, centerOnParity: true } });
     expect(parity.tickUpper - parity.tickLower).toBe(market.tickUpper - market.tickLower);
-    expect(Math.abs((parity.tickLower + parity.tickUpper) / 2 - 46050)).toBeLessThanOrEqual(5);
-    expect(parity.priceLower).toBeLessThan(1);
-    expect(parity.priceUpper).toBeGreaterThan(1);
+    expect(parity.tickLower <= tickCurrent && tickCurrent < parity.tickUpper).toBe(true);
+    if (parity.tickLower === market.tickLower && parity.tickUpper === market.tickUpper) {
+      // Tight/Micro/Standard around 1 do not contain tick 46120, so they fall back to the current-price band.
+    } else {
+      expect(Math.abs((parity.tickLower + parity.tickUpper) / 2 - 46050)).toBeLessThanOrEqual(5);
+      expect(parity.priceLower).toBeLessThan(1);
+      expect(parity.priceUpper).toBeGreaterThan(1);
+    }
     expect(resolveOpenRange({ ...pool, range: { preset, centerOnParity: false } })).toEqual(market);
   });
 
-  it("keeps a parity-centered Micro range fixed as the market moves", () => {
+  it("recenters a parity-centered Micro range on the current tick when the market leaves the 1:1 band", () => {
     const resolve = (tickCurrent: number) => resolveOpenRange({ range: { preset: "micro", centerOnParity: true },
       currentPrice: uiPriceBPerAFromTick(tickCurrent, 6, 6), tickCurrent,
       sqrtPriceX64: TickUtil.getSqrtPriceAtTick(tickCurrent).toString(), decimalsA: 6, decimalsB: 6, tickSpacing: 1 });
-    for (const tick of [-50, 0, 50]) {
-      expect(resolve(tick)).toMatchObject({ tickLower: -2, tickUpper: 2 });
-    }
-    expect(resolve(50).inRange).toBe(false);
+    expect(resolve(0)).toMatchObject({ tickLower: -2, tickUpper: 2, inRange: true });
+    expect(resolve(-50)).toMatchObject({ tickLower: -52, tickUpper: -48, inRange: true });
+    expect(resolve(50)).toMatchObject({ tickLower: 48, tickUpper: 52, inRange: true });
   });
 
   it("aligns ticks down and up to spacing", () => {
@@ -171,15 +175,18 @@ describe("open-position range / tick math", () => {
     });
   });
 
-  it("centers a preset on an explicit centerPrice instead of 1", () => {
-    const tickCurrent = 46120;
+  it("centers a preset on an explicit centerPrice instead of 1 when the current tick stays in that band", () => {
+    const tickCurrent = 45992;
     const pool = { currentPrice: uiPriceBPerAFromTick(tickCurrent, 6, 8), tickCurrent,
       sqrtPriceX64: TickUtil.getSqrtPriceAtTick(tickCurrent).toString(), decimalsA: 6, decimalsB: 8, tickSpacing: 10 };
+    const market = resolveOpenRange({ ...pool, range: { preset: "standard" } });
     const parity = resolveOpenRange({ ...pool, range: { preset: "standard", centerOnParity: true } });
     const fair = resolveOpenRange({ ...pool, range: { preset: "standard", centerOnParity: true, centerPrice: 0.992581 } });
     expect(fair.tickUpper - fair.tickLower).toBe(parity.tickUpper - parity.tickLower);
+    expect(fair.tickLower).not.toBe(market.tickLower);
     expect(fair.tickLower).not.toBe(parity.tickLower);
     expect(fair.priceLower).toBeLessThan(0.992581);
     expect(fair.priceUpper).toBeGreaterThan(0.992581);
+    expect(fair.tickLower <= tickCurrent && tickCurrent < fair.tickUpper).toBe(true);
   });
 });

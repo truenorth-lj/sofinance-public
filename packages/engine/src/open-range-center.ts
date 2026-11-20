@@ -49,3 +49,23 @@ export function rangeWithFairCenter(
     }),
   };
 }
+
+/** Inclusive unit/bin band of `units` around `center` (lower = center - floor(units/2)). */
+export function unitBand(center: number, units: number): { lower: number; upper: number } {
+  const lower = center - Math.floor(units / 2);
+  return { lower, upper: lower + units - 1 };
+}
+
+/**
+ * Center a unit/bin range on the fair unit first. If the current unit is outside that
+ * inclusive band, center on the current unit instead.
+ */
+export function unitCenterWithCurrentFallback(fairCenter: number, current: number, units: number): number {
+  const { lower, upper } = unitBand(fairCenter, units);
+  return current >= lower && current <= upper ? fairCenter : current;
+}
+
+/** Uniswap-style ticks: in range when lower <= current < upper. */
+export function tickRangeContainsCurrent(tickLower: number, tickUpper: number, tickCurrent: number): boolean {
+  return tickLower <= tickCurrent && tickCurrent < tickUpper;
+}

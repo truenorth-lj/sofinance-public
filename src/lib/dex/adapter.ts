@@ -114,6 +114,8 @@ export type OpenRanges = {
    * or the on-chain current unit when that returns null. Derived from on-chain state only.
    */
   centerUnit?: number;
+  /** On-chain current unit (Meteora activeId). Used to fall back when the fair-centered band does not contain it. */
+  currentUnit?: number;
 };
 
 export type ExitPreview = { outputs: { token: string; amountRaw: string }[]; platformFeeRaw: string };

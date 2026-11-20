@@ -326,7 +326,7 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
         onChainPriceBPerA,
       });
       const centerUnit = meteoraBinIdAtPrice(centerPrice, binStep, pool.decimalsX, pool.decimalsY);
-      return { poolId, decimals: { [pool.lbPair.tokenXMint]: pool.decimalsX, [pool.lbPair.tokenYMint]: pool.decimalsY }, presets: meteoraOpenPresets(pool), parityUnit, centerUnit };
+      return { poolId, decimals: { [pool.lbPair.tokenXMint]: pool.decimalsX, [pool.lbPair.tokenYMint]: pool.decimalsY }, presets: meteoraOpenPresets(pool), parityUnit, centerUnit, currentUnit: activeId };
     }),
     previewWithdraw: async () => { throw notYet(descriptor.capabilities.exitPreview); },
     prepareOpen: (request: OpenRequest, context: StepContext) => guarded(() => open(request, context)),
