@@ -38,7 +38,7 @@ vi.mock("@/lib/dex/client", async (importOriginal) => {
   const { dexDescriptors } = await import("@/lib/dex/descriptor-registry");
   return { ...actual, dexDescriptors };
 });
-// The table reads APRs through `usePoolsApr7d` (the /app/rwa-pairs hook), which loads each pool through the shared
+// The table reads APRs through `usePoolsApr7d` (the /pools hook), which loads each pool through the shared
 // client; `aprFor` states map to that client's promise (ready → payload, error → rejection, loading → pending).
 vi.mock("./range-apr/pool-range-apr-client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./range-apr/pool-range-apr-client")>()),
@@ -50,7 +50,7 @@ vi.mock("./range-apr/pool-range-apr-client", async (importOriginal) => ({
   },
 }));
 
-// Distinct pools need distinct mints: the /app/rwa-pairs duplicate rule keeps one pool per chain and token pair.
+// Distinct pools need distinct mints: the /pools duplicate rule keeps one pool per chain and token pair.
 const mintsFor = (poolAddress: unknown) =>
   !poolAddress || poolAddress === "spcx-pool" ? { mintA: "mint-wrapped", mintB: "mint-plain" } : { mintA: `${poolAddress}-a`, mintB: `${poolAddress}-b` };
 const pair = (overrides: Record<string, unknown>) => ({
@@ -132,7 +132,7 @@ const rhcSummary = (index: number, tvlUsd: number): RhcPoolSummary => {
 };
 
 
-/** The homepage's single top-5 block (the same PoolCard as /app/rwa-pairs). */
+/** The homepage's single top-5 block (the same PoolCard as /pools). */
 const rowsOf = () => [...container.querySelectorAll('[data-testid="top-pools-cards"] [data-pool]')];
 const keysOf = () => rowsOf().map((row) => row.getAttribute("data-pool"));
 const aprOf = (row: Element) => row.querySelector("[data-testid='apr7d']")!;
@@ -168,20 +168,20 @@ describe("homepage pools: single top-5 block", () => {
     expect(container.querySelector("[data-testid=top-pools-cards]")!.className).toMatch(/grid-cols-1/);
     expect(container.querySelector("[data-testid=top-pools-cards]")!.className).toMatch(/md:grid-cols-3/);
     expect(container.querySelector('[data-testid="top-pools"] table')).toBeNull();
-    expect(row!.querySelector("a[aria-label='Open position in SPCXx/SPCX']")!.getAttribute("href")).toBe("/app/rwa-pairs?openPool=spcx-pool");
-    expect(row!.querySelector("a[aria-label='Calculate shares for SPCXx/SPCX']")!.getAttribute("href")).toBe("/app/rwa-pairs?calc=spcx-pool");
+    expect(row!.querySelector("a[aria-label='Open position in SPCXx/SPCX']")!.getAttribute("href")).toBe("/pools?openPool=spcx-pool");
+    expect(row!.querySelector("a[aria-label='Calculate shares for SPCXx/SPCX']")!.getAttribute("href")).toBe("/pools?calc=spcx-pool");
     expect(row!.querySelector("button[aria-label^='Open position']")).toBeNull();
     expect(row!.querySelector("button[aria-label^='Calculate']")).toBeNull();
     expect(container.querySelector("[role=dialog]")).toBeNull();
     const viewAll = container.querySelector("[data-testid='homepage-view-all']")!;
-    expect(viewAll.getAttribute("href")).toBe("/app/rwa-pairs");
+    expect(viewAll.getAttribute("href")).toBe("/pools");
     expect(viewAll.textContent).toBe("See all 1 pool →");
     expect(container.querySelector("a[href='/docs/fee-apr']")!.textContent).toBe("How estimates work");
     expect(container.querySelector("#pools a[href='/docs/risks']")!.textContent).toBe("Risks");
     expect(container.textContent).not.toMatch(/\byield\b|\bearn\b|make your money|strateg|recipe|open[- ]source|\bMIT\b/i);
   });
 
-  it("opens a Meteora pool in its /app/rwa-pairs dialog (?openPool=), like the pools page does", async () => {
+  it("opens a Meteora pool in its /pools dialog (?openPool=), like the pools page does", async () => {
     mocks.aprFor.mockImplementation((poolId) => (poolId === "met-pool" ? ready({ micro: 10, tight: 30, standard: 20, wide: 5 }) : { status: "loading" }));
     jsonOk({ pairs: [pair({ poolAddress: "met-pool", protocol: "meteora-dlmm" })], freshness: { snapshotAt: new Date().toISOString(), stale: false } });
     await mount();
@@ -190,7 +190,7 @@ describe("homepage pools: single top-5 block", () => {
     expect(row!.textContent).toContain("Meteora");
     expect(row!.querySelector("[data-testid=open-disabled]")).toBeNull();
     expect(row!.textContent).not.toContain("isn't available yet");
-    expect(row!.querySelector("a[aria-label='Open position in SPCXx/SPCX']")!.getAttribute("href")).toBe("/app/rwa-pairs?openPool=met-pool");
+    expect(row!.querySelector("a[aria-label='Open position in SPCXx/SPCX']")!.getAttribute("href")).toBe("/pools?openPool=met-pool");
   });
 
   it("leaves out a pool whose token is not supported yet (NVDAx, ScaledUiAmount): not in the top 5, its APR never read", async () => {
@@ -235,7 +235,7 @@ describe("homepage pools: single top-5 block", () => {
     expect(container.querySelector("[data-testid=homepage-view-all]")!.textContent).toBe("See all 8 pools →");
   });
 
-  it("leaves out pools under $5k TVL before the duplicate rule; See all N is the /app/rwa-pairs default view (no floor)", async () => {
+  it("leaves out pools under $5k TVL before the duplicate rule; See all N is the /pools default view (no floor)", async () => {
     const apr: Record<string, number> = { "meta-tiny": 673.66, "meta-big": 40, "tsla-pool": 20, "small-pool": 300 };
     mocks.aprFor.mockImplementation((poolId) => (apr[poolId] !== undefined ? ready({ micro: apr[poolId]! }) : { status: "error", message: "down" }));
     jsonOk({ pairs: [
@@ -349,7 +349,7 @@ describe("homepage pools: single top-5 block", () => {
     jsonOk({ pairs: [] });
     await mount();
     expect(container.textContent).toMatch(/No pools to show/);
-    expect(container.querySelector("[data-testid='homepage-view-all']")!.getAttribute("href")).toBe("/app/rwa-pairs");
+    expect(container.querySelector("[data-testid='homepage-view-all']")!.getAttribute("href")).toBe("/pools");
     expect(container.querySelector("[data-testid='homepage-view-all']")!.textContent).toBe("See all 0 pools →");
   });
 
@@ -417,7 +417,7 @@ describe("homepage pools: single top-5 block", () => {
     expect(container.querySelector("#pools-search")).toBeNull();
   });
 
-  it("top-5 cards use the same pair icons as the /app/rwa-pairs card", async () => {
+  it("top-5 cards use the same pair icons as the /pools card", async () => {
     mocks.aprFor.mockImplementation(() => ready({ micro: 5 }));
     jsonOk({ pairs: [pair({ poolAddress: "spcx-pool" })] });
     await mount();
@@ -482,8 +482,8 @@ describe("homepage pools: single top-5 block", () => {
     expect(aprOf(rows[0]!).textContent).toBe("33.00%");
     expect(mocks.aprFor).toHaveBeenCalledWith(nvda.poolId, "uniswap-v4-rhc");
     expect(mocks.aprFor).toHaveBeenCalledWith("spcx-pool", "raydium-clmm");
-    expect(rows[0]!.querySelector("a[href^='/app/rwa-pairs']")!.getAttribute("href")).toBe(`/app/rwa-pairs?openPool=${nvda.poolId}`);
-    expect(rows[2]!.querySelector("a[href^='/app/rwa-pairs']")!.getAttribute("href")).toBe("/app/rwa-pairs?openPool=spcx-pool");
+    expect(rows[0]!.querySelector("a[href^='/pools']")!.getAttribute("href")).toBe(`/pools?openPool=${nvda.poolId}`);
+    expect(rows[2]!.querySelector("a[href^='/pools']")!.getAttribute("href")).toBe("/pools?openPool=spcx-pool");
     expect(container.querySelector("[data-testid='homepage-pools-updated']")!.textContent).toBe(
       "Updated 2026-10-30 11:02 UTC (Solana) · 2026-10-29 11:05 UTC (Robinhood Chain)",
     );
@@ -503,7 +503,7 @@ describe("homepage pools: single top-5 block", () => {
     expect(orca!.querySelector("a[aria-label^='Open position']")).toBeNull();
     const rhc = rowsOf().find((row) => row.getAttribute("data-pool") === rhcKey(0));
     expect(rhc).toBeTruthy();
-    expect(rhc!.querySelector("a[href^='/app/rwa-pairs']")!.getAttribute("href")).toBe(`/app/rwa-pairs?openPool=${UNIV4_RHC_ALLOWLISTED_POOLS[0]!.poolId}`);
+    expect(rhc!.querySelector("a[href^='/pools']")!.getAttribute("href")).toBe(`/pools?openPool=${UNIV4_RHC_ALLOWLISTED_POOLS[0]!.poolId}`);
   });
 
   it("keeps showing the Solana rows when only the Robinhood Chain request fails", async () => {

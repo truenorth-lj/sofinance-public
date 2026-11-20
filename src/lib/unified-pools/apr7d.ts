@@ -40,7 +40,7 @@ export function cardDataDays(payload: PoolRangeAprPayload): number {
 
 /**
  * One pool's estimated highest range APR (7-day average) from its range-APR payload, with the same
- * `highestRangeSummary` the cards and the Create position modal use. Pure, so `/app/rwa-pairs` (client) and the
+ * `highestRangeSummary` the cards and the Create position modal use. Pure, so `/pools` (client) and the
  * homepage snapshot (server) resolve the identical number from the identical payload.
  *
  * The APR is the best fitting range's, at the common $1,000 preview basis, held only to every fee the pool's LPs took (a

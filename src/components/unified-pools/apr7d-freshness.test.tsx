@@ -34,7 +34,7 @@ const cell = (nowMs: number, value = payload()) => {
   return { text: apr.textContent, status: apr.getAttribute("data-apr-status"), delayed: doc.querySelector("[data-testid=apr7d-delayed]")?.textContent ?? null };
 };
 
-describe("7d APR column freshness (homepage top 5 and /app/rwa-pairs share PoolTable)", () => {
+describe("7d APR column freshness (homepage top 5 and /pools share PoolTable)", () => {
   it("fresh (under 26h): the number, no label", () => {
     const shown = cell(at(2));
     expect(shown.status).toBe("ready");

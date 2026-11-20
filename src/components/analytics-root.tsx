@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import { captureGrowthEvent, capturePageview, initGrowthAnalytics } from "@/lib/analytics/client";
 import { GROWTH_EVENTS } from "@/lib/analytics/events";
 import { sanitizeAttrValue } from "@/lib/analytics/attribution";
+import { APP_ROUTES } from "@/lib/public-urls";
 
 export function AnalyticsRoot() {
   const pathname = usePathname();
@@ -21,7 +22,7 @@ export function AnalyticsRoot() {
       if (last.current === key) return;
       last.current = key;
       capturePageview(pathname, window.location.href);
-      if (pathname === "/app/rwa-pairs") {
+      if (pathname === APP_ROUTES.rwaPairs) {
         const ref = sanitizeAttrValue(searchParams.get("ref"));
         captureGrowthEvent(GROWTH_EVENTS.rwaPairsView, ref ? { ref } : {});
       }

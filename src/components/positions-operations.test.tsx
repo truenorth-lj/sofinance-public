@@ -51,7 +51,7 @@ describe("Positions while disconnected", () => {
     const list = container.querySelector('[aria-labelledby="all-positions-heading"]')!;
     const empty = list.querySelector('[data-testid="positions-empty-state"]')!;
     expect(empty.textContent).toContain("Connect your wallet to see your positions.");
-    expect(empty.querySelector('a[href="/app/rwa-pairs"]')?.textContent).toBe("Go to Pools");
+    expect(empty.querySelector('a[href="/pools"]')?.textContent).toBe("Go to Pools");
     expect(container.querySelector('nav[aria-label="Position operations"]')).toBeNull();
     expect(container.querySelector("select#position-action")).toBeNull();
     expect(container.querySelector("#compound-view")).toBeNull();

@@ -39,7 +39,7 @@ type AprRef = { key: string; chain: HomepagePool["chain"]; protocol: HomepagePoo
 
 /**
  * Estimated highest range APR (7-day) per pool key, read from the same saved APR snapshots as `/api/pool-range-apr`
- * and `/api/protocol-pools/range-apr` and resolved with the same `summarizeApr7d` as `/app/rwa-pairs`. A pool whose
+ * and `/api/protocol-pools/range-apr` and resolved with the same `summarizeApr7d` as `/pools`. A pool whose
  * read fails, or whose estimate is missing, expired or too new (`status: "new"`), has no entry (it then ranks like a missing APR on that page).
  */
 async function readApr7d(refs: AprRef[]): Promise<Record<string, number>> {
@@ -91,9 +91,9 @@ export async function loadHomepagePoolsSnapshot(): Promise<HomepagePoolsSnapshot
     solana: solana.status === "fulfilled" ? solana.value : null,
     rhc: rhc.status === "fulfilled" ? rhc.value : null,
   };
-  // The homepage ranks every candidate by its 7-day APR (top 5 above the TVL floor; "See all N" uses /app/rwa-pairs'
+  // The homepage ranks every candidate by its 7-day APR (top 5 above the TVL floor; "See all N" uses /pools'
   // default view), so every pool has its APR read: Solana pools always, Robinhood Chain pools with
-  // RHC_APR7D_ENABLED, as on `/app/rwa-pairs`.
+  // RHC_APR7D_ENABLED, as on `/pools`.
   const refs: AprRef[] = buildHomepagePools({ solana: input.solana?.pairs, rhc: input.rhc?.pools })
     .filter((pool) => poolAprUnavailableReason(pool.chain) === null)
     .map(({ key, chain, protocol, poolAddress }) => ({ key, chain, protocol, poolAddress }));

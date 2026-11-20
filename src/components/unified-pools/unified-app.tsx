@@ -10,7 +10,7 @@ type SelectedAppProps = Parameters<typeof SelectedApp>[0];
 
 /**
  * `/app` (Positions): "My positions" (one dropdown, grouped Solana / Robinhood Chain) and the tools for the selected position.
- * The pool list lives on `/app/rwa-pairs`. Robinhood Chain positions join "My positions" only while the nav's EVM wallet is
+ * The pool list lives on `/pools`. Robinhood Chain positions join "My positions" only while the nav's EVM wallet is
  * connected (restored on load from the account the wallet already shares, `eth_accounts`, no prompt); nothing shows without it.
  */
 export function UnifiedApp({ selected, flags, rhcSigningEnabled }: {

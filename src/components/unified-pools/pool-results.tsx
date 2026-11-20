@@ -44,7 +44,7 @@ export type TopPoolResultsProps = Shared & {
   mode: "top";
   /** Saved or live 7-day APR used so the server HTML already prints the numbers. */
   apr7d: Apr7dLookup;
-  /** Real count of pools in the /app/rwa-pairs default list ("See all N"). Null until the list has loaded. */
+  /** Real count of pools in the /pools default list ("See all N"). Null until the list has loaded. */
   totalCount: number | null;
   updatedText?: string | null;
   loading?: boolean;
@@ -55,7 +55,7 @@ export type TopPoolResultsProps = Shared & {
 export type PoolResultsProps = FullPoolResultsProps | TopPoolResultsProps;
 
 /**
- * Pool results extracted from `UnifiedPoolsPanel`. `mode="full"` is the /app/rwa-pairs cards/list view (no visible
+ * Pool results extracted from `UnifiedPoolsPanel`. `mode="full"` is the /pools cards/list view (no visible
  * change). `mode="top"` is the homepage's single top-5 block.
  */
 export function PoolResults(props: PoolResultsProps) {
@@ -137,7 +137,7 @@ function TopPoolResults({
       )}
 
       {pools.length > 0 && (
-        // Mobile: one-column stack (the same card as /app/rwa-pairs, shown in full — no sideways scroll of a tall
+        // Mobile: one-column stack (the same card as /pools, shown in full — no sideways scroll of a tall
         // card). Desktop: 3+2 grid. Five in one row does not fit in the homepage's 1280px shell without squeezing
         // these cards narrower than the app's own 3-column grid.
         <ul className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-3" data-testid="top-pools-cards">

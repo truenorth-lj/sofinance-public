@@ -1,5 +1,5 @@
 /**
- * One pool list for `/app/rwa-pairs` across chains (pure; no fetching here).
+ * One pool list for `/pools` across chains (pure; no fetching here).
  *
  * Solana rows (Raydium CLMM, plus Orca / Meteora when their discovery flag is on) and Robinhood Chain Uniswap v4
  * rows share one shape so search, filters, sorting and "Hide duplicate pools" work the same for every card and row.
@@ -140,7 +140,7 @@ export type PoolFilters = {
 };
 export const DEFAULT_FILTERS: PoolFilters = { query: "", chain: "all", protocol: "all", minTvl: null };
 
-/** `/app/rwa-pairs` TVL filter presets (USD), next to "Any" and a custom amount (LJ, 2026-10-31). */
+/** `/pools` TVL filter presets (USD), next to "Any" and a custom amount (LJ, 2026-10-31). */
 export const TVL_FILTER_PRESETS = [5_000, 10_000, 50_000] as const;
 
 /** Whether a pool passes a minimum-TVL filter (null = any TVL; a pool with unknown TVL fails any minimum). */

@@ -85,7 +85,7 @@ function TvlFilter({ onChange }: { onChange: (minTvl: number | null) => void }) 
 export type OpenRhcRequest = { pool: RhcPoolView };
 
 /**
- * `/app/rwa-pairs` pool list: Solana (Raydium; Orca / Meteora when their flags are on) and Robinhood Chain (Uniswap v4) in one
+ * `/pools` pool list: Solana (Raydium; Orca / Meteora when their flags are on) and Robinhood Chain (Uniswap v4) in one
  * list. Cards or a sortable table, search, chain / protocol / TVL filters, and "Hide duplicate pools" (on by default;
  * see `lib/unified-pools/model.ts` for the rule). Opening a Solana pool connects the Solana wallet and opens the
  * existing Create position modal; opening a Robinhood Chain pool asks the page to open its dialog on the nav's EVM wallet.
@@ -157,7 +157,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", deepLin
     return { kind: "open", onOpen: () => openPool(pool) };
   }, [openPool, connected, connect]);
 
-  // Deep link (`/app/rwa-pairs?openPool=…`, where `/app/rhc` and old `/app?openPool=` links redirect): open that pool once it is listed.
+  // Deep link (`/pools?openPool=…`, where `/app/rhc` and old `/app?openPool=` links redirect): open that pool once it is listed.
   const [deepLinked, setDeepLinked] = useState(false);
   useEffect(() => {
     if (deepLinked || !deepLinkPool || loading) return;
@@ -173,7 +173,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", deepLin
     return () => window.clearTimeout(timer);
   }, [deepLinkPool, deepLinked, loading, pools, openPool]);
 
-  // Deep link (`/app/rwa-pairs?calc=…`, including from the homepage "Calculate shares" link): open the calculator once the pool is listed.
+  // Deep link (`/pools?calc=…`, including from the homepage "Calculate shares" link): open the calculator once the pool is listed.
   const [deepCalced, setDeepCalced] = useState(false);
   useEffect(() => {
     if (deepCalced || !deepLinkCalc || loading) return;

@@ -16,7 +16,7 @@ export const TOP_POOLS_TITLE = "Top pools";
 export const TOP_POOLS_ANCHOR_ID = "pools";
 /** The only place the homepage names the 7d estimated APR (PR-c copy rule). */
 export const TOP_POOLS_SUBTITLE = "Pools over $5k TVL, ranked by 7d estimated APR.";
-/** "See all N pools →" on the homepage, where N is the full /app/rwa-pairs default-list count. */
+/** "See all N pools →" on the homepage, where N is the full /pools default-list count. */
 export function seeAllPoolsLabel(count: number): string {
   return count === 1 ? "See all 1 pool →" : `See all ${count} pools →`;
 }
@@ -24,14 +24,14 @@ export function seeAllPoolsLabel(count: number): string {
 /** A Solana row from `/api/rwa-pairs` (or its saved snapshot). */
 export type HomepageSolanaRow = SolanaPoolRow & { wrapKind?: string };
 
-/** One homepage row: the `/app/rwa-pairs` pool shape (either chain), built by the same `solanaPool` / `rhcPool`. */
+/** One homepage row: the `/pools` pool shape (either chain), built by the same `solanaPool` / `rhcPool`. */
 export type HomepagePool = UnifiedPool;
 
 export { updatedLabel, utcMinuteLabel, type SnapshotSourceTime as HomepageSourceTime } from "@/lib/snapshot-updated";
 
 /**
  * Server snapshot for the homepage table. `pools` are all candidate pools of both chains (before the duplicate rule),
- * `apr7d` the estimated highest range APR (7-day) per pool key from the same saved APR snapshots `/app/rwa-pairs`
+ * `apr7d` the estimated highest range APR (7-day) per pool key from the same saved APR snapshots `/pools`
  * reads, so the server HTML lists the same top pools; `homepageRows` picks the top 5.
  */
 export type HomepagePoolsSnapshot = {
@@ -42,9 +42,9 @@ export type HomepagePoolsSnapshot = {
 };
 
 /**
- * Both chains' candidate pools in one list, built as `/app/rwa-pairs` builds them (each pool once), without the pools
+ * Both chains' candidate pools in one list, built as `/pools` builds them (each pool once), without the pools
  * whose tokens we do not support yet (`unsupportedTokenReason`): the homepage lists only pools a visitor can open, the
- * same rule as the stock cards (Sophie, 2026-11-10). `/app/rwa-pairs` still lists them, greyed with the reason.
+ * same rule as the stock cards (Sophie, 2026-11-10). `/pools` still lists them, greyed with the reason.
  */
 export function buildHomepagePools(input: {
   solana?: readonly HomepageSolanaRow[] | null;
@@ -57,10 +57,10 @@ export function buildHomepagePools(input: {
   ].filter((pool) => !unsupportedTokenReason(pool) && (seen.has(pool.key) ? false : (seen.add(pool.key), true)));
 }
 
-/** `/app/rwa-pairs`'s default view: no filters, "Hide duplicate pools" on, sorted by Est. APR · 7d (high to low). */
+/** `/pools`'s default view: no filters, "Hide duplicate pools" on, sorted by Est. APR · 7d (high to low). */
 export const RWA_PAIRS_DEFAULT_SELECT = { filters: DEFAULT_FILTERS, hideDuplicates: true, sort: DEFAULT_SORT } as const;
 
-/** The homepage's selection: `/app/rwa-pairs`' default view with the homepage TVL floor as its TVL filter. */
+/** The homepage's selection: `/pools`' default view with the homepage TVL floor as its TVL filter. */
 const HOMEPAGE_SELECT = {
   ...RWA_PAIRS_DEFAULT_SELECT,
   filters: { ...DEFAULT_FILTERS, minTvl: HOMEPAGE_MIN_TVL_USD },
@@ -71,7 +71,7 @@ export const homepageCandidates = <T extends UnifiedPool>(pools: readonly T[]): 
   pools.filter((pool) => meetsMinTvl(pool, HOMEPAGE_MIN_TVL_USD));
 
 /**
- * Every pool in `/app/rwa-pairs`'s default order, through the same `selectPools`: one pool per chain and token pair
+ * Every pool in `/pools`'s default order, through the same `selectPools`: one pool per chain and token pair
  * (LJ's rule: the highest estimated 7-day APR wins), both chains merged, by 7-day APR from high to low (pools without
  * one last, ties by TVL).
  */
@@ -89,7 +89,7 @@ export const hasFiniteApr7d = (pool: UnifiedPool, apr7d: Apr7dLookup): boolean =
  * Top pools rows: TVL ≥ HOMEPAGE_MIN_TVL_USD, then one pool per chain and token pair (highest 7-day APR wins),
  * then only pools with a finite 7-day APR, ranked by that APR across both chains (ties as `selectPools` already
  * breaks them). Pools with no 7-day APR are excluded from the top 5 rather than ranked last into a slot, because
- * the block is "ranked by 7d estimated APR". The full /app/rwa-pairs list still ranks those pools last.
+ * the block is "ranked by 7d estimated APR". The full /pools list still ranks those pools last.
  * Fewer than 5 rows when fewer pools qualify. A shared `?pool=` link does not reserve a slot.
  */
 export function homepageRows<T extends UnifiedPool>(pools: readonly T[], apr7d: Apr7dLookup, group?: RankGroupLookup): T[] {
@@ -97,7 +97,7 @@ export function homepageRows<T extends UnifiedPool>(pools: readonly T[], apr7d: 
   return ranked.filter((pool) => hasFiniteApr7d(pool, apr7d)).slice(0, HOMEPAGE_POOL_LIMIT);
 }
 
-/** How many pools the /app/rwa-pairs default view shows (no TVL floor, duplicates hidden). Homepage "See all N". */
+/** How many pools the /pools default view shows (no TVL floor, duplicates hidden). Homepage "See all N". */
 export function homepageFullListCount(pools: readonly UnifiedPool[], apr7d: Apr7dLookup, group?: RankGroupLookup): number {
   return rwaPairsDefaultOrder(pools, apr7d, group).length;
 }
@@ -164,5 +164,5 @@ export function toHomepagePoolsSnapshot(input: {
   return { pools, apr7d, tokenIcons, updated };
 }
 
-/** The `/app/rwa-pairs` APR formatter: "—" when missing, "<0.01%" for a real but tiny APR, otherwise two decimals. */
+/** The `/pools` APR formatter: "—" when missing, "<0.01%" for a real but tiny APR, otherwise two decimals. */
 export { formatAprPct, exactAprTitle } from "@/lib/apr-labels/format-apr";

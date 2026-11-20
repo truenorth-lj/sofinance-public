@@ -91,7 +91,7 @@ describe("public pool page models", () => {
     expect(page?.path).toBe("/pools/tsla-tslax");
     expect(page?.dex).toBe("Raydium CLMM");
     expect(page?.apr7d).toBe("10.50%");
-    expect(page?.openInAppHref).toBe("/app/rwa-pairs?openPool=tsla-raydium");
+    expect(page?.openInAppHref).toBe("/pools?openPool=tsla-raydium");
     expect(findPublicPoolPageModel(snapshot, "not-a-pool")).toBeNull();
     expect(findPublicPoolPageModel(null, "tsla-tslax")).toBeNull();
   });
@@ -120,7 +120,7 @@ describe("public pool page models", () => {
     expect(types).toEqual(["WebPage", "BreadcrumbList"]);
     const crumbs = graph.find((node) => node["@type"] === "BreadcrumbList")?.itemListElement ?? [];
     expect(crumbs[0]?.item).toBe("https://sofinancelab.xyz");
-    expect(crumbs[1]).toMatchObject({ name: PUBLIC_POOLS_H1, item: "https://sofinancelab.xyz/app/rwa-pairs" });
+    expect(crumbs[1]).toMatchObject({ name: PUBLIC_POOLS_H1, item: "https://sofinancelab.xyz/pools" });
     expect(crumbs[2]).toMatchObject({
       name: page.title,
       item: "https://sofinancelab.xyz/pools/tsla-tslax-meteora",

@@ -13,17 +13,25 @@ export const nextConfig: NextConfig = {
   // relay rewrite. Page trailing-slash redirects are kept in src/proxy.ts instead.
   skipTrailingSlashRedirect: true,
   async rewrites() {
-    return posthogRelayRewrites(process.env.NEXT_PUBLIC_POSTHOG_HOST);
+    return {
+      // Exact /pools only — /pools/[slug] stays the public per-pool pages.
+      // Redirects run first and are not re-applied to the rewritten path, so this
+      // does not loop with the /app/rwa-pairs → /pools 308 below.
+      beforeFiles: [
+        { source: "/pools", destination: "/app/rwa-pairs" },
+      ],
+      afterFiles: posthogRelayRewrites(process.env.NEXT_PUBLIC_POSTHOG_HOST),
+    };
   },
   async redirects() {
     return [
-      { source: "/rwa-pairs", destination: "/app/rwa-pairs", permanent: true },
+      { source: "/rwa-pairs", destination: "/pools", permanent: true },
+      { source: "/app/rwa-pairs", destination: "/pools", permanent: true },
       { source: "/position-performance", destination: "/app/portfolio?view=performance", permanent: true },
       { source: "/app/position-performance", destination: "/app/portfolio?view=performance", permanent: true },
       { source: "/ai", destination: "/app/ai", permanent: true },
       { source: "/sign/:token", destination: "/app/sign/:token", permanent: true },
       // Exact paths only: /pools/{slug} and /use-cases/{slug} must not be caught.
-      { source: "/pools", destination: "/app/rwa-pairs", permanent: false },
       { source: "/use-cases", destination: "/learn", permanent: false },
       // Renamed docs page (SEO Phase 1): a real 301 (Next's `permanent` sends 308) so links and search results move.
       { source: "/docs/yield-and-apr", destination: "/docs/fee-apr", statusCode: 301 },

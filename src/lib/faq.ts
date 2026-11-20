@@ -66,7 +66,7 @@ export const FAQ_SECTIONS: readonly FaqSection[] = [
       },
       {
         question: "Which pools does SoFinance support?",
-        answer: `SoFinance lists same-stock pools on two chains. On Solana: Raydium CLMM and Meteora DLMM pools pairing Backpack Securities and xStocks tokens; as of ${FAQ_POOLS_AS_OF} these include ${FAQ_SOLANA_POOLS}, some in more than one fee tier, plus a USDC/USDT pool. On Robinhood Chain: 11 Uniswap v4 pools that use a reviewed StablePairHook and pair a Robinhood stock token with its Ondo Global Markets version, for ${FAQ_ROBINHOOD_CHAIN_POOLS}. The live list, with fee tier, TVL and 24h volume for each pool, is at sofinancelab.xyz/app/rwa-pairs.`,
+        answer: `SoFinance lists same-stock pools on two chains. On Solana: Raydium CLMM and Meteora DLMM pools pairing Backpack Securities and xStocks tokens; as of ${FAQ_POOLS_AS_OF} these include ${FAQ_SOLANA_POOLS}, some in more than one fee tier, plus a USDC/USDT pool. On Robinhood Chain: 11 Uniswap v4 pools that use a reviewed StablePairHook and pair a Robinhood stock token with its Ondo Global Markets version, for ${FAQ_ROBINHOOD_CHAIN_POOLS}. The live list, with fee tier, TVL and 24h volume for each pool, is at sofinancelab.xyz/pools.`,
       },
       {
         question: "Which wallet do I need?",

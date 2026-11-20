@@ -6,7 +6,7 @@ import { RhcUniv4OpenPanel, type RhcPoolView } from "../rhc-univ4-open-panel";
 import { RhcWrongNetworkPrompt } from "./rhc-wrong-network-prompt";
 
 /**
- * Robinhood Chain open flow as a dialog over the pool list (`/app/rwa-pairs`). It uses the nav's EVM wallet
+ * Robinhood Chain open flow as a dialog over the pool list (`/pools`). It uses the nav's EVM wallet
  * (`useEvmWalletConnection`); with none connected it shows the shared form and a Connect wallet button, which connects the same shared
  * session the nav shows. While that wallet is on another network the dialog shows a switch prompt instead of the open
  * panel. Every step is simulated before MetaMask asks to sign (`RhcUniv4OpenPanel`). No Solana content here.

@@ -4,7 +4,7 @@ import { ConnectionProvider, WalletProvider, useConnection, useWallet } from "@s
 import { WalletModalProvider, useWalletModal } from "@solana/wallet-adapter-react-ui";
 import "@solana/wallet-adapter-react-ui/styles.css";
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { PUBLIC_SOLANA_RPC_URL } from "@sofinance/engine/rpc/urls";
 import { WalletGrowthAnalytics } from "./wallet-growth-analytics";
 import { DISCONNECTED_RESTORING_WALLET, WalletConnectionContext } from "./wallet-connection";
@@ -38,14 +38,22 @@ function MobileWalletBranch({ children }: { children: React.ReactNode }) {
   );
 }
 
+let providersClientMounts = 0;
+
 export function Providers({ children }: { children: React.ReactNode }) {
   const endpoint = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || PUBLIC_SOLANA_RPC_URL;
   const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID?.trim();
+  const mountSentinelRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    providersClientMounts += 1;
+    mountSentinelRef.current?.setAttribute("data-mount-id", String(providersClientMounts));
+  }, []);
 
   // The EVM wallet (Robinhood Chain) sits beside the Solana providers, not inside them: separate state, separate buttons.
-  return <EvmWalletProvider><ConnectionProvider endpoint={endpoint}>
+  return <><span ref={mountSentinelRef} data-testid="app-providers" hidden />
+  <EvmWalletProvider><ConnectionProvider endpoint={endpoint}>
     {projectId ? <MobileWalletBranch>{children}</MobileWalletBranch> : <BrowserWalletProvider><TermsGate>{children}</TermsGate></BrowserWalletProvider>}
-  </ConnectionProvider></EvmWalletProvider>;
+  </ConnectionProvider></EvmWalletProvider></>;
 }
 
 function BrowserWalletProvider({ children }: { children: React.ReactNode }) {

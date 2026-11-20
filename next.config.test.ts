@@ -7,7 +7,8 @@ describe("legacy page redirects", () => {
     const redirects = nextConfig.redirects ? await nextConfig.redirects() : [];
     expect(redirects).toEqual(
       expect.arrayContaining([
-        { source: "/rwa-pairs", destination: "/app/rwa-pairs", permanent: true },
+        { source: "/rwa-pairs", destination: "/pools", permanent: true },
+        { source: "/app/rwa-pairs", destination: "/pools", permanent: true },
         { source: "/position-performance", destination: "/app/portfolio?view=performance", permanent: true },
         { source: "/app/position-performance", destination: "/app/portfolio?view=performance", permanent: true },
         { source: "/ai", destination: "/app/ai", permanent: true },
@@ -17,21 +18,30 @@ describe("legacy page redirects", () => {
   });
 });
 
-describe("index redirects for /pools and /use-cases", () => {
-  it("temporarily sends the bare indexes to the pools list and Learn, and does not catch slug pages", async () => {
+describe("canonical /pools list", () => {
+  it("308s /app/rwa-pairs and /rwa-pairs to /pools, rewrites exact /pools, and does not catch slug pages", async () => {
     const redirects = nextConfig.redirects ? await nextConfig.redirects() : [];
     expect(redirects).toEqual(
       expect.arrayContaining([
-        { source: "/pools", destination: "/app/rwa-pairs", permanent: false },
+        { source: "/app/rwa-pairs", destination: "/pools", permanent: true },
+        { source: "/rwa-pairs", destination: "/pools", permanent: true },
         { source: "/use-cases", destination: "/learn", permanent: false },
       ]),
     );
     const sources = redirects.map((entry) => entry.source);
+    expect(sources).not.toContain("/pools");
     expect(sources).not.toContain("/pools/:slug");
     expect(sources).not.toContain("/pools/:path*");
     expect(sources).not.toContain("/use-cases/:slug");
     expect(sources).not.toContain("/use-cases/:path*");
     expect(sources.some((source) => source.startsWith("/pools/") || source.startsWith("/use-cases/"))).toBe(false);
+
+    const rewrites = nextConfig.rewrites ? await nextConfig.rewrites() : [];
+    if (Array.isArray(rewrites)) throw new Error("expected beforeFiles/afterFiles rewrites");
+    expect(rewrites.beforeFiles).toEqual([
+      { source: "/pools", destination: "/app/rwa-pairs" },
+    ]);
+    expect(rewrites.beforeFiles?.some((entry) => entry.source.startsWith("/pools/"))).toBe(false);
   });
 });
 
@@ -47,7 +57,10 @@ describe("renamed docs pages", () => {
 describe("PostHog first-party relay", () => {
   it("rewrites /lumen to PostHog and skips the trailing-slash redirect its ingest paths need", async () => {
     const rewrites = nextConfig.rewrites ? await nextConfig.rewrites() : [];
-    expect(rewrites).toEqual(expect.arrayContaining([
+    const list = Array.isArray(rewrites)
+      ? rewrites
+      : [...(rewrites.beforeFiles ?? []), ...(rewrites.afterFiles ?? []), ...(rewrites.fallback ?? [])];
+    expect(list).toEqual(expect.arrayContaining([
       expect.objectContaining({ source: "/lumen/:path*", destination: expect.stringMatching(/^https:\/\/(us|eu)\.i\.posthog\.com\/:path\*$/) }),
       expect.objectContaining({ source: "/lumen/static/:path*" }),
       expect.objectContaining({ source: "/lumen/array/:path*" }),

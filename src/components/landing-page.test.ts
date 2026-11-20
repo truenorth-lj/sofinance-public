@@ -54,7 +54,7 @@ describe("landing page copy and routes", () => {
     expect(market).toContain("GUIDE_ROUTES.fees");
     expect(market).toContain("Solana + Robinhood Chain");
     expect(market).toContain("DOCS_ROUTES.home");
-    // Hero search, pill and backdrop are gone; /app/rwa-pairs ?q= support lives on that page, not here.
+    // Hero search, pill and backdrop are gone; /pools ?q= support lives on that page, not here.
     expect(market).not.toContain("PoolSearchInput");
     expect(market).not.toContain("hero-search");
     expect(market).not.toContain("rwaPairsSearchHref");
@@ -185,7 +185,7 @@ describe("landing page copy and routes", () => {
     expect(urls).toContain("?calc=");
     expect(table).not.toContain("openUnavailableReason");
     expect(table).toContain("fetchRwaPairsList");
-    // The homepage top 5 is PoolResults in top mode; /app/rwa-pairs keeps PoolResults in full mode (PoolTable / cards).
+    // The homepage top 5 is PoolResults in top mode; /pools keeps PoolResults in full mode (PoolTable / cards).
     expect(table).toContain('from "./unified-pools/pool-results"');
     expect(table).toContain('mode="top"');
     expect(table).toContain("homepageRows(");
@@ -210,7 +210,7 @@ describe("landing page copy and routes", () => {
     expect(results).toContain("TOP_POOLS_SUBTITLE");
     expect(results).toContain("HIGHEST_RANGE_APR_7D_HELP");
     expect(results).toContain("DOCS_ROUTES.feeApr");
-    expect(table).toContain("usePoolsApr7d"); // the /app/rwa-pairs APR state
+    expect(table).toContain("usePoolsApr7d"); // the /pools APR state
     expect(table).not.toContain("All pools");
     expect(table).not.toContain("by est. 7-day APR");
     expect(table).not.toContain("@/lib/range-apr/format"); // the rounding formatter that showed tiny APRs as 0%

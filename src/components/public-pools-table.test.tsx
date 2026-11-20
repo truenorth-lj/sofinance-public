@@ -56,7 +56,7 @@ describe("PublicPoolsTable (HTML without JS)", () => {
     expect(markup).toContain('href="/pools/tsla-tslax"');
     expect(markup).toContain('href="/pools/tsla-tslax-meteora"');
     expect(markup).toContain('href="/pools/nvda-nvdaon"');
-    expect(markup).not.toContain("/app/rwa-pairs?pool=");
+    expect(markup).not.toContain("/pools?pool=");
     expect(markup).not.toContain("USDC");
     expect(markup).not.toContain("/pools/usdc-usdt");
   });

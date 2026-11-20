@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-/** One-line page title + optional subline. Same typography as /app/rwa-pairs and /app/portfolio. */
+/** One-line page title + optional subline. Same typography as /pools and /app/portfolio. */
 export const PAGE_HEADER_TITLE_CLASS = "text-xl font-semibold text-cream sm:text-2xl";
 export const PAGE_HEADER_SUBLINE_CLASS = "mt-1 text-sm text-smoke";
 

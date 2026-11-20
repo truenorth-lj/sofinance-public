@@ -15,6 +15,7 @@ import { useTokenMetadata } from "./use-token-metadata";
 import { DecisionSession } from "@/lib/lp-decision-session";
 import { clearPositionHistoryRefresh, readPositionHistoryRefresh, subscribePositionHistoryRefresh } from "@/lib/position-history-refresh";
 import { PerformancePoolChart, PerformanceSummary, type PerformanceResponse } from "./position-performance-summary";
+import { APP_ROUTES } from "@/lib/public-urls";
 
 export function PositionPerformancePanel({
   initialMint = "",
@@ -206,7 +207,7 @@ export function PositionPerformancePanel({
         {positionsStatus === "ready" && listedPositions.length === 0 && <div role="status" className="rounded-2xl border border-white/12 bg-white/[0.03] p-4">
           <p className="font-medium text-cream/90">No positions found in this wallet</p>
           <p className="mt-1 text-xs leading-5 text-smoke">Explore pools and open a position to start tracking performance.</p>
-          <a href="/app/rwa-pairs" className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-cream hover:bg-white/10">Explore pools <ArrowUpRight className="h-4 w-4" /></a>
+          <a href={APP_ROUTES.rwaPairs} className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-cream hover:bg-white/10">Explore pools <ArrowUpRight className="h-4 w-4" /></a>
         </div>}
         {autoLoadSharedPosition && !error ? (
           (!data || loading) && <div role="status" className="flex items-center gap-2 border-t border-white/10 pt-5 text-sm text-smoke">

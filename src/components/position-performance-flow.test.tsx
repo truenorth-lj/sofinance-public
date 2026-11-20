@@ -206,7 +206,7 @@ describe("position performance workflow", () => {
   it("offers RWA Pairs only after a successful scan with no positions", async () => {
     positions = [];
     await scan();
-    expect(container.querySelector('a[href="/app/rwa-pairs"]')?.textContent).toContain("Explore pools");
+    expect(container.querySelector('a[href="/pools"]')?.textContent).toContain("Explore pools");
     const button = Array.from(container.querySelectorAll("button")).find((item) => item.textContent?.includes("Compute performance"));
     expect(button?.disabled).toBe(true);
   });
@@ -214,7 +214,7 @@ describe("position performance workflow", () => {
   it("does not treat a wallet scan error as an empty wallet", async () => {
     fetchMock.mockRejectedValue(new Error("RPC unavailable"));
     await scan();
-    expect(container.querySelector('a[href="/app/rwa-pairs"]')).toBeNull();
+    expect(container.querySelector('a[href="/pools"]')).toBeNull();
     expect(container.textContent).toContain("Could not load positions");
   });
 

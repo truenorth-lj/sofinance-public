@@ -42,8 +42,8 @@ describe("PublicPoolPage (HTML without JS)", () => {
     expect(markup).toContain("10.50%");
     expect(markup).toContain("Fees not guaranteed");
     expect(markup).toContain("past 7 days");
-    expect(markup).toContain('href="/app/rwa-pairs?openPool=tsla-raydium"');
-    expect(markup).toContain('href="/app/rwa-pairs"');
+    expect(markup).toContain('href="/pools?openPool=tsla-raydium"');
+    expect(markup).toContain('href="/pools"');
     expect(markup).toContain('href="/learn"');
     expect(markup).toMatch(/aria-label="Breadcrumb"/);
   });
@@ -75,9 +75,9 @@ describe("PublicPoolPage (HTML without JS)", () => {
 
   it("shows Open position and Calculate shares for a supported Solana pool, and drops the old text CTA", () => {
     expect(markup).toContain('aria-label="Open position in TSLAx / TSLA"');
-    expect(markup).toContain('href="/app/rwa-pairs?openPool=tsla-raydium"');
+    expect(markup).toContain('href="/pools?openPool=tsla-raydium"');
     expect(markup).toContain('aria-label="Calculate shares for TSLAx / TSLA"');
-    expect(markup).toContain('href="/app/rwa-pairs?calc=tsla-raydium"');
+    expect(markup).toContain('href="/pools?calc=tsla-raydium"');
     expect(markup).toContain("Open position");
     expect(markup).toContain("Calculate shares");
     expect(markup).toContain("All pools");
@@ -107,7 +107,7 @@ describe("PublicPoolPage calculator support", () => {
     };
     const html = renderToStaticMarkup(createElement(PublicPoolPage, { model: publicPoolPageModel(rhc, 8.2, "nvda-nvdaon") }));
     expect(html).toContain('aria-label="Open position in NVDA / NVDAon"');
-    expect(html).toContain('href="/app/rwa-pairs?openPool=0xnvda"');
+    expect(html).toContain('href="/pools?openPool=0xnvda"');
     expect(html).toContain("Open position");
     expect(html).not.toContain("Calculate shares");
     expect(html).not.toContain("?calc=");

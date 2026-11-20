@@ -10,13 +10,13 @@ import { RhcOpenDialog } from "./rhc-open-dialog";
 import { PUBLIC_POOLS_SSR_HEADING } from "@/lib/public-pools-table";
 import { UnifiedPoolsPanel, type UnifiedPoolFlags } from "./unified-pools-panel";
 
-/** Visible page title on /app/rwa-pairs; the only h1 on that page. */
+/** Visible page title on /pools; the only h1 on that page. */
 export const POOLS_PAGE_TITLE = "Pools";
 /** Subline under the title (no card). Same wording as the crawler-table heading. */
 export const POOLS_PAGE_SUBLINE = PUBLIC_POOLS_SSR_HEADING;
 
 /**
- * `/app/rwa-pairs`, the pools page: Solana and Robinhood Chain pools in one list (`UnifiedPoolsPanel`). The nav has two
+ * `/pools`, the pools page: Solana and Robinhood Chain pools in one list (`UnifiedPoolsPanel`). The nav has two
  * independent wallets (Solana, EVM). Opening a Solana pool uses the Solana wallet and opens Create position; opening a
  * Robinhood Chain pool opens its dialog on the nav's EVM wallet (asking to connect it when none is connected).
  * `?openPool=<id>` (also where `/app/rhc` and old `/app?openPool=` links land) opens that pool once it is listed.

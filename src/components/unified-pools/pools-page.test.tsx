@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// /app/rwa-pairs (pools page): the unified pool list, and the Robinhood Chain open dialog (MetaMask) over it.
+// /pools (pools page): the unified pool list, and the Robinhood Chain open dialog (MetaMask) over it.
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -38,7 +38,7 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
 
-describe("PoolsPage (/app/rwa-pairs)", () => {
+describe("PoolsPage (/pools)", () => {
   it("has exactly one h1, titled Pools, and no InkHero card", async () => {
     await act(async () => { root.render(createElement(EvmWalletProvider, { enabled: false, session: createEvmSession({ discover }) },
       createElement(PoolsPage, { flags: { orca: false, meteora: false, rhc: true }, rhcSigningEnabled: true }))); });

@@ -16,7 +16,7 @@ export type OpenAction =
   | { kind: "unsupported"; reason: string };
 
 /**
- * Open as on `/app/rwa-pairs`: tokens not supported yet say so; a registry or hidden registry DEX
+ * Open as on `/pools`: tokens not supported yet say so; a registry or hidden registry DEX
  * (`openUi: "registry"` or `"none"`, today Meteora and Orca) is disabled when its `open` capability is
  * unsupported. Native-modal availability follows the native capability record; other pools keep
  * their deep links. The app page resolves the same UI contract. No DEX-name checks here.

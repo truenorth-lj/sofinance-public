@@ -23,7 +23,7 @@ describe("openAction", () => {
   it("deep-links a Raydium pool into ?openPool=", () => {
     expect(openAction(pool({ protocol: "raydium-clmm", poolAddress: "tsla-raydium" }))).toEqual({
       kind: "link",
-      href: "/app/rwa-pairs?openPool=tsla-raydium",
+      href: "/pools?openPool=tsla-raydium",
     });
   });
 
@@ -37,7 +37,7 @@ describe("openAction", () => {
       symbolB: "NVDAon",
     }))).toEqual({
       kind: "link",
-      href: "/app/rwa-pairs?openPool=0xnvda",
+      href: "/pools?openPool=0xnvda",
     });
   });
 

@@ -19,7 +19,7 @@ describe("public app URLs", () => {
     expect(APP_ROUTES.home).toBe("/app/portfolio");
     expect(APP_ROUTES.portfolioRecovery).toBe("/app/portfolio/recovery");
     expect(APP_ROUTES.plan).toBe("/app/plan");
-    expect(APP_ROUTES.rwaPairs).toBe("/app/rwa-pairs");
+    expect(APP_ROUTES.rwaPairs).toBe("/pools");
     expect(APP_ROUTES.positionPerformance).toBe("/app/position-performance");
     expect(APP_ROUTES.ai).toBe("/app/ai");
     expect(SIGN_PATH).toBe("/app/sign");
@@ -51,7 +51,7 @@ describe("public app URLs", () => {
       else process.env.VERCEL_ENV = env;
       expect(getPublicBaseUrl()).toBe(CANONICAL_SITE_URL);
       expect(buildSignUrl("tok")).toBe("https://sofinancelab.xyz/app/sign/tok");
-      expect(buildOpenPositionUrl("Pool1")).toBe("https://sofinancelab.xyz/app/rwa-pairs?openPool=Pool1");
+      expect(buildOpenPositionUrl("Pool1")).toBe("https://sofinancelab.xyz/pools?openPool=Pool1");
     }
   });
 
@@ -63,17 +63,17 @@ describe("public app URLs", () => {
     expect(buildSignUrl("tok")).toBe("/app/sign/tok");
   });
 
-  it("builds an open-position deep link under /app/rwa-pairs", () => {
+  it("builds an open-position deep link under /pools", () => {
     delete process.env.NEXT_PUBLIC_APP_URL;
     delete process.env.VERCEL_URL;
     expect(buildOpenPositionUrl("Pool1111111111111111111111111111111111111")).toBe(
-      "/app/rwa-pairs?openPool=Pool1111111111111111111111111111111111111",
+      "/pools?openPool=Pool1111111111111111111111111111111111111",
     );
-    expect(buildOpenPositionPath("Pool 1")).toBe("/app/rwa-pairs?openPool=Pool%201");
+    expect(buildOpenPositionPath("Pool 1")).toBe("/pools?openPool=Pool%201");
     expect(buildCalculatePath("Pool1111111111111111111111111111111111111")).toBe(
-      "/app/rwa-pairs?calc=Pool1111111111111111111111111111111111111",
+      "/pools?calc=Pool1111111111111111111111111111111111111",
     );
-    expect(buildCalculatePath("Pool 1")).toBe("/app/rwa-pairs?calc=Pool%201");
+    expect(buildCalculatePath("Pool 1")).toBe("/pools?calc=Pool%201");
   });
 
   it("parses ?openPool=, ?calc=, and the legacy ?pool=&open=1 open link", () => {

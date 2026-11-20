@@ -61,7 +61,7 @@ describe("SEO metadata routes", () => {
     const urls = toSitemapUrls(publicSitemapEntries()).map((entry) => entry.url);
     expect(urls).toEqual([
       CANONICAL_SITE_URL,
-      `${CANONICAL_SITE_URL}/app/rwa-pairs`,
+      `${CANONICAL_SITE_URL}/pools`,
       ...DOCS_PAGES.map((page) => `${CANONICAL_SITE_URL}${page.href}`),
       `${CANONICAL_SITE_URL}/faq`,
       `${CANONICAL_SITE_URL}/terms`,

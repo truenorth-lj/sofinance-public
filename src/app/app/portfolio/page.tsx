@@ -12,7 +12,7 @@ export default async function AppHome({ searchParams }: {
 }) {
   const query = await searchParams;
   const first = (value: string | string[] | undefined) => Array.isArray(value) ? value[0] || "" : value || "";
-  // Old `/app?openPool=` links are sent to /app/rwa-pairs by the /app redirect (proxy, then src/app/app/page.tsx).
+  // Old `/app?openPool=` links are sent to /pools by the /app redirect (proxy, then src/app/app/page.tsx).
   const { rhcSigning, ...flags } = unifiedPoolFlags();
   // `?position=<source>:<id>&view=` (unified positions); old `?mint=` / `?positionMint=` links still select a Solana position.
   const selection = initialSelectionFromQuery(query);

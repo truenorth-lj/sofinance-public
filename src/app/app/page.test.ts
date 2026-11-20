@@ -13,7 +13,7 @@ describe("/app page fallback (requests that skip the proxy)", () => {
   });
   it("sends old ?openPool= links to the pools page", async () => {
     await expect(AppHome({ searchParams: Promise.resolve({ openPool: "poolone" }) })).rejects.toThrow();
-    expect(redirect).toHaveBeenCalledWith("/app/rwa-pairs?openPool=poolone");
+    expect(redirect).toHaveBeenCalledWith("/pools?openPool=poolone");
   });
   it("redirects a bare /app to Portfolio", async () => {
     await expect(AppHome({ searchParams: Promise.resolve({}) })).rejects.toThrow();

@@ -16,7 +16,7 @@ export type PairTokenIconsPair = {
 };
 
 /**
- * The overlapping xStock / plain-stock logo pair shown on the /app/rwa-pairs cards and the homepage pool list:
+ * The overlapping xStock / plain-stock logo pair shown on the /pools cards and the homepage pool list:
  * wrapped token first. Icons are the links the daily refresh stored in the database (`tokenIcons` from
  * `/api/rwa-pairs`, no per-request Jupiter call); a Solana token without one uses Raydium's icon path, and any icon
  * that fails to load shows the letter avatar (`TokenIcon`). `layout="stacked"` puts the two logos diagonally inside one
