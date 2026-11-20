@@ -93,7 +93,7 @@ describe("blog content", () => {
     expect(html).toContain("payoff-gamma.png");
     expect(html).toContain("liquidity-behavior.png");
     expect(html).toContain("comparison-table.png");
-    expect(html).toContain('href="/app/rwa-pairs?ref=x-article"');
+    expect(html).toContain('href="/pools?ref=x-article"');
   });
 
   it("publishes competitor-comparison with crawlable title, hero PNG, and an honest swap-fee disclosure", () => {
