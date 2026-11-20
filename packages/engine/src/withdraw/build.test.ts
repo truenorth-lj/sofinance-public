@@ -28,7 +28,7 @@ function mintInfo() { const data = Buffer.alloc(82); data.writeBigUInt64LE(10000
 const request = { wallet: wallet.toBase58(), positionMint: positionMint.toBase58(), percent: 100 };
 beforeEach(() => {
     vi.clearAllMocks();
-    vi.stubEnv("JUPITER_API_KEY", SIGNING_SECRET);
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", SIGNING_SECRET);
     mocks.padding = 0;
     mocks.impact = "0.01";
     mocks.swapStage = false;

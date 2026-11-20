@@ -41,7 +41,7 @@ let client: Client;
 let server: ReturnType<typeof createMcpServer>;
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(1793100000000);
-  vi.stubEnv("JUPITER_API_KEY", SIGNING_SECRET);
+  vi.stubEnv("SOFINANCE_SIGNING_SECRET", SIGNING_SECRET);
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.invalid.example");
   vi.spyOn(performance, "now").mockReturnValue(100);
   vi.spyOn(console, "info").mockImplementation(() => {});
@@ -130,6 +130,7 @@ for (const c of cases) describe(`${c.kind} prepare baseline`, () => {
   });
   it("HTTP builder failure precedes missing signing key", async () => {
     vi.stubEnv("JUPITER_API_KEY", undefined);
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", undefined);
     c.build.mockRejectedValue(new Error("fixture builder rejected"));
     expect({ result: await app(c.route, VALID_ARGS[c.name]), io: io() }).toMatchSnapshot();
   });

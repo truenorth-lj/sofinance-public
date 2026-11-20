@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { getJupiterApiKey, getSigningSecret } from "./server-env";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getJupiterApiKey, getSigningSecret, getSigningSecrets } from "./server-env";
 
 // The reference expressions are what every call site contained before the refactor.
 const legacyRaw = () => process.env.JUPITER_API_KEY;
@@ -9,7 +9,11 @@ const STATES: [string, string | undefined][] = [
   ["unset", undefined], ["empty", ""], ["single space", " "], ["padded key", "  abc  "], ["newline", "abc\n"], ["plain key", "abc123"],
 ];
 
-describe("server-env equivalence with the previous inline reads", () => {
+describe("server-env", () => {
+  beforeEach(() => {
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", undefined);
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET_PREVIOUS", undefined);
+  });
   afterEach(() => vi.unstubAllEnvs());
 
   it.each(STATES)("%s: getJupiterApiKey() === process.env.JUPITER_API_KEY", (_name, value) => {
@@ -39,11 +43,31 @@ describe("server-env equivalence with the previous inline reads", () => {
     expect(getJupiterApiKey()).toBe("rotated");
   });
 
-  it("does not read any other variable", () => {
+  it("uses the dedicated signing key when configured and rereads it on rotation", () => {
+    vi.stubEnv("JUPITER_API_KEY", "jupiter");
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", "  current  ");
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET_PREVIOUS", "previous");
+    expect(getSigningSecret()).toBe("  current  ");
+    expect(getSigningSecrets()).toEqual(["  current  ", "previous"]);
+    expect(getJupiterApiKey()).toBe("jupiter");
+
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", "previous");
+    expect(getSigningSecrets()).toEqual(["previous"]);
+
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", "");
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET_PREVIOUS", "");
+    expect(getSigningSecrets()).toEqual(["jupiter"]);
+  });
+
+  it("never uses the previous secret for issuance or as the only verification key", () => {
     vi.stubEnv("JUPITER_API_KEY", undefined);
-    vi.stubEnv("SOLANA_RPC_URL", "https://other.example");
-    vi.stubEnv("SOFINANCE_SIGNING_SECRET", "other");
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET_PREVIOUS", "previous");
     expect(getSigningSecret()).toBe("");
+    expect(getSigningSecrets()).toEqual([""]);
+    expect(getJupiterApiKey()).toBeUndefined();
+
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", "current");
+    expect(getSigningSecrets()).toEqual(["current", "previous"]);
     expect(getJupiterApiKey()).toBeUndefined();
   });
 });

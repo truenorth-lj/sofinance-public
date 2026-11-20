@@ -52,7 +52,7 @@ let client: Client;
 let server: ReturnType<typeof createMcpServer>;
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(1793100000000);
-  vi.stubEnv("JUPITER_API_KEY", SIGNING_SECRET);
+  vi.stubEnv("SOFINANCE_SIGNING_SECRET", SIGNING_SECRET);
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.invalid.example");
   vi.spyOn(console, "error").mockImplementation(() => {});
   for (const mock of Object.values(backend)) mock.mockReset();
@@ -132,6 +132,7 @@ for (const surface of ["http", "stdio"] as const) describe(`${surface} real read
   });
   if (surface === "stdio") it("stdio quote remains usable without a signing secret", async () => {
     vi.stubEnv("JUPITER_API_KEY", undefined);
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", undefined);
     expect((await call(surface, "quote_compound", VALID_ARGS.quote_compound)).isError).toBeUndefined();
     expect(io().map(item => item.name)).toEqual(["compound"]);
   });

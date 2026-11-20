@@ -32,7 +32,7 @@ BASE_URL=http://localhost:3000 npx playwright test --project=hermetic   # reuse 
 Hermetic lane = **sign-only**: a random throwaway key per test, no funds, broadcast routes mocked, third-party hosts
 (Reown, WalletConnect, Google Fonts) aborted, unexpected hosts / `pageerror` / `console.error` fail the test.
 `/api/verify-sign-token` is the real server route; the server runs with a CI-only dummy signing secret
-(`E2E_SIGNING_SECRET`, default `e2e-ci-only-not-a-secret`, exported to the server as `JUPITER_API_KEY`).
+(`E2E_SIGNING_SECRET`, default `e2e-ci-only-not-a-secret`, exported to the server as `SOFINANCE_SIGNING_SECRET`).
 
 The provider variant is inlined at build time: `E2E_PROVIDER=appkit` (default, same as production) or `adapter`.
 

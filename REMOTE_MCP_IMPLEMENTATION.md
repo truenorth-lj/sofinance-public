@@ -155,7 +155,7 @@ nacl.sign.detached.verify(message, signature, publicKey)
 → if valid && fresh (≤5min), mint token
 
 // 4. Token is minted (only after signature verification)
-Token = base64url(payload) + "." + HMAC-SHA256(payload, JUPITER_API_KEY)
+Token = base64url(payload) + "." + base64url(HMAC-SHA256(base64url(payload), signingSecret))
 
 Payload = {
   version: "v1",
@@ -232,10 +232,14 @@ All 14 MCP tools work remotely:
 ### Environment Variables (Server-Side Only)
 ```bash
 SOLANA_RPC_URL=<your-rpc>           # Server-only
-JUPITER_API_KEY=<your-key>          # Server-only (also HMAC secret)
+JUPITER_API_KEY=<your-key>          # Jupiter HTTP, and legacy signing fallback
+SOFINANCE_SIGNING_SECRET=<secret>  # Server-only HMAC key
+SOFINANCE_SIGNING_SECRET_PREVIOUS= # Optional verification key during rotation
 NEXT_PUBLIC_APP_URL=<optional>      # Auto-detected from VERCEL_URL
 NEXT_PUBLIC_REOWN_PROJECT_ID=<id>   # Existing wallet connect
 ```
+
+See [signing secret rotation](README.md#rotate-the-signing-secret) for the rollout sequence.
 
 ### Rate Limits & Performance
 - **Token generation**: ~50ms (HMAC + JSON)

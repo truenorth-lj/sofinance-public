@@ -4,9 +4,6 @@ import bs58 from "bs58";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
-vi.mock("@sofinance/engine/config/server-env", async (original) => ({
-  ...await original<typeof import("@sofinance/engine/config/server-env")>(), getSigningSecret: () => "test-signing-secret-not-a-real-key",
-}));
 
 import { rpcConnection } from "@sofinance/engine/rpc";
 import {
@@ -46,11 +43,13 @@ async function call(body: unknown, ip = "203.0.113.7") {
 let connection: FakeConnection;
 beforeEach(() => {
   resetTxSendRateLimit();
+  vi.stubEnv("SOFINANCE_SIGNING_SECRET", SIGNING_SECRET);
+  vi.stubEnv("SOFINANCE_SIGNING_SECRET_PREVIOUS", undefined);
   vi.spyOn(console, "error").mockImplementation(() => {});
   connection = fakeConnection();
   vi.mocked(rpcConnection).mockReturnValue(connection as never);
 });
-afterEach(() => { vi.restoreAllMocks(); vi.resetAllMocks(); });
+afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); vi.resetAllMocks(); });
 
 describe("POST /api/tx-send", () => {
   it("sends fully signed, permitted bytes once with preflight and RPC rebroadcast (maxRetries 3)", async () => {
@@ -61,6 +60,32 @@ describe("POST /api/tx-send", () => {
     expect(connection.sendRawTransaction).toHaveBeenCalledTimes(1);
     expect(connection.sendRawTransaction.mock.calls[0]![1]).toMatchObject({ skipPreflight: false, maxRetries: 3 });
     expect(connection.getBlockHeight).not.toHaveBeenCalled();
+  });
+  it("verifies permits across a rolling key change and rejects the retired key", async () => {
+    const { prepared, signed } = signedBody();
+    const wallet = payer.publicKey.toBase58();
+    const permit = () => sendPermitFor(wallet, toBase64(prepared));
+    const previousSecret = "legacy-jupiter-key";
+    vi.stubEnv("JUPITER_API_KEY", previousSecret);
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", undefined);
+    const oldPermit = permit();
+
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", SIGNING_SECRET);
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET_PREVIOUS", previousSecret);
+    const newPermit = permit();
+    expect(newPermit).not.toBe(oldPermit);
+    connection.sendRawTransaction.mockResolvedValue(signatureOf(signed));
+    expect((await call(relayBody(prepared, signed, oldPermit))).status).toBe(200);
+
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", undefined);
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET_PREVIOUS", SIGNING_SECRET);
+    expect((await call(relayBody(prepared, signed, newPermit))).status).toBe(200);
+
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", SIGNING_SECRET);
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET_PREVIOUS", undefined);
+    expect((await call(relayBody(prepared, signed, oldPermit))).status).toBe(400);
+    expect((await call(relayBody(prepared, signed, newPermit))).status).toBe(200);
+    expect(connection.sendRawTransaction).toHaveBeenCalledTimes(3);
   });
   it("accepts a Phantom-style rewrite (ComputeBudget + Lighthouse) of a permitted message", async () => {
     const prepared = unsignedOf();

@@ -6,7 +6,7 @@ import type { CompoundRecoverySummary } from "@sofinance/engine/compound-recover
 vi.mock("server-only", () => ({}));
 const mocks = vi.hoisted(() => ({ send: vi.fn(), height: vi.fn(), simulate: vi.fn() }));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: () => ({ getBlockHeight: mocks.height, sendRawTransaction: mocks.send }) }));
-vi.mock("@sofinance/engine/config/server-env", () => ({ getSigningSecret: () => "batch-test-secret" }));
+vi.mock("@sofinance/engine/config/server-env", () => ({ getSigningSecrets: () => ["batch-test-secret"] }));
 vi.mock("@/lib/compound-cleanup-batch", async original => ({ ...await original<typeof import("@/lib/compound-cleanup-batch")>(), simulateAndVerifyCleanupBatch: mocks.simulate }));
 vi.mock("@/lib/api-response", () => ({ apiError: (_error: unknown, _message: string, _status: number, details?: object) =>
   Response.json({ error: "Broadcast failed", ...details }, { status: 400 }) }));

@@ -19,7 +19,7 @@ function input(overrides: Partial<WithdrawSummary> = {}) {
 }
 beforeEach(() => {
     vi.resetAllMocks();
-    vi.stubEnv("JUPITER_API_KEY", SIGNING_SECRET);
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", SIGNING_SECRET);
     mocks.height.mockResolvedValue(100);
     mocks.simulate.mockResolvedValue({});
     mocks.send.mockResolvedValue(signatureOf(transaction));

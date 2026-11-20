@@ -6,7 +6,7 @@ import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { rpcConnection, resetRpcCache } from "@sofinance/engine/rpc";
 import { invalidatePositionHistoryCache } from "@/lib/position-history-cache";
-import { getSigningSecret } from "@sofinance/engine/config/server-env";
+import { getSigningSecrets } from "@sofinance/engine/config/server-env";
 import { withdrawPermit } from "@sofinance/engine/withdraw/permit";
 import { landedTransactionMatchesPrepared } from "@sofinance/engine/wallet-returned-tx";
 import type { ReadWithdrawalStatus, WithdrawalStatusResult } from "../withdraw-status";
@@ -21,7 +21,8 @@ export const readRaydiumWithdrawalStatus: ReadWithdrawalStatus = async (input) =
         return { status: "success", signature: input.signature, stage: summary.stage };
     };
     const expected = VersionedTransaction.deserialize(Buffer.from(unsignedTransaction, "base64"));
-    if (!withdrawPermit.verify(getSigningSecret(), { wallet: summary.wallet, message: Buffer.from(expected.message.serialize()).toString("base64"), summary }, permit))
+    const permitInput = { wallet: summary.wallet, message: Buffer.from(expected.message.serialize()).toString("base64"), summary };
+    if (!getSigningSecrets().some(secret => withdrawPermit.verify(secret, permitInput, permit)))
         throw new Error("Invalid withdrawal authorization");
     const connection = rpcConnection();
     const observed = (await connection.getSignatureStatuses([input.signature], { searchTransactionHistory: true })).value[0];

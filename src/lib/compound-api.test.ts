@@ -6,7 +6,7 @@ import { issueCompoundPermit } from "./compound-permit";
 
 afterEach(() => vi.unstubAllEnvs());
 function fixture() {
-  vi.stubEnv("JUPITER_API_KEY", "test-only-secret");
+  vi.stubEnv("SOFINANCE_SIGNING_SECRET", "test-only-secret");
   const owner = Keypair.generate(), receiver = Keypair.generate().publicKey;
   const blockhash = Keypair.generate().publicKey.toBase58();
   const transaction = new VersionedTransaction(new TransactionMessage({ payerKey: owner.publicKey, recentBlockhash: blockhash,

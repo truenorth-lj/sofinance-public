@@ -44,7 +44,7 @@ let connection: FakeConnection;
 let transaction: VersionedTransaction;
 
 beforeEach(() => {
-  vi.stubEnv("JUPITER_API_KEY", SIGNING_SECRET);
+  vi.stubEnv("SOFINANCE_SIGNING_SECRET", SIGNING_SECRET);
   transaction = signed();
   connection = fakeConnection({ sendRawTransaction: vi.fn(async () => signatureOf(transaction)) });
   vi.mocked(rpcConnection).mockReturnValue(connection as never);
@@ -231,9 +231,10 @@ describe("submitOpenPositionFromParts", () => {
     expect(error).not.toBeInstanceOf(CompoundSendError);
   });
 
-  it("QUIRK: with no JUPITER_API_KEY the permit helper throws 'Missing server signing key' (the key doubles as the HMAC secret)", async () => {
+  it("throws 'Missing server signing key' when neither signing key nor legacy fallback is configured", async () => {
     const input = parts();
     vi.stubEnv("JUPITER_API_KEY", undefined);
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", undefined);
     await expect(submitOpenPositionFromParts(input)).rejects.toThrow("Missing server signing key");
   });
 

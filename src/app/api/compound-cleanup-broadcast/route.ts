@@ -1,7 +1,7 @@
 import "@/lib/engine-host";
 import { VersionedTransaction } from "@solana/web3.js";
 import { parseWallet } from "@sofinance/engine/api-input";
-import { getSigningSecret } from "@sofinance/engine/config/server-env";
+import { getSigningSecrets } from "@sofinance/engine/config/server-env";
 import { rpcConnection } from "@sofinance/engine/rpc";
 import { readCompoundBody } from "@/lib/compound-api";
 import { parseCleanupBatchSummary, simulateAndVerifyCleanupBatch, validCleanupSignature, verifyCleanupBatchPermit } from "@/lib/compound-cleanup-batch";
@@ -23,8 +23,9 @@ export async function POST(request: Request) {
       : transaction;
     if (!validCleanupSignature(transaction, wallet)) throw new Error("Cleanup payer, signature or packet size mismatch");
     if (prepared !== transaction) assertWalletReturnedTransaction(prepared, transaction, wallet);
-    if (!verifyCleanupBatchPermit(getSigningSecret(), { wallet, summary: body.summary,
-      message: Buffer.from(prepared.message.serialize()).toString("base64") }, body.permit)) throw new Error("Cleanup transaction authorization mismatch");
+    const permitInput = { wallet, summary: body.summary,
+      message: Buffer.from(prepared.message.serialize()).toString("base64") };
+    if (!getSigningSecrets().some(secret => verifyCleanupBatchPermit(secret, permitInput, body.permit))) throw new Error("Cleanup transaction authorization mismatch");
     const summary = await parseCleanupBatchSummary(body.summary, wallet), connection = rpcConnection();
     if (summary.blockhash !== transaction.message.recentBlockhash || exceedsTxSizeLimit(transaction.serialize().length) ||
       Date.now() >= summary.expiresAt || await connection.getBlockHeight("confirmed") > summary.lastValidBlockHeight) throw new Error("Cleanup authorization expired or blockhash mismatch");

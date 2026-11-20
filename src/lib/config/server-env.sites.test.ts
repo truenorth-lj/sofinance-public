@@ -1,5 +1,4 @@
-// Proves that every server call site still gets the SAME value from the env as before the
-// lib/config/server-env refactor (the old inline `process.env.JUPITER_API_KEY [|| ""]` reads).
+// Exercises signing and Jupiter credentials through their server entrypoints.
 // Real: token-metadata, rwa-jupiter-tags, mint-symbols, jupiter-route, mcp-token, verify-sign-token.
 // Mocked: the heavy builders and the permit issuers of the four prepare routes (only the secret argument is asserted).
 import { Keypair } from "@solana/web3.js";
@@ -53,6 +52,8 @@ const post = (url: string, body: unknown) => new Request(`http://localhost${url}
 
 beforeEach(() => {
   vi.stubEnv("JUPITER_API_KEY", undefined);
+  vi.stubEnv("SOFINANCE_SIGNING_SECRET", undefined);
+  vi.stubEnv("SOFINANCE_SIGNING_SECRET_PREVIOUS", undefined);
   vi.stubEnv("E2E_KEYLESS_JUPITER", undefined);
   vi.spyOn(console, "error").mockImplementation(() => {});
   vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -91,11 +92,13 @@ describe("prepare routes pass the signing secret to the permit issuer (getSignin
     expect(await secretUsed(run, issuer)).toBe("");   // unset -> "" (the issuer then refuses to sign)
     vi.stubEnv("JUPITER_API_KEY", "  padded  ");
     expect(await secretUsed(run, issuer)).toBe("  padded  ");   // nothing is trimmed
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", "dedicated-key");
+    expect(await secretUsed(run, issuer)).toBe("dedicated-key");
   });
 });
 
 describe("verify-sign-token", () => {
-  const payload = { kind: "open-position", wallet: "w", unsignedTransaction: "u", permit: "p", submitArgs: {}, expiresAt: Date.now() + 60_000 } as never;
+  const payload = { kind: "open-position" as const, wallet: "w", unsignedTransaction: "u", permit: "p", submitArgs: {}, expiresAt: Date.now() + 60_000 };
   it("uses the signing secret: a token made with the key verifies; unset -> configuration error", async () => {
     const token = await createSignToken(payload, "sign-secret");
     vi.stubEnv("JUPITER_API_KEY", "sign-secret");
@@ -108,6 +111,19 @@ describe("verify-sign-token", () => {
     const unset = await verifySignToken(post("/api/verify-sign-token", { token }));
     expect(unset.status).toBeGreaterThanOrEqual(400);
     expect(JSON.stringify(await unset.json())).toContain("Sign token secret not configured");
+  });
+
+  it("accepts previous sign tokens until expiry or key retirement", async () => {
+    vi.stubEnv("JUPITER_API_KEY", "legacy");
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", "current");
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET_PREVIOUS", "legacy");
+    const valid = await createSignToken(payload, "legacy");
+    const expired = await createSignToken({ ...payload, expiresAt: Date.now() - 1 }, "legacy");
+    expect((await verifySignToken(post("/api/verify-sign-token", { token: valid }))).status).toBe(200);
+    expect((await verifySignToken(post("/api/verify-sign-token", { token: expired }))).status).toBe(400);
+
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET_PREVIOUS", undefined);
+    expect((await verifySignToken(post("/api/verify-sign-token", { token: valid }))).status).toBe(400);
   });
 });
 
@@ -137,10 +153,27 @@ describe("mcp-token", () => {
     expect(unset.status).toBe(500);
     expect((await unset.json()).error).toBe("Server configuration error: JUPITER_API_KEY not set");
   });
+
+  it("issues with the dedicated key when the Jupiter and previous keys also exist", async () => {
+    vi.stubEnv("JUPITER_API_KEY", "jupiter-key");
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", "current");
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET_PREVIOUS", "previous");
+    const challenge = await signedChallenge();
+    const response = await issue(challenge);
+    expect(response.status).toBe(200);
+    const { token } = await response.json();
+    expect(verifyMcpToken(token, "current")?.wallet).toBe(challenge.wallet);
+    expect(verifyMcpToken(token, "previous")).toBeNull();
+    expect(verifyMcpToken(token, "jupiter-key")).toBeNull();
+  });
 });
 
 const mint = "So11111111111111111111111111111111111111112";
 describe("Jupiter-facing readers default to the env key but accept an override", () => {
+  beforeEach(() => {
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET", "internal-signing-secret");
+    vi.stubEnv("SOFINANCE_SIGNING_SECRET_PREVIOUS", "internal-previous-secret");
+  });
   const okJson = (body: unknown) => vi.fn(async () => new Response(JSON.stringify(body))) as unknown as typeof fetch;
   const keyHeader = (fetcher: typeof fetch, call = 0) => {
     const init = vi.mocked(fetcher).mock.calls[call]?.[1] as { headers?: Record<string, string> } | undefined;

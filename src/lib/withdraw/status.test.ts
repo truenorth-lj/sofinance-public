@@ -17,7 +17,7 @@ function input(){
 }
 function receiptFor(landed:VersionedTransaction){return {meta:{err:null},transaction:{message:landed.message,signatures:[signatureOf(landed)]}};}
 function inputFor(landed:VersionedTransaction){return {...input(),signature:signatureOf(landed)};}
-beforeEach(()=>{vi.resetAllMocks();vi.stubEnv("JUPITER_API_KEY",SIGNING_SECRET);mocks.status.mockResolvedValue({value:[null]});mocks.height.mockResolvedValue(100);mocks.receipt.mockResolvedValue(null);mocks.balances.mockResolvedValue([null]);});
+beforeEach(()=>{vi.resetAllMocks();vi.stubEnv("SOFINANCE_SIGNING_SECRET",SIGNING_SECRET);mocks.status.mockResolvedValue({value:[null]});mocks.height.mockResolvedValue(100);mocks.receipt.mockResolvedValue(null);mocks.balances.mockResolvedValue([null]);});
 it("keeps confirmed transactions pending until finalization",async()=>{
  mocks.status.mockResolvedValue({value:[{confirmationStatus:"confirmed",err:null}]});
  expect(await withdrawStatus(input())).toHaveProperty("status","pending");expect(mocks.receipt).not.toHaveBeenCalled();

@@ -1,7 +1,7 @@
 import "@/lib/engine-host";
 import { verifySignToken } from "@/lib/pending-sign-token";
 import { apiError } from "@/lib/api-response";
-import { getSigningSecret } from "@sofinance/engine/config/server-env";
+import { getSigningSecrets } from "@sofinance/engine/config/server-env";
 import { sendPermitFor } from "@/lib/tx-send/permit";
 
 export async function POST(request: Request) {
@@ -13,12 +13,12 @@ export async function POST(request: Request) {
       return apiError(new Error("Invalid token"), "Invalid token");
     }
     
-    const secret = getSigningSecret();
+    const [secret, previousSecret] = getSigningSecrets();
     if (!secret) {
       return apiError(new Error("Sign token secret not configured"), "Server configuration error");
     }
     
-    const payload = await verifySignToken(token, secret);
+    const payload = await verifySignToken(token, secret, previousSecret);
     
     if (!payload) {
       return apiError(new Error("Token invalid, expired, or malformed"), "Token invalid, expired, or malformed");

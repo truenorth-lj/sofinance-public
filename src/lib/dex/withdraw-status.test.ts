@@ -12,7 +12,7 @@ vi.mock("server-only", () => ({}));
 const backend = vi.hoisted(() => ({ rpc: vi.fn(), secret: vi.fn(), invalidate: vi.fn(), reset: vi.fn() }));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: backend.rpc, resetRpcCache: backend.reset }));
 vi.mock("@sofinance/engine/config/server-env", async original => ({
-  ...await original<typeof import("@sofinance/engine/config/server-env")>(), getSigningSecret: backend.secret,
+  ...await original<typeof import("@sofinance/engine/config/server-env")>(), getSigningSecrets: backend.secret,
 }));
 vi.mock("@/lib/position-history-cache", () => ({ invalidatePositionHistoryCache: backend.invalidate }));
 
@@ -43,7 +43,7 @@ function fixture() {
   return { command, connection, receipt, transaction };
 }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; }
-beforeEach(() => { vi.resetAllMocks(); backend.secret.mockReturnValue(SIGNING_SECRET); vi.spyOn(console, "error").mockImplementation(() => {}); });
+beforeEach(() => { vi.resetAllMocks(); backend.secret.mockReturnValue([SIGNING_SECRET]); vi.spyOn(console, "error").mockImplementation(() => {}); });
 afterEach(() => { vi.restoreAllMocks(); });
 
 it("captures signature and complete authorization before lazy/RPC awaits and invalidates only the initiating position", async () => {

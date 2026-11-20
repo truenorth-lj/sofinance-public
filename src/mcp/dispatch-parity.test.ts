@@ -30,7 +30,7 @@ const resultValue = { ok: true, nested: { values: [1, null, "繁體"], omitted: 
 let client: Client;
 let server: ReturnType<typeof createMcpServer>;
 beforeEach(async () => {
-  vi.stubEnv("JUPITER_API_KEY", SIGNING_SECRET);
+  vi.stubEnv("SOFINANCE_SIGNING_SECRET", SIGNING_SECRET);
   vi.spyOn(console, "error").mockImplementation(() => {});
   for (const handler of Object.values(handlers)) handler.mockReset().mockResolvedValue(resultValue);
   server = createMcpServer();
