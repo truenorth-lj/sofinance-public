@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { effectiveScaledUiMultiplier, fairPriceFor, formatShareMultiplier } from "./fair-price";
+import {
+  effectiveScaledUiMultiplier,
+  fairPriceFor,
+  formatFairPriceLine,
+  formatShareMultiplier,
+  rawPriceBPerA,
+  scaledUiFairNote,
+} from "./fair-price";
 
 describe("fairPriceFor", () => {
   it("returns the NVDAx fair price and share line when the pool is close to fair", () => {
@@ -57,6 +64,61 @@ describe("fairPriceFor", () => {
     expect(fairPriceFor({ ...base, price: (1 / 1.01) * 0.979 })).toBeNull();
     expect(fairPriceFor({ ...base, price: Number.NaN })).toBeNull();
     expect(fairPriceFor({ ...base, multiplierA: 0 })).toBeNull();
+  });
+});
+
+describe("rawPriceBPerA", () => {
+  it("leaves a Raydium (raw) price unchanged and converts a Meteora share-adjusted price back to raw", () => {
+    const multiplierA = 1, multiplierB = 1.030927835; // fair ≈ 0.97
+    const raw = 0.97;
+    const share = raw * (multiplierB / multiplierA);
+    expect(rawPriceBPerA({ multiplierA, multiplierB, priceBPerA: raw })).toBeCloseTo(raw, 12);
+    expect(rawPriceBPerA({ protocol: "raydium-clmm", multiplierA, multiplierB, priceBPerA: raw })).toBeCloseTo(raw, 12);
+    expect(rawPriceBPerA({ protocol: "meteora-dlmm", multiplierA, multiplierB, priceBPerA: share })).toBeCloseTo(raw, 12);
+  });
+});
+
+describe("scaledUiFairNote", () => {
+  const nvda = {
+    symbolA: "NVDA",
+    symbolB: "NVDAx",
+    pairLabel: "NVDAx/NVDA",
+    multiplierA: 1,
+    multiplierB: 1.001701,
+    priceBPerA: 0.99950,
+  };
+
+  it("uses pairLabel order and unit-bearing fair price, e.g. 1 NVDAx ≈ 1.0017 NVDA", () => {
+    expect(formatFairPriceLine({ symbolA: "NVDA", symbolB: "NVDAx", fair: 1 / 1.001701, pairLabel: "NVDAx/NVDA" }))
+      .toBe("Fair price: 1 NVDAx ≈ 1.0017 NVDA");
+    expect(scaledUiFairNote(nvda)).toBe("1 NVDAx = 1.0017 shares. Fair price: 1 NVDAx ≈ 1.0017 NVDA");
+  });
+
+  it("shows no note when both sides are 8, because the fair price is 1", () => {
+    expect(
+      scaledUiFairNote({
+        symbolA: "SNDK",
+        symbolB: "SNDKx",
+        pairLabel: "SNDKx/SNDK",
+        multiplierA: 8,
+        multiplierB: 8,
+        priceBPerA: 0.99863,
+      }),
+    ).toBeNull();
+  });
+
+  it("still shows the NVDAx note when a Meteora price already includes the multiplier", () => {
+    const sharePrice = 0.99950 * (1.001701 / 1);
+    const note = scaledUiFairNote({
+      ...nvda,
+      protocol: "meteora-dlmm",
+      priceBPerA: sharePrice,
+    });
+    expect(note).toBe("1 NVDAx = 1.0017 shares. Fair price: 1 NVDAx ≈ 1.0017 NVDA");
+    // Without the conversion, a share price of 1 with fair 0.97 would be wrongly dropped.
+    const far = { symbolA: "NVDA", symbolB: "NVDAx", pairLabel: "NVDAx/NVDA", multiplierA: 1, multiplierB: 1 / 0.97, priceBPerA: 1, protocol: "meteora-dlmm" as const };
+    expect(scaledUiFairNote(far)).toContain("Fair price: 1 NVDAx ≈");
+    expect(scaledUiFairNote({ ...far, protocol: "raydium-clmm" })).toBeNull();
   });
 });
 

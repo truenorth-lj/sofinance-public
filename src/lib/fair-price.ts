@@ -1,12 +1,21 @@
 /**
- * Fair raw price for a same-stock pool from Token-2022 ScaledUiAmount multipliers.
- * fair = multiplierA / multiplierB (token B per token A, raw / decimals-adjusted).
+ * Fair price for a same-stock pool from Token-2022 ScaledUiAmount multipliers.
+ * fair = multiplierA / multiplierB (token B per token A, decimals-adjusted / raw).
  * Returns null when that fair price and the pool's current raw price differ by more than 2%,
  * so a disconnected multiplier (e.g. SNDK at 8 vs a ~1 pool price) is not shown or applied.
  * Display only — does not change ticks, amounts, or anything that gets signed.
+ *
+ * Price units: Raydium API `price` is raw (decimals only). Meteora datapi `current_price`
+ * (`priceBPerA`) includes the ScaledUiAmount multiplier (share-UI Y per share-UI X).
+ * fairPriceFromPool converts a Meteora price back to raw before the 2% gate.
  */
 
+import { poolPairLabelFromSymbols } from "./pool-names";
+
 export const FAIR_PRICE_MAX_RELATIVE_DIFF = 0.02;
+
+/** Half a unit in the 5th decimal — below this, a fair price is treated as 1 for display. */
+export const DISPLAY_ONE_EPS = 5e-6;
 
 export type FairPricePool = {
   symbolA: string;
@@ -14,7 +23,7 @@ export type FairPricePool = {
   /** Effective ScaledUiAmount multiplier (1 when the mint has no config). */
   multiplierA: number;
   multiplierB: number;
-  /** Current raw UI price, token B per token A. */
+  /** Current raw UI price, token B per token A (decimals only, no ScaledUi multiplier). */
   price: number;
 };
 
@@ -36,13 +45,11 @@ function isOne(value: number): boolean {
   return Math.abs(value - 1) <= NEAR_ONE;
 }
 
-/** Format a multiplier for the "1 TOKENx = 1.0017 shares" line (4 decimals, more if 4 would hide a small step). */
-const DISPLAY_ONE_EPS = 5e-6; // half a unit in the 5th decimal — below this, "1" is honest (ignore float noise)
-
 function trimTrailingZeros(text: string): string {
   return text.replace(/(\.\d*?[1-9])0+$/, "$1").replace(/\.0+$/, "");
 }
 
+/** Format a multiplier for the "1 TOKENx = 1.0017 shares" line (4 decimals, more if 4 would hide a small step). */
 export function formatShareMultiplier(multiplier: number): string {
   if (Math.abs(multiplier - 1) < DISPLAY_ONE_EPS) return "1";
   for (let digits = 4; digits <= 8; digits++) {
@@ -54,6 +61,24 @@ export function formatShareMultiplier(multiplier: number): string {
 
 export function formatFairPrice(fair: number): string {
   return formatShareMultiplier(fair);
+}
+
+/**
+ * "Fair price: 1 NVDAx ≈ 1.0017 NVDA" — tokens in the same order as the on-screen pairLabel
+ * (Solana: wrapped / plain). `fair` is token B per token A (raw).
+ */
+export function formatFairPriceLine(pool: {
+  symbolA: string;
+  symbolB: string;
+  fair: number;
+  pairLabel?: string;
+}): string {
+  const label = pool.pairLabel ?? poolPairLabelFromSymbols(pool.symbolA, pool.symbolB, "/");
+  const parts = label.split("/").map((part) => part.trim()).filter(Boolean);
+  const first = parts[0] ?? pool.symbolA;
+  const second = parts[1] ?? pool.symbolB;
+  const amount = first === pool.symbolB && first !== pool.symbolA ? 1 / pool.fair : pool.fair;
+  return `Fair price: 1 ${first} ≈ ${formatShareMultiplier(amount)} ${second}`;
 }
 
 /**
@@ -75,6 +100,21 @@ export function effectiveScaledUiMultiplier(
   return current;
 }
 
+/**
+ * Convert a list/API price to raw token-B-per-token-A (decimals only).
+ * Meteora datapi `current_price` already includes the ScaledUiAmount multiplier;
+ * Raydium `price` does not.
+ */
+export function rawPriceBPerA(pool: {
+  protocol?: string;
+  multiplierA: number;
+  multiplierB: number;
+  priceBPerA: number;
+}): number {
+  if (pool.protocol === "meteora-dlmm") return pool.priceBPerA * (pool.multiplierA / pool.multiplierB);
+  return pool.priceBPerA;
+}
+
 /** Fair raw price, or null when it and the pool price differ by more than 2% (or inputs are unusable). */
 export function fairPriceFor(pool: FairPricePool): FairPrice | null {
   const { multiplierA, multiplierB, price } = pool;
@@ -92,6 +132,7 @@ export function fairPriceFor(pool: FairPricePool): FairPrice | null {
 export function fairPriceFromPool(pool: {
   symbolA: string;
   symbolB: string;
+  protocol?: string;
   multiplierA?: number;
   multiplierB?: number;
   priceBPerA?: number | null;
@@ -102,19 +143,32 @@ export function fairPriceFromPool(pool: {
     symbolB: pool.symbolB,
     multiplierA: pool.multiplierA,
     multiplierB: pool.multiplierB,
-    price: pool.priceBPerA,
+    price: rawPriceBPerA({
+      protocol: pool.protocol,
+      multiplierA: pool.multiplierA,
+      multiplierB: pool.multiplierB,
+      priceBPerA: pool.priceBPerA,
+    }),
   });
 }
 
-/** User-facing note when a non-1 multiplier should be shown; null when fairPriceFor is null or both multipliers are 1. */
+/**
+ * User-facing note when the fair price itself differs from 1 (DISPLAY_ONE_EPS).
+ * Null when fairPriceFor is null or fair is 1 (e.g. SNDK/SNDKx, both multipliers 8).
+ */
 export function scaledUiFairNote(pool: {
   symbolA: string;
   symbolB: string;
+  protocol?: string;
+  pairLabel?: string;
   multiplierA?: number;
   multiplierB?: number;
   priceBPerA?: number | null;
 }): string | null {
   const result = fairPriceFromPool(pool);
-  if (!result || result.shareLines.length === 0) return null;
-  return `${result.shareLines.join(". ")}. Fair price ${formatFairPrice(result.fair)}.`;
+  if (!result || Math.abs(result.fair - 1) < DISPLAY_ONE_EPS) return null;
+  const pairLabel = pool.pairLabel;
+  const fairLine = formatFairPriceLine({ symbolA: pool.symbolA, symbolB: pool.symbolB, fair: result.fair, ...(pairLabel ? { pairLabel } : {}) });
+  if (result.shareLines.length === 0) return fairLine;
+  return `${result.shareLines.join(". ")}. ${fairLine}`;
 }
