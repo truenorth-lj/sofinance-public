@@ -82,19 +82,13 @@ beforeEach(() => {
 });
 
 describe("homepage server render", () => {
-  const tableRows = (html: string) => {
-    const table = html.slice(html.indexOf('data-testid="homepage-pools-list"'));
-    return [...table.matchAll(/<tr[^>]*data-pool="([^"]+)"/g)].map((match) => match[1]);
-  };
-  // The Top Pools card (between the hero and the list) and the list itself; the stock cards print 24h changes (not APRs).
-  const cardHtml = (html: string) => html.slice(html.indexOf('data-testid="top-pools-card"'), html.indexOf('id="pools"'));
-  const cardRows = (html: string) => [...cardHtml(html).matchAll(/<li[^>]*data-pool="([^"]+)"/g)].map((match) => match[1]);
-  const poolsHtml = (html: string) => html.slice(html.indexOf('id="pools"'));
+  const poolsHtml = (html: string) => html.slice(html.indexOf('data-testid="top-pools"') >= 0 ? html.indexOf('data-testid="top-pools"') : html.indexOf('id="pools"'));
+  const topRows = (html: string) => [...poolsHtml(html).matchAll(/<tr[^>]*data-pool="([^"]+)"/g)].map((match) => match[1]);
+  const topAprs = (html: string) => [...poolsHtml(html).matchAll(/data-testid="top-pool-apr"[^>]*>([^<]+)/g)].map((match) => match[1]);
   const rhcKey = (index: number) => `robinhood:${UNIV4_RHC_ALLOWLISTED_POOLS[index]!.poolId.toLowerCase()}`;
-  /** Every Robinhood Chain pool, by TVL (high first): the fixture gives pool i 41k + i·1k TVL. */
-  const rhcByTvl = (except: number[] = []) => UNIV4_RHC_ALLOWLISTED_POOLS.map((_, i) => i).reverse().filter((i) => !except.includes(i)).map(rhcKey);
+  const fullListCount = (solana: number, hidden = 0) => solana + UNIV4_RHC_ALLOWLISTED_POOLS.length - hidden;
 
-  it("prerenders Top Pools (top 5) and every pool of both chains in the /app/rwa-pairs list view, with the saved list time", async () => {
+  it("prerenders no top-5 rows when every 7-day APR read fails, still links See all N, and keeps JSON-LD", async () => {
     mocks.getRwaPairs.mockResolvedValue(storeResult);
     mocks.getRhcPoolsSnapshot.mockResolvedValue(rhcResult);
     const { default: Home, revalidate } = await import("./page");
@@ -103,39 +97,25 @@ describe("homepage server render", () => {
 
     expect(mocks.getRwaPairs).toHaveBeenCalledWith({ minTvl: 0, maxPages: 10, sortBy: "estimatedFeeApr" });
     expect(mocks.getRhcPoolsSnapshot).toHaveBeenCalled();
-    // Every candidate's 7-day APR is read (both chains), since the homepage ranks by it.
     expect(mocks.getPoolAprSnapshot).toHaveBeenCalledTimes(storeResult.pairs.length);
     expect(mocks.getRhcAprSnapshot).toHaveBeenCalledTimes(UNIV4_RHC_ALLOWLISTED_POOLS.length);
     expect(html).not.toContain("Loading pool data");
-    // No saved APR at all: the /app/rwa-pairs order falls back to TVL. Top Pools: 5 rows; the list: every pool, both chains.
-    expect(cardRows(html)).toEqual(["solana:usdc-usdt", "solana:spcx-pool", "solana:mstr-pool", "solana:tsla-pool", rhcKey(10)]);
-    expect(tableRows(html)).toEqual(["solana:usdc-usdt", "solana:spcx-pool", "solana:mstr-pool", "solana:tsla-pool", ...rhcByTvl()]);
-    // The stock cards are in the HTML too.
+    // No saved APR: pools with no 7-day APR are excluded from the top 5 (they still count in See all N).
+    expect(topRows(html)).toEqual([]);
+    expect(html).toContain("No pools to show right now.");
+    expect(html).toContain("Top pools");
+    expect(html).toContain("Pools over $5k TVL, ranked by 7d estimated APR.");
+    expect(html).not.toContain("All pools");
     expect(html).toContain("SpaceX");
     expect(html).toContain("Microsoft");
-    for (const name of ["USDC/USDT", "SPCXx/SPCX", "MSTRx/MSTR", "TSLAx/TSLA"]) expect(html).toContain(name);
-    expect(html).toContain("$250.0k");
-    expect(html).toContain('data-chain="solana"');
-    expect(html).toContain('data-chain="robinhood"');
-    expect(html).toContain("Robinhood Chain");
-    expect(html).toContain("Uniswap v4");
-    expect(html).toContain("Raydium");
-    expect(html).toContain("Top Pools");
-    expect(html).toContain("All pools");
-    expect(html).not.toContain("by est. 7-day APR");
-    // Same minute on both chains: one "Updated" time, from the lists' fetchedAt.
     expect(html).toContain("Updated 2026-10-30 11:02 UTC");
-    expect(html).toMatch(/<a[^>]*href="\/app\/rwa-pairs"[^>]*>Open in app →<\/a>/);
-    // Robinhood Chain rows open their dialog on /app/rwa-pairs.
-    expect(html).toContain(`/app/rwa-pairs?openPool=${UNIV4_RHC_ALLOWLISTED_POOLS[10]!.poolId}`);
-    // APRs load on the client; the cached HTML never states an APR figure (7d or 24h), in the card or the list.
-    expect(poolsHtml(html)).not.toMatch(/\d+(\.\d+)?%\s*<\/(span|td)>|87\.5/);
-    expect(cardHtml(html)).not.toMatch(/\d+(\.\d+)?%|87\.5/);
+    expect(html).toContain(`See all ${fullListCount(storeResult.pairs.length)} pools →`);
+    expect(html).toMatch(/<a[^>]*href="\/app\/rwa-pairs"[^>]*>See all \d+ pools →<\/a>/);
     expect(html).toContain('"@type":"Organization"');
     expect(html).toContain('"@type":"WebSite"');
   });
 
-  it("prerenders Top Pools and the list by saved 7-day APR (both chains, duplicates by APR) in Robinhood / Ondo order", async () => {
+  it("prerenders the top 5 by saved 7-day APR (both chains, duplicates by APR) with the numbers in the HTML", async () => {
     mocks.getRwaPairs.mockResolvedValue({
       ...storeResult,
       pairs: [...storeResult.pairs, pool("SPCXx", "SPCX", 60_000, { poolAddress: "spcx-hot" })],
@@ -149,16 +129,24 @@ describe("homepage server render", () => {
     });
     const { default: Home } = await import("./page");
     const html = renderToString(await Home());
-    // spcx-hot beats the bigger spcx-pool (LJ's rule); then by APR, ties by TVL.
-    expect(cardRows(html)).toEqual(["solana:spcx-hot", rhcKey(3), "solana:usdc-usdt", "solana:mstr-pool", "solana:tsla-pool"]);
-    expect(tableRows(html)).toEqual(["solana:spcx-hot", rhcKey(3), "solana:usdc-usdt", "solana:mstr-pool", "solana:tsla-pool", ...rhcByTvl([3])]);
+    // spcx-hot beats the bigger spcx-pool (LJ's rule); then by APR, ties by TVL. Pools with no 7-day APR are excluded,
+    // so the remaining RHC pools do not fill the last slots.
+    expect(topRows(html)).toEqual(["solana:spcx-hot", rhcKey(3), "solana:usdc-usdt", "solana:mstr-pool", "solana:tsla-pool"]);
+    expect(topAprs(html)).toEqual(["40.00%", "7.50%", "2.00%", "2.00%", "2.00%"]);
     const spec = UNIV4_RHC_ALLOWLISTED_POOLS[3]!;
     const robinhood = spec.currency0.symbol.endsWith("on") ? spec.currency1.symbol : spec.currency0.symbol;
     expect(html).toContain(`${robinhood}/${robinhood}on`);
     expect(html).not.toContain(`${robinhood}on/${robinhood}`);
-    // Still no APR figure in the cached HTML.
-    expect(poolsHtml(html)).not.toMatch(/\d+(\.\d+)?%\s*<\/(span|td)>/);
-    expect(cardHtml(html)).not.toMatch(/\d+(\.\d+)?%/);
+    expect(html).toContain("Robinhood Chain");
+    expect(html).toContain('data-testid="chain-badge"');
+    expect(html).toContain("Top pools");
+    expect(html).toContain("Pools over $5k TVL, ranked by 7d estimated APR.");
+    expect(html).not.toContain("All pools");
+    // One duplicate Solana SPCX pair is hidden in the full list.
+    expect(html).toContain(`See all ${fullListCount(storeResult.pairs.length + 1, 1)} pools →`);
+    expect(html).toContain(`/app/rwa-pairs?openPool=spcx-hot`);
+    expect(html).toContain('"@type":"Organization"');
+    expect(html).toContain('"@type":"WebSite"');
   });
 
   it("still prerenders the other chain when one chain's snapshot read fails", async () => {
@@ -167,10 +155,11 @@ describe("homepage server render", () => {
     const { default: Home } = await import("./page");
     const html = renderToString(await Home());
     expect(html).not.toContain("Loading pool data");
-    expect(cardRows(html)).toEqual([10, 9, 8, 7, 6].map(rhcKey));
-    expect(tableRows(html)).toEqual(rhcByTvl());
+    // RHC APR reads fail in this test, so the top 5 is empty; See all still counts the RHC list.
+    expect(topRows(html)).toEqual([]);
     expect(html).not.toContain("SPCXx/SPCX");
     expect(html).toContain("Updated 2026-10-30 11:02 UTC");
+    expect(html).toContain(`See all ${UNIV4_RHC_ALLOWLISTED_POOLS.length} pools →`);
   });
 
   it("falls back to the client-loaded table when both snapshot reads fail", async () => {

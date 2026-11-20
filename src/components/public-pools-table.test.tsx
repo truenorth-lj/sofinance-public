@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { HomepagePool, HomepagePoolsSnapshot } from "@/lib/homepage-pools";
 import { USDC_MINT, USDT_MINT } from "@/lib/rwa-allowlist";
-import { PUBLIC_POOLS_APR_COLUMN, PUBLIC_POOLS_H1 } from "@/lib/public-pools-table";
+import { PUBLIC_POOLS_APR_COLUMN, PUBLIC_POOLS_SSR_HEADING } from "@/lib/public-pools-table";
 import { PublicPoolsTable } from "./public-pools-table";
 
 const pool = (extra: Partial<HomepagePool> & Pick<HomepagePool, "key" | "protocol" | "poolAddress" | "symbolA" | "symbolB">): HomepagePool => ({
@@ -34,11 +34,14 @@ const snapshot: HomepagePoolsSnapshot = {
 const html = (node: HomepagePoolsSnapshot | null) => renderToStaticMarkup(createElement(PublicPoolsTable, { snapshot: node }));
 
 describe("PublicPoolsTable (HTML without JS)", () => {
-  it("renders an H1, Meteora DLMM, TVL, 24h volume, and the 7-day window in static markup", () => {
+  it("renders an h2 (not h1), Meteora DLMM, TVL, 24h volume, and the 7-day window in static markup", () => {
     const markup = html(snapshot);
     expect(markup).toContain("<table");
     expect(markup).toContain('id="public-pools-heading"');
-    expect(markup).toContain(PUBLIC_POOLS_H1);
+    expect(markup).toContain("<h2");
+    expect(markup).not.toContain("<h1");
+    expect(markup).toContain(PUBLIC_POOLS_SSR_HEADING);
+    expect(markup).not.toMatch(/same-stock/i);
     expect(markup).toContain("Meteora DLMM");
     expect(markup).toContain("Raydium CLMM");
     expect(markup).toContain("Uniswap v4");
@@ -64,9 +67,10 @@ describe("PublicPoolsTable (HTML without JS)", () => {
     expect(markup.replaceAll("Fees not guaranteed", "")).not.toMatch(/guaranteed|\byield\b|\bearn\b|backtest|auto-rebalance/i);
   });
 
-  it("renders a fallback when the snapshot is missing, still with the H1 and window copy", () => {
+  it("renders a fallback when the snapshot is missing, still with the heading and window copy", () => {
     const markup = html(null);
-    expect(markup).toContain(PUBLIC_POOLS_H1);
+    expect(markup).toContain(PUBLIC_POOLS_SSR_HEADING);
+    expect(markup).not.toContain("<h1");
     expect(markup).toContain("Fees not guaranteed");
     expect(markup).not.toContain("<table");
     expect(markup).toContain("temporarily unavailable");

@@ -8,7 +8,7 @@ import type { HomepageStocks, StockGainerRow } from "@/lib/stock-market/public";
 import { DEFAULT_SORT } from "@/lib/unified-pools/model";
 import { TokenIcon } from "./token-icon";
 import { StockCards, useHomepageStocks } from "./stocks/stock-cards";
-import { HomepagePoolsList, homepageListRows, PoolSearchInput, TopPoolsCard, useHomepagePools } from "./homepage-pools-table";
+import { HomepageTopPools, homepageListRows, PoolSearchInput, useHomepagePools } from "./homepage-pools-table";
 
 const labelPill =
   "inline-flex min-h-6 max-w-full items-center rounded-full border border-white/25 px-3 py-1 font-data text-[10px] uppercase leading-4 tracking-[0.1em] text-cream/75 sm:whitespace-nowrap sm:tracking-[0.14em]";
@@ -32,11 +32,11 @@ function IconBackdrop({ rows }: { rows: StockGainerRow[] }) {
 }
 
 /**
- * The homepage between the header and the footer: the hero (headline, search), Top Gainers / Top Stocks / Top Pools,
- * then every pool. The hero's search and the list's search are one query that filters the list.
+ * The homepage between the header and the footer: the hero (headline, search), Top Gainers / Top Stocks,
+ * then the single top-5 pools block. The hero's search still counts matches in the full list and scrolls to #pools.
  */
-export function HomepageMarketView({ initialPools = null, initialStocks = null, highlightPool }: {
-  initialPools?: HomepagePoolsSnapshot | null; initialStocks?: HomepageStocks | null; highlightPool?: string;
+export function HomepageMarketView({ initialPools = null, initialStocks = null }: {
+  initialPools?: HomepagePoolsSnapshot | null; initialStocks?: HomepageStocks | null;
 }) {
   const stocks = useHomepageStocks(initialStocks);
   const pools = useHomepagePools(initialPools);
@@ -92,17 +92,16 @@ export function HomepageMarketView({ initialPools = null, initialStocks = null, 
         </p>
       </section>
 
-      <StockCards stocks={stocks}>
-        <TopPoolsCard data={pools} className="md:col-span-2 xl:col-span-1" />
-      </StockCards>
+      <StockCards stocks={stocks} />
 
-      <HomepagePoolsList data={pools} query={query} onQueryChange={onQueryChange} highlightPool={highlightPool} />
+      <HomepageTopPools data={pools} />
     </div>
   </>;
 }
 
 /** Reads the `?pool=` tweet deep link, then renders the view (client-only: inside the landing page's Suspense). */
 export function HomepageMarket(props: { initialPools?: HomepagePoolsSnapshot | null; initialStocks?: HomepageStocks | null }) {
-  const highlightPool = useSearchParams().get("pool") ?? undefined;
-  return <HomepageMarketView {...props} highlightPool={highlightPool} />;
+  // Kept so this tree still suspends on `useSearchParams` (the landing page's prerendered fallback is HomepageMarketView).
+  useSearchParams();
+  return <HomepageMarketView {...props} />;
 }

@@ -8,9 +8,13 @@ import {
   formatAprPct,
   homepageRows,
   homepageCandidates,
+  homepageFullListCount,
+  seeAllPoolsLabel,
   HOMEPAGE_MIN_TVL_NOTE,
   HOMEPAGE_MIN_TVL_USD,
   HOMEPAGE_POOL_LIMIT,
+  TOP_POOLS_SUBTITLE,
+  TOP_POOLS_TITLE,
   collectedApr7d,
   rwaPairsDefaultOrder,
   snapshotFailedToLoadAprs,
@@ -141,7 +145,8 @@ describe("buildHomepagePools / two chains", () => {
     const noApr = rwaPairsDefaultOrder(pools, () => null);
     expect(noApr.filter((row) => row.pairLabel === "SPCXx/SPCX").map((row) => row.poolAddress)).toEqual(["spcx-pool"]);
     expect(noApr.some((row) => row.chain === "robinhood" && row.pairLabel === "SPCX/SPCXon")).toBe(true);
-    expect(homepageRows(pools, () => null).map((row) => row.poolAddress)[0]).toBe("usdc-usdt");
+    // No 7-day APR anywhere: the top 5 is empty (those pools are not ranked into a slot).
+    expect(homepageRows(pools, () => null)).toEqual([]);
   });
 
   it("keeps the highest 7-day APR pool per pair even when another pool has more TVL (LJ's rule)", () => {
@@ -174,16 +179,8 @@ describe("buildHomepagePools / two chains", () => {
     // /app/rwa-pairs' default view (TVL: Any) still lists the tiny META pool (it wins its pair), after the $5k+ pools (Low TVL).
     expect(rwaPairsDefaultOrder(small, apr7d).map((row) => row.poolAddress)).toEqual(["nvda-pool", "spcx-pool", "meta-tiny"]);
     expect(homepageCandidates(small).map((row) => row.poolAddress)).toEqual(["spcx-pool", "nvda-pool"]);
-    // A shared link to a pool under the floor does not bring it back.
-    expect(homepageRows(small, apr7d, "meta-tiny").map((row) => row.poolAddress)).toEqual(["nvda-pool", "spcx-pool"]);
-  });
-
-  it("puts a shared link's pool in the last slot when it is not in the top 5", () => {
-    const pools = buildHomepagePools({ solana, rhc: rhcSummaries() });
-    const rows = homepageRows(pools, () => null, "nvda-pool");
-    expect(rows).toHaveLength(HOMEPAGE_POOL_LIMIT);
-    expect(rows.at(-1)!.poolAddress).toBe("nvda-pool");
-    expect(homepageRows(pools, () => null, "unknown-pool")).toEqual(homepageRows(pools, () => null));
+    // A shared link no longer reserves a top-5 slot (the block is a strict APR ranking).
+    expect(homepageRows(small, apr7d).map((row) => row.poolAddress)).toEqual(["nvda-pool", "spcx-pool"]);
   });
 
   it("orders Robinhood Chain pairs as Robinhood token / Ondo token, whatever the pool's currency order", () => {
@@ -278,10 +275,108 @@ describe("homepage pools match /app/rwa-pairs", () => {
     });
   });
 
-  it("shows the first 5 pools of /app/rwa-pairs' default view, with the same pair labels", () => {
+  it("shows the first 5 pools of /app/rwa-pairs' default view that have a 7-day APR, with the same pair labels", () => {
     const shown = homepageRows(candidates, apr7d);
-    expect(shown.map((row) => row.key)).toEqual(rwaPairs.slice(0, HOMEPAGE_POOL_LIMIT).map((row) => row.key));
-    expect(shown.map((row) => row.pairLabel)).toEqual(rwaPairs.slice(0, HOMEPAGE_POOL_LIMIT).map((row) => row.pairLabel));
+    const withApr = rwaPairs.filter((row) => apr7d(row) !== null).slice(0, HOMEPAGE_POOL_LIMIT);
+    expect(shown.map((row) => row.key)).toEqual(withApr.map((row) => row.key));
+    expect(shown.map((row) => row.pairLabel)).toEqual(withApr.map((row) => row.pairLabel));
+    expect(shown).toHaveLength(3); // only three pools in this fixture have a 7-day APR
+  });
+});
+
+describe("homepage top-5 rules (TVL, dedupe, rank, no-APR, See all N)", () => {
+  const solana = [
+    solanaRow("SPCXx", "SPCX", 262_029),
+    solanaRow("SPCXx", "SPCX", 40_000, { poolAddress: "spcx-hot" }),
+    solanaRow("SPCXx", "SPCX", 4_000, { poolAddress: "spcx-tiny" }),
+    solanaRow("MSTRx", "MSTR", 66_362),
+    solanaRow("SNDKx", "SNDK", 19_508),
+    solanaRow("NVDAx", "NVDA", 8_566),
+    solanaRow("TSLAx", "TSLA", 90_000),
+    solanaRow("USDC", "USDT", 1_816_304, { poolAddress: "usdc-usdt", wrapKind: "stable" }),
+  ];
+
+  it("keeps the $5k TVL floor, then same-chain same-pair dedupe (higher 7-day APR wins), then ranks across both chains", () => {
+    const pools = buildHomepagePools({ solana, rhc: rhcSummaries() });
+    const key = (address: string) => pools.find((row) => row.poolAddress === address)!.key;
+    const rhcAddr = rhcSummaries()[3]!.poolId;
+    const rhcKey = pools.find((row) => row.poolAddress.toLowerCase() === rhcAddr.toLowerCase())!.key;
+    // The $4k SPCX pool has the highest APR but is under the floor, so it cannot hide or take the pair.
+    const apr7d = aprLookupFrom({
+      [key("spcx-tiny")]: 90,
+      [key("spcx-hot")]: 40,
+      [key("spcx-pool")]: 10,
+      [rhcKey]: 50,
+      [key("sndk-pool")]: 30,
+      [key("mstr-pool")]: 20,
+      [key("usdc-usdt")]: 5,
+      [key("tsla-pool")]: 4,
+      [key("nvda-pool")]: 3,
+    });
+    expect(homepageRows(pools, apr7d).map((row) => [row.chain, row.poolAddress])).toEqual([
+      ["robinhood", rhcAddr],
+      ["solana", "spcx-hot"],
+      ["solana", "sndk-pool"],
+      ["solana", "mstr-pool"],
+      ["solana", "usdc-usdt"],
+    ]);
+  });
+
+  it("keeps the same pair on both chains as two rows", () => {
+    const pools = buildHomepagePools({
+      solana: [solanaRow("SPCXx", "SPCX", 20_000)],
+      rhc: rhcSummaries(),
+    });
+    const solKey = pools.find((row) => row.poolAddress === "spcx-pool")!.key;
+    const rhcSpcx = pools.find((row) => row.chain === "robinhood" && row.pairLabel === "SPCX/SPCXon");
+    expect(rhcSpcx).toBeTruthy();
+    const apr7d = aprLookupFrom({ [solKey]: 12, [rhcSpcx!.key]: 9 });
+    const rows = homepageRows(pools, apr7d);
+    expect(rows.map((row) => [row.chain, row.pairLabel])).toEqual([
+      ["solana", "SPCXx/SPCX"],
+      ["robinhood", "SPCX/SPCXon"],
+    ]);
+  });
+
+  it("excludes pools with no 7-day APR from the top 5 (0.00% still qualifies) and does not pad the list", () => {
+    const pools = buildHomepagePools({
+      solana: [
+        solanaRow("SPCXx", "SPCX", 20_000),
+        solanaRow("MSTRx", "MSTR", 30_000),
+        solanaRow("TSLAx", "TSLA", 40_000),
+        solanaRow("GMEx", "GME", 50_000),
+        solanaRow("NVDAx", "NVDA", 60_000),
+        solanaRow("USDC", "USDT", 1_000_000, { poolAddress: "usdc-usdt", wrapKind: "stable" }),
+      ],
+    });
+    const key = (address: string) => pools.find((row) => row.poolAddress === address)!.key;
+    const apr7d = aprLookupFrom({ [key("spcx-pool")]: 10, [key("mstr-pool")]: 8, [key("tsla-pool")]: 0 });
+    expect(homepageRows(pools, apr7d).map((row) => row.poolAddress)).toEqual(["spcx-pool", "mstr-pool", "tsla-pool"]);
+    expect(homepageRows(pools, () => null)).toEqual([]);
+    // Full list still includes the no-APR pools, ranked last, after dedupe: 6 unique pairs.
+    expect(rwaPairsDefaultOrder(pools, apr7d).map((row) => row.poolAddress)).toEqual([
+      "spcx-pool", "mstr-pool", "tsla-pool", "usdc-usdt", "nvda-pool", "gme-pool",
+    ]);
+  });
+
+  it("counts See all N from the full default list (no TVL floor, duplicates hidden, including no-APR pools)", () => {
+    const pools = buildHomepagePools({
+      solana: [
+        solanaRow("SPCXx", "SPCX", 20_000),
+        solanaRow("SPCXx", "SPCX", 4_000, { poolAddress: "spcx-tiny" }),
+        solanaRow("MSTRx", "MSTR", 30_000),
+      ],
+    });
+    const key = (address: string) => pools.find((row) => row.poolAddress === address)!.key;
+    const apr7d = aprLookupFrom({ [key("spcx-tiny")]: 50, [key("spcx-pool")]: 2, [key("mstr-pool")]: 1 });
+    // Tiny SPCX is under $5k so it cannot hide the $20k pool in the top 5; in the full list (no floor) it wins the pair.
+    expect(homepageRows(pools, apr7d).map((row) => row.poolAddress)).toEqual(["spcx-pool", "mstr-pool"]);
+    expect(homepageFullListCount(pools, apr7d)).toBe(2);
+    expect(seeAllPoolsLabel(2)).toBe("See all 2 pools →");
+    expect(seeAllPoolsLabel(1)).toBe("See all 1 pool →");
+    expect(TOP_POOLS_TITLE).toBe("Top pools");
+    expect(TOP_POOLS_SUBTITLE).toBe("Pools over $5k TVL, ranked by 7d estimated APR.");
+    expect(TOP_POOLS_SUBTITLE).not.toMatch(/same-stock/i);
   });
 });
 

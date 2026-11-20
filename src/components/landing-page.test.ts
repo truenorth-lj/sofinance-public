@@ -23,10 +23,12 @@ describe("landing page copy and routes", () => {
   const src = readFileSync(resolve("src/components/landing-page.tsx"), "utf8");
   const market = readFileSync(resolve("src/components/homepage-market.tsx"), "utf8");
   const table = readFileSync(resolve("src/components/homepage-pools-table.tsx"), "utf8");
+  const results = readFileSync(resolve("src/components/unified-pools/pool-results.tsx"), "utf8");
   const copyFiles = [
     "src/components/landing-page.tsx",
     "src/components/homepage-market.tsx",
     "src/components/homepage-pools-table.tsx",
+    "src/components/unified-pools/pool-results.tsx",
     "src/components/stocks/stock-cards.tsx",
     "src/lib/homepage-pools.ts",
     "src/lib/homepage-pools-snapshot.ts",
@@ -47,13 +49,15 @@ describe("landing page copy and routes", () => {
     expect(market).toContain('getElementById("pools")');
     expect(market).not.toMatch(/audited|trustless|risk-free|fully automated|autonomous/i);
     // "trading" is allowed only as "trading fees", never as a trading product.
-    for (const text of [src, market, table]) expect(text.replace(/trading fees/g, "")).not.toMatch(/\btrading\b/i);
+    for (const text of [src, market, table, results]) expect(text.replace(/trading fees/g, "")).not.toMatch(/\btrading\b/i);
   });
 
-  it("orders the page like a market page: hero, the three cards, then every pool", () => {
-    const order = ['data-testid="landing-hero"', "<StockCards", "<TopPoolsCard", "<HomepagePoolsList"].map((tag) => market.indexOf(tag));
-    expect(order.every((index) => index > 0)).toBe(true);
+  it("orders the page like a market page: hero, stock cards, then the top-5 pools block", () => {
+    const order = ['data-testid="landing-hero"', "<StockCards", "<HomepageTopPools"].map((tag) => market.indexOf(tag));
+    expect(order.every((index) => index >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(market).not.toContain("<TopPoolsCard");
+    expect(market).not.toContain("<HomepagePoolsList");
     expect(src).toContain("<HomepageMarket ");
     expect(src).toContain("<HomepageMarketView ");
   });
@@ -163,42 +167,47 @@ describe("landing page copy and routes", () => {
     expect(table).toContain("?openPool=");
     expect(table).not.toContain("openUnavailableReason");
     expect(table).toContain("fetchRwaPairsList");
-    // The list is the /app/rwa-pairs list view (same PoolTable, Open action, selectPools order); Top Pools is its top 5.
-    expect(table).toContain('from "./unified-pools/pool-list"');
-    expect(table).toContain("<PoolTable");
-    expect(table).toContain("selectPools(");
-    expect(table).toContain("RWA_PAIRS_DEFAULT_SELECT");
+    // The homepage top 5 is PoolResults in top mode; /app/rwa-pairs keeps PoolResults in full mode (PoolTable / cards).
+    expect(table).toContain('from "./unified-pools/pool-results"');
+    expect(table).toContain('mode="top"');
     expect(table).toContain("homepageRows(");
-    expect(table).toContain("Open in app →");
-    expect(table).not.toMatch(/<table|homepage-pools-cards/);
+    expect(results).toContain('mode === "full"');
+    expect(results).toContain("<PoolTable");
+    expect(results).toContain('data-testid="pools-cards"');
+    expect(results).toContain("See all");
+    expect(results).toContain("TOP_POOLS_TITLE");
+    expect(results).not.toMatch(/same-stock/i);
     expect(src).not.toContain('href="/rwa-pairs"');
     expect(table).not.toMatch(/HMAC|v0 tx|signUrl|permit/i);
   });
 
-  it("ranks homepage pools by the /app/rwa-pairs 7-day estimate with a plain help and docs link", () => {
+  it("ranks homepage pools by the 7-day estimate in one top-5 block, with a plain help and docs link", () => {
     expect(HOMEPAGE_APR_DOCS_LINK_LABEL).toBe("How estimates work");
     expect(withoutAllowed(`${HIGHEST_RANGE_APR_7D_HELP} ${HOMEPAGE_APR_DOCS_LINK_LABEL}`)).not.toMatch(FORBIDDEN);
     expect(HIGHEST_RANGE_APR_7D_HELP).toContain("$1,000 deposit");
     expect(HIGHEST_RANGE_APR_7D_HELP).not.toMatch(/\$100\b|APR/);
-    expect(table).toContain("Ranked by the 7-day estimate, high to low (on Solana, for a range picked from the past 7 days of fee data).");
-    expect(table).toContain("All pools");
-    expect(table).toContain('title="Top Pools"');
-    expect(table).not.toContain("by est. 7-day APR");
-    expect(table).toContain("HIGHEST_RANGE_APR_7D_HELP");
-    expect(table).toContain("DOCS_ROUTES.feeApr");
+    expect(results).toContain("TOP_POOLS_SUBTITLE");
+    expect(results).toContain("HIGHEST_RANGE_APR_7D_HELP");
+    expect(results).toContain("DOCS_ROUTES.feeApr");
     expect(table).toContain("usePoolsApr7d"); // the /app/rwa-pairs APR state
-    expect(table).toContain("DEFAULT_SORT");
+    expect(table).not.toContain("All pools");
+    expect(table).not.toContain("by est. 7-day APR");
     expect(table).not.toContain("@/lib/range-apr/format"); // the rounding formatter that showed tiny APRs as 0%
     expect(table).not.toContain("POOL_FEE_APR_24H_HELP");
+    // The phrase family appears once, in the mandated subtitle, not as a column header.
+    const pages = ["src/components/homepage-market.tsx", "src/components/homepage-pools-table.tsx", "src/components/unified-pools/pool-results.tsx", "src/components/landing-page.tsx", "src/lib/homepage-pools.ts"];
+    const joined = pages.map((file) => copyOf(file)).join("\n");
+    expect([...joined.matchAll(/7d estimated APR/g)]).toHaveLength(1);
+    expect(joined).not.toMatch(/\b7d APR\b/);
   });
 
   it("keeps the risk lines next to the pools: not LP return, out of range, and a Risks link", () => {
-    expect(table).toContain("Not LP return; ignores IL and rewards.");
-    expect(table).toContain("A position out of its range collects no fees.");
-    expect(table).toContain("DOCS_ROUTES.risks");
+    expect(results).toContain("Not LP return; ignores IL and rewards.");
+    expect(results).toContain("A position out of its range collects no fees.");
+    expect(results).toContain("DOCS_ROUTES.risks");
     // "Fees not guaranteed" reaches the list only through the shared estimate help, never as a new claim.
     expect(HIGHEST_RANGE_APR_7D_HELP).toContain("Fees not guaranteed.");
-    for (const text of [src, market, table]) expect(withoutAllowed(text)).not.toMatch(/guaranteed|will earn|risk-free/i);
+    for (const text of [src, market, table, results]) expect(withoutAllowed(text)).not.toMatch(/guaranteed|will earn|risk-free/i);
   });
 
   it("describes Solana ranges as picked from the past 7 days of fee data, never as backtested", () => {
@@ -206,6 +215,7 @@ describe("landing page copy and routes", () => {
       "src/components/landing-page.tsx",
       "src/components/homepage-market.tsx",
       "src/components/homepage-pools-table.tsx",
+      "src/components/unified-pools/pool-results.tsx",
       "src/app/page.tsx",
       "src/components/blog/blog-shell.tsx",
       "src/app/docs/fee-apr/page.tsx",
