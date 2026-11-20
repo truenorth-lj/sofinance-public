@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { HIGHEST_RANGE_APR_7D_HELP } from "@/lib/apr-labels/copy";
 import type { HomepagePool, HomepagePoolsSnapshot } from "@/lib/homepage-pools";
 import { USDC_MINT, USDT_MINT } from "@/lib/rwa-allowlist";
-import { PUBLIC_POOLS_H1 } from "@/lib/public-pools-table";
+import { PUBLIC_POOLS_H1, publicPoolRows } from "@/lib/public-pools-table";
 import {
   PUBLIC_POOL_APR_LABEL,
   assignPublicPoolSlugs,
@@ -148,5 +148,49 @@ describe("public pool page models", () => {
       "/pools/tsla-tslax",
       "/pools/tsla-tslax-meteora",
     ]);
+  });
+
+  it("shows the same 7d APR as the SSR table for a pool in the snapshot, and — only when that pool has no 7d value", () => {
+    const sndk = pool({
+      key: "solana:sndk-sndkx",
+      protocol: "raydium-clmm",
+      poolAddress: "sndk-pool",
+      symbolA: "SNDKx",
+      symbolB: "SNDK",
+    });
+    const antRay = pool({
+      key: "solana:ant-antx",
+      protocol: "raydium-clmm",
+      poolAddress: "ant-raydium",
+      symbolA: "ANTx",
+      symbolB: "ANT",
+    });
+    const antMeteora = pool({
+      key: "solana:ant-antx-meteora",
+      protocol: "meteora-dlmm",
+      poolAddress: "ant-meteora",
+      symbolA: "ANT",
+      symbolB: "ANTx",
+    });
+    const withApr: HomepagePoolsSnapshot = {
+      pools: [...snapshot.pools, sndk, antRay, antMeteora],
+      apr7d: { ...snapshot.apr7d, [sndk.key]: 81.28, [antRay.key]: 13.68 },
+      updated: [],
+    };
+    const rows = publicPoolRows(withApr);
+    const sndkRow = rows.find((row) => row.href === "/pools/sndk-sndkx");
+    const antRow = rows.find((row) => row.href === "/pools/ant-antx-meteora");
+    const antRayRow = rows.find((row) => row.href === "/pools/ant-antx");
+    const sndkPage = findPublicPoolPageModel(withApr, "sndk-sndkx");
+    const antPage = findPublicPoolPageModel(withApr, "ant-antx-meteora");
+    const antRayPage = findPublicPoolPageModel(withApr, "ant-antx");
+    expect(antRayRow?.apr7d).toBe("13.68%");
+    expect(antRayPage?.apr7d).toBe("13.68%");
+    expect(sndkRow?.apr7d).toBe("81.28%");
+    expect(sndkPage?.apr7d).toBe("81.28%");
+    expect(sndkPage?.apr7d).toBe(sndkRow?.apr7d);
+    expect(antRow?.apr7d).toBe("—");
+    expect(antPage?.apr7d).toBe("—");
+    expect(antPage?.apr7d).toBe(antRow?.apr7d);
   });
 });

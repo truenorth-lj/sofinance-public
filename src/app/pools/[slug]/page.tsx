@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { PublicPoolPage } from "@/components/public-pool-page";
+import { snapshotFailedToLoadAprs } from "@/lib/homepage-pools";
 import { loadHomepagePoolsSnapshot } from "@/lib/homepage-pools-snapshot";
 import { serializeJsonLd } from "@/lib/json-ld";
 import {
@@ -17,6 +18,10 @@ type PageProps = { params: Promise<{ slug: string }> };
 
 export async function generateStaticParams() {
   const snapshot = await loadHomepagePoolsSnapshot();
+  // If the build-time APR fetch failed entirely, do not prerender every slug with "—".
+  // dynamicParams + ISR will fill each page on first request once the snapshot cache is warm.
+  // (Calling noStore() here would mark the whole route per-request dynamic.)
+  if (snapshotFailedToLoadAprs(snapshot)) return [];
   return listPublicPoolPageModels(snapshot).map((page) => ({ slug: page.slug }));
 }
 

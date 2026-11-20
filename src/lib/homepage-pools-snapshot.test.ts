@@ -1,5 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
+import { snapshotFailedToLoadAprs } from "./homepage-pools";
 import { loadHomepagePoolsSnapshot } from "./homepage-pools-snapshot";
+import { listPublicPoolPageModels } from "./public-pool-pages";
 import { payloadFixture } from "./range-apr/payload.fixture";
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 vi.mock("server-only", () => ({}));
@@ -34,4 +36,21 @@ it("reads both saved APR sources when the same RHC flag is on", async () => {
   expect(await loadHomepagePoolsSnapshot()).not.toBeNull();
   expect(backend.solanaApr).toHaveBeenCalledExactlyOnceWith("solana-pool");
   expect(backend.rhcApr).toHaveBeenCalledExactlyOnceWith(spec.poolId);
+});
+it("puts a ready 7d APR on the snapshot so a pool page model shows the same percent", async () => {
+  const snapshot = await loadHomepagePoolsSnapshot();
+  expect(snapshotFailedToLoadAprs(snapshot)).toBe(false);
+  expect(Object.values(snapshot!.apr7d).length).toBeGreaterThan(0);
+  const [key, apr] = Object.entries(snapshot!.apr7d)[0]!;
+  const model = listPublicPoolPageModels(snapshot).find((page) => page.pool.key === key);
+  expect(model?.apr7d).toBe(`${apr.toFixed(2)}%`);
+  expect(model?.apr7d).not.toBe("—");
+});
+
+it("does not record an empty APR map when every read fails (homepage still renders the pools)", async () => {
+  backend.solanaApr.mockRejectedValue(new Error("store down"));
+  const snapshot = await loadHomepagePoolsSnapshot();
+  expect(snapshot).not.toBeNull();
+  expect(snapshot!.pools.length).toBeGreaterThan(0);
+  expect(snapshotFailedToLoadAprs(snapshot)).toBe(true);
 });

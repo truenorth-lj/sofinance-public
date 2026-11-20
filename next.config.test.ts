@@ -16,6 +16,24 @@ describe("legacy page redirects", () => {
   });
 });
 
+describe("index redirects for /pools and /use-cases", () => {
+  it("temporarily sends the bare indexes to the pools list and Learn, and does not catch slug pages", async () => {
+    const redirects = nextConfig.redirects ? await nextConfig.redirects() : [];
+    expect(redirects).toEqual(
+      expect.arrayContaining([
+        { source: "/pools", destination: "/app/rwa-pairs", permanent: false },
+        { source: "/use-cases", destination: "/learn", permanent: false },
+      ]),
+    );
+    const sources = redirects.map((entry) => entry.source);
+    expect(sources).not.toContain("/pools/:slug");
+    expect(sources).not.toContain("/pools/:path*");
+    expect(sources).not.toContain("/use-cases/:slug");
+    expect(sources).not.toContain("/use-cases/:path*");
+    expect(sources.some((source) => source.startsWith("/pools/") || source.startsWith("/use-cases/"))).toBe(false);
+  });
+});
+
 describe("renamed docs pages", () => {
   it("sends /docs/yield-and-apr to /docs/fee-apr with a real 301", async () => {
     const redirects = nextConfig.redirects ? await nextConfig.redirects() : [];

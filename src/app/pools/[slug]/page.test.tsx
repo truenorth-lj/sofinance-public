@@ -73,7 +73,31 @@ describe("/pools/[slug]", () => {
     expect(html).toContain("$TSLAx / $TSLA on Raydium CLMM");
     expect(html).toContain("7d APR");
     expect(html.split("7d APR")).toHaveLength(2);
+    expect(html).toContain("10.00%");
     expect(html).not.toContain("<!--$!-->");
     expect(notFound).not.toHaveBeenCalled();
+  });
+
+  it("skips generateStaticParams when every 7d APR failed to load, so deploys do not prerender all dashes", async () => {
+    loadHomepagePoolsSnapshot.mockResolvedValue({ ...snapshot, apr7d: {} });
+    expect(await generateStaticParams()).toEqual([]);
+    const html = renderToStaticMarkup(await PublicPoolSlugPage({ params: Promise.resolve({ slug: "tsla-tslax" }) }) as ReactElement);
+    expect(html).toContain("7d APR");
+    expect(html).toContain("—");
+    expect(html).not.toContain("10.00%");
+  });
+
+  it("still shows — for a genuinely missing 7d value and still prerenders the other slugs", async () => {
+    loadHomepagePoolsSnapshot.mockResolvedValue({
+      ...snapshot,
+      apr7d: { "solana:tsla-meteora": 11 },
+    });
+    const params = await generateStaticParams();
+    expect(params.map((row) => row.slug).sort()).toEqual(["tsla-tslax", "tsla-tslax-meteora"]);
+    const missing = renderToStaticMarkup(await PublicPoolSlugPage({ params: Promise.resolve({ slug: "tsla-tslax" }) }) as ReactElement);
+    const ready = renderToStaticMarkup(await PublicPoolSlugPage({ params: Promise.resolve({ slug: "tsla-tslax-meteora" }) }) as ReactElement);
+    expect(missing).toContain("—");
+    expect(missing).not.toContain("10.00%");
+    expect(ready).toContain("11.00%");
   });
 });
