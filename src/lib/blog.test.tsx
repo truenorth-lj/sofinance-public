@@ -110,6 +110,30 @@ describe("blog content", () => {
     expect(articles.map((item) => item.slug)).toContain("competitor-comparison");
   });
 
+  it("publishes the LP guide with a hero PNG and FAQPage JSON-LD built from its faq frontmatter", () => {
+    const article = getBlogArticle("how-to-provide-liquidity-raydium-orca-meteora");
+    expect(article).not.toBeNull();
+    expect(article?.datePublished).toBe("2026-11-20");
+    expect(getPublicPngSize(article!.hero.src)).toEqual({ width: 1600, height: 900 });
+    expect(article?.faq).toHaveLength(8);
+    for (const item of article!.faq) {
+      expect(article?.body).toContain(`### ${item.question}`);
+    }
+    expect(article?.body).toContain("Fees not guaranteed");
+    expect(article?.body).not.toMatch(/\b(earn|yield|apy|backtest|risk-free|auto-rebalance|re-center)\b/i);
+    const graph = blogArticleJsonLd(article!)["@graph"] as Array<Record<string, unknown>>;
+    const faqPage = graph.find((node) => node["@type"] === "FAQPage");
+    expect(faqPage?.["@id"]).toBe(
+      "https://sofinancelab.xyz/blog/how-to-provide-liquidity-raydium-orca-meteora#faq",
+    );
+    expect((faqPage?.mainEntity as unknown[]).length).toBe(8);
+  });
+
+  it("omits FAQPage JSON-LD when an article has no faq frontmatter", () => {
+    const graph = blogArticleJsonLd(getBlogArticle("dex-evolution")!)["@graph"] as Array<Record<string, unknown>>;
+    expect(graph.map((node) => node["@type"])).toEqual(["BlogPosting", "BreadcrumbList"]);
+  });
+
   it("reads PNG dimensions from public files and formats dates without locale drift", () => {
     expect(getPublicPngSize("/blog/dex-evolution/hero-evolution.png")).toEqual({ width: 1500, height: 600 });
     expect(formatBlogDate("2026-10-23")).toBe("October 23, 2026");

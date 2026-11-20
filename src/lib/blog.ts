@@ -38,6 +38,12 @@ export type BlogImageSize = {
   height: number;
 };
 
+/** Optional Q&A pairs, emitted as FAQPage JSON-LD. Each pair should also appear in the article body. */
+export type BlogFaqItem = {
+  question: string;
+  answer: string;
+};
+
 export type BlogArticle = {
   slug: string;
   title: string;
@@ -45,6 +51,7 @@ export type BlogArticle = {
   datePublished: string;
   dateModified: string;
   hero: BlogHero;
+  faq: BlogFaqItem[];
   body: string;
 };
 
@@ -77,6 +84,18 @@ function parseHero(value: unknown, file: string): BlogHero {
   return { src, alt };
 }
 
+function parseFaq(value: unknown, file: string): BlogFaqItem[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new Error(`${file}: faq must be a list`);
+  return value.map((item, index) => {
+    if (!isRecord(item)) throw new Error(`${file}: faq[${index}] must have question and answer`);
+    return {
+      question: requireString(item.question, `faq[${index}].question`, file),
+      answer: requireString(item.answer, `faq[${index}].answer`, file),
+    };
+  });
+}
+
 function parseArticleFile(filename: string): BlogArticle {
   const slug = filename.replace(/\.(md|mdx)$/, "");
   if (!SLUG.test(slug)) {
@@ -96,6 +115,7 @@ function parseArticleFile(filename: string): BlogArticle {
   const datePublished = requireDate(data.datePublished, "datePublished", filename);
   const dateModified = requireDate(data.dateModified ?? data.datePublished, "dateModified", filename);
   const hero = parseHero(data.hero, filename);
+  const faq = parseFaq(data.faq, filename);
 
   return {
     slug,
@@ -104,6 +124,7 @@ function parseArticleFile(filename: string): BlogArticle {
     datePublished,
     dateModified,
     hero,
+    faq,
     body: content.trim(),
   };
 }
@@ -266,6 +287,19 @@ export function blogArticleJsonLd(article: BlogArticle): JsonLd {
           { "@type": "ListItem", position: 3, name: article.title, item: canonical },
         ],
       },
+      ...(article.faq.length > 0
+        ? [
+            {
+              "@type": "FAQPage",
+              "@id": `${canonical}#faq`,
+              mainEntity: article.faq.map((item) => ({
+                "@type": "Question",
+                name: item.question,
+                acceptedAnswer: { "@type": "Answer", text: item.answer },
+              })),
+            },
+          ]
+        : []),
     ],
   };
 }
