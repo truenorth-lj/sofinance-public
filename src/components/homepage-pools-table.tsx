@@ -12,16 +12,13 @@ import {
   type HomepageSourceTime,
 } from "@/lib/homepage-pools";
 import { isRhcUniv4DiscoveryEnabled } from "@/lib/protocol-flags";
-import { dexDescriptors, uiFor, openCapabilityFor } from "@/lib/dex/client";
 import { fetchRwaPairsList } from "@/lib/rwa-pairs-list";
-import { buildOpenPositionPath } from "@/lib/public-urls";
 import {
-  unsupportedTokenReason,
   type PoolChain, type UnifiedPool,
 } from "@/lib/unified-pools/model";
+import { openAction } from "@/lib/unified-pools/open-action";
 import type { Apr7dState } from "@/lib/unified-pools/apr7d";
 import type { RhcPoolSummary } from "@/lib/unified-pools/rows";
-import { type OpenAction } from "./unified-pools/pool-list";
 import { PoolResults } from "./unified-pools/pool-results";
 import { usePoolsApr7d } from "./unified-pools/use-pools-apr7d";
 import { rankGroupLookup } from "@/lib/unified-pools/apr7d";
@@ -36,25 +33,6 @@ type PairsResponse = {
 type RhcResponse = { pools?: RhcPoolSummary[]; fetchedAt?: string; snapshot?: { stale?: boolean } };
 
 const RHC_POOLS_URL = "/api/protocol-pools?protocol=uniswap-v4-rhc";
-
-/**
- * Open as on `/app/rwa-pairs`: tokens not supported yet say so; a registry or hidden registry DEX
- * (`openUi: "registry"` or `"none"`, today Meteora and Orca) is disabled when its `open` capability is
- * unsupported. Native-modal availability follows the native capability record; other pools keep
- * their deep links. The app page resolves the same UI contract. No DEX-name checks here.
- */
-const openAction = (pool: UnifiedPool): OpenAction => {
-  const unsupported = unsupportedTokenReason(pool);
-  if (unsupported) return { kind: "unsupported", reason: unsupported };
-  // Resolve the capability for the chosen UI contract. A native modal reads its
-  // native declaration; generic StepResult readiness still governs registry shells.
-  const openUi = uiFor(pool.protocol).openUi;
-  if (openUi === "registry" || openUi === "none" || openUi === "native-modal") {
-    const open = openCapabilityFor(dexDescriptors.descriptorFor(pool.protocol));
-    if (open && !open.supported) return { kind: "disabled", reason: open.reason };
-  }
-  return { kind: "link", href: buildOpenPositionPath(pool.poolAddress) };
-};
 
 type ChainPools = Partial<Record<PoolChain, HomepagePool[]>>;
 
@@ -177,7 +155,10 @@ export function useHomepagePools(initial?: HomepagePoolsSnapshot | null): Homepa
 /**
  * The homepage's single top-5 block: `PoolResults` in `mode="top"`.
  */
-export function HomepageTopPools({ data }: { data: HomepagePoolsData }) {
+export function HomepageTopPools({ data, detailHrefs }: {
+  data: HomepagePoolsData;
+  detailHrefs?: Readonly<Record<string, string>>;
+}) {
   const rows = useMemo(() => (data.pools ? homepageRows(data.pools, data.apr7d, data.group) : []), [data.pools, data.apr7d, data.group]);
   const totalCount = useMemo(() => (data.pools ? homepageFullListCount(data.pools, data.apr7d, data.group) : 0), [data.pools, data.apr7d, data.group]);
   return <PoolResults
@@ -192,5 +173,6 @@ export function HomepageTopPools({ data }: { data: HomepagePoolsData }) {
     loading={Boolean(data.loading && !data.pools)}
     error={data.pools ? null : data.error}
     onRetry={data.retry}
+    detailHrefs={detailHrefs}
   />;
 }

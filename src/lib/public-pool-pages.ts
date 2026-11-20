@@ -191,6 +191,16 @@ export function slugForPool(snapshot: HomepagePoolsSnapshot | null, poolKey: str
   return assignPublicPoolSlugs(pools).get(poolKey) ?? null;
 }
 
+/** Server-built `pool.key → /pools/<slug>` map for card and list-row name links. Pools without a slug are omitted. */
+export function publicPoolDetailHrefs(snapshot: HomepagePoolsSnapshot | null): Readonly<Record<string, string>> {
+  const pools = seoPublicPools(snapshot);
+  if (pools.length === 0) return {};
+  const slugs = assignPublicPoolSlugs(pools);
+  const hrefs: Record<string, string> = {};
+  for (const [key, slug] of slugs) hrefs[key] = publicPoolPath(slug);
+  return hrefs;
+}
+
 export function publicPoolJsonLd(model: PublicPoolPageModel): JsonLd {
   const url = `${CANONICAL_SITE_URL}${model.path}`;
   const listUrl = `${CANONICAL_SITE_URL}${model.listHref}`;

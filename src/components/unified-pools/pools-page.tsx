@@ -20,10 +20,11 @@ export const POOLS_PAGE_SUBLINE = PUBLIC_POOLS_SSR_HEADING;
  * independent wallets (Solana, EVM). Opening a Solana pool uses the Solana wallet and opens Create position; opening a
  * Robinhood Chain pool opens its dialog on the nav's EVM wallet (asking to connect it when none is connected).
  * `?openPool=<id>` (also where `/app/rhc` and old `/app?openPool=` links land) opens that pool once it is listed.
- * `?calc=<id>` opens the share calculator for that pool.
+ * `?calc=<id>` opens the share calculator when that pool supports it; otherwise the param is ignored.
  */
-export function PoolsPage({ flags, rhcSigningEnabled, deepLinkPool, deepLinkCalc, initialQuery }: {
+export function PoolsPage({ flags, rhcSigningEnabled, deepLinkPool, deepLinkCalc, initialQuery, detailHrefs }: {
   flags: UnifiedPoolFlags; rhcSigningEnabled: boolean; deepLinkPool?: string; deepLinkCalc?: string; initialQuery?: string;
+  detailHrefs?: Readonly<Record<string, string>>;
 }) {
   const { address, connected, restoring, connect, disconnect } = useWalletConnection();
   const [rhcOpen, setRhcOpen] = useState<RhcPoolView | null>(null);
@@ -33,7 +34,7 @@ export function PoolsPage({ flags, rhcSigningEnabled, deepLinkPool, deepLinkCalc
       <h1 className="text-xl font-semibold text-cream sm:text-2xl">{POOLS_PAGE_TITLE}</h1>
       <p className="mt-1 text-sm text-smoke">{POOLS_PAGE_SUBLINE}</p>
     </div>
-    <UnifiedPoolsPanel flags={flags} deepLinkPool={deepLinkPool} deepLinkCalc={deepLinkCalc} initialQuery={initialQuery} onOpenRhc={({ pool }) => setRhcOpen(pool)} />
+    <UnifiedPoolsPanel flags={flags} deepLinkPool={deepLinkPool} deepLinkCalc={deepLinkCalc} initialQuery={initialQuery} detailHrefs={detailHrefs} onOpenRhc={({ pool }) => setRhcOpen(pool)} />
     {rhcOpen && <RhcOpenDialog pool={rhcOpen} signingEnabled={rhcSigningEnabled} onClose={() => setRhcOpen(null)} />}
     <SiteFooter variant="app" />
   </InkShell>;

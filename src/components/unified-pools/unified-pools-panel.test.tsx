@@ -23,14 +23,19 @@ const mocks = vi.hoisted(() => ({
   openOverride: null as null | { supported: false; reason: string },
   planOverride: null as null | { supported: false; reason: string },
 }));
-vi.mock("@/lib/dex/client", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/dex/client")>();
-  return { ...actual, dexDescriptors: { ...actual.dexDescriptors, descriptorFor: (id: string) => {
+vi.mock("@/lib/dex/descriptor-registry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/dex/descriptor-registry")>();
+  return { dexDescriptors: { ...actual.dexDescriptors, descriptorFor: (id: string) => {
     const descriptor = actual.dexDescriptors.descriptorFor(id);
     if (!descriptor) return descriptor;
     return { ...descriptor, capabilities: { ...descriptor.capabilities,
       ...(mocks.planOverride ? { plan: mocks.planOverride } : {}), ...(mocks.openOverride ? { open: mocks.openOverride } : {}) } };
   } } };
+});
+vi.mock("@/lib/dex/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/dex/client")>();
+  const { dexDescriptors } = await import("@/lib/dex/descriptor-registry");
+  return { ...actual, dexDescriptors };
 });
 vi.mock("./use-pools-apr7d", () => ({
   usePoolsApr7d: (pools: UnifiedPool[]) => Object.fromEntries(pools.map((pool): [string, Apr7dState] => [pool.key,
@@ -268,6 +273,15 @@ describe("UnifiedPoolsPanel", () => {
     expect(mocks.calc).toHaveBeenCalledWith("spcxA", "open");
     expect(mocks.modal).not.toHaveBeenCalled();
     expect(mocks.connect).not.toHaveBeenCalled();
+  });
+
+  it("silently ignores ?calc= for a Robinhood Chain pool and does not open the calculator", async () => {
+    await render(PROD, { deepLinkCalc: rhcSpec.poolId });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    expect(mocks.calc).not.toHaveBeenCalled();
+    expect(mocks.modal).not.toHaveBeenCalled();
+    expect(container.querySelector("[data-testid=share-calc-dialog]")).toBeNull();
+    expect(container.textContent).not.toMatch(/Invalid poolId|couldn't open the calculator/i);
   });
 
   it("explains in plain words when one source fails and still shows the others", async () => {

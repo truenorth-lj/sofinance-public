@@ -28,8 +28,9 @@ const secondaryBtn =
 /**
  * The homepage between the header and the footer: the hero, the top-5 pools block, then Top Gainers / Top Stocks.
  */
-export function HomepageMarketView({ initialPools = null, initialStocks = null }: {
+export function HomepageMarketView({ initialPools = null, initialStocks = null, detailHrefs }: {
   initialPools?: HomepagePoolsSnapshot | null; initialStocks?: HomepageStocks | null;
+  detailHrefs?: Readonly<Record<string, string>>;
 }) {
   const stocks = useHomepageStocks(initialStocks);
   const pools = useHomepagePools(initialPools);
@@ -59,7 +60,7 @@ export function HomepageMarketView({ initialPools = null, initialStocks = null }
         </ul>
       </section>
 
-      <HomepageTopPools data={pools} />
+      <HomepageTopPools data={pools} detailHrefs={detailHrefs} />
 
       <StockCards stocks={stocks} />
     </div>
@@ -67,7 +68,7 @@ export function HomepageMarketView({ initialPools = null, initialStocks = null }
 }
 
 /** Renders the view (client-only: inside the landing page's Suspense). */
-export function HomepageMarket(props: { initialPools?: HomepagePoolsSnapshot | null; initialStocks?: HomepageStocks | null }) {
+export function HomepageMarket(props: { initialPools?: HomepagePoolsSnapshot | null; initialStocks?: HomepageStocks | null; detailHrefs?: Readonly<Record<string, string>> }) {
   // Kept so this tree still suspends on `useSearchParams` (the landing page's prerendered fallback is HomepageMarketView).
   useSearchParams();
   return <HomepageMarketView {...props} />;

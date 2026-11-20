@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { CARD_RANGE_APR_7D_HELP } from "@/lib/apr-labels/copy";
 import { cn } from "@/lib/cn";
-import { dexDescriptors, uiFor } from "@/lib/dex/client";
+import { uiFor } from "@/lib/dex/client";
 import { volumeDivergenceNote } from "@/lib/apr-labels/volume-divergence";
 import { HIGHEST_RANGE_COLUMN_LABEL, HIGHEST_RANGE_HELP } from "@/lib/range-apr/copy";
 import { unavailableReasonText } from "@/lib/range-apr/format";
@@ -12,6 +12,7 @@ import { pairIssuerLabel } from "@/lib/rwa-pair-names";
 import type { TokenIconMap } from "@/lib/token-icons/map";
 import { planShareSymbol, pairLabelSymbols } from "@/lib/lp-plan-shares";
 import { isLowTvl, PROTOCOL_LABELS, type UnifiedPool } from "@/lib/unified-pools/model";
+import { poolPlanCapability } from "@/lib/unified-pools/plan-support";
 import { InfoTip } from "../info-tip";
 import { PairTokenIcons } from "../pair-token-icons";
 import { dataDaysLabel, MIN_DATA_DAYS } from "@/lib/min-data-days";
@@ -45,12 +46,14 @@ const cardEyebrow = "font-data text-[10px] uppercase tracking-[0.12em] text-ink/
  * full name is the title). The narrowest cards (phones, and the three-column grid below 2xl) use a smaller name and icons.
  */
 
-export function PoolCard({ pool, apr, action, icons, onCalculate, calculateHref }: {
+export function PoolCard({ pool, apr, action, icons, onCalculate, calculateHref, detailHref }: {
   pool: UnifiedPool; apr: Apr7dState | undefined; action: OpenAction; icons: TokenIconMap | undefined;
   /** Opens the share calculator over the list (only offered where the DEX's `plan` capability is supported). */
   onCalculate?: () => void;
   /** When set (homepage), Calculate is a link into the app instead of opening the in-page dialog. */
   calculateHref?: string;
+  /** When set, the pair name links to the public pool page. */
+  detailHref?: string;
 }) {
   const ready = apr?.status === "ready" ? apr : null;
   const volumeNote = ready ? volumeDivergenceNote(pool.volume24hUsd, ready.avgDailyVolumeUsd) : null;
@@ -59,12 +62,7 @@ export function PoolCard({ pool, apr, action, icons, onCalculate, calculateHref 
   const ui = uiFor(pool.protocol);
   const chain = chainMeta(pool.chain);
   const externalUrl = ui.externalPoolUrl?.(pool.poolAddress);
-  // A registered `plan` capability only drives the chip when plan terms or the open UI come from
-  // the registry (`useDescriptorPlanTerms` or `openUi` registry/none). RHC keeps `rhc-dialog` and
-  // `useDescriptorPlanTerms: false`, so it still uses `planFallback` (unset → no Calculate button),
-  // matching the pre-register screen. Meteora (plan terms on) and Orca (`openUi: "none"`) are unchanged.
-  const useRegisteredPlan = ui.useDescriptorPlanTerms || ui.openUi === "registry" || ui.openUi === "none";
-  const plan = (useRegisteredPlan ? dexDescriptors.descriptorFor(pool.protocol)?.capabilities.plan : null) ?? (ui.planFallback ?? null);
+  const plan = poolPlanCapability(pool);
   // Stock pools count shares; the stablecoin pool has no stock, so its button just says Calculate.
   const calcLabel = planShareSymbol(pairLabelSymbols(pool.pairLabel)) ? "Calculate shares" : "Calculate";
   return <li className="flex min-w-0 flex-col rounded-[28px] bg-cream p-6 text-ink" data-pool={pool.key} data-chain={pool.chain}>
@@ -74,7 +72,9 @@ export function PoolCard({ pool, apr, action, icons, onCalculate, calculateHref 
       <div className="flex min-w-0 items-center gap-3 max-sm:gap-2 xl:max-2xl:gap-2">
         <PairTokenIcons pair={iconPair(pool)} icons={icons} chain={pool.chain} iconClassName="h-10 w-10 max-sm:h-8 max-sm:w-8 xl:max-2xl:h-8 xl:max-2xl:w-8" />
         <div className="min-w-0">
-          <h3 className="truncate whitespace-nowrap text-xl font-medium max-sm:text-lg xl:max-2xl:text-lg leading-tight tracking-[-0.02em]" title={pool.pairLabel} data-testid="pool-card-name">{pool.pairLabel}</h3>
+          <h3 className="truncate whitespace-nowrap text-xl font-medium max-sm:text-lg xl:max-2xl:text-lg leading-tight tracking-[-0.02em]" title={pool.pairLabel} data-testid="pool-card-name">{detailHref
+            ? <Link href={detailHref} className="underline decoration-ink/30 underline-offset-2 hover:decoration-ink">{pool.pairLabel}</Link>
+            : pool.pairLabel}</h3>
           <p className="truncate text-xs text-ink/65" title={`${pool.nameA} / ${pool.nameB}`}>{pairIssuerLabel(pool.nameA, pool.nameB)}</p>
         </div>
       </div>

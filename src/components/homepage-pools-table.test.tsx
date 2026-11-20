@@ -7,6 +7,7 @@ import { cardPayloadWithAprs } from "@/lib/range-apr/payload.fixture";
 import { RWA_PAIRS_LIST_PATH } from "@/lib/rwa-pairs-list";
 import { UNIV4_RHC_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/uniswap-v4/constants";
 import { toHomepagePoolsSnapshot, type HomepageSolanaRow } from "@/lib/homepage-pools";
+import { publicPoolDetailHrefs } from "@/lib/public-pool-pages";
 import type { RhcPoolSummary } from "@/lib/unified-pools/rows";
 import { HomepageMarket, HomepageMarketView } from "./homepage-market";
 import type { PoolRangeAprState } from "./range-apr/use-pool-range-apr";
@@ -23,14 +24,19 @@ const mocks = vi.hoisted(() => ({
   nativeOpenDisabled: false,
   tokens: {} as Record<string, { icon: string | null }>,
 }));
-vi.mock("@/lib/dex/client", async original => {
-  const actual = await original<typeof import("@/lib/dex/client")>();
-  return { ...actual, dexDescriptors: { ...actual.dexDescriptors, descriptorFor: (id: string) => {
+vi.mock("@/lib/dex/descriptor-registry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/dex/descriptor-registry")>();
+  return { dexDescriptors: { ...actual.dexDescriptors, descriptorFor: (id: string) => {
     const descriptor = actual.dexDescriptors.descriptorFor(id);
     return mocks.nativeOpenDisabled && descriptor?.nativeCapabilities
       ? { ...descriptor, nativeCapabilities: { ...descriptor.nativeCapabilities, open: { supported: false as const, reason: "Native opening is unavailable" } } }
       : descriptor;
   } } };
+});
+vi.mock("@/lib/dex/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/dex/client")>();
+  const { dexDescriptors } = await import("@/lib/dex/descriptor-registry");
+  return { ...actual, dexDescriptors };
 });
 // The table reads APRs through `usePoolsApr7d` (the /app/rwa-pairs hook), which loads each pool through the shared
 // client; `aprFor` states map to that client's promise (ready → payload, error → rejection, loading → pending).
@@ -293,6 +299,26 @@ describe("homepage pools: single top-5 block", () => {
     });
     expect(keysOf()).toEqual([sol("spcx-pool")]);
     expect(aprOf(rowsOf()[0]!).textContent).toBe("12.50%");
+  });
+
+  it("links a top-5 card name to /pools/<slug> from the server map and leaves unmapped names plain", async () => {
+    const stock = pair({ poolAddress: "spcx-pool", tvlUsd: 300_000 }) as HomepageSolanaRow;
+    const initial = toHomepagePoolsSnapshot({
+      solana: { pairs: [stock], fetchedAt: "2026-10-30T11:02:00.000Z", stale: false },
+      apr7d: { "solana:spcx-pool": 12.5 },
+    });
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    await act(async () => {
+      root.render(createElement(HomepageMarketView, { initialPools: initial, detailHrefs: publicPoolDetailHrefs(initial) }));
+    });
+    const name = container.querySelector("[data-testid=pool-card-name]")!;
+    expect(name.textContent).toBe("SPCXx/SPCX");
+    expect(name.querySelector("a")!.getAttribute("href")).toBe("/pools/spcx-spcxx");
+    await act(async () => {
+      root.render(createElement(HomepageMarketView, { initialPools: initial, detailHrefs: {} }));
+    });
+    expect(container.querySelector("[data-testid=pool-card-name] a")).toBeNull();
+    expect(container.querySelector("[data-testid=pool-card-name]")!.textContent).toBe("SPCXx/SPCX");
   });
 
   it("shows a loading status before pairs arrive", async () => {
