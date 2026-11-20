@@ -185,6 +185,6 @@ SoFinance isn't affiliated with Metric, Fables, Raydium, Jupiter, xStocks, Backp
 
 If you hold a tokenized stock and want to see what a same-stock pool looks like, including its suggested ranges (Solana pools) and risk flags, before you commit anything:
 
-**[https://sofinancelab.xyz/app/rwa-pairs?ref=x-article](https://sofinancelab.xyz/app/rwa-pairs?ref=x-article)**
+**[https://sofinancelab.xyz/pools?ref=x-article](https://sofinancelab.xyz/pools?ref=x-article)**
 
 *Not financial advice. Providing liquidity can lose money.*
