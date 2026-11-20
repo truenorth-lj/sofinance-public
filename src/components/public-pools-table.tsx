@@ -3,8 +3,8 @@ import { HOMEPAGE_APR_DOCS_LINK_LABEL } from "@/lib/apr-labels/copy";
 import type { HomepagePoolsSnapshot } from "@/lib/homepage-pools";
 import {
   PUBLIC_POOLS_APR_COLUMN,
-  PUBLIC_POOLS_H1,
   PUBLIC_POOLS_INTRO,
+  PUBLIC_POOLS_SSR_HEADING,
   publicPoolRows,
 } from "@/lib/public-pools-table";
 
@@ -23,9 +23,9 @@ export function PublicPoolsTable({ snapshot }: { snapshot: HomepagePoolsSnapshot
       aria-labelledby="public-pools-heading"
       className="mx-auto max-w-[1280px] px-4 py-6 text-cream"
     >
-      <h1 id="public-pools-heading" className="font-display text-2xl font-medium tracking-tight">
-        {PUBLIC_POOLS_H1}
-      </h1>
+      <h2 id="public-pools-heading" className="font-display text-2xl font-medium tracking-tight">
+        {PUBLIC_POOLS_SSR_HEADING}
+      </h2>
       <p className="mt-3 max-w-3xl text-sm leading-relaxed text-cream/80">{PUBLIC_POOLS_INTRO}</p>
       <p className="mt-2 text-sm">
         <a href={GUIDE_ROUTES.learn} className="underline decoration-cream/40 underline-offset-2 hover:decoration-cream">

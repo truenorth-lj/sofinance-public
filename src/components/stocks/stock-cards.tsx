@@ -106,8 +106,8 @@ function StockCard({ testId, title, subtitle, pill, rows, buy, onBuy, showMcap }
 }
 
 /**
- * Top Gainers and Top Stocks, then `children` (the homepage's Top Pools card) in the same grid: one column on phones,
- * two from 768px (a third card spans both), three from 1280px (narrower, the rows would cut the names short). Without data the two stock cards say they are loading.
+ * Top Gainers and Top Stocks in one grid: one column on phones, two from 768px. An optional `children` card still
+ * joins that grid (three columns from 1280px) if a caller passes one. Without data the two stock cards say they are loading.
  */
 export function StockCardsView({ stocks, onBuy, children }: { stocks: HomepageStocks | null; onBuy: (option: StockBuyOption) => void; children?: ReactNode }) {
   const snapshot = stocks ? utcMinuteLabel(stocks.snapshotAt) : null;

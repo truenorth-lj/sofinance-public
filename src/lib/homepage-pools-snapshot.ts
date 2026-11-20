@@ -91,13 +91,13 @@ export async function loadHomepagePoolsSnapshot(): Promise<HomepagePoolsSnapshot
     solana: solana.status === "fulfilled" ? solana.value : null,
     rhc: rhc.status === "fulfilled" ? rhc.value : null,
   };
-  // The homepage lists every pool by its 7-day APR (Top Pools: the top 5 above the homepage TVL floor; the full list:
-  // `/app/rwa-pairs`' default view), so every pool has its APR read: Solana pools always, Robinhood Chain pools with
+  // The homepage ranks every candidate by its 7-day APR (top 5 above the TVL floor; "See all N" uses /app/rwa-pairs'
+  // default view), so every pool has its APR read: Solana pools always, Robinhood Chain pools with
   // RHC_APR7D_ENABLED, as on `/app/rwa-pairs`.
   const refs: AprRef[] = buildHomepagePools({ solana: input.solana?.pairs, rhc: input.rhc?.pools })
     .filter((pool) => poolAprUnavailableReason(pool.chain) === null)
     .map(({ key, chain, protocol, poolAddress }) => ({ key, chain, protocol, poolAddress }));
-  // Without the APRs the order falls back to TVL; the client re-ranks once it has loaded them.
+  // If the APR read fails, the snapshot keeps an empty map: the top 5 then has no rows until the client has APRs.
   const apr7d = await withTimeout(cachedApr7d(refs)).catch(() => ({}));
   return toHomepagePoolsSnapshot({ ...input, apr7d });
 }

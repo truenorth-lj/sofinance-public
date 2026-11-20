@@ -88,14 +88,21 @@ afterEach(() => {
 });
 
 const PROD: UnifiedPoolFlags = { orca: false, meteora: false, rhc: true };
-async function render(flags: UnifiedPoolFlags = PROD, props: { deepLinkPool?: string; onOpenRhc?: (r: unknown) => void } = {}) {
-  await act(async () => { root.render(createElement(UnifiedPoolsPanel, { flags, onOpenRhc: props.onOpenRhc ?? vi.fn(), deepLinkPool: props.deepLinkPool })); });
+async function render(flags: UnifiedPoolFlags = PROD, props: { deepLinkPool?: string; initialQuery?: string; onOpenRhc?: (r: unknown) => void } = {}) {
+  await act(async () => { root.render(createElement(UnifiedPoolsPanel, { flags, onOpenRhc: props.onOpenRhc ?? vi.fn(), deepLinkPool: props.deepLinkPool, initialQuery: props.initialQuery })); });
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
 }
 const shown = () => [...container.querySelectorAll("[data-pool]")].map((el) => el.getAttribute("data-pool"));
 const button = (text: string) => [...container.querySelectorAll("button")].find((el) => el.textContent?.includes(text))!;
 
 describe("UnifiedPoolsPanel", () => {
+  it("prefills the list search from initialQuery (?q=)", async () => {
+    await render(PROD, { initialQuery: "tsla" });
+    const search = container.querySelector<HTMLInputElement>('input[type="search"]')!;
+    expect(search.value).toBe("tsla");
+    expect(shown()).toEqual(["solana:tsla"]);
+  });
+
   it("lists Solana and Robinhood Chain pools together, duplicates hidden, highest 7d APR first", async () => {
     await render();
     expect(shown()).toEqual(["solana:spcxA", "solana:tsla", `robinhood:${rhcSpec.poolId.toLowerCase()}`]);

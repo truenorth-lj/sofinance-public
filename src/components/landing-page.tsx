@@ -6,8 +6,8 @@ import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 
 /**
- * The homepage, laid out like a market page: header, the hero (headline and pool search), Top Gainers / Top Stocks /
- * Top Pools, then every pool. How it works, risks and agents live in Docs, the FAQ and the app.
+ * The homepage, laid out like a market page: header, the hero (headline and pool search), Top Gainers / Top Stocks,
+ * then the top-5 pools block. How it works, risks and agents live in Docs, the FAQ and the app.
  */
 export function LandingPage({ initialPools = null, initialStocks = null }: { initialPools?: HomepagePoolsSnapshot | null; initialStocks?: HomepageStocks | null } = {}) {
   return (

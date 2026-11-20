@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { type ReactElement } from "react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -25,5 +27,23 @@ describe("/app/rwa-pairs page", () => {
     }
     const deepLink = poolsPageProps(await RwaPairsPage({ searchParams: Promise.resolve({ risk: "freeze", openPool: "abc" }) }) as ReactElement);
     expect(deepLink).toEqual({ ...plain, deepLinkPool: "abc" });
+  });
+
+  it("passes ?q= through as initialQuery so the list search is prefilled, including with a deep link", async () => {
+    const plain = poolsPageProps(await RwaPairsPage({ searchParams: Promise.resolve({}) }) as ReactElement);
+    const withQuery = poolsPageProps(await RwaPairsPage({ searchParams: Promise.resolve({ q: "tesla" }) }) as ReactElement);
+    expect(withQuery).toEqual({ ...plain, initialQuery: "tesla" });
+    const both = poolsPageProps(await RwaPairsPage({ searchParams: Promise.resolve({ q: "spcx", openPool: "abc" }) }) as ReactElement);
+    expect(both).toEqual({ ...plain, initialQuery: "spcx", deepLinkPool: "abc" });
+  });
+
+  it("uses a single Pools h1 and no InkHero; the crawler table is an h2", () => {
+    const page = readFileSync(resolve("src/components/unified-pools/pools-page.tsx"), "utf8");
+    expect(page).not.toContain("InkHero");
+    expect(page).toContain("POOLS_PAGE_TITLE");
+    expect(page).toContain("<h1");
+    const table = readFileSync(resolve("src/components/public-pools-table.tsx"), "utf8");
+    expect(table).not.toMatch(/<h1\b/);
+    expect(table).toContain("<h2");
   });
 });

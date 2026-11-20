@@ -12,6 +12,12 @@ import { CHAIN_LABELS, type UnifiedPool } from "@/lib/unified-pools/model";
 
 export const PUBLIC_POOLS_H1 = "Same-stock liquidity pools";
 
+/**
+ * On-page heading for the /app/rwa-pairs crawler table (and the visible subline under the "Pools" h1).
+ * Does not say "same-stock" because the interactive list also includes USDC/USDT.
+ */
+export const PUBLIC_POOLS_SSR_HEADING = "Liquidity pools on Solana and Robinhood Chain";
+
 /** One intro: names the DEXes, states the 7-day window, and includes "Fees not guaranteed." */
 export const PUBLIC_POOLS_INTRO =
   `Raydium CLMM and Meteora DLMM on Solana, and Uniswap v4 on Robinhood Chain. ${HIGHEST_RANGE_APR_7D_HELP}`;

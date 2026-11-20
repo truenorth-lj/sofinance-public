@@ -19,9 +19,9 @@ import type { RhcPoolView } from "../rhc-univ4-open-panel";
 import type { OpenPositionPair } from "../use-open-position-controller";
 import { useWalletConnection } from "../wallet-connection";
 import { usePoolsApr7d } from "./use-pools-apr7d";
-import { COLUMNS, PoolTable, type OpenAction } from "./pool-list";
+import { COLUMNS, type OpenAction } from "./pool-list";
+import { PoolResults } from "./pool-results";
 import { rankGroupLookup } from "@/lib/unified-pools/apr7d";
-import { PoolCard } from "./pool-card";
 import { usePoolSources, type UnifiedPoolFlags } from "./use-pool-sources";
 import { resolveOpenDispatch } from "./open-dispatch";
 
@@ -89,17 +89,22 @@ export type OpenRhcRequest = { pool: RhcPoolView };
  * see `lib/unified-pools/model.ts` for the rule). Opening a Solana pool connects the Solana wallet and opens the
  * existing Create position modal; opening a Robinhood Chain pool asks the page to open its dialog on the nav's EVM wallet.
  */
-export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header }: {
+export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", initialQuery = "", header }: {
   flags: UnifiedPoolFlags;
   onOpenRhc: (request: OpenRhcRequest) => void;
   /** `?openPool=` from the URL: open this pool once it is listed. */
   deepLinkPool?: string;
+  /** `?q=` from the URL (homepage hero search): prefill the list search. */
+  initialQuery?: string;
   header?: ReactNode;
 }) {
   const { connected, connect } = useWalletConnection();
   const { loaded, errors, loading, refreshKey, refresh: reloadSources } = usePoolSources(flags);
   const [view, setView] = useState<"cards" | "list">("cards");
-  const [filters, setFilters] = useState<PoolFilters>(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState<PoolFilters>(() => {
+    const query = initialQuery.trim();
+    return query ? { ...DEFAULT_FILTERS, query } : DEFAULT_FILTERS;
+  });
   const [showAll, setShowAll] = useState(false);
   const [sort, setSort] = useState(DEFAULT_SORT);
   const [openPair, setOpenPair] = useState<OpenPositionPair | null>(null);
@@ -230,12 +235,10 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", header 
       <p className="sr-only" role="status">{selected.pools.length} pools shown</p>
     </div>
 
-    {selected.pools.length > 0 && (view === "cards"
-      ? <ul className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3" data-testid="pools-cards">
-          {selected.pools.map((pool) => <PoolCard key={pool.key} pool={pool} apr={apr[pool.key]} action={actionFor(pool)} icons={loaded.icons}
-            onCalculate={() => setCalcPool(pool)} />)}
-        </ul>
-      : <PoolTable pools={selected.pools} apr={apr} actionFor={actionFor} sort={sort} onSort={onSort} icons={loaded.icons} />)}
+    {selected.pools.length > 0 && (
+      <PoolResults mode="full" view={view} pools={selected.pools} apr={apr} actionFor={actionFor} sort={sort} onSort={onSort}
+        icons={loaded.icons} onCalculate={(pool) => setCalcPool(pool)} />
+    )}
 
     {calcPool && <ShareCalcDialog key={calcPool.key} pool={calcPool} open={actionFor(calcPool)} onClose={closeCalc} />}
     {openPair && <OpenPositionModal pair={openPair} onClose={() => setOpenPair(null)} />}

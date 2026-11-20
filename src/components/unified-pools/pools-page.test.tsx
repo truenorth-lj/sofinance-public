@@ -4,18 +4,17 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const seen = vi.hoisted(() => ({ openRhc: null as null | ((r: { pool: unknown }) => void), deepLink: [] as (string | undefined)[],
+const seen = vi.hoisted(() => ({ openRhc: null as null | ((r: { pool: unknown }) => void), deepLink: [] as (string | undefined)[], initialQuery: [] as (string | undefined)[],
   panel: vi.fn<(props: Record<string, unknown>) => void>() }));
 vi.mock("../ink", () => ({
   InkShell: ({ children }: { children: unknown }) => createElement("main", null, children as never),
-  InkHero: ({ title }: { title: string }) => createElement("h1", null, title),
 }));
 vi.mock("../site-header", () => ({ SiteHeader: () => null }));
 vi.mock("../site-footer", () => ({ SiteFooter: () => null }));
 vi.mock("../wallet-connection", () => ({ useWalletConnection: () => ({ address: null, connected: false, connect: vi.fn(), disconnect: vi.fn() }) }));
 vi.mock("./unified-pools-panel", () => ({
-  UnifiedPoolsPanel: (props: { onOpenRhc: (r: { pool: unknown }) => void; deepLinkPool?: string }) => {
-    seen.openRhc = props.onOpenRhc; seen.deepLink.push(props.deepLinkPool); return createElement("section", { id: "pools" });
+  UnifiedPoolsPanel: (props: { onOpenRhc: (r: { pool: unknown }) => void; deepLinkPool?: string; initialQuery?: string }) => {
+    seen.openRhc = props.onOpenRhc; seen.deepLink.push(props.deepLinkPool); seen.initialQuery.push(props.initialQuery); return createElement("section", { id: "pools" });
   },
 }));
 vi.mock("../rhc-univ4-open-panel", () => ({ RhcUniv4OpenPanel: (props: Record<string, unknown>) => {
@@ -23,7 +22,7 @@ vi.mock("../rhc-univ4-open-panel", () => ({ RhcUniv4OpenPanel: (props: Record<st
   return createElement("div", { "data-testid": "rhc-open-panel" });
 } }));
 
-import { PoolsPage } from "./pools-page";
+import { PoolsPage, POOLS_PAGE_SUBLINE, POOLS_PAGE_TITLE } from "./pools-page";
 import { EvmWalletProvider } from "../evm-wallet-connection";
 import { createEvmSession } from "@/lib/rhc-wallet/evm-session";
 
@@ -35,11 +34,31 @@ let container: HTMLDivElement; let root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
-  seen.openRhc = null; seen.deepLink = []; seen.panel.mockReset();
+  seen.openRhc = null; seen.deepLink = []; seen.initialQuery = []; seen.panel.mockReset();
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
 
 describe("PoolsPage (/app/rwa-pairs)", () => {
+  it("has exactly one h1, titled Pools, and no InkHero card", async () => {
+    await act(async () => { root.render(createElement(EvmWalletProvider, { enabled: false, session: createEvmSession({ discover }) },
+      createElement(PoolsPage, { flags: { orca: false, meteora: false, rhc: true }, rhcSigningEnabled: true }))); });
+    const headings = [...container.querySelectorAll("h1")];
+    expect(headings).toHaveLength(1);
+    expect(headings[0]!.textContent).toBe(POOLS_PAGE_TITLE);
+    expect(POOLS_PAGE_TITLE).toBe("Pools");
+    expect(container.textContent).toContain(POOLS_PAGE_SUBLINE);
+    expect(POOLS_PAGE_SUBLINE).toBe("Liquidity pools on Solana and Robinhood Chain");
+    expect(container.textContent).not.toMatch(/same-stock/i);
+    expect(container.textContent).not.toContain("RWA pairs on Solana and Robinhood Chain");
+    expect(container.querySelector(".bg-cream")).toBeNull();
+  });
+
+  it("passes initialQuery through to the pool list", async () => {
+    await act(async () => { root.render(createElement(EvmWalletProvider, { enabled: false, session: createEvmSession({ discover }) },
+      createElement(PoolsPage, { flags: { orca: false, meteora: false, rhc: true }, rhcSigningEnabled: true, initialQuery: "tesla" }))); });
+    expect(seen.initialQuery.at(-1)).toBe("tesla");
+  });
+
   it("lists the pools, passes the deep link, and opens a Robinhood Chain pool in a MetaMask dialog with no Solana content", async () => {
     await act(async () => { root.render(createElement(EvmWalletProvider, { enabled: false, session: createEvmSession({ discover }) },
       createElement(PoolsPage, { flags: { orca: false, meteora: false, rhc: true }, rhcSigningEnabled: true, deepLinkPool: "0xpool" }))); });
