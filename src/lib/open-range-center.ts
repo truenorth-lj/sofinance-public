@@ -14,6 +14,7 @@ export function openRangeCenterPrice(input: {
   multiplierB?: number;
   onChainPriceBPerA: number;
 }): number {
+  if (input.multiplierA === undefined || input.multiplierB === undefined) return input.onChainPriceBPerA;
   const fair = fairPriceFor({
     symbolA: input.symbolA ?? "A",
     symbolB: input.symbolB ?? "B",
