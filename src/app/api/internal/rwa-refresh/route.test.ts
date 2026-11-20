@@ -78,11 +78,31 @@ describe("native cron adapter", () => {
     }
   });
   it("sanitizes thrown errors before monitoring and recovers on the next tick", async () => {
-    vi.mocked(refreshRwaSnapshots).mockRejectedValueOnce(new Error("private DB credential"));
+    const password = "super-secret-db-password";
+    const databaseUrl = `postgres://sofinance_owner:${password}@ep-private.neon.tech/sofinance`;
+    const failure = Object.assign(new Error(`connect failed ${databaseUrl} DATABASE_URL=${databaseUrl}`), { code: "08006" });
+    failure.name = "PostgresError";
+    vi.mocked(refreshRwaSnapshots).mockRejectedValueOnce(failure);
     const response = await GET(request("GET"));
     expect(response.status).toBe(503);
-    expect(await response.text()).not.toContain("credential");
-    expect(vi.mocked(captureApiRouteError).mock.calls[0]?.[0]).toEqual(new Error("RWA refresh temporarily unavailable"));
+    const body = await response.text();
+    expect(body).toContain("RWA refresh temporarily unavailable");
+    expect(body).not.toContain(password);
+    expect(body).not.toContain("postgres://");
+    expect(body).not.toContain("DATABASE_URL");
+    const [captured, options] = vi.mocked(captureApiRouteError).mock.calls[0] ?? [];
+    const monitored = captured as Error & { pgCode?: string; code?: string; message: string };
+    expect(monitored.message).toBe("RWA refresh temporarily unavailable");
+    expect(monitored.name).toBe("PostgresError");
+    expect(monitored.pgCode).toBe("08006");
+    expect(options).toMatchObject({ route: "/api/internal/rwa-refresh", status: 503, job: "rwa-refresh", fallback: "RWA refresh temporarily unavailable" });
+    const payload = JSON.stringify(vi.mocked(captureApiRouteError).mock.calls, (_key, item) => (
+      item instanceof Error ? { ...item, name: item.name, message: item.message, stack: item.stack } : item
+    ));
+    expect(payload).not.toContain(password);
+    expect(payload).not.toContain("postgres://");
+    expect(payload).not.toContain("DATABASE_URL");
+    expect(payload).not.toContain("neon.tech");
     expect((await GET(request("GET"))).status).toBe(200);
   });
 });

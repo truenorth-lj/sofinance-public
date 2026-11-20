@@ -3,7 +3,9 @@ import { isJupiterUpstreamError, JupiterHttpError, JupiterUnavailableError, JUPI
 import { isMinContextSlotError, RpcHttpError, RpcUnavailableError } from "@sofinance/engine/rpc/errors";
 import { RPC_BEHIND_CODE } from "@sofinance/engine/rpc/context-slot";
 import { isWalletRejection } from "@/lib/tx-pipeline/errors";
-import { publicErrorCode, CompoundSendError, sanitizePublicError } from "../public-error";
+import { classifyObservedError } from "../observed-error";
+import { exceptionForCapture, messageIfSanitized } from "../refresh-monitoring";
+import { publicErrorCode, CompoundSendError } from "../public-error";
 import { AMOUNT_TOO_SMALL_CODE, JUPITER_CLIENT_ERROR_CODE, SMALL_LEG_MOVES_PRICE_CODE } from "../selected-amount-error";
 import { isSentryEnabled } from "./runtime";
 import { pathnameFromUrl, routeFromRequest, routeFromTransaction } from "./route";
@@ -102,7 +104,7 @@ export function resolveApiRoute(options: {
 export function captureApiRouteError(
   error: unknown,
   options: { route?: string; request?: { url: string }; fallback?: string; status?: number; quotePath?: string;
-    transaction?: boolean; sent?: boolean } = {},
+    transaction?: boolean; sent?: boolean; job?: string } = {},
 ): void {
   try {
     if (!isSentryEnabled()) return;
@@ -110,17 +112,24 @@ export function captureApiRouteError(
     // Ordinary 4xx (bad input, refused relay, rate limit) never reach Sentry, so abuse cannot burn the quota.
     if (!shouldCaptureApiError(error, status)) return;
     const route = resolveApiRoute(options);
+    const fallback = options.fallback ?? "API route error";
+    const fields = classifyObservedError(error);
     Sentry.withScope((scope) => {
       if (route) scope.setTag("route", route);
+      if (options.job) scope.setTag("job", options.job);
       if (isRpcBehindError(error)) {
         scope.setLevel("warning");
         scope.setTag("rpc_behind", "true");
       }
       if (options.transaction) scope.setTag("tx_sent", options.sent === false ? "no" : "unknown");
       scope.setTag("error_class", sentryErrorClass(error));
-      if (options.quotePath) scope.setTag("quote_path", options.quotePath);
-      scope.setExtra("public_message", sanitizePublicError(error, options.fallback ?? "API route error"));
-      Sentry.captureException(error);
+      scope.setTag("error_name", fields.name);
+      if (fields.pgCode) scope.setTag("pg_code", fields.pgCode);
+      if (fields.httpStatus !== undefined) scope.setTag("http_status", String(fields.httpStatus));
+      if (fields.storeCode) scope.setTag("store_code", fields.storeCode);
+      // The sanitizer's text when it kept one; otherwise the fixed fallback. Never the raw message.
+      scope.setExtra("public_message", messageIfSanitized(error, fallback) ?? fallback);
+      Sentry.captureException(exceptionForCapture(error, fallback));
     });
   } catch {
     // Monitoring must never fail the request.

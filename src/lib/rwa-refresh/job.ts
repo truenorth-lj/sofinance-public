@@ -4,7 +4,9 @@ import type { PublicClient } from "viem";
 import { getRwaConfig } from "../config/rwa-env";
 import type { ThrottleGate } from "../range-apr/throttle-gate";
 import { createCronGeckoGate } from "../pool-metrics/gecko";
-import { sanitizePublicError } from "../public-error";
+import { isLeaseLost } from "../observed-error";
+import { errorForMonitoring, publicIssue } from "../refresh-monitoring";
+import { captureApiRouteError } from "../sentry/capture";
 import { getRwaStore } from "../rwa-store";
 import type { DailyTvlStats, DexId } from "@/lib/dex";
 import { poolSourceFor, readCronTokenIcons } from "@/lib/dex";
@@ -118,7 +120,7 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
       // its last generation and never touches Raydium's. Reported as an issue, not counted as a job failure.
       if (options.meteoraScan ?? true) {
         meteora = await publishPoolCron("meteora-dlmm", { store, lease, seedPairs: result.pairs, fetcher: options.fetcher, signal })
-          .catch((error) => ({ error: sanitizePublicError(error, "Meteora scan failed").slice(0, 200) }));
+          .catch((error) => ({ error: publicIssue(error, "Meteora scan failed", 200) }));
         if ("error" in meteora) { issues.push(`Meteora: ${meteora.error}`); status = "partial"; }
       }
       // Best effort: a missing table or an indexer outage leaves the snapshot published and the old icons in place.
@@ -142,7 +144,8 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
   } catch (error) {
     status = "error";
     failure = true;
-    issues.push(sanitizePublicError(error, "Refresh failed").slice(0, 400));
+    issues.push(publicIssue(error, "Refresh failed"));
+    reportRefreshFailure(error, job, "Refresh failed");
   }
   try {
     await store.request({
@@ -153,9 +156,12 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
       failure,
       issues: issues.slice(0, 20),
     });
-  } catch {
+  } catch (error) {
     status = "error";
-    issues.push("Job lease was lost before completion");
+    const leaseLost = isLeaseLost(error);
+    const fallback = leaseLost ? "Job lease was lost before completion" : "Job could not be finished";
+    issues.push(leaseLost ? fallback : publicIssue(error, fallback));
+    reportRefreshFailure(error, job, fallback);
   }
   return {
     job, status, processed, issues: issues.slice(0, 20), elapsedMs: clock() - startedAt,
@@ -164,6 +170,19 @@ export async function runJob(job: JobName, options: Options): Promise<JobResult>
   };
 }
 
+
+function reportRefreshFailure(error: unknown, job: JobName, fallback: string) {
+  try {
+    captureApiRouteError(errorForMonitoring(error, fallback), {
+      route: "/api/internal/rwa-refresh",
+      fallback,
+      status: 503,
+      job,
+    });
+  } catch {
+    // Monitoring must never fail the refresh.
+  }
+}
 
 export async function refreshRwaSnapshots(options: Options = {}) {
   const clock = options.clock ?? Date.now;

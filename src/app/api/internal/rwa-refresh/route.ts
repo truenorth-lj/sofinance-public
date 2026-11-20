@@ -2,6 +2,7 @@ import { z } from "zod";
 import { getRwaConfig } from "@/lib/config/rwa-env";
 import { validRwaAuthorization } from "@/lib/rwa-auth";
 import { refreshRwaSnapshots } from "@/lib/rwa-refresh";
+import { errorForMonitoring } from "@/lib/refresh-monitoring";
 import { captureApiRouteError } from "@/lib/sentry/capture";
 import { NO_STORE_HEADERS } from "@/lib/http/no-store";
 
@@ -42,9 +43,10 @@ async function handleRefresh(request: Request, method: "GET" | "POST") {
           : 200,
       headers: NO_STORE_HEADERS,
     });
-  } catch {
-    // Database errors may contain credentials/receipts. Monitoring gets a fixed error only.
-    captureApiRouteError(new Error("RWA refresh temporarily unavailable"), { request, route: "/api/internal/rwa-refresh", fallback: "RWA refresh temporarily unavailable", status: 503 });
+  } catch (error) {
+    // The HTTP body stays this fixed sentence. Monitoring gets the error name, SQLSTATE, and store code, not the raw message.
+    const fallback = "RWA refresh temporarily unavailable";
+    captureApiRouteError(errorForMonitoring(error, fallback), { request, route: "/api/internal/rwa-refresh", fallback, status: 503, job: "rwa-refresh" });
     return Response.json(
       { error: "RWA refresh temporarily unavailable" },
       { status: 503, headers: NO_STORE_HEADERS },
