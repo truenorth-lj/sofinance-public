@@ -30,11 +30,13 @@ export function PoolsPage({ flags, rhcSigningEnabled, deepLinkPool, deepLinkCalc
   const [rhcOpen, setRhcOpen] = useState<RhcPoolView | null>(null);
   return <InkShell>
     <SiteHeader variant="app" wallet={address} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
+    <main id="main">
     <div className="mt-5 px-1">
       <h1 className="text-xl font-semibold text-cream sm:text-2xl">{POOLS_PAGE_TITLE}</h1>
       <p className="mt-1 text-sm text-smoke">{POOLS_PAGE_SUBLINE}</p>
     </div>
     <UnifiedPoolsPanel flags={flags} deepLinkPool={deepLinkPool} deepLinkCalc={deepLinkCalc} initialQuery={initialQuery} detailHrefs={detailHrefs} onOpenRhc={({ pool }) => setRhcOpen(pool)} />
+    </main>
     {rhcOpen && <RhcOpenDialog pool={rhcOpen} signingEnabled={rhcSigningEnabled} onClose={() => setRhcOpen(null)} />}
     <SiteFooter variant="app" />
   </InkShell>;

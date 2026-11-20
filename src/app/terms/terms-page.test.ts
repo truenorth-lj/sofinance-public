@@ -41,3 +41,9 @@ describe("/terms page", () => {
     expect(readFileSync(resolve("src/components/docs/docs-shell.tsx"), "utf8")).toContain("<SiteFooter variant=\"marketing\" />");
   });
 });
+
+  it("sets a canonical via pageMetadata and does not rewrite the Terms body for SEO", () => {
+    expect(page).toContain("pageMetadata");
+    expect(page).toContain("path: LEGAL_ROUTES.terms");
+    expect(page).toContain("<main id=\"main\">");
+  });

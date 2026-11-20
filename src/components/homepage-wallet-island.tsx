@@ -24,7 +24,7 @@ export function HomepageWalletIsland() {
   return mounted ? <HomepageWalletRoot /> : null;
 }
 
-const pill = "flex h-10 min-w-0 items-center justify-center gap-2 rounded-full px-5 text-[13px] font-semibold outline-none transition-colors";
+const pill = "flex h-10 min-w-0 items-center justify-center gap-2 whitespace-nowrap rounded-full px-5 text-[13px] font-semibold outline-none transition-colors";
 const short = shortAddress;
 
 /**
@@ -47,6 +47,6 @@ export function HomepageConnectButton() {
     title="Connect a Solana wallet (Phantom, Solflare, …)"
     className={cn(pill, "bg-cream text-ink hover:bg-white focus-visible:shadow-[0_0_0_2px_var(--color-lemon)]")}>
     {loading ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-    {loading ? "Connecting…" : "Connect wallet"}
+    {loading ? "Connecting…" : <>Connect<span className="hidden sm:inline"> wallet</span></>}
   </button>;
 }

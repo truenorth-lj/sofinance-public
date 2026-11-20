@@ -50,7 +50,9 @@ describe("SiteHeader", () => {
       expect(html).toMatch(/<a[^>]*href="\/app\/portfolio"[^>]*>Portfolio<\/a>/);
       expect(html).not.toContain("Open app");
     }
-    expect(marketing).toMatch(/<button[^>]*data-testid="home-wallet"[^>]*>Connect wallet<\/button>/);
+    expect(marketing).toContain('data-testid="home-wallet"');
+    expect(marketing).toContain("Connect");
+    expect(marketing).toContain('<span class="hidden sm:inline"> wallet</span>');
     expect(app).not.toContain('data-testid="home-wallet"');
   });
 
@@ -117,5 +119,23 @@ describe("SiteHeader", () => {
     const nav = readFileSync(resolve("src/components/ink/InkNav.tsx"), "utf8");
     expect(nav).not.toMatch(/label: "Blog"/);
     expect(nav).not.toContain("BLOG_ROUTES");
+  });
+
+  it("puts a skip link to #main at the top of the header, and shells expose that landmark", () => {
+    const header = renderToStaticMarkup(createElement(SiteHeader));
+    expect(header).toMatch(/<a[^>]*href="#main"[^>]*>Skip to content<\/a>/);
+    const pages = {
+      blog: createElement(BlogShell, null, "x"),
+      docs: createElement(DocsShell, null, "x"),
+      faq: createElement(FaqPage),
+      terms: createElement(TermsPage),
+      notFound: createElement(NotFound),
+    };
+    for (const [name, el] of Object.entries(pages)) {
+      const html = renderToStaticMarkup(el);
+      expect(html, name).toContain('href="#main"');
+      expect(html, name).toContain("Skip to content");
+      expect(html, name).toContain('id="main"');
+    }
   });
 });

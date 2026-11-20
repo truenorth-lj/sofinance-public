@@ -25,7 +25,7 @@ export default function FaqPage() {
         dangerouslySetInnerHTML={{ __html: serializeJsonLd(faqJsonLd(`${CANONICAL_SITE_URL}${FAQ_ROUTE}`)) }}
       />
       <SiteHeader />
-      <main>
+      <main id="main">
         <PageHeader
           title="Questions about same-stock LP"
           subline={

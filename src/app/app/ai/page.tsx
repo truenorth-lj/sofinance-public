@@ -15,6 +15,7 @@ export default function AIManagementPage() {
     <InkShell maxWidth="5xl">
       <SiteHeader variant="app" wallet={wallet} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
 
+      <main id="main">
       <PageHeader
         title="Manage positions with AI"
         subline="Connect your wallet to get started with AI-powered position management via MCP"
@@ -187,6 +188,7 @@ export default function AIManagementPage() {
           </InkCard>
         </div>
       )}
+      </main>
       <SiteFooter variant="app" />
     </InkShell>
   );

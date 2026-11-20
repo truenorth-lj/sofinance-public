@@ -206,7 +206,7 @@ describe("position performance workflow", () => {
   it("offers RWA Pairs only after a successful scan with no positions", async () => {
     positions = [];
     await scan();
-    expect(container.querySelector('a[href="/app/rwa-pairs"]')?.textContent).toContain("Explore RWA Pairs");
+    expect(container.querySelector('a[href="/app/rwa-pairs"]')?.textContent).toContain("Explore pools");
     const button = Array.from(container.querySelectorAll("button")).find((item) => item.textContent?.includes("Compute performance"));
     expect(button?.disabled).toBe(true);
   });

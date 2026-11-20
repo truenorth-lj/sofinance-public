@@ -59,3 +59,11 @@ describe("/app → /app/portfolio (Positions was renamed Portfolio)", () => {
     expect(go("/app/portfolio/recovery").headers.get("location")).toBeNull();
   });
 });
+
+describe("/app/position-performance → /app/portfolio?view=performance", () => {
+  it("keeps the existing query and sets view=performance", () => {
+    expect(unifiedAppRedirect("/app/position-performance")).toBe("/app/portfolio?view=performance");
+    expect(unifiedAppRedirect("/app/position-performance", "?mint=abc&wallet=w")).toBe("/app/portfolio?mint=abc&wallet=w&view=performance");
+    expect(unifiedAppRedirect("/app/position-performance", "?view=deposit&mint=abc")).toBe("/app/portfolio?view=performance&mint=abc");
+  });
+});

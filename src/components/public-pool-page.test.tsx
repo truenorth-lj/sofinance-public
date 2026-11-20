@@ -53,6 +53,17 @@ describe("PublicPoolPage (HTML without JS)", () => {
     expect(markup.replaceAll("Fees not guaranteed", "")).not.toMatch(/guaranteed|\byield\b|\bearn\b|backtest|auto-rebalance/i);
   });
 
+
+  it("uses chain · DEX · fee tier as the h1 subline and keeps aprHelp under the 7d APR fact", () => {
+    expect(markup).toContain("Solana · Raydium CLMM · 25 bps fee tier");
+    expect(markup).toContain('data-testid="apr-help"');
+    const aprIdx = markup.indexOf(PUBLIC_POOL_APR_LABEL);
+    const helpIdx = markup.indexOf('data-testid="apr-help"');
+    expect(aprIdx).toBeGreaterThan(-1);
+    expect(helpIdx).toBeGreaterThan(aprIdx);
+  });
+
+
   it("still server-renders when a Reown project id is set", () => {
     vi.stubEnv("NEXT_PUBLIC_REOWN_PROJECT_ID", "test-reown-id");
     const html = renderToStaticMarkup(createElement(PublicPoolPage, { model }));

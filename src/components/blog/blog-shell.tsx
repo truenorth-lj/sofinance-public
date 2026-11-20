@@ -33,7 +33,7 @@ export function BlogShell({ children }: { children: ReactNode }) {
   return (
     <InkShell>
       <SiteHeader />
-      {children}
+      <main id="main">{children}</main>
       <SiteFooter variant="marketing" />
     </InkShell>
   );

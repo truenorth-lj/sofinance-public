@@ -42,6 +42,12 @@ export function SiteHeader({
 
   return (
     <>
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-[100] focus:rounded-full focus:bg-cream focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-ink"
+      >
+        Skip to content
+      </a>
       <header data-testid="site-header" className="flex flex-wrap items-center gap-2">
         {/* Mobile row is DOM order: logo, then wallet + Menu (Menu last) with ml-auto on the right.
             Order classes are sm: only: below sm the wrapper is a real flex container, and an un-prefixed

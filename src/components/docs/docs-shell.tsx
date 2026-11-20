@@ -24,6 +24,7 @@ export function DocsShell({ children }: { children: ReactNode }) {
   return (
     <InkShell>
       <SiteHeader />
+      <main id="main">
       <div className="mt-3 grid gap-3 lg:grid-cols-12">
         <nav
           aria-label="Documentation"
@@ -67,6 +68,7 @@ export function DocsShell({ children }: { children: ReactNode }) {
         </nav>
         <div className="min-w-0 lg:col-span-9">{children}</div>
       </div>
+      </main>
       <SiteFooter variant="marketing" />
     </InkShell>
   );

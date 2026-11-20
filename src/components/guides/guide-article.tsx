@@ -26,7 +26,7 @@ export function GuideArticle({ page, children }: { page: GuidePage; children?: R
     <InkShell>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(guideJsonLd(page)) }} />
       <SiteHeader />
-      <main>
+      <main id="main">
         <article>
           <PageHeader
             title={page.title}

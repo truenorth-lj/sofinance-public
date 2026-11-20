@@ -7,7 +7,9 @@ export default function NotFound() {
   return (
     <InkShell>
       <SiteHeader />
-      <PageHeader title="This page does not exist." subline="Try the homepage, or open the pool list." />
+      <main id="main">
+        <PageHeader title="This page does not exist." subline="Try the homepage, or open the pool list." />
+      </main>
       <SiteFooter variant="marketing" />
     </InkShell>
   );

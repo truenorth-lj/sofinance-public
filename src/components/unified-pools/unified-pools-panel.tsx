@@ -199,7 +199,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", deepLin
 
   return <section id="pools" className="mt-3 scroll-mt-4" aria-labelledby="pools-heading">
     <div className="rounded-[28px] border border-white/12 bg-char p-4 sm:p-5">
-      <h2 id="pools-heading" className="sr-only">Pools</h2>
+      <h2 id="pools-heading" className="sr-only">Pool list</h2>
       {header}
       {/* 11/4 redesign: one row of pill filters (left) with sort, view and refresh (right), then a full-width search. */}
       <div className="flex flex-wrap items-center justify-between gap-2">

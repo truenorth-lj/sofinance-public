@@ -364,6 +364,7 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
     <div className="relative mx-auto max-w-[1280px] px-3 pb-32 pt-3 max-sm:pb-[max(8rem,calc(var(--tx-notice-bottom-offset,0px)+2rem))] sm:px-5 sm:pt-5">
       <SiteHeader variant="app" wallet={wallet} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
 
+      <main id="main">
       <div className="relative">
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 px-1">
         <h1 className="text-xl font-semibold text-cream sm:text-2xl">Portfolio</h1>
@@ -386,6 +387,7 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
         {external?.status}
       </section>
       </div>
+      </main>
       <SiteFooter variant="app" />
     </div>
     {popupIsPanel && <ActionDialog open={popupOpen} onClose={closePopup} title={popupTitle} testId={`${popup.view}-popup`}
