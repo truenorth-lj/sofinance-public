@@ -170,7 +170,7 @@ const TSLA: GuidePage = {
       id: "why-swaps",
       question: "Why do traders swap between TSLA and TSLAx?",
       blocks: [
-        p("Traders swap between TSLA and TSLAx because the two tokens come from different issuers, with different venues, buyers and redemption routes, so their prices drift slightly apart. Arbitrage and routing swaps close that gap, and every swap pays the pool fee to the LPs whose range is active. Because both tokens track the same share, the pool price usually stays in a narrow band, which makes narrow ranges practical. Some Token-2022 tokens use a share multiplier, so the raw fair price can be a little away from 1."),
+        p("Traders swap between TSLA and TSLAx because the two tokens come from different issuers, with different venues, buyers and redemption routes, so their prices drift slightly apart. Arbitrage and routing swaps close that gap, and every swap pays the pool fee to the LPs whose range is active. Because both tokens track the same share, the pool price usually stays in a narrow band, which makes narrow ranges practical. Some tokens use a share multiplier, so the fair pool price can sit slightly away from 1."),
       ],
     },
     {
@@ -366,7 +366,7 @@ const WHAT_IS: GuidePage = {
       id: "near-one",
       question: "Why does a same-stock pool usually trade close to even?",
       blocks: [
-        p("A same-stock pool usually trades close to even because both tokens represent the same share, so neither should be worth much more than the other. Small premiums and discounts still appear when one version has more buyers or is easier to redeem, and those gaps are what swaps close. Some Token-2022 tokens also use a share multiplier, so the raw fair price can sit a little away from 1 even when both sides track the same stock. Because the price moves in a narrow band, LPs can use tight concentrated ranges."),
+        p("A same-stock pool usually trades close to even because both tokens represent the same share, so neither should be worth much more than the other. Small premiums and discounts still appear when one version has more buyers or is easier to redeem, and those gaps are what swaps close. Some tokens use a share multiplier, so the fair pool price can sit slightly away from 1. Because the price moves in a narrow band, LPs can use tight concentrated ranges."),
       ],
     },
     {
@@ -512,7 +512,7 @@ const IMPERMANENT_LOSS: GuidePage = {
       id: "applies",
       question: "Does impermanent loss apply to same-stock pools?",
       blocks: [
-        p("Yes, impermanent loss applies to same-stock pools, but usually less than in a stock/USDC pool, because the two tokens track the same share and usually trade in a narrow band. It appears whenever one issuer's token trades at a premium or discount to the other, for example TSLAx a little below TSLA, and when a share multiplier moves the raw fair price away from 1."),
+        p("Yes, impermanent loss applies to same-stock pools, but usually less than in a stock/USDC pool, because the two tokens track the same share and usually trade in a narrow band. It appears whenever one issuer's token trades at a premium or discount to the other, for example TSLAx a little below TSLA. Some tokens use a share multiplier, so the fair pool price can sit slightly away from 1."),
       ],
     },
     {
