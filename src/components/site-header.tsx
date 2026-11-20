@@ -47,9 +47,9 @@ export function SiteHeader({
             Order classes are sm: only: below sm the wrapper is a real flex container, and an un-prefixed
             order-1 on the logo would sort it after the wallet group (default order 0). sm+ uses contents
             so logo / nav / wallet join the header flex as sm:order-1 / sm:order-2 / sm:order-3. */}
-        <div className="flex w-full items-center gap-2 sm:contents">
+        <div className="flex w-full items-center gap-1.5 sm:contents sm:gap-2">
           <SiteLogo className="sm:order-1" />
-          <div className="ml-auto flex min-w-0 items-center gap-2 sm:order-3 sm:ml-0">
+          <div className="ml-auto flex items-center gap-1.5 sm:order-3 sm:ml-0 sm:gap-2">
             {variant === "marketing" ? (
               <HomepageConnectButton />
             ) : (
@@ -63,7 +63,7 @@ export function SiteHeader({
               data-testid="nav-menu"
               className={cn(
                 pill,
-                "shrink-0 gap-1.5 px-3.5 sm:hidden",
+                "shrink-0 gap-1.5 px-2.5 sm:hidden",
                 menuOpen ? "border-cream bg-cream text-ink" : "border-white/25 text-cream/85 focus-visible:border-lemon",
               )}
             >

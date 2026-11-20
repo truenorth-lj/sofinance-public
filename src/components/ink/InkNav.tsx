@@ -17,7 +17,7 @@ export interface InkNavProps {
 const short = shortAddress;
 const shortEvm = shortAddress;
 
-const walletPill = "flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-full border px-2.5 text-[13px] sm:gap-2 sm:px-4 font-medium outline-none transition-colors focus-visible:border-lemon";
+const walletPill = "flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-full border px-2 text-[13px] sm:gap-2 sm:px-4 font-medium outline-none transition-colors focus-visible:border-lemon";
 const walletOff = "border-white/25 text-cream/85 hover:border-white/70";
 const walletOn = "border-white/40 text-cream hover:border-white/70";
 
@@ -36,8 +36,8 @@ export function InkNav({ wallet, connected, restoring = false, onConnect, onDisc
   if (!showSolana) return null;
 
   return (
-    <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-      <div className="flex min-w-0 gap-2" data-testid="nav-wallets">
+    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
+      <div className="flex shrink-0 gap-1.5 sm:gap-2" data-testid="nav-wallets">
         <button
           type="button"
           onClick={solanaConnected ? onDisconnect : onConnect}
