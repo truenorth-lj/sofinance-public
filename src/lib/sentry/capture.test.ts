@@ -210,3 +210,44 @@ describe("RPC node behind the read slot", () => {
     expect(setLevel).not.toHaveBeenCalled();
   });
 });
+
+describe("refresh failure classification", () => {
+  const password = "super-secret-db-password";
+  const databaseUrl = `postgres://sofinance_owner:${password}@ep-private.neon.tech/sofinance`;
+
+  it("records SQLSTATE, name, and job without the connection string", () => {
+    vi.stubEnv("SENTRY_DSN", "https://key@o1.ingest.us.sentry.io/1");
+    const error = Object.assign(new Error(`connect failed ${databaseUrl} DATABASE_URL=${databaseUrl}`), { code: "08006" });
+    error.name = "PostgresError";
+    captureApiRouteError(error, { route: "/api/internal/rwa-refresh", fallback: "RWA refresh temporarily unavailable", status: 503, job: "rwa-refresh" });
+    const captured = captureException.mock.calls[0]?.[0] as Error & { pgCode?: string; stack?: string };
+    expect(captured).not.toBe(error);
+    expect(captured.name).toBe("PostgresError");
+    expect(captured.pgCode).toBe("08006");
+    expect(captured.message).toBe("RWA refresh temporarily unavailable");
+    expect(captured.stack).not.toContain(password);
+    expect(setTag).toHaveBeenCalledWith("error_name", "PostgresError");
+    expect(setTag).toHaveBeenCalledWith("pg_code", "08006");
+    expect(setTag).toHaveBeenCalledWith("job", "rwa-refresh");
+    expect(setTag).toHaveBeenCalledWith("route", "/api/internal/rwa-refresh");
+    expect(setExtra).toHaveBeenCalledWith("public_message", "RWA refresh temporarily unavailable");
+    const payload = JSON.stringify([captureException.mock.calls, setTag.mock.calls, setExtra.mock.calls], (_key, item) => (
+      item instanceof Error ? { ...item, name: item.name, message: item.message, stack: item.stack } : item
+    ));
+    expect(payload).not.toContain(password);
+    expect(payload).not.toContain("postgres://");
+    expect(payload).not.toContain("DATABASE_URL");
+    expect(payload).not.toContain("neon.tech");
+  });
+
+  it("records an upstream HTTP status and a store code", () => {
+    vi.stubEnv("SENTRY_DSN", "https://key@o1.ingest.us.sentry.io/1");
+    const error = Object.assign(new Error("LEASE_LOST"), { code: "LEASE_LOST", status: 409 });
+    captureApiRouteError(error, { route: "/api/internal/rwa-refresh", fallback: "Job lease was lost before completion", status: 503, job: "rwa-apr-refresh" });
+    expect(captureException).toHaveBeenCalledWith(error);
+    expect(setTag).toHaveBeenCalledWith("http_status", "409");
+    expect(setTag).toHaveBeenCalledWith("store_code", "LEASE_LOST");
+    expect(setTag).toHaveBeenCalledWith("job", "rwa-apr-refresh");
+    expect(setTag).toHaveBeenCalledWith("error_name", "Error");
+  });
+});
