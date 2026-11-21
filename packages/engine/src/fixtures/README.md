@@ -105,3 +105,11 @@ mainnet on 2026-11-04. Spot-swap tests run the mint checks on these exact
 bytes: a finite ScaledUiAmount multiplier is accepted (including the
 five tokens that used to be refused solely for a tiny dividend multiplier),
 and permanent delegate / confidential transfer are accepted.
+
+`jupiter-price-v3-sndk-nvdax.json` is one unmodified Jupiter Price API v3 response
+(`GET https://api.jup.ag/price/v3`, keyless, the endpoint `token-prices.ts` already calls)
+captured on 2026-11-21 07:51:49Z for SNDK (Backpack, ScaledUiAmount 8 with no pending change),
+SNDKx (xStocks, 1 → 8 at 2026-11-20 09:30Z) and NVDAx (xStocks, multiplier ≈ 1.0017 whose
+last change took effect 2026-09-10, nothing pending). No API key or header is recorded. Tests
+check that `usdPrice` is per share: per-share price × effective multiplier equals Jupiter's
+own `usdPricePrescaled` at the capture time.

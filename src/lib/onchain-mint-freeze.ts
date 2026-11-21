@@ -4,6 +4,8 @@ import "server-only";
 import { getScaledUiAmountConfig, unpackMint } from "@solana/spl-token";
 import { PublicKey, type Connection } from "@solana/web3.js";
 import { mintBlockReasons, poolMintIssues, type MintBlockReason } from "@sofinance/engine/token-safety";
+import { scaledUiConfigFromExtension } from "@sofinance/engine/valuation/multiplier-sources/token2022-scaled-ui";
+import type { ScaledUiMultiplierConfig } from "@sofinance/engine/valuation/types";
 import { effectiveScaledUiMultiplier } from "./fair-price";
 
 const TOKEN_PROGRAMS = new Set(["TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"]);
@@ -26,6 +28,8 @@ export type MintSafety = {
   unsupported?: string[];
   /** Effective Token-2022 ScaledUiAmount multiplier when the mint has a finite config; omitted otherwise. */
   scaledUiMultiplier?: number;
+  /** The complete ScaledUiAmount schedule (timestamp in seconds), so readers evaluate it at read time. Same omission. */
+  scaledUiConfig?: ScaledUiMultiplierConfig;
 };
 
 /**
@@ -47,6 +51,7 @@ export async function readMintSafety(connection: Connection, mints: readonly str
     let freezeAuthority: boolean;
     try { freezeAuthority = mintDataHasFreezeAuthority(info.data); } catch { return; /* left out */ }
     let blockReasons: MintBlockReason[] = [], unsupported: string[] = [], scaledUiMultiplier: number | undefined;
+    let scaledUiConfig: ScaledUiMultiplierConfig | undefined;
     try {
       const mint = unpackMint(new PublicKey(unique[index]!), info, info.owner);
       blockReasons = mintBlockReasons(mint);
@@ -54,10 +59,14 @@ export async function readMintSafety(connection: Connection, mints: readonly str
       const scaled = getScaledUiAmountConfig(mint);
       if (scaled) {
         const multiplier = effectiveScaledUiMultiplier(scaled);
-        if (Number.isFinite(multiplier) && multiplier > 0) scaledUiMultiplier = multiplier;
+        if (Number.isFinite(multiplier) && multiplier > 0) {
+          scaledUiMultiplier = multiplier;
+          scaledUiConfig = scaledUiConfigFromExtension(scaled) ?? undefined;
+        }
       }
     } catch { /* base layout only */ }
-    result.set(unique[index]!, { freezeAuthority, blockReasons, unsupported, ...(scaledUiMultiplier !== undefined ? { scaledUiMultiplier } : {}) });
+    result.set(unique[index]!, { freezeAuthority, blockReasons, unsupported,
+      ...(scaledUiMultiplier !== undefined ? { scaledUiMultiplier } : {}), ...(scaledUiConfig ? { scaledUiConfig } : {}) });
   });
   return result;
 }

@@ -1,0 +1,72 @@
+{
+  "capturedAt": "2026-11-21T07:51:49Z",
+  "request": "GET https://api.jup.ag/price/v3?ids=SNDKbwMUQvZhnLnxLduradgLHG5KrPuKwpnrkkGRhfH,Xswbpc8UqU6e1j9QZEWCjBMjyvz4twqD7PCy6j2e7jj,Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh (keyless, Accept: application/json)",
+  "response": {
+    "SNDKbwMUQvZhnLnxLduradgLHG5KrPuKwpnrkkGRhfH": {
+      "createdAt": "2026-06-18T10:03:11Z",
+      "liquidity": 50898.004525194076,
+      "usdPrice": 79.63876148957138,
+      "blockId": 472061375,
+      "decimals": 6,
+      "priceChange24h": -9.402150043586373,
+      "stockData": {
+        "id": "backpack",
+        "price": 81.406,
+        "mcap": 859609894987.2,
+        "updatedAt": "2026-11-21T07:51:23.359Z"
+      },
+      "scaledUiConfig": {
+        "multiplier": 8.00000022993473,
+        "newMultiplier": 8.00000022993473,
+        "newMultiplierEffectiveAt": "1970-01-01T00:00:00Z",
+        "circSupplyPrescaled": 969.662864,
+        "totalSupplyPrescaled": 969.662864,
+        "usdPricePrescaled": 637.1101102282882
+      }
+    },
+    "Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh": {
+      "createdAt": "2025-06-11T09:39:59Z",
+      "liquidity": 1588154.3028117195,
+      "usdPrice": 128.25337087463362,
+      "blockId": 472061716,
+      "decimals": 8,
+      "priceChange24h": -10.957109887718,
+      "stockData": {
+        "id": "xstocks",
+        "price": 130.014,
+        "mcap": 3524979059999.9995,
+        "updatedAt": "2026-11-21T07:51:23.358Z"
+      },
+      "scaledUiConfig": {
+        "multiplier": 1.0009180758490996,
+        "newMultiplier": 1.001701196801074,
+        "newMultiplierEffectiveAt": "2026-09-10T00:30:00Z",
+        "circSupplyPrescaled": 528929.76338236,
+        "totalSupplyPrescaled": 528929.76338236,
+        "usdPricePrescaled": 128.4715550988925
+      }
+    },
+    "Xswbpc8UqU6e1j9QZEWCjBMjyvz4twqD7PCy6j2e7jj": {
+      "createdAt": "2026-03-20T14:56:22Z",
+      "liquidity": 243.9431292008132,
+      "usdPrice": 79.90293609116948,
+      "blockId": 472052195,
+      "decimals": 8,
+      "priceChange24h": -8.597858754199803,
+      "stockData": {
+        "id": "xstocks",
+        "price": 81.406,
+        "mcap": 859609894987.2,
+        "updatedAt": "2026-11-21T07:51:23.359Z"
+      },
+      "scaledUiConfig": {
+        "multiplier": 1,
+        "newMultiplier": 8,
+        "newMultiplierEffectiveAt": "2026-11-20T09:30:00Z",
+        "circSupplyPrescaled": 42078.46464511,
+        "totalSupplyPrescaled": 42078.46464511,
+        "usdPricePrescaled": 639.2234887293558
+      }
+    }
+  }
+}

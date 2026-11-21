@@ -45,13 +45,15 @@ type TokenPriceMetadata = {
 /** Prices retain their provider's unit; X3-1 does not rescale consumers yet. */
 export type TokenPriceQuote = TokenPriceMetadata & (
   | { source: "jupiter"; basis: "per-share"; scaledUiConfig?: ScaledUiMultiplierConfig }
-  | { source: "dexscreener" | "raydium"; basis: "per-raw-unit" }
+  | { source: "dexscreener"; basis: "per-raw-unit" }
+  | { source: "raydium"; basis: "per-raw-unit" }
 );
 
 const scaledUiConfigSchema = z.object({
   multiplier: z.number().finite().positive(),
   newMultiplier: z.number().finite().positive(),
-  newMultiplierEffectiveAt: z.iso.datetime({ offset: true }),
+  /** Absent or null: no scheduled change is published; `multiplier` applies. */
+  newMultiplierEffectiveAt: z.iso.datetime({ offset: true }).nullish(),
 });
 
 /** Preserve the complete schedule, not a value evaluated at fetch time. */
@@ -61,10 +63,9 @@ function parseScaledUiConfig(raw: unknown): ScaledUiMultiplierConfig | undefined
   return {
     multiplier: parsed.data.multiplier,
     newMultiplier: parsed.data.newMultiplier,
-    newMultiplierEffectiveTimestamp: Date.parse(parsed.data.newMultiplierEffectiveAt) / 1000,
+    newMultiplierEffectiveTimestamp: parsed.data.newMultiplierEffectiveAt ? Date.parse(parsed.data.newMultiplierEffectiveAt) / 1000 : null,
   };
 }
-
 
 type CachedMintPrice = { quote: TokenPriceQuote | undefined; expiresAt: number };
 

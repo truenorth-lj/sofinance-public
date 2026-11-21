@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import priceV3Capture from "./fixtures/jupiter-price-v3-sndk-nvdax.json";
 import { resetJupiterRuntime } from "./jupiter";
 import {
   DEXSCREENER_MIN_LIQUIDITY_USD,
@@ -215,24 +216,37 @@ describe("fetchJupiterPricesUsd", () => {
 });
 
 describe("token price basis (X3-1)", () => {
+  // One real Price v3 response (fixtures/README.md): SNDK, SNDKx and NVDAx, captured 2026-11-21 07:51:49Z.
+  const { response } = priceV3Capture;
   const SNDK = "SNDKbwMUQvZhnLnxLduradgLHG5KrPuKwpnrkkGRhfH";
-  const SNDKX = "Xswbpc7PDcTuWsvvQh3SsnN5JK1Wa5yFNcxGaJfu59t";
+  const SNDKX = "Xswbpc8UqU6e1j9QZEWCjBMjyvz4twqD7PCy6j2e7jj";
+  const NVDAX = "Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh";
 
-  it("keeps Jupiter's per-share SNDK quote and complete scheduled multiplier", async () => {
+  it("keeps Jupiter's per-share quotes and complete schedules from a real Price v3 response", async () => {
     const fetcher = mockFetch((url) => {
-      if (url.includes("/price/v3")) return json(200, {
-        [SNDK]: { usdPrice: 78.6347, scaledUiConfig: { multiplier: 8.00000022993473, newMultiplier: 8.00000022993473, newMultiplierEffectiveAt: "1970-01-01T00:00:00Z" } },
-        [SNDKX]: { usdPrice: 80.9905, scaledUiConfig: { multiplier: 1, newMultiplier: 8, newMultiplierEffectiveAt: "2026-11-20T09:30:00Z" } },
-      });
+      if (url.includes("/price/v3")) return json(200, response);
       throw new Error(`unexpected fetch ${url}`);
     });
-    const quotes = await fetchTokenPricesUsd([SNDK, SNDKX], fetcher);
-    expect(quotes.get(SNDK)).toEqual({ price: 78.6347, source: "jupiter", basis: "per-share",
+    const quotes = await fetchTokenPricesUsd([SNDK, SNDKX, NVDAX], fetcher);
+    expect(quotes.get(SNDK)).toMatchObject({ price: response[SNDK].usdPrice, source: "jupiter", basis: "per-share",
       scaledUiConfig: { multiplier: 8.00000022993473, newMultiplier: 8.00000022993473, newMultiplierEffectiveTimestamp: 0 } });
-    expect(quotes.get(SNDKX)).toEqual({ price: 80.9905, source: "jupiter", basis: "per-share",
+    expect(quotes.get(SNDKX)).toMatchObject({ price: response[SNDKX].usdPrice, source: "jupiter", basis: "per-share",
       scaledUiConfig: { multiplier: 1, newMultiplier: 8, newMultiplierEffectiveTimestamp: 1_795_167_000 } });
-    expect((await fetchJupiterPricesUsd([SNDK], fetcher)).get(SNDK)).toBe(78.6347);
+    // A multiplier with no pending change: its last change (2026-09-10 00:30Z) already applies.
+    expect(quotes.get(NVDAX)).toMatchObject({ price: response[NVDAX].usdPrice, source: "jupiter", basis: "per-share",
+      scaledUiConfig: { multiplier: 1.0009180758490996, newMultiplier: 1.001701196801074, newMultiplierEffectiveTimestamp: 1_789_000_200 } });
+    expect((await fetchJupiterPricesUsd([SNDK], fetcher)).get(SNDK)).toBe(response[SNDK].usdPrice);
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts a schedule with no effective time (absent or null): the current multiplier applies", async () => {
+    const fetcher = mockFetch(() => json(200, {
+      [SNDK]: { usdPrice: 79.64, scaledUiConfig: { multiplier: 8, newMultiplier: 8 } },
+      [NVDAX]: { usdPrice: 128.25, scaledUiConfig: { multiplier: 1.0017, newMultiplier: 1.0017, newMultiplierEffectiveAt: null } },
+    }));
+    const quotes = await fetchTokenPricesUsd([SNDK, NVDAX], fetcher);
+    expect(quotes.get(SNDK)).toMatchObject({ scaledUiConfig: { multiplier: 8, newMultiplier: 8, newMultiplierEffectiveTimestamp: null } });
+    expect(quotes.get(NVDAX)).toMatchObject({ scaledUiConfig: { multiplier: 1.0017, newMultiplier: 1.0017, newMultiplierEffectiveTimestamp: null } });
   });
 
   it("drops a malformed scaledUiConfig without dropping the price", async () => {

@@ -26,6 +26,7 @@ import { rpcConnection } from "@sofinance/engine/rpc";
 import { readMintSafety, type MintSafety } from "./onchain-mint-freeze";
 import { unsupportedOf, type PoolMintUnsupported } from "./pool-mint-unsupported";
 import type { MintBlockReason } from "@sofinance/engine/token-safety";
+import type { ScaledUiMultiplierConfig } from "@sofinance/engine/valuation/types";
 
 export const RAYDIUM_API_V3 = "https://api-v3.raydium.io";
 const DEFAULT_PAGE_SIZE = 1000;
@@ -105,6 +106,9 @@ export type RwaPairRow = {
   /** Effective ScaledUiAmount multipliers (1 when unknown or unset). */
   multiplierA?: number;
   multiplierB?: number;
+  /** Complete ScaledUiAmount schedules behind `multiplierA/B` (evaluated at read time by `@sofinance/engine/valuation`). */
+  scaledUiConfigA?: ScaledUiMultiplierConfig;
+  scaledUiConfigB?: ScaledUiMultiplierConfig;
 };
 
 
@@ -628,6 +632,8 @@ export async function applyOnchainFreezeRisk(pairs: RwaPairRow[], connection?: C
       freezeRisk: freezeRiskA || freezeRiskB,
       ...(a?.scaledUiMultiplier !== undefined ? { multiplierA: a.scaledUiMultiplier } : {}),
       ...(b?.scaledUiMultiplier !== undefined ? { multiplierB: b.scaledUiMultiplier } : {}),
+      ...(a?.scaledUiConfig ? { scaledUiConfigA: a.scaledUiConfig } : {}),
+      ...(b?.scaledUiConfig ? { scaledUiConfigB: b.scaledUiConfig } : {}),
     };
     const blocked = blockOf([[pair.mintA, a], [pair.mintB, b]]);
     if (blocked) row.blocked = blocked;
