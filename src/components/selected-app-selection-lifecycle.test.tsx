@@ -72,7 +72,8 @@ const selectedState = (positionMint: string): SelectedPositionState => ({ wallet
   lowerSqrtX64: "1", upperSqrtX64: "2", price: "1", inRange: true, rangeSide: "inside", liquidity: "1", poolLiquidity: "1",
   currentAmounts: { a: "500000000", b: "520000000" }, ownsNft: true, paused: false, transferFee: false, frozen: false, unsupportedExtensions: [],
   wsolBalance: "0", ataAExists: true, ataBExists: true, vaultA: "v", vaultB: "w", tickSpacing: 1,
-  solLamports: 1_000_000_000, sufficientSol: true, pricing: { priceUsdInput: 1, priceUsdA: 100, priceUsdB: 50 } });
+  solLamports: 1_000_000_000, sufficientSol: true, pricing: { priceUsdInput: 1, priceUsdA: 100, priceUsdB: 50 },
+  displayPricing: { usdPerRawUnitInput: 1, multiplierInput: 1, usdPerRawUnitA: 100, multiplierA: 1, usdPerRawUnitB: 50, multiplierB: 1 } });
 
 const stockFixture = {
   symbol: "SPCX", priceMint: fixture.mintA, priceUsd: 100, change24hPct: 1,

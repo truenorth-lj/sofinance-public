@@ -6,15 +6,16 @@
 export type AddWalletPreviewQuote = {
   requiredA: string; requiredB: string; dustA: string; dustB: string; decimalsA: number; decimalsB: number;
 };
-export type AddWalletPreviewPrices = { priceUsdA?: number | null; priceUsdB?: number | null };
+/** USD per (raw / 10^decimals) token unit, multiplier already applied (`SelectedDisplayPricing`); display only. */
+export type AddWalletPreviewPrices = { usdPerRawUnitA?: number | null; usdPerRawUnitB?: number | null };
 
-const usdOf = (raw: string, decimals: number, priceUsd: number) => Number(BigInt(raw)) / 10 ** decimals * priceUsd;
+const usdOf = (raw: string, decimals: number, usdPerRawUnit: number) => Number(BigInt(raw)) / 10 ** decimals * usdPerRawUnit;
 // A zero price is as unknown as a missing one (an unpriced token would read as "$0.00 coming back").
 const usable = (price: number | null | undefined): price is number => typeof price === "number" && Number.isFinite(price) && price > 0;
 
 /** `null` when either token has no (or a zero) USD price: the line is left out rather than guessed. */
 export function addWalletPreviewSplit(quote: AddWalletPreviewQuote, prices: AddWalletPreviewPrices | null | undefined): { backUsd: number; depositUsd: number } | null {
-  const priceA = prices?.priceUsdA; const priceB = prices?.priceUsdB;
+  const priceA = prices?.usdPerRawUnitA; const priceB = prices?.usdPerRawUnitB;
   if (!usable(priceA) || !usable(priceB)) return null;
   const backUsd = usdOf(quote.dustA, quote.decimalsA, priceA) + usdOf(quote.dustB, quote.decimalsB, priceB);
   const depositUsd = usdOf(quote.requiredA, quote.decimalsA, priceA) + usdOf(quote.requiredB, quote.decimalsB, priceB);

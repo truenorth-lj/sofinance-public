@@ -8,25 +8,13 @@ import type { TokenMetadata } from "@sofinance/engine/token-metadata";
 import type { WalletAsset } from "@sofinance/engine/wallet-types";
 import { TokenIcon } from "./token-icon";
 import { shortAddress } from "@/lib/format/address";
+import { rawAmountUsdLabel } from "@/lib/format/token-usd";
 
 const short = shortAddress;
 const displayBalance = (asset: WalletAsset) => {
   const balance = formatAmount(asset.balance, asset.decimals);
   return balance === "0" && BigInt(asset.balance) > 0n ? "<0.000001" : balance;
 };
-
-function calculateBalanceUsd(rawAmount: string, decimals: number, priceUsd: number | null): string | null {
-  if (priceUsd === null || !Number.isFinite(priceUsd) || priceUsd < 0) return null;
-  try {
-    const amount = Number(rawAmount) / Math.pow(10, decimals);
-    if (!Number.isFinite(amount) || amount < 0) return null;
-    const usdValue = amount * priceUsd;
-    if (!Number.isFinite(usdValue)) return null;
-    return usdValue < 0.01 ? "< $0.01" : `≈ $${usdValue.toFixed(2)}`;
-  } catch {
-    return null;
-  }
-}
 
 export function assetMetadata(asset: WalletAsset, metadata: Record<string, TokenMetadata>) {
   const item = metadata[asset.mint];
@@ -63,10 +51,10 @@ function AssetRow({ asset, item, selected, onSelect }: {
     : <div aria-disabled="true" className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 opacity-60">{content}</div>;
 }
 
-export function TokenPicker({ assets, selectedAsset, metadata, disabled, onSelect, inputPriceUsd }: {
+export function TokenPicker({ assets, selectedAsset, metadata, disabled, onSelect, inputUsdPerRawUnit }: {
   assets: WalletAsset[]; selectedAsset: WalletAsset | undefined; metadata: Record<string, TokenMetadata>;
   disabled: boolean; onSelect: (kind: WalletAsset["kind"], mint: string) => void;
-  inputPriceUsd?: number | null;
+  inputUsdPerRawUnit?: number | null;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -88,8 +76,8 @@ export function TokenPicker({ assets, selectedAsset, metadata, disabled, onSelec
   const usable = matching.filter((asset) => asset.eligible);
   const unavailable = matching.filter((asset) => !asset.eligible);
   const selectedItem = selectedAsset ? assetMetadata(selectedAsset, metadata) : null;
-  const selectedBalanceUsd = selectedAsset && inputPriceUsd !== null && inputPriceUsd !== undefined
-    ? calculateBalanceUsd(selectedAsset.balance, selectedAsset.decimals, inputPriceUsd)
+  const selectedBalanceUsd = selectedAsset && inputUsdPerRawUnit !== null && inputUsdPerRawUnit !== undefined
+    ? rawAmountUsdLabel(selectedAsset.balance, selectedAsset.decimals, inputUsdPerRawUnit)
     : null;
   return <>
     <button ref={triggerRef} type="button" aria-labelledby="asset-label" aria-haspopup="dialog" aria-expanded={open}

@@ -12,7 +12,7 @@ async function fillReadyInput(page: Page) {
   await expect(input).toHaveValue("1");
 }
 
-async function setup(page: Page, wallet: FakeWallet, options: { selectedStateGate?: () => Promise<void>; connectOnly?: boolean; prepareFails?: boolean; uncertainSend?: boolean; previewGate?: Promise<void>; previewFails?: boolean; skipPreviewWait?: boolean; historyStatus?: "pending" | "manual-review" | "invalid" | "legacy"; nativeSol?: boolean; finality?: () => string } = {}) {
+async function setup(page: Page, wallet: FakeWallet, options: { selectedStateGate?: () => Promise<void>; connectOnly?: boolean; prepareFails?: boolean; uncertainSend?: boolean; previewGate?: Promise<void>; previewFails?: boolean; skipPreviewWait?: boolean; historyStatus?: "pending" | "manual-review" | "invalid" | "legacy"; nativeSol?: boolean; finality?: () => string; prices?: Record<string, unknown> } = {}) {
   const positionMint = randomAddress(), mintA = randomAddress(), mintB = randomAddress();
   const inputMint = options.nativeSol ? "So11111111111111111111111111111111111111112" : "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
   const poolId = randomAddress(), positionAccount = randomAddress();
@@ -25,7 +25,9 @@ async function setup(page: Page, wallet: FakeWallet, options: { selectedStateGat
     paused: false, frozen: false, transferFee: false, rangeSide: "inside", inRange: true,
     price: "1", tickLower: -10, tickUpper: 10, liquidity: "100", currentAmounts: { a: "1000000", b: "1000000" },
     balances: { input: options.nativeSol ? "200000311000" : "200000311", a: "0", b: "0" }, fees: { a: "0", b: "0" }, rewards: [], eligible: true,
-    pricing: { priceUsdInput: null, priceUsdA: 2, priceUsdB: 0.5 } };
+    pricing: { priceUsdInput: null, priceUsdA: 2, priceUsdB: 0.5 },
+    displayPricing: { usdPerRawUnitInput: null, multiplierInput: 1, usdPerRawUnitA: 2, multiplierA: 1, usdPerRawUnitB: 0.5, multiplierB: 1 },
+    ...options.prices };
   const calls: string[] = [];
   const quoteRequests: Record<string, unknown>[] = [];
   await page.route("**/api/**", async (route) => {
@@ -161,6 +163,29 @@ test("input enables Add after a lightweight preview; no automatic simulation or 
     "Your wallet preview will show only about $0.02 of tokens coming back. The other ~$1.22 goes into this position.");
   await page.screenshot({ path: test.info().outputPath("add-preview-desktop.png") });
 });
+
+// X3-4: a ScaledUiAmount ×2 stock (SNDK-type). `pricing` is Jupiter's per-share price (kept for withdraw, X3-5);
+// every on-screen dollar uses `displayPricing` (USD per raw / 10^decimals, multiplier applied), never per-share × amount.
+const scaledPrices = {
+  pricing: { priceUsdInput: 50, priceUsdA: 2, priceUsdB: 0.5 },
+  displayPricing: { usdPerRawUnitInput: 100, multiplierInput: 2, usdPerRawUnitA: 4, multiplierA: 2, usdPerRawUnitB: 0.5, multiplierB: 1 },
+};
+for (const width of [1280, 375]) {
+  test(`scaled stock: balance, input and wallet-preview dollars include the multiplier (${width})`, async ({ page, wallet }) => {
+    await page.setViewportSize({ width, height: width === 1280 ? 900 : 812 });
+    await setup(page, wallet, { prices: scaledPrices });
+    await expect(page.getByText("Preview ready. Final checks run when you add liquidity.")).toBeVisible();
+    // Balance 200.000311 × $100 (shown from the sm breakpoint) and the typed 1 × $100 (not × $50 per share).
+    if (width === 1280) await expect(page.getByText("≈ $20000.03", { exact: true })).toBeVisible();
+    await expect(page.getByText("≈ $100.00", { exact: true })).toBeVisible();
+    // Reserve 0.005 A × $4 + 0.015 B × $0.50; deposit 0.49 A × $4 + 0.48 B × $0.50.
+    await expect(page.getByTestId("add-wallet-preview-note")).toHaveText(
+      "Your wallet preview will show only about $0.03 of tokens coming back. The other ~$2.20 goes into this position.");
+    // The input dollar line and the wallet-preview note in one frame (the modal scrolls on mobile).
+    await page.getByTestId("add-wallet-preview-note").scrollIntoViewIfNeeded();
+    await page.screenshot({ path: test.info().outputPath(`add-scaled-${width}.png`) });
+  });
+}
 
 test("one Add prepares once, signs the same message, broadcasts once and persists pending", async ({ page, wallet }) => {
   const { calls, add } = await setup(page, wallet);

@@ -10,11 +10,22 @@ import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT } from "./ids";
 import { positionSide } from "./quote-math";
 import { rpcConnection } from "./rpc";
 import { inputMintReason } from "./wallet-discovery";
-import { fetchJupiterPricesUsd, fetchRaydiumPoolUsdPrices } from "./token-prices";
+import { fetchRaydiumPoolUsdPrices, fetchTokenPricesUsd, type TokenPriceQuote } from "./token-prices";
+import { priceSingleAssets } from "./valuation/single-asset";
 import { getJupiterApiKey } from "./config/server-env";
 import { withContextSlotRetry } from "./rpc/context-slot";
 
 export type { PositionSelection, SelectedPositionState } from "./selected-types";
+
+/**
+ * Display-only USD for the Selected / Add screens: per (raw / 10^decimals) token unit, multiplier applied, never
+ * guard-corrected. Never feeds signed amounts or withdraw targets (those keep `pricing` + quote + slippage).
+ */
+export type SelectedDisplayPricing = {
+  usdPerRawUnitInput: number | null; multiplierInput: number | null;
+  usdPerRawUnitA: number | null; multiplierA: number | null;
+  usdPerRawUnitB: number | null; multiplierB: number | null;
+};
 
 const tokenPrograms = [TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58()];
 
@@ -110,26 +121,58 @@ export async function readSelectedPositionState(
   const solLamports = walletInfo?.lamports ?? 0;
   const inputBalance = selection.inputKind === "native"
     ? Math.max(0, solLamports - MIN_SOL_LAMPORTS).toString() : inputToken.amount.toString();
-  
+  // `pricing` keeps the legacy values (Jupiter `price`, Raydium fallback) for the withdraw path (X3-5); `displayPricing`
+  // is for display only: USD per (raw / 10^decimals) with the multiplier from the mint accounts read above, no guard.
   let priceUsdInput: number | null = null;
   let priceUsdA: number | null = null;
   let priceUsdB: number | null = null;
+  let displayPricing: SelectedDisplayPricing | undefined;
   if (options.displayPrices !== false) {
-  try {
-    const apiKey = getJupiterApiKey();
-    const mints = [selection.inputMint, pool.mintA.toBase58(), pool.mintB.toBase58()];
-    const prices = await fetchJupiterPricesUsd(mints, fetch, apiKey);
-    priceUsdInput = prices.get(selection.inputMint) ?? null;
-    priceUsdA = prices.get(pool.mintA.toBase58()) ?? null;
-    priceUsdB = prices.get(pool.mintB.toBase58()) ?? null;
-    if (priceUsdA === null || priceUsdB === null) {
-      const fallback = await fetchRaydiumPoolUsdPrices(poolId, pool.mintA.toBase58(), pool.mintB.toBase58(), fetch);
-      priceUsdA = fallback.get(pool.mintA.toBase58()) ?? priceUsdA;
-      priceUsdB = fallback.get(pool.mintB.toBase58()) ?? priceUsdB;
+    try {
+      const apiKey = getJupiterApiKey();
+      const mintAKey = pool.mintA.toBase58();
+      const mintBKey = pool.mintB.toBase58();
+      const quotes = await fetchTokenPricesUsd([selection.inputMint, mintAKey, mintBKey], fetch, apiKey);
+      const quotesObservedAtMs = Date.now();
+      const quoteA = quotes.get(mintAKey);
+      const quoteB = quotes.get(mintBKey);
+      priceUsdInput = quotes.get(selection.inputMint)?.price ?? null;
+      priceUsdA = quoteA?.price ?? null;
+      priceUsdB = quoteB?.price ?? null;
+      let fallbackA: TokenPriceQuote | undefined;
+      let fallbackB: TokenPriceQuote | undefined;
+      if (priceUsdA === null || priceUsdB === null) {
+        const fallback = await fetchRaydiumPoolUsdPrices(poolId, mintAKey, mintBKey, fetch);
+        const raydium = (mint: string): TokenPriceQuote | undefined => {
+          const price = fallback.get(mint);
+          return price !== undefined ? { price, source: "raydium", basis: "per-raw-unit" } : undefined;
+        };
+        priceUsdA = fallback.get(mintAKey) ?? priceUsdA;
+        priceUsdB = fallback.get(mintBKey) ?? priceUsdB;
+        fallbackA = raydium(mintAKey);
+        fallbackB = raydium(mintBKey);
+      }
+      const priced = priceSingleAssets({
+        assets: [
+          { mint: selection.inputMint, decimals: input.mint.decimals, account: inputMintInfo, quote: quotes.get(selection.inputMint) },
+          { mint: mintAKey, decimals: mintA.mint.decimals, account: mintAInfo, quote: fallbackA ?? quoteA },
+          { mint: mintBKey, decimals: mintB.mint.decimals, account: mintBInfo, quote: fallbackB ?? quoteB },
+        ],
+        nowMs: Date.now(), quotesObservedAtMs,
+        warn: (warning) => {
+          // eslint-disable-next-line no-console -- deliberate marker: a multiplier conflict on a display price (X3-4)
+          console.warn("[valuation]", JSON.stringify({ surface: "selected-state", poolId, ...warning }));
+        },
+      });
+      const side = (mint: string) => priced.get(mint) ?? { usdPerRawUnit: null, multiplier: null };
+      displayPricing = {
+        usdPerRawUnitInput: side(selection.inputMint).usdPerRawUnit, multiplierInput: side(selection.inputMint).multiplier,
+        usdPerRawUnitA: side(mintAKey).usdPerRawUnit, multiplierA: side(mintAKey).multiplier,
+        usdPerRawUnitB: side(mintBKey).usdPerRawUnit, multiplierB: side(mintBKey).multiplier,
+      };
+    } catch {
+      // Price fetch failed, continue without prices
     }
-  } catch {
-    // Price fetch failed, continue without prices
-  }
   }
 
   return {
@@ -158,5 +201,6 @@ export async function readSelectedPositionState(
     pricing: priceUsdInput !== null || priceUsdA !== null || priceUsdB !== null
       ? { priceUsdInput, priceUsdA, priceUsdB }
       : undefined,
+    ...(displayPricing ? { displayPricing } : {}),
   };
 }
