@@ -71,6 +71,13 @@ describe("withdraw full estimate (X3-5, targetUSDC only)", () => {
         // The old per-share estimate (2.89 × 78.63 + 100 ≈ $327) would reject $500 as larger than the position.
         expect(() => targetUSDCToBps(500, 2.89 * 78.63 + 100)).toThrow("Target must be within the position estimate");
     });
+    it("a 0 price on either side is rejected like a missing one (it would shrink full and withdraw too much)", () => {
+        for (const displayPricing of [{ usdPerRawUnitA: 0, usdPerRawUnitB: 1 }, { usdPerRawUnitA: 78.63 * 8, usdPerRawUnitB: 0 }]) {
+            const full = withdrawFullEstimateUsd({ ...sndk, displayPricing });
+            expect(full).toBe(0);
+            expect(() => targetUSDCToBps(1, full)).toThrow("Target must be within the position estimate");
+        }
+    });
     it("an unpriced side gives 0, so any target is rejected (never valued at a guess)", () => {
         for (const displayPricing of [undefined, { usdPerRawUnitA: null, usdPerRawUnitB: 1 }, { usdPerRawUnitA: 1, usdPerRawUnitB: Number.NaN }]) {
             const full = withdrawFullEstimateUsd({ ...sndk, displayPricing });

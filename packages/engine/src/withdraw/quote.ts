@@ -39,17 +39,20 @@ export function capReceivedAmount(received: bigint, simulated: bigint, minimum: 
         throw new Error("Finalized withdrawal received less than minimum");
     return received < simulated ? received : simulated;
 }
+const usablePrice = (price: number | null | undefined): price is number => typeof price === "number" && Number.isFinite(price) && price > 0;
 /**
  * The position's full USD estimate that `targetUSDCToBps` divides by. Uses the selected state's registry valuation
  * (USD per raw / 10^decimals, multiplier applied, never pair-guard corrected). 0 (target rejected) when either side
- * is unpriced; a per-share price is never multiplied by raw / 10^decimals directly.
+ * is unpriced or priced at 0; a per-share price is never multiplied by raw / 10^decimals directly.
  */
 export function withdrawFullEstimateUsd(state: {
     currentAmounts: { a: string; b: string }; decimalsA: number; decimalsB: number;
     displayPricing?: { usdPerRawUnitA: number | null; usdPerRawUnitB: number | null };
 }) {
     const a = state.displayPricing?.usdPerRawUnitA, b = state.displayPricing?.usdPerRawUnitB;
-    if (typeof a !== "number" || typeof b !== "number" || !Number.isFinite(a) || !Number.isFinite(b) || a < 0 || b < 0)
+    // Same rule as add-wallet-preview's usable(): a 0 price is as unknown as a missing one. Counting it would shrink
+    // the estimate, so the same target would map to more bps (withdrawing too much).
+    if (!usablePrice(a) || !usablePrice(b))
         return 0;
     return Number(state.currentAmounts.a) / 10 ** state.decimalsA * a + Number(state.currentAmounts.b) / 10 ** state.decimalsB * b;
 }
