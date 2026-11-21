@@ -13,7 +13,7 @@ export default function AIManagementPage() {
 
   return (
     <InkShell maxWidth="5xl">
-      <SiteHeader variant="app" wallet={wallet} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
+      <SiteHeader wallet={wallet} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
 
       <main id="main">
       <PageHeader

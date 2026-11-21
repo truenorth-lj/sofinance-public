@@ -1,4 +1,6 @@
 import { type ReactElement } from "react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { HomepagePool, HomepagePoolsSnapshot } from "@/lib/homepage-pools";
@@ -106,5 +108,32 @@ describe("/pools/[slug]", () => {
     expect(missing).not.toContain("10.00%");
     expect(ready).toContain("11.00%");
     expect(notFound).not.toHaveBeenCalled();
+  });
+
+  it("keeps metadata, canonical and JSON-LD, uses the app header, and does not wrap the page in Providers", async () => {
+    const src = readFileSync(resolve("src/app/pools/[slug]/page.tsx"), "utf8");
+    expect(src).toContain("generateMetadata");
+    expect(src).toContain("publicPoolMetadata");
+    expect(src).toContain("publicPoolJsonLd");
+    expect(src).toContain("serializeJsonLd");
+    expect(src).not.toContain("Providers");
+    const metadata = await generateMetadata({ params: Promise.resolve({ slug: "tsla-tslax" }) });
+    expect(metadata.alternates?.canonical).toBe("/pools/tsla-tslax");
+    expect(metadata.title).toBeTruthy();
+    const tree = await PublicPoolSlugPage({ params: Promise.resolve({ slug: "tsla-tslax" }) }) as ReactElement;
+    const html = renderToStaticMarkup(tree);
+    expect(html).toContain("application/ld+json");
+    expect(html).toContain("BreadcrumbList");
+    expect(html).toContain("WebPage");
+    const headerNav = html.match(/<nav[^>]*aria-label="App"[\s\S]*?<\/nav>/);
+    expect(headerNav?.[0]).toContain("Pools");
+    expect(headerNav?.[0]).toContain("Portfolio");
+    expect(headerNav?.[0]).toContain("AI agents");
+    expect(headerNav?.[0]).not.toContain("Learn");
+    expect(headerNav?.[0]).not.toContain("Blog");
+    expect(html).toContain('data-testid="nav-wallets"');
+    expect(html).not.toContain('data-testid="home-wallet"');
+    expect(html).not.toContain("ConnectionProvider");
+    expect(html).not.toContain("WalletProvider");
   });
 });

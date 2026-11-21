@@ -27,7 +27,7 @@ export function RecoveryPage({ positionKey = "" }: { positionKey?: string }) {
   const tokenLabel = (mint: string) => metadata[mint]?.symbol || shortAddress(mint);
   const back = positionKey ? `${APP_ROUTES.home}?position=${encodeURIComponent(positionKey)}` : APP_ROUTES.home;
   return <InkShell>
-    <SiteHeader variant="app" wallet={address} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
+    <SiteHeader wallet={address} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
     <main id="main">
     <section aria-labelledby="recovery-heading" data-testid="harvest-recovery-page" className="mt-5 rounded-[28px] border border-white/12 bg-char p-5 text-xs text-smoke sm:p-7">
       <Link href={back} className="text-xs font-semibold text-cream/80 underline underline-offset-2 hover:opacity-70">← Back to Portfolio</Link>

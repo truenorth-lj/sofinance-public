@@ -15,7 +15,7 @@ export function LandingPage({ initialPools = null, initialStocks = null }: { ini
   return (
     <div className="continuous-corners min-h-screen overflow-x-clip bg-canvas text-cream">
       <div className="mx-auto max-w-[1280px] px-3 pt-3 sm:px-5 sm:pt-5">
-        <SiteHeader variant="marketing" />
+        <SiteHeader />
       </div>
 
       <main id="main">

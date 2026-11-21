@@ -142,7 +142,7 @@ describe("landing page copy and routes", () => {
 
   it("uses the cream squircle H mark in the header, not the old square logo image", () => {
     // The header moved to SiteHeader (shared with blog, docs, FAQ and terms).
-    expect(src).toContain('<SiteHeader variant="marketing" />');
+    expect(src).toContain("<SiteHeader />");
     const header = readFileSync(resolve("src/components/site-header.tsx"), "utf8");
     expect(header).toContain("<SiteLogo");
     expect(header).not.toContain("BrandMark");

@@ -10,9 +10,10 @@ import { shortAddress } from "@/lib/format/address";
 const HomepageWalletRoot = dynamic(() => import("./homepage-wallet-root").then((module) => module.HomepageWalletRoot), { ssr: false });
 
 /**
- * Mounts the homepage's wallet root once it is needed: on the first Connect wallet or Buy, or right after load when the
- * browser remembers a wallet (so the header shows it, as `/app` would). Rendered once per page, outside the Suspense
- * boundary, so there is never a second providers tree.
+ * Mounts the wallet root once it is needed: on the first Connect or Buy, or right after load when the
+ * browser remembers a wallet (so the header shows it, as `/app` would). Rendered once per page as a sibling of the
+ * document body, outside any Suspense boundary, so there is never a second providers tree and SSR HTML is unchanged.
+ * Anonymous visits (no remembered wallet, no click) never load the providers.
  */
 export function HomepageWalletIsland() {
   const { mounted } = useHomepageWallet();
