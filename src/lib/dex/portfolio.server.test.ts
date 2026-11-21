@@ -17,7 +17,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.rpc.mockReturnValue({});
   mocks.snapshot.mockImplementation(async () => ({ poolId: "pool", mintA: "A", mintB: "B" }));
-  mocks.prices.mockResolvedValue(new Map([["A", { price: 50, source: "jupiter" }]]));
+  mocks.prices.mockResolvedValue(new Map([["A", { price: 50, source: "jupiter", basis: "per-share" }]]));
   mocks.metadata.mockResolvedValue({});
   mocks.symbols.mockResolvedValue(new Map([["pool", { symbolA: "TSLA", symbolB: "TSLAx" }]]));
   mocks.figures.mockResolvedValue({ figures, evaluatedAt: "2026-11-15T00:00:00Z", historyComplete: true, historyRefreshResolved: true, timings: {}, historyFetch: {} });

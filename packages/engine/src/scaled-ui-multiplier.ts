@@ -1,7 +1,7 @@
 import { getScaledUiAmountConfig, type Mint } from "@solana/spl-token";
 import { effectiveScaledUiMultiplier } from "./valuation/multiplier";
 
-export { effectiveScaledUiMultiplier } from "./valuation/multiplier";
+export { effectiveScaledUiMultiplier };
 
 function isPositiveFinite(value: number): boolean {
   return Number.isFinite(value) && value > 0;
