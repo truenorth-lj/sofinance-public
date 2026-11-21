@@ -1,7 +1,8 @@
 /**
  * Deposit-time stock price from trades in a reference stock/USDC pool (`stock-reference-pools.ts`), pure.
- * A trade is read from the pool's own two vaults: price = |ΔUSDC| / |Δstock| in raw amount / decimals, the same unit the
- * report uses for share amounts (a ScaledUiAmount multiplier is not applied, as everywhere else in the report).
+ * A trade is read from the pool's own two vaults: price = |ΔUSDC| / |Δstock| in raw amount / decimals, i.e. USD per raw
+ * token unit, the unit of the report's amounts. No ScaledUiAmount multiplier is applied here, so a stored price stays
+ * valid across a multiplier change; the stock view divides it by the multiplier now (`stock-performance.ts`, X3-6).
  */
 import { USDC_MINT } from "./rwa-allowlist";
 import { USDC_DECIMALS, type StockReferencePool } from "./stock-reference-pools";

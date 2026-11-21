@@ -3,7 +3,7 @@ import { Keypair, type AccountInfo } from "@solana/web3.js";
 import { describe, expect, it } from "vitest";
 import { createAsset } from "./asset";
 import { mintAccountHint } from "./multiplier-sources/token2022-scaled-ui";
-import { PAIR_GUARD_MAX_RELATIVE_DIFF, pricePair, sqrtPriceX64ToPriceBPerA } from "./pair-pricing";
+import { ownUsdPerRawUnit, PAIR_GUARD_MAX_RELATIVE_DIFF, pricePair, sqrtPriceX64ToPriceBPerA } from "./pair-pricing";
 import type { AssetFacts, PriceQuote } from "./types";
 
 const NOW = Date.parse("2026-11-21T08:00:00Z");
@@ -92,6 +92,18 @@ describe("pricePair", () => {
   it("the result is plain data", () => {
     const priced = pricePair({ a: { asset: asset(8), quote: share(80) }, b: { asset: asset(1), quote: share(640) }, poolPriceBPerA: 1, nowMs: NOW });
     expect(JSON.parse(JSON.stringify(priced))).toEqual(priced);
+  });
+});
+
+describe("ownUsdPerRawUnit", () => {
+  const corrected = { kind: "corrected" as const, relativeDiff: 0.03, side: "b" as const, rule: "liquidity" as const, ownUsdPerRawUnit: 647.92 };
+  it("returns the guard's recorded own price only for the side it corrected", () => {
+    expect(ownUsdPerRawUnit({ usdPerRawUnit: 629.33, side: "b", guard: corrected })).toBe(647.92);
+    expect(ownUsdPerRawUnit({ usdPerRawUnit: 629.08, side: "a", guard: corrected })).toBe(629.08);
+  });
+  it("passes the reported price through when nothing was corrected", () => {
+    expect(ownUsdPerRawUnit({ usdPerRawUnit: 629.08, side: "a", guard: { kind: "agreed", relativeDiff: 0.01 } })).toBe(629.08);
+    expect(ownUsdPerRawUnit({ usdPerRawUnit: null, side: "a", guard: null })).toBeNull();
   });
 });
 
