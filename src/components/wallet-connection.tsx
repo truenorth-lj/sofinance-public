@@ -44,3 +44,7 @@ export function useWalletConnection(): WalletConnection {
   if (!connection) throw new Error("Wallet connection provider is missing");
   return connection;
 }
+
+export function useOptionalWalletConnection(): WalletConnection | null {
+  return useContext(WalletConnectionContext);
+}

@@ -258,7 +258,7 @@ export default function SignPage() {
 
   return (
     <InkShell>
-      <SiteHeader variant="app" wallet={wallet} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
+      <SiteHeader wallet={wallet} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
       
       <div className="mx-auto max-w-3xl">
       <PageHeader title="Sign transaction" subline="Review and sign the prepared transaction" />

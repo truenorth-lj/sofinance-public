@@ -1,10 +1,11 @@
 "use client";
 
 /**
- * The homepage's one wallet, shared by the header's Connect wallet and the stock rows' Buy. The wallet providers are
- * heavy, so they load only on first use (`HomepageWalletRoot`, mounted once by `HomepageWalletIsland`); this small store
- * is what the light parts of the page talk to. One providers tree means connecting in the header is the connection Buy
- * uses, and the other way round.
+ * The site header's wallet island (marketing pages and public `/pools/[slug]` pages) plus the homepage Buy modal.
+ * Wallet providers are heavy, so they load only on first use (`HomepageWalletRoot`, mounted once by
+ * `HomepageWalletIsland`); this small store is what the light header talks to. Anonymous visits never mount the
+ * providers, so they make no RPC or paid wallet-cloud calls. One providers tree means connecting in the header is
+ * the connection Buy uses, and the other way round.
  */
 import { useSyncExternalStore } from "react";
 import type { StockBuyOption } from "@/lib/stock-market/public";
@@ -20,9 +21,17 @@ export type HomepageWalletState = {
   address: string | null;
   /** The stock whose Buy modal is open. */
   buy: StockBuyOption | null;
+  /** Bumped by every EVM connect click; the root opens the EVM flow once per bump. */
+  evmConnectRequests: number;
+  /** The connected EVM wallet address, or null. */
+  evmAddress: string | null;
+  /** The EVM session has finished restoring and reports evmAddress. */
+  evmReady: boolean;
+  evmChainId: number | null;
+  evmError: string | null;
 };
 
-const INITIAL: HomepageWalletState = { mounted: false, ready: false, connectRequests: 0, address: null, buy: null };
+const INITIAL: HomepageWalletState = { mounted: false, ready: false, connectRequests: 0, address: null, buy: null, evmConnectRequests: 0, evmAddress: null, evmReady: false, evmChainId: null, evmError: null };
 let state = INITIAL;
 const listeners = new Set<() => void>();
 /**
@@ -36,6 +45,8 @@ let disconnectWallet: (() => void) | null = null;
  * by itself).
  */
 let answeredConnectRequests = 0;
+let disconnectEvmWallet: (() => void) | null = null;
+let answeredEvmConnectRequests = 0;
 
 /** Notifies only when a value really changed, so a report of the same wallet re-renders nothing. */
 function set(patch: Partial<HomepageWalletState>) {
@@ -66,10 +77,32 @@ export const homepageWallet = {
   report: (address: string | null, restoring = false) => set({ ready: !restoring, address }),
   /** Called by the root: how to disconnect (not part of the state, see `disconnectWallet`). */
   setDisconnect: (disconnect: (() => void) | null) => { disconnectWallet = disconnect; },
-  /** The root unmounted (the visitor left the homepage): nothing it reported is true any more. */
-  unmounted: () => { disconnectWallet = null; set({ ready: false, address: null, buy: null }); },
+  requestEvmConnect: () => set({ mounted: true, evmConnectRequests: state.evmConnectRequests + 1 }),
+  takeEvmConnectRequest: () => {
+    if (state.evmConnectRequests <= answeredEvmConnectRequests) return false;
+    answeredEvmConnectRequests = state.evmConnectRequests;
+    return true;
+  },
+  reportEvm: (address: string | null, restoring = false, chainId: number | null = null, error: string | null = null) =>
+    set({ evmReady: !restoring, evmAddress: address, evmChainId: chainId, evmError: error }),
+  setEvmDisconnect: (disconnect: (() => void) | null) => { disconnectEvmWallet = disconnect; },
+  disconnectEvm: () => disconnectEvmWallet?.(),
+  dismissEvmError: () => { if (state.evmError !== null) set({ evmError: null }); },
+  /** The root unmounted (the visitor left the page): nothing it reported is true any more. */
+  unmounted: () => {
+    disconnectWallet = null;
+    disconnectEvmWallet = null;
+    set({ ready: false, address: null, buy: null, evmReady: false, evmAddress: null, evmChainId: null, evmError: null });
+  },
   /** Tests only. */
-  reset: () => { state = INITIAL; disconnectWallet = null; answeredConnectRequests = 0; for (const listener of listeners) listener(); },
+  reset: () => {
+    state = INITIAL;
+    disconnectWallet = null;
+    disconnectEvmWallet = null;
+    answeredConnectRequests = 0;
+    answeredEvmConnectRequests = 0;
+    for (const listener of listeners) listener();
+  },
 };
 
 export function useHomepageWallet(): HomepageWalletState {

@@ -58,7 +58,7 @@ test.describe("production, read-only", () => {
     // The homepage must restore this AppKit session without wallet-adapter's walletName hint.
     expect(await page.evaluate(() => localStorage.getItem("walletName"))).toBeNull();
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    const homeWallet = page.getByTestId("home-wallet");
+    const homeWallet = page.getByTestId("nav-solana-wallet");
     await expect(homeWallet).toHaveAttribute("data-connected", "true");
     await expect(homeWallet).toContainText(modal.shortAddress);
     await expect(page.getByTestId("w3m-modal-card")).not.toBeVisible();

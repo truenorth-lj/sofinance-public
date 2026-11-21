@@ -4,41 +4,77 @@ import { useId, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, X as CloseIcon } from "lucide-react";
-import { HomepageConnectButton, HomepageWalletIsland } from "@/components/homepage-wallet-island";
+import { HomepageWalletIsland } from "@/components/homepage-wallet-island";
+import { homepageWallet, useHomepageWallet } from "@/components/homepage-wallet";
 import { InkNav, type InkNavProps } from "@/components/ink/InkNav";
 import { SiteLogo } from "@/components/site-logo";
 import { cn } from "@/lib/cn";
+import { navGroup } from "@/lib/nav-group";
+import { isRhcUniv4TradingEnabled } from "@/lib/protocol-flags";
 import { APP_ROUTES, BLOG_ROUTES, GUIDE_ROUTES } from "@/lib/public-urls";
 
 const pill =
   "flex h-10 items-center justify-center rounded-full border px-4 text-[13px] font-medium outline-none transition-colors";
 
-const NAV_ITEMS = [
+const APP_NAV_ITEMS = [
   { href: APP_ROUTES.rwaPairs, label: "Pools" },
   { href: APP_ROUTES.home, label: "Portfolio" },
-  { href: GUIDE_ROUTES.learn, label: "Learn" },
   { href: APP_ROUTES.ai, label: "AI agents" },
 ] as const;
 
+const MARKETING_NAV_ITEMS = [
+  { href: APP_ROUTES.rwaPairs, label: "Pools" },
+  { href: GUIDE_ROUTES.learn, label: "Learn" },
+  { href: APP_ROUTES.ai, label: "AI agents" },
+  { href: BLOG_ROUTES.home, label: "Blog" },
+] as const;
+
 /**
- * One site header. `variant` only changes the wallet slot and whether Blog is shown (11/4: Blog stays on
- * the marketing site). Pools always goes to the list page; the logo always goes home. On small screens the
- * links fold into Menu so AI agents is not dropped below 640px.
+ * One site header. The group (marketing vs app) comes only from `navGroup(pathname)` —
+ * no per-route branching and no variant prop. Both groups use the same InkNav wallet
+ * slot (Solana + EVM). Pages already inside `Providers` (`/app/*`, the `/pools` list)
+ * use that context; marketing pages and `/pools/[slug]` load the wallet providers
+ * through a lazy client island so SSR/SEO and anonymous browsing stay unchanged.
  */
-export function SiteHeader({
-  variant = "marketing",
-  wallet,
-  connected,
-  restoring,
-  onConnect,
-  onDisconnect,
-}: { variant?: "marketing" | "app" } & InkNavProps) {
+export function SiteHeader(props: InkNavProps = {}) {
   const pathname = usePathname();
+  const group = navGroup(pathname);
+  const island = useHomepageWallet();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuId = useId();
-  const items = variant === "marketing"
-    ? [...NAV_ITEMS, { href: BLOG_ROUTES.home, label: "Blog" }]
-    : NAV_ITEMS;
+  const items = group === "app" ? APP_NAV_ITEMS : MARKETING_NAV_ITEMS;
+  // App pages already inside Providers pass Solana handlers; InkNav then reads EVM from context.
+  // Marketing pages and /pools/[slug] omit handlers, so the lazy island feeds both chains via the store.
+  const fromApp = Boolean(props.onConnect && props.onDisconnect);
+
+  const solana = fromApp
+    ? {
+        wallet: props.wallet,
+        connected: props.connected,
+        restoring: props.restoring,
+        onConnect: props.onConnect,
+        onDisconnect: props.onDisconnect,
+      }
+    : {
+        wallet: island.address,
+        connected: Boolean(island.address),
+        restoring: island.mounted && !island.ready,
+        onConnect: homepageWallet.requestConnect,
+        onDisconnect: homepageWallet.disconnect,
+      };
+
+  const evm = fromApp
+    ? undefined
+    : {
+        evmEnabled: isRhcUniv4TradingEnabled(),
+        evmWallet: island.evmAddress,
+        evmBusy: island.mounted && !island.evmReady,
+        evmChainId: island.evmChainId,
+        evmError: island.evmError,
+        onEvmConnect: homepageWallet.requestEvmConnect,
+        onEvmDisconnect: homepageWallet.disconnectEvm,
+        onEvmDismissError: homepageWallet.dismissEvmError,
+      };
 
   return (
     <>
@@ -56,11 +92,14 @@ export function SiteHeader({
         <div className="flex w-full items-center gap-1.5 sm:contents sm:gap-2">
           <SiteLogo className="sm:order-1" />
           <div className="ml-auto flex items-center gap-1.5 sm:order-3 sm:ml-0 sm:gap-2">
-            {variant === "marketing" ? (
-              <HomepageConnectButton />
-            ) : (
-              <InkNav wallet={wallet} connected={connected} restoring={restoring} onConnect={onConnect} onDisconnect={onDisconnect} />
-            )}
+            <InkNav
+              wallet={solana.wallet}
+              connected={solana.connected}
+              restoring={solana.restoring}
+              onConnect={solana.onConnect}
+              onDisconnect={solana.onDisconnect}
+              {...evm}
+            />
             <button
               type="button"
               aria-expanded={menuOpen}
@@ -82,7 +121,7 @@ export function SiteHeader({
         </div>
 
         <nav
-          aria-label={variant === "app" ? "App" : "Sections"}
+          aria-label={group === "app" ? "App" : "Sections"}
           id={menuId}
           onKeyDown={(event) => { if (event.key === "Escape") setMenuOpen(false); }}
           className={cn(
@@ -112,8 +151,9 @@ export function SiteHeader({
           })}
         </nav>
       </header>
-      {/* One providers tree, outside any page Suspense boundary. App pages keep their own wallet providers. */}
-      {variant === "marketing" ? <HomepageWalletIsland /> : null}
+      {/* Lazy island only when this header is not already inside the app Providers tree.
+          The island is a sibling of the page body, never a wrapper, so SSR/SEO stays intact. */}
+      {fromApp ? null : <HomepageWalletIsland />}
     </>
   );
 }

@@ -80,7 +80,7 @@ test.describe("J1 connect wallet", () => {
     expect(await page.evaluate(() => localStorage.getItem("walletName"))).toBeNull();
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    const homeWallet = page.getByTestId("home-wallet");
+    const homeWallet = page.getByTestId("nav-solana-wallet");
     await expect(homeWallet).toHaveAttribute("data-connected", "true");
     await expect(homeWallet).toContainText(modal.shortAddress);
     await expect(page.getByTestId("w3m-modal-card")).not.toBeVisible();
@@ -89,9 +89,11 @@ test.describe("J1 connect wallet", () => {
     await expect(page.getByTestId("w3m-modal-card")).not.toBeVisible();
 
     await homeWallet.click();
-    await expect(homeWallet).toHaveText("Connect wallet");
+    await expect(homeWallet).toHaveAttribute("data-connected", "false");
+    await expect(homeWallet).toHaveText("Solana");
     await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(homeWallet).toHaveText("Connect wallet");
+    await expect(homeWallet).toHaveAttribute("data-connected", "false");
+    await expect(homeWallet).toHaveText("Solana");
     await expect(homeWallet).toBeEnabled();
     await expect(page.getByTestId("w3m-modal-card")).not.toBeVisible();
     expect(wallet.ledger).toEqual([]);

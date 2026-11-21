@@ -12,6 +12,15 @@ export interface InkNavProps {
   restoring?: boolean;
   onConnect?: () => void;
   onDisconnect?: () => void;
+  /** Used when this slot is outside `EvmWalletProvider` (marketing pages, public pool pages). */
+  evmEnabled?: boolean;
+  evmWallet?: string | null;
+  evmBusy?: boolean;
+  evmChainId?: number | null;
+  evmError?: string | null;
+  onEvmConnect?: () => void;
+  onEvmDisconnect?: () => void;
+  onEvmDismissError?: () => void;
 }
 
 const short = shortAddress;
@@ -25,13 +34,25 @@ const walletOn = "border-white/40 text-cream hover:border-white/70";
  * App wallet slot for SiteHeader: Solana and EVM stay independent. No nav links (those live in SiteHeader).
  * Wallet buttons only render when the page passes Solana handlers; plan/sign pages without handlers show none.
  */
-export function InkNav({ wallet, connected, restoring = false, onConnect, onDisconnect }: InkNavProps) {
+export function InkNav({
+  wallet, connected, restoring = false, onConnect, onDisconnect,
+  evmEnabled, evmWallet, evmBusy: evmBusyProp, evmChainId, evmError, onEvmConnect, onEvmDisconnect, onEvmDismissError,
+}: InkNavProps) {
   const evm = useOptionalEvmWalletConnection();
   const showSolana = Boolean(onConnect && onDisconnect);
-  const showEvm = showSolana && Boolean(evm?.enabled);
+  const evmOn = evm ? evm.enabled : Boolean(evmEnabled);
+  const showEvm = showSolana && Boolean(evmOn);
   const solanaConnected = Boolean(connected && wallet);
-  const evmBusy = evm?.status === "connecting" || evm?.status === "restoring";
-  const evmOnRhc = evm?.chainId === RHC_CHAIN_ID;
+  const evmAddress = evm?.wallet?.address ?? evmWallet ?? null;
+  const evmBusy = evm ? evm.status === "connecting" || evm.status === "restoring" : Boolean(evmBusyProp);
+  const evmOnRhc = (evm ? evm.chainId : evmChainId) === RHC_CHAIN_ID;
+  const evmAlert = evm?.error ?? evmError ?? null;
+  const onEvmClick = evmAddress
+    ? () => { if (evm) evm.disconnect(); else onEvmDisconnect?.(); }
+    : () => {
+        if (evm) { evm.dismissError(); void evm.connect().catch(() => {}); }
+        else onEvmConnect?.();
+      };
 
   if (!showSolana) return null;
 
@@ -54,29 +75,29 @@ export function InkNav({ wallet, connected, restoring = false, onConnect, onDisc
         </button>
         {/* No network tag or switch here (LJ 11/14): another network is only asked about where it matters (RHC Close).
             The address shows a chain tag only on Robinhood Chain. */}
-        {showEvm && evm && (
+        {showEvm && (
           <button
             type="button"
-            onClick={evm.wallet ? evm.disconnect : () => { evm.dismissError(); void evm.connect().catch(() => {}); }}
+            onClick={onEvmClick}
             disabled={evmBusy}
-            title={evm.wallet ? "Disconnect EVM wallet" : "Connect an EVM wallet (MetaMask) for Robinhood Chain"}
-            aria-label={evm.wallet ? `EVM wallet ${shortEvm(evm.wallet.address)}${evmOnRhc ? " on Robinhood Chain" : ""}, connected. Disconnect` : "Connect an EVM wallet"}
+            title={evmAddress ? "Disconnect EVM wallet" : "Connect an EVM wallet (MetaMask) for Robinhood Chain"}
+            aria-label={evmAddress ? `EVM wallet ${shortEvm(evmAddress)}${evmOnRhc ? " on Robinhood Chain" : ""}, connected. Disconnect` : "Connect an EVM wallet"}
             data-testid="nav-evm-wallet"
-            data-connected={evm.wallet ? "true" : "false"}
-            className={cn(walletPill, evm.wallet ? walletOn : walletOff, "disabled:cursor-wait disabled:opacity-60")}
+            data-connected={evmAddress ? "true" : "false"}
+            className={cn(walletPill, evmAddress ? walletOn : walletOff, "disabled:cursor-wait disabled:opacity-60")}
           >
             <Wallet className="hidden h-4 w-4 shrink-0 sm:block" aria-hidden="true" />
-            {evm.wallet
-              ? <WalletLabel address={shortEvm(evm.wallet.address)} chain={evmOnRhc ? "RHC" : null} />
-              : <span className="shrink-0">{evm.status === "connecting" ? "Connecting…" : "EVM"}</span>}
+            {evmAddress
+              ? <WalletLabel address={shortEvm(evmAddress)} chain={evmOnRhc ? "RHC" : null} />
+              : <span className="shrink-0">{evmBusy ? "Connecting…" : "EVM"}</span>}
           </button>
         )}
       </div>
-      {showEvm && evm?.error && (
+      {showEvm && evmAlert && (
         <p role="alert" className="w-full text-right text-xs text-red-200" data-testid="nav-evm-error">
-          <span>EVM wallet: {evm.error}</span>
+          <span>EVM wallet: {evmAlert}</span>
           {" "}
-          <button type="button" onClick={evm.dismissError} className="underline underline-offset-2">Dismiss</button>
+          <button type="button" onClick={() => evm ? evm.dismissError() : onEvmDismissError?.()} className="underline underline-offset-2">Dismiss</button>
         </p>
       )}
     </div>
