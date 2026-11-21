@@ -44,8 +44,8 @@ export function buildRealizedFeeAprSeries(input: {
   poolId: string;
   evaluatedAt: number;
   uncollectedFees: { a: bigint; b: bigint };
-  priceUsdA: number | null;
-  priceUsdB: number | null;
+  usdPerRawUnitA: number | null;
+  usdPerRawUnitB: number | null;
   decimalsA: number;
   decimalsB: number;
   openedAt: number | null;
@@ -74,8 +74,8 @@ export function buildRealizedFeeAprSeries(input: {
       uncollected: { a: 0n, b: 0n },
       includeUncollected: false,
       kind: "event",
-      priceUsdA: input.priceUsdA,
-      priceUsdB: input.priceUsdB,
+      usdPerRawUnitA: input.usdPerRawUnitA,
+      usdPerRawUnitB: input.usdPerRawUnitB,
       decimalsA: input.decimalsA,
       decimalsB: input.decimalsB,
     });
@@ -89,8 +89,8 @@ export function buildRealizedFeeAprSeries(input: {
     uncollected: input.uncollectedFees,
     includeUncollected: true,
     kind: "evaluation",
-    priceUsdA: input.priceUsdA,
-    priceUsdB: input.priceUsdB,
+    usdPerRawUnitA: input.usdPerRawUnitA,
+    usdPerRawUnitB: input.usdPerRawUnitB,
     decimalsA: input.decimalsA,
     decimalsB: input.decimalsB,
   });
@@ -110,8 +110,8 @@ function pointFromCash(input: {
   uncollected: { a: bigint; b: bigint };
   includeUncollected: boolean;
   kind: RealizedFeeAprKind;
-  priceUsdA: number | null;
-  priceUsdB: number | null;
+  usdPerRawUnitA: number | null;
+  usdPerRawUnitB: number | null;
   decimalsA: number;
   decimalsB: number;
 }): RealizedFeeAprPoint | null {
@@ -120,8 +120,8 @@ function pointFromCash(input: {
     { a: input.cash.depositedA, b: input.cash.depositedB },
     input.decimalsA,
     input.decimalsB,
-    input.priceUsdA,
-    input.priceUsdB,
+    input.usdPerRawUnitA,
+    input.usdPerRawUnitB,
   );
   const feesUsd = sideUsd(
     {
@@ -130,8 +130,8 @@ function pointFromCash(input: {
     },
     input.decimalsA,
     input.decimalsB,
-    input.priceUsdA,
-    input.priceUsdB,
+    input.usdPerRawUnitA,
+    input.usdPerRawUnitB,
   );
   const holdingDays = holdingDaysFromSeconds(Math.max(0, input.asOf - input.openedAt));
   const aprPct =

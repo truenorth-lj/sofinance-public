@@ -2,10 +2,16 @@ import { ASSUMPTIONS_LABEL, PERFORMANCE_METHOD, TOKEN_NATIVE_ASSUMPTIONS, type P
 import { getJupiterApiKey } from "@sofinance/engine/config/server-env";
 import { getTokenMetadata } from "@sofinance/engine/token-metadata";
 import { fetchRaydiumPoolUsdPrices, fetchTokenPricesUsd, type TokenPriceQuote, type TokenPriceSource } from "@sofinance/engine/token-prices";
+import { assetKey } from "@sofinance/engine/valuation/asset";
+import { pricePair } from "@sofinance/engine/valuation/pair-pricing";
+import { multiplierHintsFromQuote } from "@sofinance/engine/valuation/price-sources/token-price-quotes";
+import { assetRegistry } from "@sofinance/engine/valuation/registry";
+import type { AssetRef, MultiplierHint, ValuationWarning } from "@sofinance/engine/valuation/types";
 import { buildStockPerformance } from "./stock-performance-build";
 import { buildRealizedFeeAprSeries } from "./realized-fee-apr-series";
 import type { HistoryFetchMetric } from "./position-performance-history";
 import type { PositionHistoryEvent, PositionPerformanceResult, PositionPricingSource } from "./position-performance";
+import type { PositionPricingReport } from "./position-performance-report";
 
 export const DEFAULT_MAX_SIGNATURES = 100;
 
@@ -34,21 +40,82 @@ const PRICE_SOURCE_LABEL: Record<string, string> = {
 export function describePositionPricing(
   quoteA: TokenPriceQuote | undefined,
   quoteB: TokenPriceQuote | undefined,
-): { source: PositionPricingSource; label: string; priceUsdA: number | null; priceUsdB: number | null } {
-  const priceUsdA = quoteA?.price ?? null;
-  const priceUsdB = quoteB?.price ?? null;
+): { source: PositionPricingSource; label: string } {
   if (!quoteA || !quoteB) {
-    return { source: "none", label: "USD pricing did not return both mint prices; USD metrics null.", priceUsdA, priceUsdB };
+    return { source: "none", label: "USD pricing did not return both mint prices; USD metrics null." };
   }
   const unique = [...new Set([quoteA.source, quoteB.source])].sort();
   const source = (unique.length === 1 ? PRICE_SOURCE_ID[unique[0]!] : unique.join("+")) as PositionPricingSource;
   const label = PRICE_SOURCE_LABEL[source] ?? `USD from ${unique.join(" and ")} at evaluation time (current), NOT historical tx-time prices.`;
-  return { source, label, priceUsdA, priceUsdB };
+  return { source, label };
+}
+
+/** One side of a position to price: the mint, its decimals, and the multiplier hint its reader got in its own batch. */
+export type PricingSide = { mint: string; decimals: number; hint: MultiplierHint | null };
+
+export type PositionPricing = PositionPricingReport<PositionPricingSource>;
+
+const UNPRICED: Omit<PositionPricing, "source" | "label"> = {
+  usdPerRawUnitA: null, usdPerRawUnitB: null, sharePriceUsdA: null, sharePriceUsdB: null,
+  multiplierA: null, multiplierB: null, basis: { a: null, b: null }, guard: null,
+};
+
+const logValuation = (record: Record<string, unknown>) => {
+  // eslint-disable-next-line no-console -- deliberate marker: a multiplier conflict or a pair-guard correction (PM Q1, X3-3)
+  console.warn("[valuation]", JSON.stringify(record));
+};
+
+/**
+ * USD per raw unit for both sides of a position. Quotes go through the asset registry with the hints the reader already
+ * has (mint accounts from its own batch, then Jupiter's `scaledUiConfig`), so a per-share price gets the multiplier and
+ * a per-raw price never does; then the pair guard cross-checks them against the pool price. No new RPC calls.
+ */
+export function pricePosition(input: {
+  a: PricingSide;
+  b: PricingSide;
+  quoteA: TokenPriceQuote | undefined;
+  quoteB: TokenPriceQuote | undefined;
+  poolPriceBPerA: number | null;
+  nowMs: number;
+  /** When the quotes were fetched (Jupiter `scaledUiConfig` hints are timestamped with it). */
+  quotesObservedAtMs: number;
+  /** Identifies the position in logs. */
+  logContext?: Record<string, string>;
+}): PositionPricing {
+  const { a, b, quoteA, quoteB, nowMs } = input;
+  const warnings: ValuationWarning[] = [];
+  const refA: AssetRef = { chain: "solana", address: a.mint };
+  const refB: AssetRef = { chain: "solana", address: b.mint };
+  const hintsOf = (side: PricingSide, quote: TokenPriceQuote | undefined) =>
+    [...(side.hint ? [side.hint] : []), ...(quote ? multiplierHintsFromQuote(quote, input.quotesObservedAtMs) : [])];
+  const assets = assetRegistry.resolve([
+    { ref: refA, decimals: a.decimals, hints: hintsOf(a, quoteA) },
+    { ref: refB, decimals: b.decimals, hints: hintsOf(b, quoteB) },
+  ], { nowMs, warn: (warning) => warnings.push(warning) });
+  const priced = pricePair({
+    a: { asset: assets.get(assetKey(refA))!, quote: quoteA ? assetRegistry.quoteOf(quoteA) : null },
+    b: { asset: assets.get(assetKey(refB))!, quote: quoteB ? assetRegistry.quoteOf(quoteB) : null },
+    poolPriceBPerA: input.poolPriceBPerA, nowMs,
+  });
+  for (const warning of warnings) logValuation({ ...input.logContext, ...warning });
+  if (priced.guard.kind === "corrected" || priced.guard.kind === "unresolved") logValuation({ ...input.logContext, kind: "pair-guard", guard: priced.guard });
+  return {
+    ...describePositionPricing(quoteA, quoteB),
+    usdPerRawUnitA: priced.a.usdPerRawUnit, usdPerRawUnitB: priced.b.usdPerRawUnit,
+    sharePriceUsdA: priced.a.sharePriceUsd, sharePriceUsdB: priced.b.sharePriceUsd,
+    multiplierA: priced.a.multiplier, multiplierB: priced.b.multiplier,
+    basis: { a: priced.a.basis, b: priced.b.basis },
+    guard: priced.guard,
+  };
 }
 
 export async function priceAndLabel(input: {
-  mintA: string;
-  mintB: string;
+  a: PricingSide;
+  b: PricingSide;
+  /** Pool price as token B per token A in raw units, from the reader's own pool state; null skips the pair guard. */
+  poolPriceBPerA: number | null;
+  /** Evaluation time (the position's `evaluatedAt`). */
+  nowMs: number;
   skipPricing?: boolean;
   fetcher: typeof fetch;
   jupiterApiKey?: string;
@@ -56,44 +123,39 @@ export async function priceAndLabel(input: {
   raydiumPoolId?: string;
   /** A portfolio read shares one price batch across all positions. */
   quotes?: ReadonlyMap<string, TokenPriceQuote>;
+  logContext?: Record<string, string>;
 }): Promise<{
   quotes: Map<string, TokenPriceQuote>;
-  priceUsdA: number | null;
-  priceUsdB: number | null;
-  pricingSource: PositionPricingSource;
-  pricingLabel: string;
+  pricing: PositionPricing;
   pricingMs: number;
 }> {
-  let priceUsdA: number | null = null;
-  let priceUsdB: number | null = null;
-  let pricingSource: PositionPricingSource = "none";
-  let pricingLabel = "USD pricing skipped; token-raw / token-native metrics only.";
   const pricingStarted = Date.now();
+  let pricing: PositionPricing = { source: "none", label: "USD pricing skipped; token-raw / token-native metrics only.", ...UNPRICED };
   let quotes = new Map<string, TokenPriceQuote>();
+  const mintA = input.a.mint;
+  const mintB = input.b.mint;
   if (!input.skipPricing) {
     try {
-      quotes = input.quotes ? new Map(input.quotes) : await fetchTokenPricesUsd([input.mintA, input.mintB], input.fetcher, input.jupiterApiKey ?? getJupiterApiKey());
-      let quoteA = quotes.get(input.mintA);
-      let quoteB = quotes.get(input.mintB);
+      quotes = input.quotes ? new Map(input.quotes) : await fetchTokenPricesUsd([mintA, mintB], input.fetcher, input.jupiterApiKey ?? getJupiterApiKey());
+      const quotesObservedAtMs = input.quotes ? input.nowMs : Date.now();
+      let quoteA = quotes.get(mintA);
+      let quoteB = quotes.get(mintB);
       if (input.raydiumPoolId && (!quoteA || !quoteB)) {
-        const fallback = await fetchRaydiumPoolUsdPrices(input.raydiumPoolId, input.mintA, input.mintB, input.fetcher);
+        const fallback = await fetchRaydiumPoolUsdPrices(input.raydiumPoolId, mintA, mintB, input.fetcher);
         const raydium = (mint: string): TokenPriceQuote | undefined => {
           const price = fallback.get(mint);
           return price !== undefined ? { price, source: "raydium", basis: "per-raw-unit" } : undefined;
         };
-        quoteA = quoteA ?? raydium(input.mintA);
-        quoteB = quoteB ?? raydium(input.mintB);
+        quoteA = quoteA ?? raydium(mintA);
+        quoteB = quoteB ?? raydium(mintB);
       }
-      const described = describePositionPricing(quoteA, quoteB);
-      priceUsdA = described.priceUsdA;
-      priceUsdB = described.priceUsdB;
-      pricingSource = described.source;
-      pricingLabel = described.label;
+      pricing = pricePosition({ a: input.a, b: input.b, quoteA, quoteB, poolPriceBPerA: input.poolPriceBPerA,
+        nowMs: input.nowMs, quotesObservedAtMs, logContext: input.logContext });
     } catch {
-      pricingLabel = "USD pricing request failed; USD metrics null.";
+      pricing = { source: "none", label: "USD pricing request failed; USD metrics null.", ...UNPRICED };
     }
   }
-  return { quotes, priceUsdA, priceUsdB, pricingSource, pricingLabel, pricingMs: Date.now() - pricingStarted };
+  return { quotes, pricing, pricingMs: Date.now() - pricingStarted };
 }
 
 export async function resolveSymbols(input: {
@@ -175,7 +237,7 @@ export async function assemblePerformanceResult(input: {
   metrics: PositionPerformanceMetrics;
   tokenNative: TokenNativeMetrics;
   quotes: Map<string, TokenPriceQuote>;
-  pricing: { source: PositionPricingSource; label: string; priceUsdA: number | null; priceUsdB: number | null };
+  pricing: PositionPricing;
   incomplete: boolean;
   incompleteMessage: string;
   extraAssumptions?: readonly string[];
@@ -197,7 +259,7 @@ export async function assemblePerformanceResult(input: {
   const realizedFeeAprSeries = buildRealizedFeeAprSeries({
     history: identity.history, positionMint: identity.positionMint, poolId: identity.poolId,
     evaluatedAt: identity.evaluatedAt, uncollectedFees: input.uncollectedFees,
-    priceUsdA: input.pricing.priceUsdA, priceUsdB: input.pricing.priceUsdB,
+    usdPerRawUnitA: input.pricing.usdPerRawUnitA, usdPerRawUnitB: input.pricing.usdPerRawUnitB,
     decimalsA: identity.decimalsA, decimalsB: identity.decimalsB, openedAt: identity.openedAt,
   });
   if (input.incomplete) realizedFeeAprSeries.points = [];

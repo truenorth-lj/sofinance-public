@@ -1,0 +1,439 @@
+{
+ "capturedAt": "2026-11-21T04:36:58Z",
+ "sources": {
+  "solana": "Public Solana RPC getMultipleAccounts (jsonParsed) at slot 472006863, 2026-11-21 12:36 Taipei: owner, decimals and the ScaledUiAmount extension state of each mint (other extensions omitted). Pool price: each pool account at the same slot (B per A, raw units).",
+  "jupiter": "Jupiter Price v3 (keyless lite endpoint, 1 call) at the same time: usdPrice, liquidity, scaledUiConfig.",
+  "robinhood": "GeckoTerminal pool endpoint (1 call): base/quote token USD prices, which are per raw unit."
+ },
+ "solana": [
+  {
+   "pool": "SPY/SPYx",
+   "protocol": "raydium-clmm",
+   "poolAddress": "5jdb8XzZc5L2BvG2DjLrnzeA2Psn9NZsfxwxNwZHypMk",
+   "poolRawPriceBPerA": 0.9944939971786521,
+   "a": {
+    "mint": "SPYBo66VJPFjh1pXMb9Le53kDYWTK1zzYVDeVRWtsbi",
+    "symbol": "SPY",
+    "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    "decimals": 6,
+    "scaledUiAmountConfig": {
+     "multiplier": 1.0,
+     "newMultiplier": 1.0,
+     "newMultiplierEffectiveTimestamp": 0
+    },
+    "jupiter": {
+     "usdPrice": 692.6175319988528,
+     "liquidity": 15893.430049624718,
+     "scaledUiConfig": null
+    }
+   },
+   "b": {
+    "mint": "XsoCS1TfEyfFhfvj8EtZ528L3CaKBDBRqRapnBbDF2W",
+    "symbol": "SPYx",
+    "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    "decimals": 8,
+    "scaledUiAmountConfig": {
+     "multiplier": 1.0057321559499792,
+     "newMultiplier": 1.007474126658766,
+     "newMultiplierEffectiveTimestamp": 1793454300
+    },
+    "jupiter": {
+     "usdPrice": 691.7724675804948,
+     "liquidity": 2357791.63152545,
+     "scaledUiConfig": {
+      "multiplier": 1.0057321559499792,
+      "newMultiplier": 1.007474126658766,
+      "newMultiplierEffectiveAt": "2026-10-31T13:45:00Z",
+      "usdPricePrescaled": 696.9428626222384
+     }
+    }
+   }
+  },
+  {
+   "pool": "AVGOx/AVGO",
+   "protocol": "raydium-clmm",
+   "poolAddress": "6upkM7TLLAvZhZwvQAM99S7LZYk14y6hC2xWPszxh2x2",
+   "poolRawPriceBPerA": 1.0070381645489397,
+   "a": {
+    "mint": "XsgSaSvNSqLTtFuyWPBhK9196Xb9Bbdyjj4fH3cPJGo",
+    "symbol": "AVGOx",
+    "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    "decimals": 8,
+    "scaledUiAmountConfig": {
+     "multiplier": 1.0048837684862768,
+     "newMultiplier": 1.0061623180646875,
+     "newMultiplierEffectiveTimestamp": 1789777800
+    },
+    "jupiter": {
+     "usdPrice": 305.254537732902,
+     "liquidity": 101472.57330310081,
+     "scaledUiConfig": {
+      "multiplier": 1.0048837684862768,
+      "newMultiplier": 1.0061623180646875,
+      "newMultiplierEffectiveAt": "2026-09-19T00:30:00Z",
+      "usdPricePrescaled": 307.1356132851013
+     }
+    }
+   },
+   "b": {
+    "mint": "AVGoo4BQGsEfAmu4HU2deZTaTmLoqB3q3EzKXqAANGYD",
+    "symbol": "AVGO",
+    "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    "decimals": 6,
+    "scaledUiAmountConfig": {
+     "multiplier": 1.0,
+     "newMultiplier": 1.0,
+     "newMultiplierEffectiveTimestamp": 0
+    },
+    "jupiter": {
+     "usdPrice": 305.44516683963883,
+     "liquidity": 2445.519465950311,
+     "scaledUiConfig": null
+    }
+   }
+  },
+  {
+   "pool": "SNDK/SNDKx",
+   "protocol": "raydium-clmm",
+   "poolAddress": "9nnephnEJQsBgUbHsDebKpf7vpC9S9Q6T5q1rYQQSoxT",
+   "poolRawPriceBPerA": 0.9995914974769974,
+   "a": {
+    "mint": "SNDKbwMUQvZhnLnxLduradgLHG5KrPuKwpnrkkGRhfH",
+    "symbol": "SNDK",
+    "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    "decimals": 6,
+    "scaledUiAmountConfig": {
+     "multiplier": 8.00000022993473,
+     "newMultiplier": 8.00000022993473,
+     "newMultiplierEffectiveTimestamp": 0
+    },
+    "jupiter": {
+     "usdPrice": 78.6347189646351,
+     "liquidity": 49523.15529101548,
+     "scaledUiConfig": {
+      "multiplier": 8.00000022993473,
+      "newMultiplier": 8.00000022993473,
+      "newMultiplierEffectiveAt": "1970-01-01T00:00:00Z",
+      "usdPricePrescaled": 629.0777697979337
+     }
+    }
+   },
+   "b": {
+    "mint": "Xswbpc8UqU6e1j9QZEWCjBMjyvz4twqD7PCy6j2e7jj",
+    "symbol": "SNDKx",
+    "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    "decimals": 8,
+    "scaledUiAmountConfig": {
+     "multiplier": 1.0,
+     "newMultiplier": 8.0,
+     "newMultiplierEffectiveTimestamp": 1795167000
+    },
+    "jupiter": {
+     "usdPrice": 80.99049808583007,
+     "liquidity": 243.9431292008132,
+     "scaledUiConfig": {
+      "multiplier": 1,
+      "newMultiplier": 8,
+      "newMultiplierEffectiveAt": "2026-11-20T09:30:00Z",
+      "usdPricePrescaled": 647.9239846866406
+     }
+    }
+   }
+  },
+  {
+   "pool": "NVDA/NVDAx",
+   "protocol": "meteora-dlmm",
+   "poolAddress": "Aq7nhS8pDPRvPA2uWotwyk79aG8Hfegf5CdA3iXABxAR",
+   "poolRawPriceBPerA": 0.998301089140614,
+   "a": {
+    "mint": "NVDAVuiB7hwd3m5Wa1JuHNovPaPG6BH1QNztbKFxNjv",
+    "symbol": "NVDA",
+    "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    "decimals": 6,
+    "scaledUiAmountConfig": {
+     "multiplier": 1.0,
+     "newMultiplier": 1.0,
+     "newMultiplierEffectiveTimestamp": 0
+    },
+    "jupiter": {
+     "usdPrice": 127.40917157110418,
+     "liquidity": 460271.0828872462,
+     "scaledUiConfig": null
+    }
+   },
+   "b": {
+    "mint": "Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh",
+    "symbol": "NVDAx",
+    "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    "decimals": 8,
+    "scaledUiAmountConfig": {
+     "multiplier": 1.0009180758490996,
+     "newMultiplier": 1.001701196801074,
+     "newMultiplierEffectiveTimestamp": 1789000200
+    },
+    "jupiter": {
+     "usdPrice": 127.39989081544024,
+     "liquidity": 1755501.9253289807,
+     "scaledUiConfig": {
+      "multiplier": 1.0009180758490996,
+      "newMultiplier": 1.001701196801074,
+      "newMultiplierEffectiveAt": "2026-09-10T00:30:00Z",
+      "usdPricePrescaled": 127.61662310215266
+     }
+    }
+   }
+  },
+  {
+   "pool": "NVDA/NVDAx",
+   "protocol": "raydium-clmm",
+   "poolAddress": "FjUosHaSbH6XWodwzNfq2bFeSJkmdLkwi66zBjzc8KKS",
+   "poolRawPriceBPerA": 0.9988008601165287,
+   "a": {
+    "mint": "NVDAVuiB7hwd3m5Wa1JuHNovPaPG6BH1QNztbKFxNjv",
+    "symbol": "NVDA",
+    "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    "decimals": 6,
+    "scaledUiAmountConfig": {
+     "multiplier": 1.0,
+     "newMultiplier": 1.0,
+     "newMultiplierEffectiveTimestamp": 0
+    },
+    "jupiter": {
+     "usdPrice": 127.40917157110418,
+     "liquidity": 460271.0828872462,
+     "scaledUiConfig": null
+    }
+   },
+   "b": {
+    "mint": "Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh",
+    "symbol": "NVDAx",
+    "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    "decimals": 8,
+    "scaledUiAmountConfig": {
+     "multiplier": 1.0009180758490996,
+     "newMultiplier": 1.001701196801074,
+     "newMultiplierEffectiveTimestamp": 1789000200
+    },
+    "jupiter": {
+     "usdPrice": 127.39989081544024,
+     "liquidity": 1755501.9253289807,
+     "scaledUiConfig": {
+      "multiplier": 1.0009180758490996,
+      "newMultiplier": 1.001701196801074,
+      "newMultiplierEffectiveAt": "2026-09-10T00:30:00Z",
+      "usdPricePrescaled": 127.61662310215266
+     }
+    }
+   }
+  },
+  {
+   "pool": "AAPLx/AAPL",
+   "protocol": "raydium-clmm",
+   "poolAddress": "85YT66QaFFzFZgvR9YAjKiR1ECuKkyYiswwMa5CqBogy",
+   "poolRawPriceBPerA": 1.0032824785304368,
+   "a": {
+    "mint": "XsbEhLAtcf6HdfpFZ5xEMdqW8nfAvcsP5bdudRLJzJp",
+    "symbol": "AAPLx",
+    "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    "decimals": 8,
+    "scaledUiAmountConfig": {
+     "multiplier": 1.0032690125398187,
+     "newMultiplier": 1.0038023030588032,
+     "newMultiplierEffectiveTimestamp": 1794447000
+    },
+    "jupiter": {
+     "usdPrice": 343.7604279008646,
+     "liquidity": 716637.2979898477,
+     "scaledUiConfig": {
+      "multiplier": 1.0032690125398187,
+      "newMultiplier": 1.0038023030588032,
+      "newMultiplierEffectiveAt": "2026-11-12T01:30:00Z",
+      "usdPricePrescaled": 345.06750922736757
+     }
+    }
+   },
+   "b": {
+    "mint": "AAPLEDt8RpzPgXyhvFzkMBofvFSQw9gpeMCoUdPdLnB8",
+    "symbol": "AAPL",
+    "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    "decimals": 6,
+    "scaledUiAmountConfig": {
+     "multiplier": 1.0005316271155518,
+     "newMultiplier": 1.0005316271155518,
+     "newMultiplierEffectiveTimestamp": 0
+    },
+    "jupiter": {
+     "usdPrice": 343.60332873072036,
+     "liquidity": 140371.84597913575,
+     "scaledUiConfig": {
+      "multiplier": 1.0005316271155518,
+      "newMultiplier": 1.0005316271155518,
+      "newMultiplierEffectiveAt": "1970-01-01T00:00:00Z",
+      "usdPricePrescaled": 343.78599757726744
+     }
+    }
+   }
+  },
+  {
+   "pool": "META/METAx",
+   "protocol": "raydium-clmm",
+   "poolAddress": "4gzWX5biAZxQsb2GhWPGds2YR6bgMowcGUS3SuWjejtY",
+   "poolRawPriceBPerA": 0.9997224333375755,
+   "a": {
+    "mint": "METAaH6MMZZgy2CTEJq3QdNi7AFVTV3NxHFBfFgLEDd",
+    "symbol": "META",
+    "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    "decimals": 6,
+    "scaledUiAmountConfig": {
+     "multiplier": 1.0,
+     "newMultiplier": 1.0,
+     "newMultiplierEffectiveTimestamp": 0
+    },
+    "jupiter": {
+     "usdPrice": 561.0783569810933,
+     "liquidity": 216682.74119195217,
+     "scaledUiConfig": null
+    }
+   },
+   "b": {
+    "mint": "Xsa62P5mvPszXL1krVUnU5ar38bBSVcWAB6fmPCo5Zu",
+    "symbol": "METAx",
+    "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    "decimals": 8,
+    "scaledUiAmountConfig": {
+     "multiplier": 1.002298265651938,
+     "newMultiplier": 1.0028515433272898,
+     "newMultiplierEffectiveTimestamp": 1789777800
+    },
+    "jupiter": {
+     "usdPrice": 560.7872001548271,
+     "liquidity": 396929.5453684118,
+     "scaledUiConfig": {
+      "multiplier": 1.002298265651938,
+      "newMultiplier": 1.0028515433272898,
+      "newMultiplierEffectiveAt": "2026-09-19T00:30:00Z",
+      "usdPricePrescaled": 562.3863091534581
+     }
+    }
+   }
+  },
+  {
+   "pool": "SKHY/SKHYx",
+   "protocol": "raydium-clmm",
+   "poolAddress": "6g65bzgeTNLeq9ubXPKvw7huT1s9JjMDjmbYYVkY1jCZ",
+   "poolRawPriceBPerA": 0.9847190788211246,
+   "a": {
+    "mint": "SKHYhSjuRWHgikq8eRKbtBbpABgJSkd7ytQV14i9EQ3",
+    "symbol": "SKHY",
+    "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    "decimals": 6,
+    "scaledUiAmountConfig": {
+     "multiplier": 1.0,
+     "newMultiplier": 1.0,
+     "newMultiplierEffectiveTimestamp": 0
+    },
+    "jupiter": {
+     "usdPrice": 103.04680447934281,
+     "liquidity": 74521.20477728659,
+     "scaledUiConfig": null
+    }
+   },
+   "b": {
+    "mint": "XsnhgGRQwhExfS2bmWzR6EYddKGPRGDEjeJsatkmKqU",
+    "symbol": "SKHYx",
+    "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    "decimals": 8,
+    "scaledUiAmountConfig": {
+     "multiplier": 1.0,
+     "newMultiplier": 1.0000876478965819,
+     "newMultiplierEffectiveTimestamp": 1791333000
+    },
+    "jupiter": {
+     "usdPrice": 96.19118302523988,
+     "liquidity": 2107.6980006892936,
+     "scaledUiConfig": {
+      "multiplier": 1,
+      "newMultiplier": 1.0000876478965819,
+      "newMultiplierEffectiveAt": "2026-10-07T00:30:00Z",
+      "usdPricePrescaled": 96.19961398010176
+     }
+    }
+   }
+  },
+  {
+   "pool": "GOOGLx/GOOGL",
+   "protocol": "raydium-clmm",
+   "poolAddress": "DFphRgRLFyufhFGUnM3p82TJaSHQPaedRWvFWRUgFDEy",
+   "poolRawPriceBPerA": 1.0008442758965912,
+   "a": {
+    "mint": "XsCPL9dNWBMvFtTmwcCA5v3xWPSMEBCszbQdiLLq6aN",
+    "symbol": "GOOGLx",
+    "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    "decimals": 8,
+    "scaledUiAmountConfig": {
+     "multiplier": 1.001926722393864,
+     "newMultiplier": 1.0023772500603487,
+     "newMultiplierEffectiveTimestamp": 1788481800
+    },
+    "jupiter": {
+     "usdPrice": 264.08213273575643,
+     "liquidity": 322688.07226528827,
+     "scaledUiConfig": {
+      "multiplier": 1.001926722393864,
+      "newMultiplier": 1.0023772500603487,
+      "newMultiplierEffectiveAt": "2026-09-04T00:30:00Z",
+      "usdPricePrescaled": 264.7099220017395
+     }
+    }
+   },
+   "b": {
+    "mint": "GooGLMvZtJZXHdNZy95RUrAMCCKxV6ghK3qE5ddBgVm5",
+    "symbol": "GOOGL",
+    "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    "decimals": 6,
+    "scaledUiAmountConfig": {
+     "multiplier": 1.0,
+     "newMultiplier": 1.0,
+     "newMultiplierEffectiveTimestamp": 0
+    },
+    "jupiter": {
+     "usdPrice": 264.90216038979474,
+     "liquidity": 319817.303870579,
+     "scaledUiConfig": null
+    }
+   }
+  }
+ ],
+ "robinhood": [
+  {
+   "pool": "NVDAon/NVDA",
+   "protocol": "uniswap-v4",
+   "poolAddress": "0x4c71fa93d5a448afc030cfec54e1779ed1d2498c905569ee817eb5cadcbdc6fb",
+   "a": {
+    "address": "0xf1b95ae4e7700b962714702ea53784dc8492a856",
+    "symbol": "NVDAon",
+    "gtUsdPerRawUnit": 130.883523673672
+   },
+   "b": {
+    "address": "0xd0601ce157db5bdc3162bbac2a2c8af5320d9eec",
+    "symbol": "NVDA",
+    "gtUsdPerRawUnit": 130.735316917794
+   }
+  },
+  {
+   "pool": "SPYon/SPY",
+   "protocol": "uniswap-v4",
+   "poolAddress": "0xdb42a69b7c64037d22f5bf0fb2f406bcb1349aac536d9a5cfc034c6d7ffee56e",
+   "a": {
+    "address": "0x533c5571ae586985e1fddfaa24304284d970c62a",
+    "symbol": "SPYon",
+    "gtUsdPerRawUnit": 702.346471738919
+   },
+   "b": {
+    "address": "0x117cc2133c37b721f49de2a7a74833232b3b4c0c",
+    "symbol": "SPY",
+    "gtUsdPerRawUnit": 696.844789907956
+   }
+  }
+ ]
+}

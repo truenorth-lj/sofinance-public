@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { MINT_SIZE, MintLayout, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { PublicKey, Keypair, type AccountInfo, type Connection, type ParsedTransactionWithMeta } from "@solana/web3.js";
 import {
   CLMM_PROGRAM_ID, getPdaPersonalPositionAddress, PersonalPositionLayout,
@@ -198,7 +199,8 @@ describe("Raydium position performance characterization", () => {
 
   const connection = {
     getAccountInfo: vi.fn(async (address: PublicKey) => accounts.get(address.toBase58()) ?? null),
-    getMultipleAccountsInfo: vi.fn(async () => [-120, 60].map((start) => {
+    // The boundary tick arrays, then both pool mints (plain SPL, 6 decimals) in the same batch.
+    getMultipleAccountsInfo: vi.fn(async (keys: PublicKey[]) => [...[-120, 60].map((start) => {
       const data = Buffer.alloc(TickArrayLayout.span);
       pool.toBuffer().copy(data, TickArrayLayout.offsetOf("poolId"));
       data.writeInt32LE(start, TickArrayLayout.offsetOf("startTickIndex"));
@@ -207,7 +209,12 @@ describe("Raydium position performance characterization", () => {
         data.writeInt32LE(tick, TickArrayLayout.offsetOf("ticks") + TickArrayUtil.getTickOffsetInArray(tick, 1) * TickLayout.span);
       }
       return info(data);
-    })),
+    }), ...keys.slice(2).map(() => {
+      const data = Buffer.alloc(MINT_SIZE);
+      MintLayout.encode({ mintAuthorityOption: 0, mintAuthority: PublicKey.default, supply: 1n, decimals: 6, isInitialized: true,
+        freezeAuthorityOption: 0, freezeAuthority: PublicKey.default }, data);
+      return { ...info(data), owner: TOKEN_PROGRAM_ID };
+    })]),
   } as unknown as Connection;
 
   const openEvent = {

@@ -184,8 +184,14 @@
   "pricing": {
     "source": "none",
     "label": "USD pricing skipped; token-raw / token-native metrics only.",
-    "priceUsdA": null,
-    "priceUsdB": null
+    "usdPerRawUnitA": null,
+    "usdPerRawUnitB": null,
+    "sharePriceUsdA": null,
+    "sharePriceUsdB": null,
+    "multiplierA": null,
+    "multiplierB": null,
+    "basis": { "a": null, "b": null },
+    "guard": null
   },
   "method": "Discover txs via getSignaturesForAddress(personalPosition PDA). Parse Raydium Anchor events from tx logs: CreatePersonalPositionEvent, IncreaseLiquidityEvent, DecreaseLiquidityEvent (exact deposit/withdraw/fee amounts). Current equity = LiquidityMath amounts for position L + uncollected fees (feeGrowth inside \u2212 lastInside) \u00d7 L / Q64 + tokenFeesOwed (same as compound-state). USD optional via Jupiter Price API v3 (fallback: Raydium pool mid \u00d7 stable) at evaluation time (NOT historical).",
   "assumptions": "Returns use on-chain token amounts; USD uses current prices (not tx-time prices) and is secondary. Same-asset RWA wrap pairs prefer token-equivalent (TE) in the plain/base ticker via current tick mid. holdingPeriodReturnPct = pnl / deposited \u00d7 100 (TE when available; else USD). annualizedReturnPct = holdingPeriodReturnPct \u00d7 365 / holdingDays (simple, not compounded). feeOnlyAprPct = feesEarned / deposited \u00d7 365 / holdingDays \u00d7 100 (TE when available; else USD). PnL includes IL, price drift, and fees \u2014 not Raydium pool 24h feeApr. History capped by maxSignatures; truncated=true means earlier txs may be missing. Token-native metrics use on-chain raw amounts converted to UI decimals. Same-asset wrap pairs: TE uses current tick mid (NOT historical): uiPriceBPerA = 1.0001^tickCurrent \u00d7 10^(decA\u2212decB). Prefer TE in the plain/base ticker (not the wrapped side); also expose raw A/B. holdingPeriodReturnPct_TE = pnl_TE / deposited_TE \u00d7 100. annualizedReturnPct_TE = holdingPeriodReturnPct_TE \u00d7 365 / holdingDays (simple). feeOnlyAprPct_TE = feesEarned_TE / deposited_TE \u00d7 365 / holdingDays \u00d7 100. perSideFeeAprPct = feesEarned_side / deposited_side \u00d7 365 / holdingDays \u00d7 100 (UI amounts). USD remains optional/secondary (current Jupiter/Raydium prices, not tx-time).",
