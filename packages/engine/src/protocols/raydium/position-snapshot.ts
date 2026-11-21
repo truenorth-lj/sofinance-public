@@ -14,7 +14,9 @@ import BN from "bn.js";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { accruedFee } from "../../compound-math";
 import { positionSide } from "../../quote-math";
-import type { ClmmPositionAccounts } from "../types";
+import { mintAccountHint } from "../../valuation/multiplier-sources/token2022-scaled-ui";
+import { sqrtPriceX64ToPriceBPerA } from "../../valuation/pair-pricing";
+import type { ClmmPositionAccounts, UncollectedFeesRead } from "../types";
 
 const POSITION_DISCRIMINATOR = createHash("sha256").update("account:PersonalPositionState").digest().subarray(0, 8);
 const POOL_DISCRIMINATOR = createHash("sha256").update("account:PoolState").digest().subarray(0, 8);
@@ -103,14 +105,16 @@ export async function readRaydiumPositionAccounts(positionMint: string, connecti
 export async function readRaydiumUncollectedFees(
   connection: Connection,
   accounts: ClmmPositionAccounts,
-): Promise<{ a: bigint; b: bigint }> {
+): Promise<UncollectedFeesRead> {
   const programId = new PublicKey(accounts.programId);
   const poolId = new PublicKey(accounts.poolId);
   const ticks = [accounts.tickLower, accounts.tickUpper];
   const starts = ticks.map((tick) => TickArrayUtil.getTickArrayStartIndex(tick, accounts.tickSpacing));
   const keys = starts.map((start) => getPdaTickArrayAddress(programId, poolId, start).publicKey);
-  const infos = await connection.getMultipleAccountsInfo(keys, "confirmed");
-  const boundaries = infos.map((info, index) => {
+  // One batch: both boundary tick arrays, then both pool mints (their multiplier config, for valuation).
+  const infos = await connection.getMultipleAccountsInfo([...keys, new PublicKey(accounts.mintA), new PublicKey(accounts.mintB)], "confirmed");
+  const [lowerInfo, upperInfo, mintAInfo, mintBInfo] = infos;
+  const boundaries = [lowerInfo, upperInfo].map((info, index) => {
     if (!info || !info.owner.equals(programId)) throw new Error("Boundary tick array missing for fee accrual");
     const array = TickArrayLayout.decode(info.data);
     if (array.poolId.toBase58() !== poolId.toBase58() || array.startTickIndex !== starts[index]) {
@@ -133,7 +137,13 @@ export async function readRaydiumUncollectedFees(
     liquidity: BigInt(accounts.liquidity),
     owed: side === "A" ? accounts.tokenFeesOwedA : accounts.tokenFeesOwedB,
   });
-  return { a: fee("A"), b: fee("B") };
+  return { a: fee("A"), b: fee("B"),
+    mintHints: { a: mintAccountHint(accounts.mintA, mintAInfo), b: mintAccountHint(accounts.mintB, mintBInfo) } };
+}
+
+/** Pool mid price as token B per token A in raw units (decimals applied, no multiplier). No I/O. */
+export function raydiumPoolPriceBPerA(accounts: Pick<ClmmPositionAccounts, "sqrtPriceX64" | "decimalsA" | "decimalsB">): number {
+  return sqrtPriceX64ToPriceBPerA(accounts.sqrtPriceX64, accounts.decimalsA, accounts.decimalsB);
 }
 
 export type RaydiumPersonalPosition = {

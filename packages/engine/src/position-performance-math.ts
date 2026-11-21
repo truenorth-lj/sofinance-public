@@ -44,7 +44,10 @@ export type PositionPerformanceInputs = {
   uncollectedFees: TokenSideAmounts;
   /** Seconds since first open (or increase) event; must be > 0 for annualization. */
   holdingSeconds: number;
-  /** Optional USD prices in dollars per whole token (not raw). */
+  /**
+   * Optional USD per raw unit (raw / 10^decimals, the unscaled on-chain amount), so a ScaledUiAmount multiplier is
+   * already in it. Never pass a per-share quote here.
+   */
   priceUsdA?: number | null;
   priceUsdB?: number | null;
   decimalsA: number;
@@ -63,6 +66,7 @@ export type PositionPerformanceMetrics = {
   feesEarnedRaw: { a: string; b: string };
   /** equity + withdrawnPrincipal + feesCollected − deposited (per side, raw) */
   pnlRaw: { a: string; b: string };
+  /** The USD per raw unit used (see `PositionPerformanceInput.priceUsdA`). */
   priceUsdA: number | null;
   priceUsdB: number | null;
   depositedUsd: number | null;

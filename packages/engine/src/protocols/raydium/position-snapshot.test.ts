@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { ExtensionType, MINT_SIZE, MintLayout, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { describe, expect, it, vi } from "vitest";
 import {
   CLMM_PROGRAM_ID,
@@ -78,6 +79,19 @@ function seed() {
   tickRead.mockClear();
   accounts.set(position.toBase58(), info(positionData()));
   accounts.set(pool.toBase58(), info(poolData()));
+  const baseMint = Buffer.alloc(MINT_SIZE);
+  MintLayout.encode({ mintAuthorityOption: 0, mintAuthority: PublicKey.default, supply: 1_000_000n, decimals: 6,
+    isInitialized: true, freezeAuthorityOption: 0, freezeAuthority: PublicKey.default }, baseMint);
+  accounts.set(mintA.toBase58(), info(baseMint, TOKEN_PROGRAM_ID));
+  const scaled = Buffer.alloc(166 + 4 + 56);
+  baseMint.copy(scaled);
+  scaled.writeUInt8(1, 165);
+  scaled.writeUInt16LE(ExtensionType.ScaledUiAmountConfig, 166);
+  scaled.writeUInt16LE(56, 168);
+  scaled.writeDoubleLE(1, 170 + 32);
+  scaled.writeBigInt64LE(1_795_167_000n, 170 + 40);
+  scaled.writeDoubleLE(8, 170 + 48);
+  accounts.set(mintB.toBase58(), info(scaled, TOKEN_2022_PROGRAM_ID));
   for (const tick of [-100, 100]) {
     const start = TickArrayUtil.getTickArrayStartIndex(tick, 1);
     const pda = getPdaTickArrayAddress(CLMM_PROGRAM_ID, pool, start).publicKey;
@@ -113,7 +127,10 @@ describe("Raydium position snapshot", () => {
     expect(accountRead.mock.calls[0]?.[1]).toBe("confirmed");
 
     const fees = await readRaydiumUncollectedFees(connection, snapshot);
-    expect(fees).toEqual({ a: 17n, b: 0n });
+    expect(fees).toEqual({ a: 17n, b: 0n, mintHints: {
+      a: { kind: "mint-extensions", scaledUiConfig: null },
+      b: { kind: "mint-extensions", scaledUiConfig: { multiplier: 1, newMultiplier: 8, newMultiplierEffectiveTimestamp: 1_795_167_000 } },
+    } });
     const facts = await readRaydiumRangeFacts(nft.toBase58(), connection);
     expect(facts.onChainPriceBPerA).toBeGreaterThan(0);
     expect(facts.poolId).toBe(snapshot.poolId);
@@ -121,7 +138,10 @@ describe("Raydium position snapshot", () => {
     expect(decodeRaydiumPersonalPosition(positionData())).toMatchObject({
       nftMint: nft.toBase58(), poolId: pool.toBase58(), tickLower: -100, tickUpper: 100, liquidity: "10000",
     });
-    expect(tickRead).toHaveBeenCalledTimes(1);
+    expect(tickRead).toHaveBeenCalledTimes(1);  // same single RPC call, with both mints folded into its existing batch
+    const keys = tickRead.mock.calls[0]![0].map((key) => key.toBase58());
+    expect(keys).toHaveLength(4);
+    expect(keys.slice(2)).toEqual([mintA.toBase58(), mintB.toBase58()]);
     expect(tickRead.mock.calls[0]?.[1]).toBe("confirmed");
   });
 

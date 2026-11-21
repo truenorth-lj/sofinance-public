@@ -113,3 +113,13 @@ SNDKx (xStocks, 1 → 8 at 2026-11-20 09:30Z) and NVDAx (xStocks, multiplier ≈
 last change took effect 2026-09-10, nothing pending). No API key or header is recorded. Tests
 check that `usdPrice` is per share: per-share price × effective multiplier equals Jupiter's
 own `usdPricePrescaled` at the capture time.
+
+`multiplier-pools-2026-11-21.json` records the 11 pools whose tokens carry a
+share multiplier (9 Solana, 2 Robinhood Chain), captured read-only on
+2026-11-21 12:36 Taipei (Solana slot 472006863): each Solana mint's owner,
+decimals and ScaledUiAmount extension state (public RPC `getMultipleAccounts`,
+jsonParsed; other extensions omitted), the pool's B-per-A raw price, the
+Jupiter Price v3 row (keyless endpoint, 1 call) and, for Robinhood Chain, the
+GeckoTerminal per-raw-unit token prices (1 call). No keys or wallet data. The
+position-pricing gate test re-encodes the mint accounts and runs them through
+the production hint path.

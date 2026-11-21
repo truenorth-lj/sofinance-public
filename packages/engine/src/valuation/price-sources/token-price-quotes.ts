@@ -21,9 +21,12 @@ export const dexscreenerPriceSource = tokenPriceSource("dexscreener", "per-raw-u
 /** Raydium pool mid / stable-USD fallback: per raw unit. */
 export const raydiumPoolPriceSource = tokenPriceSource("raydium", "per-raw-unit");
 
-/** Jupiter's free `scaledUiConfig` as the lowest-priority multiplier hint (on-chain and snapshot facts win). */
-export function multiplierHintsFromQuote(quote: TokenPriceQuote): MultiplierHint[] {
+/**
+ * Jupiter's free `scaledUiConfig` as a multiplier hint. `observedAtMs` is when the response was fetched: an on-chain
+ * mint read still wins, and against a stored snapshot the more recent one wins.
+ */
+export function multiplierHintsFromQuote(quote: TokenPriceQuote, observedAtMs: number): MultiplierHint[] {
   return quote.source === "jupiter" && quote.scaledUiConfig
-    ? [{ kind: "scaled-ui-config", origin: "jupiter", config: quote.scaledUiConfig }]
+    ? [{ kind: "scaled-ui-config", origin: "jupiter", observedAtMs, config: quote.scaledUiConfig }]
     : [];
 }

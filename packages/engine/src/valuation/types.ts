@@ -28,14 +28,35 @@ export type PriceQuote = ValuationQuote & { source: PriceSourceId; liquidityUsd?
 
 export type MultiplierSourceId = "token2022-scaled-ui" | "spl-plain" | "ondo-none" | "rhc-per-raw";
 
+/** Where a stored or quoted ScaledUiAmount config came from. */
+export type ScaledUiConfigOrigin = "snapshot" | "jupiter";
+
 /**
- * Facts already read elsewhere in the same request (never fetched here). Priority: an on-chain mint account, then the
- * stored snapshot config, then Jupiter's `scaledUiConfig`.
+ * Facts already read elsewhere in the same request (never fetched here). An on-chain mint account read in this request
+ * wins. Otherwise the most recently observed config wins (`observedAtMs`: when the snapshot was taken or the Jupiter
+ * response was fetched), so a stale snapshot never overrides a newer issuer schedule.
  */
 export type MultiplierHint =
   | { kind: "mint-extensions"; scaledUiConfig: ScaledUiMultiplierConfig | null }
-  | { kind: "scaled-ui-config"; origin: "snapshot" | "jupiter"; config: ScaledUiMultiplierConfig }
+  | { kind: "scaled-ui-config"; origin: ScaledUiConfigOrigin; observedAtMs: number; config: ScaledUiMultiplierConfig }
   | { kind: "issuer"; issuer: string };
+
+/** Where the chosen multiplier came from, for a warning. */
+export type MultiplierEvidence = { origin: "mint-account" | ScaledUiConfigOrigin; observedAtMs: number | null; multiplier: number | null };
+
+/**
+ * Two facts for one asset disagree on the effective multiplier at evaluation time. The chosen one is used; the warning is
+ * plain data for the host to log.
+ */
+export type ValuationWarning = {
+  kind: "multiplier-conflict";
+  asset: string;
+  chosen: MultiplierEvidence;
+  ignored: MultiplierEvidence;
+};
+
+/** Evaluation context for resolving assets: the clock, and where warnings go. */
+export type ResolveContext = { nowMs: number; warn?: (warning: ValuationWarning) => void };
 
 /** Serializable description of one asset. `createAsset` turns it into behaviour; this is what crosses boundaries. */
 export type AssetFacts = {

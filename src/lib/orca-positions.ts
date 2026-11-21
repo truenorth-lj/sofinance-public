@@ -12,7 +12,9 @@ import {
 import {
   computePositionPerformance, computeTokenNativeMetrics,
 } from "@sofinance/engine/position-performance-math";
+import type { PairMintHints } from "@sofinance/engine/protocols/types";
 import { rpcConnection, rpcProvider, type RpcProvider } from "@sofinance/engine/rpc";
+import { mintAccountHint } from "@sofinance/engine/valuation/multiplier-sources/token2022-scaled-ui";
 import { parseOrcaPositionCashflowEvents } from "./orca-position-events";
 import { aggregateCashflowsForPosition, type PositionEventContext } from "./position-performance-events";
 import { fetchPositionHistoryTransactions, toChronological, type HistoryConnection } from "./position-performance-history";
@@ -57,6 +59,8 @@ export type OrcaPositionSnapshot = {
   rangeSide: "below" | "inside" | "above";
   amounts: { a: bigint; b: bigint };
   uncollected: { a: bigint; b: bigint };
+  /** Multiplier hints of both mints from the same batch as the tick arrays (for valuation; no extra read). */
+  mintHints: PairMintHints;
   stateFingerprint: string;
 };
 
@@ -114,6 +118,7 @@ async function snapshotFromPosition(positionAccount: string, position: OrcaPosit
     decimalsA: decodeMintDecimals(mintAInfo.data), decimalsB: decodeMintDecimals(mintBInfo.data),
     rangeSide: orcaRangeSide(pool.sqrtPriceX64, position.tickLowerIndex, position.tickUpperIndex),
     amounts: { a: amounts.amountA, b: amounts.amountB }, uncollected: { a: fees.feeA, b: fees.feeB },
+    mintHints: { a: mintAccountHint(pool.tokenMintA, mintAInfo), b: mintAccountHint(pool.tokenMintB, mintBInfo) },
     stateFingerprint: fingerprint,
   };
 }
@@ -294,10 +299,13 @@ export async function getOrcaPositionPerformance(positionMint: string, options: 
   const holdingSeconds = openedAt !== null && openedAt > 0 ? Math.max(0, nowSeconds - openedAt) : 0;
 
   const priced = await priceAndLabel({
-    mintA: pool.tokenMintA, mintB: pool.tokenMintB, skipPricing: options.skipPricing, fetcher,
-    jupiterApiKey: options.jupiterApiKey,
+    a: { mint: pool.tokenMintA, decimals: snapshot.decimalsA, hint: snapshot.mintHints.a },
+    b: { mint: pool.tokenMintB, decimals: snapshot.decimalsB, hint: snapshot.mintHints.b },
+    poolPriceBPerA: onChainPriceBPerA(pool.sqrtPriceX64, snapshot.decimalsA, snapshot.decimalsB),
+    nowMs: nowSeconds * 1000, skipPricing: options.skipPricing, fetcher, jupiterApiKey: options.jupiterApiKey,
+    logContext: { protocol: "orca-whirlpool", poolId: snapshot.poolId, positionMint },
   });
-  const { priceUsdA, priceUsdB, quotes, pricingMs } = priced;
+  const { pricing, quotes, pricingMs } = priced;
   const sides = {
     deposited: { a: cashflows.depositedA, b: cashflows.depositedB },
     withdrawnPrincipal: { a: cashflows.withdrawnPrincipalA, b: cashflows.withdrawnPrincipalB },
@@ -305,7 +313,8 @@ export async function getOrcaPositionPerformance(positionMint: string, options: 
     liquidityAmounts: snapshot.amounts,
     uncollectedFees: snapshot.uncollected,
   };
-  const metrics = computePositionPerformance({ ...sides, holdingSeconds, priceUsdA, priceUsdB,
+  const metrics = computePositionPerformance({ ...sides, holdingSeconds,
+    priceUsdA: pricing.usdPerRawUnitA, priceUsdB: pricing.usdPerRawUnitB,
     decimalsA: snapshot.decimalsA, decimalsB: snapshot.decimalsB });
 
   const metadataStarted = Date.now();
@@ -358,7 +367,7 @@ export async function getOrcaPositionPerformance(positionMint: string, options: 
     metrics,
     tokenNative,
     quotes,
-    pricing: { source: priced.pricingSource, label: priced.pricingLabel, priceUsdA, priceUsdB },
+    pricing,
     incomplete,
     incompleteMessage: "Position history is incomplete; return percentages are unavailable until the full history is available.",
     extraAssumptions: ["Orca: fees are collected separately from withdrawals; rewards are not included."],

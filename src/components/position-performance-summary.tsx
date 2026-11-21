@@ -50,7 +50,7 @@ export function PerformanceSummary({ data, embedded, metadata, showStockPerforma
     deposited: te ? te.metrics.deposited : data.metrics.depositedUsd ?? null,
     holdingDays: data.metrics.holdingDays ?? null,
     needsHoldingTime,
-    missingUsdPrice: !te && (data.pricing.priceUsdA === null || data.pricing.priceUsdB === null),
+    missingUsdPrice: !te && (data.pricing.usdPerRawUnitA === null || data.pricing.usdPerRawUnitB === null),
     truncated: data.truncated ?? false,
   });
   const stock = data.stock ?? null;
@@ -115,9 +115,9 @@ export function PerformanceSummary({ data, embedded, metadata, showStockPerforma
               <h4 className="text-[11px] font-semibold uppercase tracking-wide text-smoke">Position assets</h4>
               <div className="mt-4 divide-y divide-white/10">
                 <PositionAssetRow symbol={symA} icon={metadata[data.mintA]?.icon ?? null} decimals={data.decimalsA}
-                  liquidityRaw={data.metrics.liquidityAmountsRaw.a} unclaimedFeesRaw={data.metrics.uncollectedFeesRaw.a} priceUsd={data.pricing.priceUsdA} />
+                  liquidityRaw={data.metrics.liquidityAmountsRaw.a} unclaimedFeesRaw={data.metrics.uncollectedFeesRaw.a} priceUsd={data.pricing.usdPerRawUnitA} />
                 <PositionAssetRow symbol={symB} icon={metadata[data.mintB]?.icon ?? null} decimals={data.decimalsB}
-                  liquidityRaw={data.metrics.liquidityAmountsRaw.b} unclaimedFeesRaw={data.metrics.uncollectedFeesRaw.b} priceUsd={data.pricing.priceUsdB} />
+                  liquidityRaw={data.metrics.liquidityAmountsRaw.b} unclaimedFeesRaw={data.metrics.uncollectedFeesRaw.b} priceUsd={data.pricing.usdPerRawUnitB} />
               </div>
             </div>
           )}

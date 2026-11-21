@@ -13,6 +13,8 @@ import {
   computePositionPerformance, computeTokenNativeMetrics,
 } from "@sofinance/engine/position-performance-math";
 import { rpcConnection, rpcProvider, type RpcProvider } from "@sofinance/engine/rpc";
+import { mintAccountHint } from "@sofinance/engine/valuation/multiplier-sources/token2022-scaled-ui";
+import type { MultiplierHint } from "@sofinance/engine/valuation/types";
 import { parseMeteoraPositionCashflowEvents, type MeteoraEventContext } from "./meteora-position-events";
 import { aggregateCashflowsForPosition } from "./position-performance-events";
 import { fetchPositionHistoryTransactions, toChronological, type HistoryConnection } from "./position-performance-history";
@@ -73,6 +75,8 @@ export type MeteoraPositionSnapshot = {
   rangeSide: "below" | "inside" | "above";
   amounts: { x: bigint; y: bigint };
   uncollected: { x: bigint; y: bigint };
+  /** Multiplier hints of token X / Y from the mint accounts in the same batch (for valuation; no extra read). */
+  mintHints: { x: MultiplierHint | null; y: MultiplierHint | null };
 };
 
 /**
@@ -136,6 +140,7 @@ async function snapshotFromData(positionAccount: string, data: Uint8Array, conne
     decimalsX: decodeMintDecimals(mintXInfo.data), decimalsY: decodeMintDecimals(mintYInfo.data),
     rangeSide: meteoraRangeSide(pool.activeId, position.lowerBinId, position.upperBinId),
     amounts: { x: totals.amountX, y: totals.amountY }, uncollected: { x: totals.feeX, y: totals.feeY },
+    mintHints: { x: mintAccountHint(pool.tokenXMint, mintXInfo), y: mintAccountHint(pool.tokenYMint, mintYInfo) },
   };
 }
 
@@ -335,10 +340,13 @@ export async function getMeteoraPositionPerformance(positionAccount: string, opt
   const holdingSeconds = openedAt !== null && openedAt > 0 ? Math.max(0, nowSeconds - openedAt) : 0;
 
   const priced = await priceAndLabel({
-    mintA: pool.tokenXMint, mintB: pool.tokenYMint, skipPricing: options.skipPricing, fetcher,
-    jupiterApiKey: options.jupiterApiKey,
+    a: { mint: pool.tokenXMint, decimals: snapshot.decimalsX, hint: snapshot.mintHints.x },
+    b: { mint: pool.tokenYMint, decimals: snapshot.decimalsY, hint: snapshot.mintHints.y },
+    poolPriceBPerA: binPriceBPerA(pool.activeId, pool.binStep, snapshot.decimalsX, snapshot.decimalsY),
+    nowMs: nowSeconds * 1000, skipPricing: options.skipPricing, fetcher, jupiterApiKey: options.jupiterApiKey,
+    logContext: { protocol: METEORA_PROTOCOL, poolId: snapshot.poolId, positionAccount: snapshot.positionAccount },
   });
-  const { priceUsdA, priceUsdB, quotes, pricingMs } = priced;
+  const { pricing, quotes, pricingMs } = priced;
   const sides = {
     deposited: { a: cashflows.depositedA, b: cashflows.depositedB },
     withdrawnPrincipal: { a: cashflows.withdrawnPrincipalA, b: cashflows.withdrawnPrincipalB },
@@ -346,7 +354,8 @@ export async function getMeteoraPositionPerformance(positionAccount: string, opt
     liquidityAmounts: { a: snapshot.amounts.x, b: snapshot.amounts.y },
     uncollectedFees: { a: snapshot.uncollected.x, b: snapshot.uncollected.y },
   };
-  const metrics = computePositionPerformance({ ...sides, holdingSeconds, priceUsdA, priceUsdB,
+  const metrics = computePositionPerformance({ ...sides, holdingSeconds,
+    priceUsdA: pricing.usdPerRawUnitA, priceUsdB: pricing.usdPerRawUnitB,
     decimalsA: snapshot.decimalsX, decimalsB: snapshot.decimalsY });
 
   const metadataStarted = Date.now();
@@ -400,7 +409,7 @@ export async function getMeteoraPositionPerformance(positionAccount: string, opt
     metrics,
     tokenNative,
     quotes,
-    pricing: { source: priced.pricingSource, label: priced.pricingLabel, priceUsdA, priceUsdB },
+    pricing,
     incomplete,
     incompleteMessage: "Position history is incomplete; return percentages are unavailable until the full history is available.",
     extraAssumptions: ["Meteora DLMM: token X/Y are reported as A/B; fees are claimed separately from withdrawals; rewards are not included; ledger liquidity is 0 because DLMM events report token amounts, not bin shares."],

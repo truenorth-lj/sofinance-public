@@ -4,7 +4,26 @@
  * contract and the UI can name it without importing a DEX implementation. An adapter's report is type-checked
  * against it where the adapter returns `PositionPerformance`; the `/api/position-performance` JSON is read as-is.
  */
+import type { PairGuard, SidePricing } from "@sofinance/engine/valuation/pair-pricing";
+
 type UiSide = { a: number; b: number };
+
+/**
+ * USD pricing of a position's two tokens. Multiply raw / 10^decimals by `usdPerRawUnitA/B` (never by a share price):
+ * the multiplier is already in it. `guard` is the cross-check against the pool price (null when pricing was skipped).
+ */
+export type PositionPricingReport<Source extends string = string> = {
+  source: Source;
+  label: string;
+  usdPerRawUnitA: number | null;
+  usdPerRawUnitB: number | null;
+  sharePriceUsdA: number | null;
+  sharePriceUsdB: number | null;
+  multiplierA: number | null;
+  multiplierB: number | null;
+  basis: { a: SidePricing["basis"]; b: SidePricing["basis"] };
+  guard: PairGuard | null;
+};
 
 type TokenEquivalent = {
   baseSymbol: string;
@@ -130,7 +149,7 @@ export type PositionPerformanceReport = {
   tokenNative?: TokenNative;
   /** Same-stock pools only. */
   stock?: StockPerformance | null;
-  pricing: { source: string; label: string; priceUsdA: number | null; priceUsdB: number | null };
+  pricing: PositionPricingReport;
   assumptions: string;
   method: string;
   realizedFeeAprSeries?: {

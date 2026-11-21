@@ -60,7 +60,8 @@ const performanceBody = () => ({ key: `meteora-dlmm:${POSITION}`, depositedUsd: 
     metrics: { holdingDays: 31, depositedUsd: 500, currentEquityUsd: 502, liquidityUsd: 501.25, uncollectedFeesUsd: 0.75, feesEarnedUsd: 2, pnlUsd: 4,
       holdingPeriodReturnPct: 0.8, annualizedReturnPct: 9.42, feeOnlyAprPct: 4.71, depositedRaw: { a: "1250000", b: "0" }, currentEquityRaw: { a: "1", b: "1" },
       liquidityAmountsRaw: { a: "1", b: "1" }, feesEarnedRaw: { a: "1", b: "1" }, uncollectedFeesRaw: { a: "1", b: "1" }, feesCollectedRaw: { a: "1", b: "1" } },
-    pricing: { source: "jupiter", label: "Jupiter Price API v3", priceUsdA: 400, priceUsdB: 400 }, assumptions: "a", method: "m",
+    pricing: { source: "jupiter", label: "Jupiter Price API v3", usdPerRawUnitA: 400, usdPerRawUnitB: 400, sharePriceUsdA: 400, sharePriceUsdB: 400,
+      multiplierA: 1, multiplierB: 1, basis: { a: "per-share", b: "per-share" }, guard: { kind: "agreed", relativeDiff: 0 } }, assumptions: "a", method: "m",
     realizedFeeAprSeries: { label: "Realized fee APR", assumptions: "r", points: [{ time: 1, date: "2026-10-02", aprPct: 4, kind: "collect" }] } },
 });
 const raydiumRow = { positionMint: RAYDIUM_MINT, positionAccount: "p", poolId: POOL, mintA: MINT_A, mintB: MINT_B, symbolA: "A", symbolB: "B",

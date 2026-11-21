@@ -23,7 +23,9 @@ const report: PositionPerformanceReport = {
     perSideFeeAprPct: { a: 4, b: null }, tokenEquivalent: { baseSymbol: "NVDA", baseSide: "A", wrappedSymbol: "NVDAx", tickUsed: 0,
       uiPriceBPerA: 1, basis: "fixture", note: "fixture", metrics: { deposited: 2, equity: 2.5312, liquidity: 2.5,
         uncollectedFees: 0.0312, feesEarned: 0.0312, withdrawnPrincipal: 0, pnl: 0, holdingPeriodReturnPct: null, annualizedReturnPct: null, feeOnlyAprPct: 4 } } },
-  pricing: { source: "fixture", label: "Test fixture, not live data", priceUsdA: 176.35, priceUsdB: 176.35 },
+  pricing: { source: "fixture", label: "Test fixture, not live data", usdPerRawUnitA: 176.35, usdPerRawUnitB: 176.35,
+    sharePriceUsdA: 176.35, sharePriceUsdB: 176.35, multiplierA: 1, multiplierB: 1, basis: { a: "per-share", b: "per-share" },
+    guard: { kind: "agreed", relativeDiff: 0 } },
   assumptions: "fixture", method: "fixture",
 };
 it("omits stock summary cards already shown in the overview while keeping position details", () => {

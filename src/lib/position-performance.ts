@@ -3,7 +3,7 @@ import "server-only";
 
 import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Connection, PublicKey } from "@solana/web3.js";
-import { readRaydiumPositionAccounts, readRaydiumUncollectedFees } from "@sofinance/engine/protocols/raydium/position-snapshot";
+import { raydiumPoolPriceBPerA, readRaydiumPositionAccounts, readRaydiumUncollectedFees } from "@sofinance/engine/protocols/raydium/position-snapshot";
 import { rpcConnection, rpcProvider, type RpcProvider } from "@sofinance/engine/rpc";
 import {
   type HistoryConnection,
@@ -21,7 +21,7 @@ import {
 } from "@sofinance/engine/position-performance-math";
 import { matchWrapPairShape } from "./rwa-pairing";
 import { JUPITER_PRICE_V3 } from "@sofinance/engine/jupiter/urls";
-import type { StockPerformance } from "./position-performance-report";
+import type { PositionPricingReport, StockPerformance } from "./position-performance-report";
 import { type RealizedFeeAprSeries } from "./realized-fee-apr-series";
 import { getRwaConfig } from "./config/rwa-env";
 import { getPositionHistoryStore } from "./position-history-store";
@@ -96,12 +96,7 @@ export type PositionPerformanceResult = {
   tokenNative: TokenNativeMetrics;
   /** Same-stock pools: the stock view (share price, 24h, entry price, fees in shares); null otherwise or when pricing is skipped. */
   stock: StockPerformance | null;
-  pricing: {
-    source: PositionPricingSource;
-    label: string;
-    priceUsdA: number | null;
-    priceUsdB: number | null;
-  };
+  pricing: PositionPricingReport<PositionPricingSource>;
   method: string;
   assumptions: string;
   /** Sparse cumulative realized fee APR from already-parsed events. Not a daily fill. */
@@ -245,7 +240,7 @@ async function readPositionValuation(positionMint: string, options: PositionValu
   const fallbackConnection = options.fallbackConnection;
   const historyStore = options.historyStore !== undefined ? options.historyStore
     : !options.connection && getRwaConfig().positionHistoryEnabled ? getPositionHistoryStore() : null;
-  const [fetched, uncollected, ownsNft] = await Promise.all([options.historyResult ?? loadPerformanceHistory({
+  const [fetched, feeRead, ownsNft] = await Promise.all([options.historyResult ?? loadPerformanceHistory({
     address: positionPda,
     maxSignatures,
     maxDetailRequests: options.historyDetailBudget ?? (options.connection ? undefined : MAX_PACED_HISTORY_DETAILS),
@@ -269,6 +264,7 @@ async function readPositionValuation(positionMint: string, options: PositionValu
     } : undefined,
   }), readRaydiumUncollectedFees(accounts, snapshot),
   options.wallet ? walletOwnsNft(accounts, new PublicKey(options.wallet), mint) : Promise.resolve(null)]);
+  const uncollected = { a: feeRead.a, b: feeRead.b };
   const truncated = fetched.truncated;
   const history: PositionHistoryEvent[] = fetched.history;
 
@@ -284,10 +280,14 @@ async function readPositionValuation(positionMint: string, options: PositionValu
   const mintA = snapshot.mintA;
   const mintB = snapshot.mintB;
   const priced = await priceAndLabel({
-    mintA, mintB, skipPricing: options.skipPricing, fetcher,
+    a: { mint: mintA, decimals: snapshot.decimalsA, hint: feeRead.mintHints.a },
+    b: { mint: mintB, decimals: snapshot.decimalsB, hint: feeRead.mintHints.b },
+    poolPriceBPerA: raydiumPoolPriceBPerA(snapshot), nowMs: nowSeconds * 1000,
+    skipPricing: options.skipPricing, fetcher,
     jupiterApiKey: options.jupiterApiKey, raydiumPoolId: snapshot.poolId, quotes: options.prices,
+    logContext: { protocol: "raydium-clmm", poolId: snapshot.poolId, positionMint },
   });
-  const { priceUsdA, priceUsdB, quotes, pricingMs } = priced;
+  const { pricing, quotes, pricingMs } = priced;
 
   const metrics = computePositionPerformance({
     deposited: { a: cashflows.depositedA, b: cashflows.depositedB },
@@ -299,8 +299,8 @@ async function readPositionValuation(positionMint: string, options: PositionValu
     },
     uncollectedFees: uncollected,
     holdingSeconds,
-    priceUsdA,
-    priceUsdB,
+    priceUsdA: pricing.usdPerRawUnitA,
+    priceUsdB: pricing.usdPerRawUnitB,
     decimalsA: snapshot.decimalsA,
     decimalsB: snapshot.decimalsB,
   });
@@ -373,7 +373,7 @@ async function readPositionValuation(positionMint: string, options: PositionValu
     metrics,
     tokenNative,
     quotes,
-    pricing: { source: priced.pricingSource, label: priced.pricingLabel, priceUsdA, priceUsdB },
+    pricing,
     incomplete,
     incompleteMessage: "Position history is incomplete; return percentages are unavailable until backfill and missing transactions are resolved.",
     stockIncomplete: incomplete || truncated || !history.some((item) => item.events.some((event) => event.kind === "open")),

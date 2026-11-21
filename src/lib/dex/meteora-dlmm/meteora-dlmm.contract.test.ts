@@ -196,7 +196,7 @@ describe("Meteora DLMM adapter specifics", () => {
     expect(performance.report?.cashflows).toEqual({ openCount: 0, increaseCount: 0, decreaseCount: 0 });
     expect(performance.report).toMatchObject({
       positionMint: FEED_POSITION, poolId: TSLA_POOL, mintA: TSLA, mintB: TSLAX, truncated: false,
-      pricing: { priceUsdA: 400.10567118198486, priceUsdB: 399.6496888563945 },
+      pricing: { usdPerRawUnitA: 400.10567118198486, usdPerRawUnitB: 399.6496888563945, guard: { kind: "agreed" } },
       tokenNative: { symbolA: "TSLA", symbolB: "TSLAx" },
     });
     await expect(adapter.performance(`meteora-dlmm:${UNLISTED_POSITION}`)).rejects.toMatchObject({ code: "UNSUPPORTED" });

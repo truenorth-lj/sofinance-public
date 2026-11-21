@@ -8,7 +8,7 @@ import { token2022ScaledUiSource } from "./multiplier-sources/token2022-scaled-u
 import { dexscreenerPriceSource, jupiterPriceSource, raydiumPoolPriceSource } from "./price-sources/token-price-quotes";
 import { rhcStoredPriceSource } from "./price-sources/rhc-stored";
 import type { PriceSource } from "./price-sources/types";
-import type { AssetRef, MultiplierHint, PriceQuote } from "./types";
+import type { AssetRef, MultiplierHint, PriceQuote, ResolveContext } from "./types";
 
 type QuoteBySource = { [S in TokenPriceSource]: Extract<TokenPriceQuote, { source: S }> };
 export type TokenPriceSources = { [S in TokenPriceSource]: PriceSource<QuoteBySource[S]> };
@@ -22,8 +22,11 @@ function quoteFrom<S extends TokenPriceSource>(sources: TokenPriceSources, quote
 export type AssetInput = { ref: AssetRef; decimals: number; hints?: readonly MultiplierHint[] };
 
 export interface AssetRegistry {
-  /** Assets keyed by `assetKey`. Duplicate refs are merged (their hints combined); the first decimals win. No I/O. */
-  resolve(inputs: readonly AssetInput[]): Map<string, Asset>;
+  /**
+   * Assets keyed by `assetKey`. Duplicate refs are merged (their hints combined); the first decimals win. No I/O.
+   * `context.nowMs` is only used to compare conflicting facts; each asset still evaluates its multiplier at read time.
+   */
+  resolve(inputs: readonly AssetInput[], context: ResolveContext): Map<string, Asset>;
   /** A `fetchTokenPricesUsd` quote as a `PriceQuote`, unit taken from the source that produced it. */
   quoteOf(quote: TokenPriceQuote): PriceQuote | null;
   /** A stored Robinhood Chain price as a `PriceQuote`. */
@@ -41,7 +44,7 @@ export function createAssetRegistry(input: {
 }): AssetRegistry {
   const { multiplierSources, priceSources, rhcStored } = input;
   return {
-    resolve(inputs) {
+    resolve(inputs, context) {
       const merged = new Map<string, { ref: AssetRef; decimals: number; hints: MultiplierHint[] }>();
       for (const { ref, decimals, hints = [] } of inputs) {
         const key = assetKey(ref);
@@ -53,7 +56,7 @@ export function createAssetRegistry(input: {
       for (const [key, { ref, decimals, hints }] of merged) {
         let found: { source: MultiplierSource; reading: NonNullable<ReturnType<MultiplierSource["read"]>> } | null = null;
         for (const source of multiplierSources) {
-          const reading = source.read(ref, hints);
+          const reading = source.read(ref, hints, context);
           if (reading) { found = { source, reading }; break; }
         }
         assets.set(key, createAsset({

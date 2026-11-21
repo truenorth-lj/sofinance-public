@@ -7,6 +7,7 @@ import type { estimateOpenPositionRent } from "../open-rent";
 import type { readOpenPoolState } from "../open-state";
 import type { readSelectedPositionState } from "../selected-state";
 import type { compoundProtocolInstructions } from "../swap/receipt";
+import type { MultiplierHint } from "../valuation/types";
 import type { discoverWallet } from "../wallet-discovery";
 
 /**
@@ -38,6 +39,11 @@ export type PoolProtocolId = (typeof POOL_PROTOCOL_IDS)[number];
  * `readPositionAccounts` and `readUncollectedFees` are the shared valuation reads;
  * Raydium's implementation lives in `protocols/raydium/position-snapshot.ts`.
  */
+/** Multiplier hint of each pool mint; null when the mint account could not be read or decoded (the asset stays unknown). */
+export type PairMintHints = { a: MultiplierHint | null; b: MultiplierHint | null };
+
+export type UncollectedFeesRead = { a: bigint; b: bigint; mintHints: PairMintHints };
+
 export type ClmmPositionAccounts = {
   positionAccount: string;
   poolId: string;
@@ -91,6 +97,9 @@ export type ClmmProtocolAdapter = {
   protocolInstructions: typeof compoundProtocolInstructions;
   /** Position and pool accounts for holding-period valuation. Does not require the wallet to hold the NFT. */
   readPositionAccounts: (positionMint: string, connection: Connection) => Promise<ClmmPositionAccounts>;
-  /** Uncollected swap fees for a snapshot from `readPositionAccounts`. */
-  readUncollectedFees: (connection: Connection, accounts: ClmmPositionAccounts) => Promise<{ a: bigint; b: bigint }>;
+  /**
+   * Uncollected swap fees for a snapshot from `readPositionAccounts`, plus both mints' multiplier hints read in the
+   * same batch (no extra RPC call).
+   */
+  readUncollectedFees: (connection: Connection, accounts: ClmmPositionAccounts) => Promise<UncollectedFeesRead>;
 };
