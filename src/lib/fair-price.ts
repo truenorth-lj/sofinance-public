@@ -10,6 +10,8 @@
  * fairPriceFromPool converts a Meteora price back to raw before the 2% gate.
  */
 
+export { effectiveScaledUiMultiplier } from "@sofinance/engine/valuation/multiplier";
+
 import { uiFor } from "./dex/ui";
 import { poolPairLabelFromSymbols } from "./pool-names";
 
@@ -80,25 +82,6 @@ export function formatFairPriceLine(pool: {
   const second = parts[1] ?? pool.symbolB;
   const amount = first === pool.symbolB && first !== pool.symbolA ? 1 / pool.fair : pool.fair;
   return `Fair price: 1 ${first} ≈ ${formatShareMultiplier(amount)} ${second}`;
-}
-
-/**
- * Effective ScaledUiAmount multiplier: `newMultiplier` once its timestamp has passed, otherwise `multiplier`.
- * Timestamps may be seconds or milliseconds.
- */
-export function effectiveScaledUiMultiplier(
-  config: { multiplier: number; newMultiplier: number; newMultiplierEffectiveTimestamp?: bigint | number | string | null },
-  nowMs = Date.now(),
-): number {
-  const current = Number(config.multiplier);
-  const next = Number(config.newMultiplier);
-  const raw = config.newMultiplierEffectiveTimestamp;
-  const ts = raw === null || raw === undefined || raw === "" ? NaN : Number(raw);
-  if (isPositiveFinite(next) && Number.isFinite(ts) && ts > 0) {
-    const ms = ts > 1e12 ? ts : ts * 1000;
-    if (nowMs >= ms) return next;
-  }
-  return current;
 }
 
 /**
