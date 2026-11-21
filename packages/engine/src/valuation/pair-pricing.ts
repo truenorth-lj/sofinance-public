@@ -16,7 +16,7 @@ export type PairSide = "a" | "b";
  * `unresolved`: over the gate but neither rule picks a side; both own prices are kept.
  */
 export type PairGuard =
-  | { kind: "not-checked"; reason: "missing-price" | "no-pool-price" }
+  | { kind: "not-checked"; reason: "no-multiplier" | "missing-price" | "no-pool-price" }
   | { kind: "agreed"; relativeDiff: number }
   | { kind: "corrected"; relativeDiff: number; side: PairSide; rule: "multiplier" | "liquidity"; ownUsdPerRawUnit: number }
   | { kind: "unresolved"; relativeDiff: number };
@@ -49,9 +49,14 @@ const sharePrice = (usdPerRawUnit: number | null, multiplier: number | null): nu
 
 function suspectSide(a: PairSideInput & { pricing: SidePricing }, b: PairSideInput & { pricing: SidePricing }):
   { side: PairSide; rule: "multiplier" | "liquidity" } | null {
-  const scaledA = a.pricing.multiplier !== 1;
-  const scaledB = b.pricing.multiplier !== 1;
-  if (scaledA !== scaledB) return { side: scaledA ? "a" : "b", rule: "multiplier" };
+  const multiplierA = a.pricing.multiplier;
+  const multiplierB = b.pricing.multiplier;
+  // Unknown does not participate in the multiplier rule. Only known positive, non-1 values count as scaled.
+  if (positive(multiplierA) && positive(multiplierB)) {
+    const scaledA = multiplierA !== 1;
+    const scaledB = multiplierB !== 1;
+    if (scaledA !== scaledB) return { side: scaledA ? "a" : "b", rule: "multiplier" };
+  }
   const liquidityA = a.quote?.liquidityUsd ?? 0;
   const liquidityB = b.quote?.liquidityUsd ?? 0;
   if (liquidityA === liquidityB) return null;
@@ -60,7 +65,8 @@ function suspectSide(a: PairSideInput & { pricing: SidePricing }, b: PairSideInp
 
 /**
  * Prices both sides of a pool position. Each side goes through its asset (the multiplier is applied only to per-share
- * quotes), then the pair guard checks them against the pool price. No I/O.
+ * quotes). The pair guard runs only if at least one asset's multiplierSource is token2022-scaled-ui; ordinary pools
+ * always return not-checked / no-multiplier. No I/O.
  */
 export function pricePair(input: {
   a: PairSideInput;
@@ -72,6 +78,10 @@ export function pricePair(input: {
 }): PairPricing {
   const a = { ...input.a, pricing: sideOf(input.a, input.nowMs) };
   const b = { ...input.b, pricing: sideOf(input.b, input.nowMs) };
+  // Ordinary pools never use the pair guard, even if their prices disagree or the pool price is missing.
+  if (![input.a.asset, input.b.asset].some((asset) => asset.facts.multiplierSource === "token2022-scaled-ui")) {
+    return { a: a.pricing, b: b.pricing, guard: { kind: "not-checked", reason: "no-multiplier" } };
+  }
   const pA = a.pricing.usdPerRawUnit;
   const pB = b.pricing.usdPerRawUnit;
   if (pA === null || pB === null) return { a: a.pricing, b: b.pricing, guard: { kind: "not-checked", reason: "missing-price" } };

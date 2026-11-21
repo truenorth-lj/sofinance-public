@@ -33,7 +33,7 @@ describe("priceAndLabel", () => {
     expect(pricing.source).toBe(described.source);
     expect(pricing.label).toBe(described.label);
     expect(pricing.label).not.toBe("USD pricing request failed; USD metrics null.");
-    expect(pricing.guard).toEqual({ kind: "not-checked", reason: "missing-price" });
+    expect(pricing.guard).toEqual({ kind: "not-checked", reason: "no-multiplier" });
   });
 
   it("labels the Raydium pool fallback per raw unit without changing its USD values", async () => {
@@ -52,7 +52,7 @@ describe("priceAndLabel", () => {
   it("an asset with no multiplier fact is not priced (never valued as 1)", async () => {
     vi.mocked(fetchTokenPricesUsd).mockResolvedValue(new Map([[MINT_A, QUOTE_A], [MINT_B, QUOTE_A]]));
     const { pricing } = await priceAndLabel({ ...sides(), a: { mint: MINT_A, decimals: 6, hint: null }, fetcher: vi.fn(), jupiterApiKey: "test-key" });
-    expect(pricing).toMatchObject({ usdPerRawUnitA: null, multiplierA: null, usdPerRawUnitB: 12.5, guard: { kind: "not-checked", reason: "missing-price" } });
+    expect(pricing).toMatchObject({ usdPerRawUnitA: null, multiplierA: null, usdPerRawUnitB: 12.5, guard: { kind: "not-checked", reason: "no-multiplier" } });
   });
 
   it("skipped pricing reads nothing and returns no prices", async () => {

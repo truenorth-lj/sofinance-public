@@ -133,7 +133,17 @@ describe("GATE: ordinary pools", () => {
       const pricing = pricePosition({ a: side(a), b: side(b),
         quoteA: { price: usdA, source: "jupiter", basis: "per-share" }, quoteB: { price: usdB, source: "jupiter", basis: "per-share" },
         poolPriceBPerA: poolPrice, nowMs: NOW_MS, quotesObservedAtMs: NOW_MS });
-      expect(pricing).toMatchObject({ usdPerRawUnitA: usdA, usdPerRawUnitB: usdB, multiplierA: 1, multiplierB: 1, guard: { kind: "agreed" } });
+      expect(pricing).toMatchObject({ usdPerRawUnitA: usdA, usdPerRawUnitB: usdB, multiplierA: 1, multiplierB: 1, guard: { kind: "not-checked", reason: "no-multiplier" } });
+    });
+
+  it.each([["SOL/USDC", SOL, USDC], ["PYUSD/USDC", PYUSD, USDC]] as const)(
+    "%s: even wildly disagreeing quotes are never guard-corrected", (_name, a, b) => {
+      const pricing = pricePosition({ a: side(a), b: side(b),
+        quoteA: { price: 20, source: "jupiter", basis: "per-share", liquidityUsd: 1 },
+        quoteB: { price: 1, source: "jupiter", basis: "per-share", liquidityUsd: 1_000_000 },
+        poolPriceBPerA: 100, nowMs: NOW_MS, quotesObservedAtMs: NOW_MS });
+      expect(pricing).toMatchObject({ usdPerRawUnitA: 20, usdPerRawUnitB: 1,
+        guard: { kind: "not-checked", reason: "no-multiplier" } });
     });
 
   it("a DexScreener / Raydium per-raw quote is never multiplied again", () => {

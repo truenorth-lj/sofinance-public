@@ -7,17 +7,21 @@ import { PAIR_GUARD_MAX_RELATIVE_DIFF, pricePair, sqrtPriceX64ToPriceBPerA } fro
 import type { AssetFacts, PriceQuote } from "./types";
 
 const NOW = Date.parse("2026-11-21T08:00:00Z");
+/** A Token-2022 ScaledUiAmount asset (multiplier 1 included, like SPY), or unknown for null. */
 const asset = (multiplier: number | null) => createAsset({
   ref: { chain: "solana", address: Keypair.generate().publicKey.toBase58() }, decimals: 6,
-  multiplier: multiplier === null ? { kind: "unknown" } : multiplier === 1 ? { kind: "none" }
+  multiplier: multiplier === null ? { kind: "unknown" }
     : { kind: "scaled-ui", config: { multiplier, newMultiplier: multiplier, newMultiplierEffectiveTimestamp: 0 } },
   multiplierSource: multiplier === null ? null : "token2022-scaled-ui",
 } satisfies AssetFacts);
+/** A plain SPL mint (known 1, no ScaledUiAmount extension). */
+const plain = () => createAsset({ ref: { chain: "solana", address: Keypair.generate().publicKey.toBase58() }, decimals: 6,
+  multiplier: { kind: "none" }, multiplierSource: "spl-plain" });
 const share = (usd: number, liquidityUsd?: number): PriceQuote => ({ basis: "per-share", usd, source: "jupiter", ...(liquidityUsd !== undefined ? { liquidityUsd } : {}) });
 
 describe("pricePair", () => {
   it("applies the multiplier to per-share quotes only and keeps prices that agree with the pool", () => {
-    const priced = pricePair({ a: { asset: asset(8), quote: share(80) }, b: { asset: asset(1), quote: { basis: "per-raw-unit", usd: 640, source: "dexscreener" } },
+    const priced = pricePair({ a: { asset: asset(8), quote: share(80) }, b: { asset: plain(), quote: { basis: "per-raw-unit", usd: 640, source: "dexscreener" } },
       poolPriceBPerA: 1, nowMs: NOW });
     expect(priced).toEqual({
       a: { usdPerRawUnit: 640, sharePriceUsd: 80, multiplier: 8, basis: "per-share" },
@@ -64,6 +68,25 @@ describe("pricePair", () => {
       expect(pricePair({ a: { asset: asset(1), quote: share(1) }, b: { asset: asset(1), quote: share(2) }, poolPriceBPerA, nowMs: NOW }).guard)
         .toEqual({ kind: "not-checked", reason: "no-pool-price" });
     }
+  });
+
+  it("ordinary pools (no token2022-scaled-ui side) are never checked or corrected", () => {
+    const priced = pricePair({ a: { asset: plain(), quote: share(20, 1) }, b: { asset: plain(), quote: share(1, 1_000_000) }, poolPriceBPerA: 100, nowMs: NOW });
+    expect(priced.guard).toEqual({ kind: "not-checked", reason: "no-multiplier" });
+    expect([priced.a.usdPerRawUnit, priced.b.usdPerRawUnit]).toEqual([20, 1]);
+    expect(pricePair({ a: { asset: plain(), quote: null }, b: { asset: plain(), quote: share(1) }, poolPriceBPerA: null, nowMs: NOW }).guard)
+      .toEqual({ kind: "not-checked", reason: "no-multiplier" });
+  });
+
+  it("an unknown multiplier does not take part in the multiplier rule (it is not 'scaled')", () => {
+    // A: unknown multiplier but a per-raw quote (still priced); B: Token-2022 at exactly 1. Before the fix A counted as
+    // the only scaled side; now the multiplier rule abstains and the lower-liquidity side (B) is suspect.
+    const priced = pricePair({
+      a: { asset: asset(null), quote: { basis: "per-raw-unit", usd: 110, source: "dexscreener", liquidityUsd: 1_000_000 } },
+      b: { asset: asset(1), quote: share(100, 10) }, poolPriceBPerA: 1, nowMs: NOW });
+    expect(priced.a.multiplier).toBeNull();
+    expect(priced.guard).toMatchObject({ kind: "corrected", side: "b", rule: "liquidity" });
+    expect(priced.b.usdPerRawUnit).toBe(110);
   });
 
   it("the result is plain data", () => {

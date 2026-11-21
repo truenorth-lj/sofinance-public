@@ -45,8 +45,8 @@ export type PositionPerformanceInputs = {
   /** Seconds since first open (or increase) event; must be > 0 for annualization. */
   holdingSeconds: number;
   /**
-   * Optional USD per raw unit (raw / 10^decimals, the unscaled on-chain amount), so a ScaledUiAmount multiplier is
-   * already in it. Never pass a per-share quote here.
+   * Optional USD per (raw / 10^decimals) token unit: the ScaledUiAmount multiplier is already applied. Never pass a
+   * per-share quote here. (Name kept; X3-8 adds explicit names and keeps these as aliases.)
    */
   priceUsdA?: number | null;
   priceUsdB?: number | null;
@@ -66,7 +66,7 @@ export type PositionPerformanceMetrics = {
   feesEarnedRaw: { a: string; b: string };
   /** equity + withdrawnPrincipal + feesCollected − deposited (per side, raw) */
   pnlRaw: { a: string; b: string };
-  /** The USD per raw unit used (see `PositionPerformanceInput.priceUsdA`). */
+  /** USD per (raw / 10^decimals) token unit used, multiplier already applied (see the input's `priceUsdA`). */
   priceUsdA: number | null;
   priceUsdB: number | null;
   depositedUsd: number | null;
