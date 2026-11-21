@@ -6,6 +6,7 @@ import { formatAmount } from "@sofinance/engine/amount";
 import { shortAddress } from "@/lib/format/address";
 import { solscanTxUrl } from "@/lib/format/explorer";
 import { formatUsd } from "@/lib/format/usd";
+import { typedAmountUsdLabel } from "@/lib/format/token-usd";
 import { addWalletPreviewSplit } from "@/lib/add-wallet-preview";
 import { TokenPicker } from "./token-picker";
 
@@ -13,25 +14,13 @@ const short = shortAddress;
 
 const money = (value: string, decimals: number, digits = 6) => formatAmount(value, decimals, digits);
 
-function calculateInputUsd(amount: string, priceUsd: number | null): string | null {
-  if (!amount || priceUsd === null || !Number.isFinite(priceUsd) || priceUsd < 0) return null;
-  try {
-    const parsed = Number(amount);
-    if (!Number.isFinite(parsed) || parsed <= 0) return null;
-    const usdValue = parsed * priceUsd;
-    if (!Number.isFinite(usdValue)) return null;
-    return usdValue < 0.01 ? "< $0.01" : `≈ $${usdValue.toFixed(2)}`;
-  } catch {
-    return null;
-  }
-}
-
 function Row({ title, value, emphasize = false }: { title: string; value: string; emphasize?: boolean }) {
   return <div className="flex items-start justify-between gap-4"><span className="text-smoke">{title}</span><span className={`max-w-[55%] text-right font-medium tabular-nums ${emphasize ? "text-cream" : "text-cream/80"}`}>{value}</span></div>;
 }
 
 type PositionState = {
-  pricing?: { priceUsdInput?: number | null; priceUsdA?: number | null; priceUsdB?: number | null };
+  /** Display-only USD per (raw / 10^decimals), multiplier applied; see `SelectedDisplayPricing`. */
+  displayPricing?: { usdPerRawUnitInput?: number | null; usdPerRawUnitA?: number | null; usdPerRawUnitB?: number | null };
   inputBalance: string;
   inputDecimals: number;
   mintA: string;
@@ -74,7 +63,7 @@ export function AddLiquiditySection({
   metadata,
   busy,
   onSelectAsset,
-  inputPriceUsd,
+  inputUsdPerRawUnit,
   amount,
   onChangeAmount,
   onFillMax,
@@ -112,7 +101,7 @@ export function AddLiquiditySection({
   metadata: Parameters<typeof TokenPicker>[0]["metadata"];
   busy: boolean;
   onSelectAsset: Parameters<typeof TokenPicker>[0]["onSelect"];
-  inputPriceUsd: number | null | undefined;
+  inputUsdPerRawUnit: number | null | undefined;
   amount: string;
   onChangeAmount: (value: string) => void;
   onFillMax: () => void;
@@ -158,7 +147,7 @@ export function AddLiquiditySection({
           <h2 className="text-lg font-semibold text-cream">Add to existing position</h2>
           <p className="mt-2 text-xs leading-5 text-smoke">Choose an asset from your wallet. We swap it into the pool tokens as needed, then add liquidity to the existing LP position selected above in one transaction. Your position keeps its current price range.</p>
           <span id="asset-label" className="mt-6 block text-xs font-medium uppercase tracking-[0.16em] text-smoke">Asset to add from wallet</span>
-          <TokenPicker assets={assetOptions} selectedAsset={selectedAsset} metadata={metadata} disabled={!assetOptions.length || busy} onSelect={onSelectAsset} inputPriceUsd={inputPriceUsd} />
+          <TokenPicker assets={assetOptions} selectedAsset={selectedAsset} metadata={metadata} disabled={!assetOptions.length || busy} onSelect={onSelectAsset} inputUsdPerRawUnit={inputUsdPerRawUnit} />
           {selectedAsset && <details className="mt-2 text-[11px] leading-5 text-smoke/70">
             <summary className="cursor-pointer">Asset address and balance source</summary>
             <p className="mt-2 break-all">Mint {selectedAsset.mint} · Available for input ATA/SOL balance {money(selectedAsset.balance, selectedAsset.decimals, selectedAsset.decimals)}{selectedAsset.totalBalance !== selectedAsset.balance ? `; wallet total holdings ${money(selectedAsset.totalBalance, selectedAsset.decimals, selectedAsset.decimals)}` : ""}</p>
@@ -168,8 +157,8 @@ export function AddLiquiditySection({
             <input id="amount" disabled={busy || !state} inputMode="decimal" placeholder="0.00" value={amount} onChange={(event) => onChangeAmount(event.target.value)} className="min-w-0 flex-1 bg-transparent text-3xl font-semibold text-cream outline-none placeholder:text-smoke/50" />
             <span className="text-sm font-semibold text-cream/80">{inputLabel}</span>
           </div>
-          {state?.pricing?.priceUsdInput !== undefined && state.pricing.priceUsdInput !== null && amount && (() => {
-            const inputUsd = calculateInputUsd(amount, state.pricing.priceUsdInput);
+          {amount && (() => {
+            const inputUsd = typedAmountUsdLabel(amount, state?.displayPricing?.usdPerRawUnitInput);
             return inputUsd ? <div className="mt-2 text-center text-sm text-smoke/70">{inputUsd}</div> : null;
           })()}
           <div className="mt-3 flex items-center justify-between text-xs text-smoke">
@@ -195,7 +184,7 @@ export function AddLiquiditySection({
             if (!quote || !fresh || calculating || quote.requiredA === undefined || quote.requiredB === undefined
               || quote.dustA === undefined || quote.dustB === undefined) return null;
             const split = addWalletPreviewSplit({ requiredA: quote.requiredA, requiredB: quote.requiredB, dustA: quote.dustA, dustB: quote.dustB,
-              decimalsA: quote.decimalsA, decimalsB: quote.decimalsB }, state?.pricing);
+              decimalsA: quote.decimalsA, decimalsB: quote.decimalsB }, state?.displayPricing);
             return split ? <p data-testid="add-wallet-preview-note" className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-xs leading-5 text-cream/80">
               Your wallet preview will show only about {formatUsd(split.backUsd)} of tokens coming back. The other ~{formatUsd(split.depositUsd)} goes into this position.
             </p> : null;

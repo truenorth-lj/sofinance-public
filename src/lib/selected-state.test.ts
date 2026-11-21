@@ -4,8 +4,8 @@ import { CLMM_PROGRAM_ID, getPdaPersonalPositionAddress, PersonalPositionLayout,
 import { ExtensionType, getAssociatedTokenAddressSync, getTypeLen, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Keypair, PublicKey, SystemProgram, type AccountInfo, type Connection } from "@solana/web3.js";
 vi.mock("server-only", () => ({}));
-vi.mock("@sofinance/engine/token-prices", () => ({ fetchJupiterPricesUsd: vi.fn(), fetchRaydiumPoolUsdPrices: vi.fn() }));
-import { fetchJupiterPricesUsd } from "@sofinance/engine/token-prices";
+vi.mock("@sofinance/engine/token-prices", () => ({ fetchTokenPricesUsd: vi.fn(), fetchRaydiumPoolUsdPrices: vi.fn() }));
+import { fetchTokenPricesUsd } from "@sofinance/engine/token-prices";
 import { readSelectedPositionState } from "@sofinance/engine/selected-state";
 import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT } from "@sofinance/engine/ids";
 
@@ -61,7 +61,7 @@ describe("direct selected position state", () => {
     expect(read).toHaveBeenCalledTimes(4);
     expect(connection.getTokenAccountsByOwner).not.toHaveBeenCalled();
     expect(connection.getAccountInfo).not.toHaveBeenCalled(); expect(connection.getBalance).not.toHaveBeenCalled();
-    expect(fetchJupiterPricesUsd).not.toHaveBeenCalled();
+    expect(fetchTokenPricesUsd).not.toHaveBeenCalled();
     expect(read.mock.calls[1]?.[1]).toEqual({ commitment: "confirmed", minContextSlot: 42 });
   });
   it.each(["missing", "frozen", "wrong-owner"])("rejects %s NFT ownership", async (mode) => {

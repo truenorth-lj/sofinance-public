@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CLMM_PROGRAM_ID, getPdaPersonalPositionAddress, PersonalPositionLayout, PoolInfoLayout, TickUtil } from "@raydium-io/raydium-sdk-v2";
 import { ExtensionType, getAssociatedTokenAddressSync, getTypeLen, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Keypair, PublicKey, SystemProgram, type AccountInfo, type Connection } from "@solana/web3.js";
-vi.mock("./token-prices", () => ({ fetchJupiterPricesUsd: vi.fn(), fetchRaydiumPoolUsdPrices: vi.fn() }));
-import { fetchJupiterPricesUsd } from "./token-prices";
+vi.mock("./token-prices", () => ({ fetchTokenPricesUsd: vi.fn(), fetchRaydiumPoolUsdPrices: vi.fn() }));
+import { fetchRaydiumPoolUsdPrices, fetchTokenPricesUsd } from "./token-prices";
 import { readSelectedPositionState } from "./selected-state";
 import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT } from "./ids";
 
@@ -60,7 +60,7 @@ describe("direct selected position state", () => {
     expect(read).toHaveBeenCalledTimes(4);
     expect(connection.getTokenAccountsByOwner).not.toHaveBeenCalled();
     expect(connection.getAccountInfo).not.toHaveBeenCalled(); expect(connection.getBalance).not.toHaveBeenCalled();
-    expect(fetchJupiterPricesUsd).not.toHaveBeenCalled();
+    expect(fetchTokenPricesUsd).not.toHaveBeenCalled();
     expect(read.mock.calls[1]?.[1]).toEqual({ commitment: "confirmed", minContextSlot: 42 });
   });
   it.each(["missing", "frozen", "wrong-owner"])("rejects %s NFT ownership", async (mode) => {
@@ -152,5 +152,59 @@ describe("raw Token-2022 selected state", () => {
     const ata = getAssociatedTokenAddressSync(input, wallet, false, TOKEN_2022_PROGRAM_ID);
     accounts.set(ata.toBase58(), info(extendedToken(token(input, wallet, 1000n)), TOKEN_2022_PROGRAM_ID));
     await expect(state()).resolves.toMatchObject({ unsupportedExtensions: [] });
+  });
+});
+
+describe("selected display pricing (X3-4)", () => {
+  const scaled = (multiplier: number) => {
+    const payload = Buffer.alloc(getTypeLen(ExtensionType.ScaledUiAmountConfig));
+    payload.writeDoubleLE(multiplier, 32); payload.writeDoubleLE(multiplier, 48);
+    return info(extendedMint(mint(), ExtensionType.ScaledUiAmountConfig, payload), TOKEN_2022_PROGRAM_ID);
+  };
+  const scaleA = (multiplier: number) => {
+    accounts.set(mintA.toBase58(), scaled(multiplier));
+    accounts.set(vaultA.toBase58(), info(extendedToken(token(mintA, pool, 1000000n)), TOKEN_2022_PROGRAM_ID));
+  };
+  const jupiter = (price: number, scaledUiConfig?: { multiplier: number; newMultiplier: number }) => ({ price, source: "jupiter" as const, basis: "per-share" as const, ...(scaledUiConfig ? { scaledUiConfig } : {}) });
+  const priced = () => readSelectedPositionState(wallet.toBase58(), selection, connection);
+  const quotes = (entries: [PublicKey, ReturnType<typeof jupiter>][]) =>
+    vi.mocked(fetchTokenPricesUsd).mockResolvedValue(new Map(entries.map(([m, q]) => [m.toBase58(), q])) as never);
+
+  it("applies the on-chain multiplier to Jupiter's per-share price; legacy pricing (withdraw path) is unchanged", async () => {
+    scaleA(2);
+    quotes([[input, jupiter(3)], [mintA, jupiter(10)], [mintB, jupiter(1)]]);
+    const result = await priced();
+    expect(result.displayPricing).toEqual({ usdPerRawUnitInput: 3, multiplierInput: 1, usdPerRawUnitA: 20, multiplierA: 2, usdPerRawUnitB: 1, multiplierB: 1 });
+    expect(result.pricing).toEqual({ priceUsdInput: 3, priceUsdA: 10, priceUsdB: 1 });
+    // No new reads: the same 4 account batches and one price request.
+    expect(read).toHaveBeenCalledTimes(4); expect(fetchTokenPricesUsd).toHaveBeenCalledTimes(1);
+    expect(fetchRaydiumPoolUsdPrices).not.toHaveBeenCalled();
+  });
+  it("prefers the mint account read in this request over Jupiter's scaledUiConfig", async () => {
+    scaleA(2);
+    quotes([[input, jupiter(3)], [mintA, jupiter(10, { multiplier: 3, newMultiplier: 3 })], [mintB, jupiter(1)]]);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const result = await priced();
+    const logged = warn.mock.calls.map((call) => call.join(" "));
+    warn.mockRestore();
+    expect(result.displayPricing).toMatchObject({ usdPerRawUnitA: 20, multiplierA: 2 });
+    expect(logged.some((line) => line.startsWith("[valuation]") && line.includes("multiplier-conflict"))).toBe(true);
+  });
+  it("never multiplies a per-raw-unit Raydium fallback again", async () => {
+    scaleA(2);
+    quotes([[input, jupiter(3)], [mintB, jupiter(1)]]);
+    vi.mocked(fetchRaydiumPoolUsdPrices).mockResolvedValue(new Map([[mintA.toBase58(), 20], [mintB.toBase58(), 1]]));
+    const result = await priced();
+    expect(result.displayPricing).toMatchObject({ usdPerRawUnitA: 20, multiplierA: 2, usdPerRawUnitB: 1 });
+    expect(result.pricing).toMatchObject({ priceUsdA: 20, priceUsdB: 1 });
+  });
+  it("leaves a side unpriced (null, not $0) when no quote exists", async () => {
+    quotes([[mintA, jupiter(10)]]);
+    vi.mocked(fetchRaydiumPoolUsdPrices).mockResolvedValue(new Map());
+    const result = await priced();
+    expect(result.displayPricing).toMatchObject({ usdPerRawUnitInput: null, usdPerRawUnitA: 10, usdPerRawUnitB: null });
+  });
+  it("has no displayPricing on execution reads (displayPrices: false)", async () => {
+    expect((await state()).displayPricing).toBeUndefined();
   });
 });
