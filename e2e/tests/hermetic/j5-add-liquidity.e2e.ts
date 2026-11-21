@@ -181,7 +181,9 @@ for (const width of [1280, 375]) {
     // Reserve 0.005 A × $4 + 0.015 B × $0.50; deposit 0.49 A × $4 + 0.48 B × $0.50.
     await expect(page.getByTestId("add-wallet-preview-note")).toHaveText(
       "Your wallet preview will show only about $0.03 of tokens coming back. The other ~$2.20 goes into this position.");
-    await page.screenshot({ path: test.info().outputPath(`add-scaled-${width}.png`), fullPage: true });
+    // The input dollar line and the wallet-preview note in one frame (the modal scrolls on mobile).
+    await page.getByTestId("add-wallet-preview-note").scrollIntoViewIfNeeded();
+    await page.screenshot({ path: test.info().outputPath(`add-scaled-${width}.png`) });
   });
 }
 
