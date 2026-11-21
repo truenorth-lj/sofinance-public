@@ -79,7 +79,7 @@ export async function priceAndLabel(input: {
         const fallback = await fetchRaydiumPoolUsdPrices(input.raydiumPoolId, input.mintA, input.mintB, input.fetcher);
         const raydium = (mint: string): TokenPriceQuote | undefined => {
           const price = fallback.get(mint);
-          return price !== undefined ? { price, source: "raydium" } : undefined;
+          return price !== undefined ? { price, source: "raydium", basis: "per-raw-unit" } : undefined;
         };
         quoteA = quoteA ?? raydium(input.mintA);
         quoteB = quoteB ?? raydium(input.mintB);

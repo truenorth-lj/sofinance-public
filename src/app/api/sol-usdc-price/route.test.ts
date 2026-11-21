@@ -8,7 +8,7 @@ import { GET } from "./route";
 
 afterEach(() => vi.resetAllMocks());
 
-const quote = (price: number, source: TokenPriceQuote["source"]): TokenPriceQuote => ({ price, source });
+const quote = (price: number, source: TokenPriceQuote["source"]): TokenPriceQuote => source === "jupiter" ? { price, source, basis: "per-share" } : { price, source, basis: "per-raw-unit" };
 
 describe("SOL/USDC reference price", () => {
   it("uses both USD prices rather than assuming USDC equals one dollar", async () => {

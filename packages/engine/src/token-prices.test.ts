@@ -99,7 +99,7 @@ describe("fetchJupiterPricesUsd", () => {
     const first = await fetchTokenPricesUsd([TSLAX], fetcher);
     const cached = await fetchTokenPricesUsd([TSLAX], fetcher);
     expect(cached.get(TSLAX)).toEqual({
-      price: 376.8, source: "jupiter", priceChange24hPct: -2.5, liquidityUsd: 2255035,
+      price: 376.8, source: "jupiter", basis: "per-share", priceChange24hPct: -2.5, liquidityUsd: 2255035,
     });
     expect(cached.get(TSLAX)).toEqual(first.get(TSLAX));
     expect((await fetchJupiterPricesUsd([TSLAX], fetcher)).get(TSLAX)).toBe(376.8);
@@ -113,7 +113,7 @@ describe("fetchJupiterPricesUsd", () => {
     });
     const prices = await fetchJupiterPricesUsd([TSLAX], fetcher);
     expect(prices.get(TSLAX)).toBe(376.79702919622997);
-    expect((await fetchTokenPricesUsd([TSLAX], fetcher)).get(TSLAX)).toEqual({ price: 376.79702919622997, source: "jupiter" });
+    expect((await fetchTokenPricesUsd([TSLAX], fetcher)).get(TSLAX)).toEqual({ price: 376.79702919622997, source: "jupiter", basis: "per-share" });
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(String(fetcher.mock.calls[0]?.[0])).toContain("/price/v3");
     expect(String(fetcher.mock.calls[0]?.[0])).toContain(TSLAX);
@@ -126,7 +126,7 @@ describe("fetchJupiterPricesUsd", () => {
       throw new Error(`unexpected fetch ${url}`);
     });
     const quotes = await fetchTokenPricesUsd([TSLAX], fetcher);
-    expect(quotes.get(TSLAX)).toEqual({ price: 377.36, source: "dexscreener" });
+    expect(quotes.get(TSLAX)).toEqual({ price: 377.36, source: "dexscreener", basis: "per-raw-unit" });
     expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
       expect.stringContaining("/price/v3"),
       `${DEXSCREENER_SOLANA_TOKENS_URL}/${TSLAX}`,
@@ -211,5 +211,41 @@ describe("fetchJupiterPricesUsd", () => {
     await fetchJupiterPricesUsd([TSLAX], fetcher);
     await fetchJupiterPricesUsd([TSLAX], fetcher);
     expect(jupiterCalls).toBe(2);
+  });
+});
+
+describe("token price basis (X3-1)", () => {
+  const SNDK = "SNDKbwMUQvZhnLnxLduradgLHG5KrPuKwpnrkkGRhfH";
+  const SNDKX = "Xswbpc7PDcTuWsvvQh3SsnN5JK1Wa5yFNcxGaJfu59t";
+
+  it("keeps Jupiter's per-share SNDK quote and complete scheduled multiplier", async () => {
+    const fetcher = mockFetch((url) => {
+      if (url.includes("/price/v3")) return json(200, {
+        [SNDK]: { usdPrice: 78.6347, scaledUiConfig: { multiplier: 8.00000022993473, newMultiplier: 8.00000022993473, newMultiplierEffectiveAt: "1970-01-01T00:00:00Z" } },
+        [SNDKX]: { usdPrice: 80.9905, scaledUiConfig: { multiplier: 1, newMultiplier: 8, newMultiplierEffectiveAt: "2026-11-20T09:30:00Z" } },
+      });
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const quotes = await fetchTokenPricesUsd([SNDK, SNDKX], fetcher);
+    expect(quotes.get(SNDK)).toEqual({ price: 78.6347, source: "jupiter", basis: "per-share",
+      scaledUiConfig: { multiplier: 8.00000022993473, newMultiplier: 8.00000022993473, newMultiplierEffectiveTimestamp: 0 } });
+    expect(quotes.get(SNDKX)).toEqual({ price: 80.9905, source: "jupiter", basis: "per-share",
+      scaledUiConfig: { multiplier: 1, newMultiplier: 8, newMultiplierEffectiveTimestamp: 1_795_167_000 } });
+    expect((await fetchJupiterPricesUsd([SNDK], fetcher)).get(SNDK)).toBe(78.6347);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops a malformed scaledUiConfig without dropping the price", async () => {
+    const fetcher = mockFetch(() => json(200, { [SNDKX]: { usdPrice: "80.99", scaledUiConfig: { multiplier: 1, newMultiplier: Number.NaN, newMultiplierEffectiveAt: "later" } } }));
+    expect((await fetchTokenPricesUsd([SNDKX], fetcher)).get(SNDKX)).toEqual({ price: 80.99, source: "jupiter", basis: "per-share" });
+  });
+
+  it("marks the DexScreener SNDK fallback as per raw unit", async () => {
+    const fetcher = mockFetch((url) => {
+      if (url.includes("/price/v3")) return json(503, {});
+      if (url.startsWith(DEXSCREENER_SOLANA_TOKENS_URL)) return json(200, [pair({ mint: SNDK, priceUsd: "630.67", liquidityUsd: 55_189.34 })]);
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    expect((await fetchTokenPricesUsd([SNDK], fetcher)).get(SNDK)).toEqual({ price: 630.67, source: "dexscreener", basis: "per-raw-unit" });
   });
 });

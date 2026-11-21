@@ -198,7 +198,7 @@ it("fills price change and total for the NVDA position from the recorded entry p
     tokenNative: { tokenEquivalent: { baseSymbol: "NVDA", baseSide: "A", uiPriceBPerA: 0.9995,
       metrics: { equity: 0.66, feesEarned: 0.01 } } } as TokenNativeMetrics,
     metrics: { currentEquityUsd: 118.8, feesEarnedUsd: 1.8 }, incomplete: false, nowSeconds: deposit.blockTime + 86_400,
-    quotes: new Map([[NVDA, { source: "jupiter" as const, price: 180, priceChange24hPct: 1, liquidityUsd: 1 }]]),
+    quotes: new Map([[NVDA, { source: "jupiter", basis: "per-share" as const, price: 180, priceChange24hPct: 1, liquidityUsd: 1 }]]),
     entryDeps: { store, rpc: fixtureRpc().rpc },
   });
   const sharesIn = 0.344847 + 0.31431638 / 0.9995;
@@ -217,7 +217,7 @@ it("still uses a recorded entry price when the performance history is incomplete
     tokenNative: { tokenEquivalent: { baseSymbol: "NVDA", baseSide: "A", uiPriceBPerA: 0.9995,
       metrics: { equity: 0.66, feesEarned: 0.01 } } } as TokenNativeMetrics,
     metrics: { currentEquityUsd: 118.8, feesEarnedUsd: 1.8 }, incomplete: true, nowSeconds: deposit.blockTime + 86_400,
-    quotes: new Map([[NVDA, { source: "jupiter" as const, price: 180, priceChange24hPct: 1, liquidityUsd: 1 }]]),
+    quotes: new Map([[NVDA, { source: "jupiter", basis: "per-share" as const, price: 180, priceChange24hPct: 1, liquidityUsd: 1 }]]),
     entryDeps: { store, rpc: fixtureRpc().rpc },
   });
   expect(stock?.entryPriceUsd).toBeCloseTo(176.998, 3);

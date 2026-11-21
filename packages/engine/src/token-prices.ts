@@ -1,3 +1,5 @@
+import { z } from "zod";
+import type { ScaledUiMultiplierConfig } from "./valuation/types";
 import { sleep } from "./async";
 import { JUPITER_PRICE_TTL_MS, jupiterRequest } from "./jupiter";
 import { JUPITER_PRICE_V3_PATH, resolveJupiterApiKey } from "./jupiter/urls";
@@ -32,13 +34,37 @@ export const DEXSCREENER_PRICE_SPACING_MS = 220;
 const PRICE_FETCH_TIMEOUT_MS = 5_000;
 
 export type TokenPriceSource = "jupiter" | "dexscreener" | "raydium";
-export type TokenPriceQuote = {
+type TokenPriceMetadata = {
   price: number;
   source: TokenPriceSource;
   /** Optional Jupiter rolling 24h change; never inferred for fallback quotes. */
   priceChange24hPct?: number;
   liquidityUsd?: number;
 };
+
+/** Prices retain their provider's unit; X3-1 does not rescale consumers yet. */
+export type TokenPriceQuote = TokenPriceMetadata & (
+  | { source: "jupiter"; basis: "per-share"; scaledUiConfig?: ScaledUiMultiplierConfig }
+  | { source: "dexscreener" | "raydium"; basis: "per-raw-unit" }
+);
+
+const scaledUiConfigSchema = z.object({
+  multiplier: z.number().finite().positive(),
+  newMultiplier: z.number().finite().positive(),
+  newMultiplierEffectiveAt: z.iso.datetime({ offset: true }),
+});
+
+/** Preserve the complete schedule, not a value evaluated at fetch time. */
+function parseScaledUiConfig(raw: unknown): ScaledUiMultiplierConfig | undefined {
+  const parsed = scaledUiConfigSchema.safeParse(raw);
+  if (!parsed.success) return undefined;
+  return {
+    multiplier: parsed.data.multiplier,
+    newMultiplier: parsed.data.newMultiplier,
+    newMultiplierEffectiveTimestamp: Date.parse(parsed.data.newMultiplierEffectiveAt) / 1000,
+  };
+}
+
 
 type CachedMintPrice = { quote: TokenPriceQuote | undefined; expiresAt: number };
 
@@ -169,7 +195,7 @@ async function fetchJupiterPriceBatch(
   const prices = new Map<string, TokenPriceQuote>();
   try {
     activeJupiterApiKey = apiKey;
-    const body = await jupiterPacer.pace(() => jupiterRequest<Record<string, { usdPrice?: number | string; priceChange24h?: unknown; liquidity?: unknown } | null>>({
+    const body = await jupiterPacer.pace(() => jupiterRequest<Record<string, { usdPrice?: number | string; priceChange24h?: unknown; liquidity?: unknown; scaledUiConfig?: unknown } | null>>({
       path: JUPITER_PRICE_V3_PATH,
       query: { ids: mints.join(",") },
       fetcher,
@@ -184,7 +210,9 @@ async function fetchJupiterPriceBatch(
       const row = body[mint];
       const value = parseUsd(row?.usdPrice, true);
       if (value !== null) {
-        const quote: TokenPriceQuote = { price: value, source: "jupiter" };
+        const quote: TokenPriceQuote = { price: value, source: "jupiter", basis: "per-share" };
+        const config = parseScaledUiConfig(row?.scaledUiConfig);
+        if (config !== undefined) quote.scaledUiConfig = config;
         const change = finiteMetadata(row?.priceChange24h);
         const liquidity = finiteMetadata(row?.liquidity);
         if (change !== undefined) quote.priceChange24hPct = change;
@@ -254,7 +282,7 @@ async function loadTokenPricesUsd(
     for (const mint of batch) {
       const value = pickDexScreenerUsdPrice(payload, mint);
       if (value !== null) {
-        const quote = { price: value, source: "dexscreener" as const };
+        const quote: TokenPriceQuote = { price: value, source: "dexscreener", basis: "per-raw-unit" };
         out.set(mint, quote);
         cacheSet(mint, quote, TOKEN_PRICE_TTL_MS);
       }

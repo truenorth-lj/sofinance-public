@@ -56,8 +56,8 @@ function stable(result: PositionPerformanceResult) {
 
 function quotes(mintA: string, mintB: string): Map<string, TokenPriceQuote> {
   return new Map([
-    [mintA, { price: PRICE, source: "jupiter" }],
-    [mintB, { price: PRICE, source: "jupiter" }],
+    [mintA, { price: PRICE, source: "jupiter", basis: "per-share" }],
+    [mintB, { price: PRICE, source: "jupiter", basis: "per-share" }],
   ]);
 }
 
