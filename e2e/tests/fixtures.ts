@@ -3,13 +3,15 @@ import bs58 from "bs58";
 import { installFakeWallet } from "../fake-wallet/install";
 import { FakeWallet, type FakeWalletOptions, type WalletMode } from "../fake-wallet/node-signer";
 import { attachGuards, stubWalletApis, type Guards } from "../support/guards";
+import { describeBlockedEgress, readBlockedEgress } from "../support/server-egress";
 
 type Options = { walletMode: WalletMode; signAndSendError: FakeWalletOptions["signAndSendError"] | null };
 type Fixtures = { wallet: FakeWallet; guards: Guards };
 
 /**
  * `wallet`: a fresh random throwaway keypair per test (no funds, never persisted), installed as a Wallet Standard wallet.
- * `guards`: network allowlist + page/console error collection; the test fails in teardown if anything unexpected happened.
+ * `guards`: network allowlist + page/console error collection + the server's Jupiter egress ledger; the test fails in
+ *   teardown if anything unexpected happened.
  * `context` installs the wallet and the API stubs before any page exists; `guards` is automatic.
  */
 export const test = base.extend<Options & Fixtures>({
@@ -29,8 +31,11 @@ export const test = base.extend<Options & Fixtures>({
   },
   guards: [async ({ context, page, baseURL }, use) => {
     const guards = await attachGuards(context, page, new URL(baseURL ?? "http://localhost").origin);
+    const egressBefore = readBlockedEgress().length;
     await use(guards);
     expect.soft(guards.failures(), "unexpected network hosts, page errors or console errors").toEqual([]);
+    // The hermetic server refuses real Jupiter (scripts/hermetic-egress-guard.mjs); a refusal during this test fails it.
+    expect.soft(describeBlockedEgress(readBlockedEgress().slice(egressBefore)), "server-side fetches to real Jupiter").toEqual([]);
   }, { auto: true }],
 });
 
