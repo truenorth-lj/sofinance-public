@@ -39,3 +39,17 @@ export function capReceivedAmount(received: bigint, simulated: bigint, minimum: 
         throw new Error("Finalized withdrawal received less than minimum");
     return received < simulated ? received : simulated;
 }
+/**
+ * The position's full USD estimate that `targetUSDCToBps` divides by. Uses the selected state's registry valuation
+ * (USD per raw / 10^decimals, multiplier applied, never pair-guard corrected). 0 (target rejected) when either side
+ * is unpriced; a per-share price is never multiplied by raw / 10^decimals directly.
+ */
+export function withdrawFullEstimateUsd(state: {
+    currentAmounts: { a: string; b: string }; decimalsA: number; decimalsB: number;
+    displayPricing?: { usdPerRawUnitA: number | null; usdPerRawUnitB: number | null };
+}) {
+    const a = state.displayPricing?.usdPerRawUnitA, b = state.displayPricing?.usdPerRawUnitB;
+    if (typeof a !== "number" || typeof b !== "number" || !Number.isFinite(a) || !Number.isFinite(b) || a < 0 || b < 0)
+        return 0;
+    return Number(state.currentAmounts.a) / 10 ** state.decimalsA * a + Number(state.currentAmounts.b) / 10 ** state.decimalsB * b;
+}

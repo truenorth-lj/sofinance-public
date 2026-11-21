@@ -18,8 +18,9 @@ import { withContextSlotRetry } from "./rpc/context-slot";
 export type { PositionSelection, SelectedPositionState } from "./selected-types";
 
 /**
- * Display-only USD for the Selected / Add screens: per (raw / 10^decimals) token unit, multiplier applied, never
- * guard-corrected. Never feeds signed amounts or withdraw targets (those keep `pricing` + quote + slippage).
+ * Registry USD per (raw / 10^decimals) token unit, multiplier applied, never pair-guard corrected. Used for the
+ * Selected / Add dollars (X3-4) and the withdraw targetUSDC → bps estimate (X3-5). Signed amounts never come from it:
+ * they come from the Jupiter quote + slippage. (`pricing` keeps the legacy Jupiter values; X3-8 removes it.)
  */
 export type SelectedDisplayPricing = {
   usdPerRawUnitInput: number | null; multiplierInput: number | null;
@@ -121,8 +122,8 @@ export async function readSelectedPositionState(
   const solLamports = walletInfo?.lamports ?? 0;
   const inputBalance = selection.inputKind === "native"
     ? Math.max(0, solLamports - MIN_SOL_LAMPORTS).toString() : inputToken.amount.toString();
-  // `pricing` keeps the legacy values (Jupiter `price`, Raydium fallback) for the withdraw path (X3-5); `displayPricing`
-  // is for display only: USD per (raw / 10^decimals) with the multiplier from the mint accounts read above, no guard.
+  // `pricing` keeps the legacy values (Jupiter `price`, Raydium fallback; no reader since X3-5). `displayPricing` is
+  // USD per (raw / 10^decimals) with the multiplier from the mint accounts read above, never pair-guard corrected.
   let priceUsdInput: number | null = null;
   let priceUsdA: number | null = null;
   let priceUsdB: number | null = null;

@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ state: vi.fn(), rpc: vi.fn(), leg: vi.fn(), fee: vi.fn(), padding: 0, impact: "0.01", swapStage: false, receivedA: 200n, receivedB: 300n }));
+const mocks = vi.hoisted(() => ({ state: vi.fn(), rpc: vi.fn(), leg: vi.fn(), fee: vi.fn(), padding: 0, impact: "0.01", swapStage: false, receivedA: 200n, receivedB: 300n, exits: [] as { amount: string; minimumA: string; minimumB: string; closePosition: boolean }[] }));
 vi.mock("../selected-state", () => ({ readSelectedPositionState: mocks.state }));
 vi.mock("../rpc", async (importOriginal) => ({ ...await importOriginal<typeof import("../rpc")>(), rpcConnection: mocks.rpc }));
 vi.mock("../swap/leg", () => ({ feeSwapLeg: mocks.leg }));
@@ -10,15 +10,17 @@ vi.mock("../lp-exit-instructions", async () => {
     return { buildPositionExitInstructions: (input: {
             recipients: PublicKey[];
             positionKey: PublicKey;
-        }) => [new TransactionInstruction({ programId: input.positionKey, keys: input.recipients.map(pubkey => ({ pubkey, isSigner: false, isWritable: true })), data: Buffer.from([1]) })] };
+            amount: { toString(): string }; minimumA: { toString(): string }; minimumB: { toString(): string }; closePosition: boolean;
+        }) => (mocks.exits.push({ amount: input.amount.toString(), minimumA: input.minimumA.toString(), minimumB: input.minimumB.toString(), closePosition: input.closePosition }), [new TransactionInstruction({ programId: input.positionKey, keys: input.recipients.map(pubkey => ({ pubkey, isSigner: false, isWritable: true })), data: Buffer.from([1]) })]) };
 });
 import { ComputeBudgetProgram, PublicKey, SystemProgram, TransactionInstruction, TransactionMessage, VersionedTransaction, type Connection } from "@solana/web3.js";
 import { LIGHTHOUSE_PROGRAM_ID } from "../wallet-returned-tx";
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { PersonalPositionLayout, PoolInfoLayout } from "@raydium-io/raydium-sdk-v2";
 import { buildWithdraw } from "./build";
+import { principalMinimum } from "./quote";
 import { BLOCKHASH, SIGNING_SECRET, testKeypair } from "../test-support/send-fixtures";
-import { USDC_MINT } from "../ids";
+import { SLIPPAGE_BPS, USDC_MINT } from "../ids";
 const key = (n: number) => testKeypair(n).publicKey;
 const wallet = key(1), mintA = key(2), mintB = key(3), positionMint = key(4), positionKey = key(5), poolKey = key(6), nft = key(7);
 const ata = (mint: PublicKey) => getAssociatedTokenAddressSync(mint, wallet);
@@ -70,7 +72,7 @@ beforeEach(() => {
         }),
     } as unknown as Connection;
     mocks.rpc.mockReturnValue(connection);
-    mocks.state.mockResolvedValue({ wallet: wallet.toBase58(), positionMint: positionMint.toBase58(), positionAccount: positionKey.toBase58(), poolId: poolKey.toBase58(), mintA: mintA.toBase58(), mintB: mintB.toBase58(), nftAta: nft.toBase58(), nftProgram: TOKEN_PROGRAM_ID.toBase58(), liquidity: "1000", currentAmounts: { a: "200", b: "300" }, decimalsA: 6, decimalsB: 6, unsupportedExtensions: [], pricing: { priceUsdA: 1, priceUsdB: 1 } });
+    mocks.state.mockResolvedValue({ wallet: wallet.toBase58(), positionMint: positionMint.toBase58(), positionAccount: positionKey.toBase58(), poolId: poolKey.toBase58(), mintA: mintA.toBase58(), mintB: mintB.toBase58(), nftAta: nft.toBase58(), nftProgram: TOKEN_PROGRAM_ID.toBase58(), liquidity: "1000", currentAmounts: { a: "200", b: "300" }, decimalsA: 6, decimalsB: 6, unsupportedExtensions: [], pricing: { priceUsdA: 1, priceUsdB: 1 }, displayPricing: { usdPerRawUnitInput: null, multiplierInput: null, usdPerRawUnitA: 1, multiplierA: 1, usdPerRawUnitB: 1, multiplierB: 1 } });
     mocks.fee.mockResolvedValue({ instructions: [], routes: [] });
     mocks.leg.mockImplementation(async (input: {
         inputMint: string;
@@ -81,6 +83,17 @@ beforeEach(() => {
         const platform = input.outputMint === USDC_MINT;
         return { feeAmount: platform ? 0n : input.spend * BigInt(input.feeBps) / 10000n, minOut: 450n, route: { inputMint: input.inputMint, outputMint: input.outputMint, inAmount: input.spend.toString(), outAmount: "500", otherAmountThreshold: "450", priceImpactPct: mocks.impact, platformFee: platform ? { amount: "1", feeBps: input.feeBps } : null, routePlan: [], addressesByLookupTableAddress: {}, setupInstructions: [], otherInstructions: [], cleanupInstruction: null, swapInstruction: { programId: key(8).toBase58(), accounts: [{ pubkey: ata(new PublicKey(input.inputMint)).toBase58(), isSigner: false, isWritable: true }], data: Buffer.concat([Buffer.from([77]), Buffer.alloc(mocks.padding)]).toString("base64") } } };
     });
+});
+it("targetUSDC uses the multiplier-aware registry estimate (X3-5); signed minimums still come from the amounts + slippage", async () => {
+    // A is a ×2 stock: $2 per raw / 10^decimals in displayPricing vs $1 per share in the legacy pricing.
+    mocks.state.mockResolvedValueOnce({ wallet: wallet.toBase58(), positionMint: positionMint.toBase58(), positionAccount: positionKey.toBase58(), poolId: poolKey.toBase58(), mintA: mintA.toBase58(), mintB: mintB.toBase58(), nftAta: nft.toBase58(), nftProgram: TOKEN_PROGRAM_ID.toBase58(), liquidity: "1000", currentAmounts: { a: "200", b: "300" }, decimalsA: 6, decimalsB: 6, unsupportedExtensions: [], pricing: { priceUsdA: 1, priceUsdB: 1 }, displayPricing: { usdPerRawUnitInput: null, multiplierInput: null, usdPerRawUnitA: 2, multiplierA: 2, usdPerRawUnitB: 1, multiplierB: 1 } });
+    // full = 0.0002 × $2 + 0.0003 × $1 = $0.0007; $0.00035 is half (the legacy ×1 estimate $0.0005 would give 70%).
+    mocks.exits.length = 0;
+    // The fixture's simulation models a full close, so this partial build stops at simulation; the exit it built is what counts.
+    await expect(buildWithdraw({ wallet: request.wallet, positionMint: request.positionMint, targetUSDC: 0.00035, receive: "original" })).rejects.toThrow("Remaining position amount mismatch");
+    // 50% of 1000 liquidity; the signed minimums are 50% of the on-chain amounts less the 0.5% slippage, no price involved.
+    expect(mocks.exits[0]).toEqual({ amount: "500", minimumA: principalMinimum(200n, 5000, SLIPPAGE_BPS).toString(), minimumB: principalMinimum(300n, 5000, SLIPPAGE_BPS).toString(), closePosition: false });
+    expect(mocks.state).toHaveBeenLastCalledWith(request.wallet, expect.anything(), expect.anything(), true, { displayPrices: true });
 });
 it("original withdrawal collects no swap fee and returns tokens and closing rent", async () => {
     vi.stubEnv("SOFINANCE_FEE_WALLET", "invalid");

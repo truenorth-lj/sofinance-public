@@ -7,6 +7,8 @@ import { decodeLbPair, type LbPairState } from "@sofinance/engine/protocols/mete
 import { METEORA_DLMM_PROGRAM_ID, SPL_TOKEN_PROGRAM_ID } from "@sofinance/engine/protocols/meteora/constants";
 import { decodeMeteoraPosition, isMeteoraPositionAccount, meteoraPositionLiquidity, type MeteoraPosition } from "@sofinance/engine/protocols/meteora/position";
 import { scaledUiMultiplierFromMint } from "@sofinance/engine/scaled-ui-multiplier";
+import { mintAccountHint } from "@sofinance/engine/valuation/multiplier-sources/token2022-scaled-ui";
+import type { MultiplierHint } from "@sofinance/engine/valuation/types";
 import {
   meteoraAddLiquidityByStrategy2Instruction, meteoraClosePosition2Instruction, meteoraInitializePositionInstruction, meteoraMaxActiveBinSlippage, meteoraSpotSplit,
 } from "@sofinance/engine/protocols/meteora/open";
@@ -76,6 +78,9 @@ export type MeteoraPoolState = {
   slot: number;
   multiplierX?: number;
   multiplierY?: number;
+  /** Serializable multiplier facts from the same mint read (`mintAccountHint`), for registry valuation (X3-5). */
+  mintHintX?: MultiplierHint;
+  mintHintY?: MultiplierHint;
 };
 
 export type MeteoraOpenPlan = {
@@ -146,10 +151,14 @@ export function assertMeteoraPoolMintsUsable(
   }
   const multiplierX = scaledUiMultiplierFromMint(checked[0]!.mint);
   const multiplierY = scaledUiMultiplierFromMint(checked[1]!.mint);
+  const mintHintX = mintAccountHint(lbPair.tokenXMint, mintX);
+  const mintHintY = mintAccountHint(lbPair.tokenYMint, mintY);
   return {
     tokenProgramX, tokenProgramY, decimalsX: checked[0]!.mint.decimals, decimalsY: checked[1]!.mint.decimals,
     ...(multiplierX !== undefined ? { multiplierX } : {}),
     ...(multiplierY !== undefined ? { multiplierY } : {}),
+    ...(mintHintX ? { mintHintX } : {}),
+    ...(mintHintY ? { mintHintY } : {}),
   };
 }
 
