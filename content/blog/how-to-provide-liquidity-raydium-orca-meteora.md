@@ -197,6 +197,8 @@ Yes. The two tokens can drift apart in price, the issuers can freeze or restrict
 
 SoFinance is a self-custodial tool for same-stock positions on Raydium CLMM and Meteora DLMM on Solana, and Uniswap v4 on Robinhood Chain. You can open a position from a single token, see a suggested range based on recent fee data, and sign in your own wallet. The position stays a standard Raydium or Meteora position, so you can also manage it directly on that venue. We charge 0.10% only when we swap tokens for you; see [Pricing](/fees). We do not support Orca today. The full pool list is on the [pools page](/pools).
 
+Related reading: [what to do when a position goes out of range](/blog/lp-position-out-of-range), [how to compound LP trading fees on Raydium and Meteora](/blog/compound-lp-trading-fees-raydium-meteora), [same-stock pool vs stock/USDC pool](/blog/same-stock-pool-vs-stock-usdc-pool), [the xStocks multiplier, explained](/blog/xstocks-multiplier-explained) and [Robinhood Chain stock LP on Uniswap v4](/blog/robinhood-chain-stock-lp-uniswap-v4).
+
 ---
 
 *Data and docs checked on 20 November 2026 (UTC). Pool numbers change by the minute. Not financial advice. Fees not guaranteed.*
