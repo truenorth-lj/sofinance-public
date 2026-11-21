@@ -70,7 +70,7 @@ describe("readMintSafety", () => {
 
 describe("readMintSafety: settings opening does not handle yet (the engine's poolMintIssues)", () => {
   // NVDAx-style Token-2022 mint: base layout + account type + ScaledUiAmountConfig TLV (authority, multiplier, time, new multiplier).
-  const scaled = (multiplier: number, newMultiplier: number) => {
+  const scaled = (multiplier: number, newMultiplier: number, effectiveSeconds = 0n) => {
     const accounts = meteoraAccounts();
     const data = Buffer.alloc(166 + 4 + 56);
     Buffer.from(accounts[WBTC]!.data, "base64").copy(data, 0, 0, 82);
@@ -78,6 +78,7 @@ describe("readMintSafety: settings opening does not handle yet (the engine's poo
     data.writeUInt16LE(ExtensionType.ScaledUiAmountConfig, 166);
     data.writeUInt16LE(56, 168);
     data.writeDoubleLE(multiplier, 170 + 32);
+    data.writeBigInt64LE(effectiveSeconds, 170 + 40);
     data.writeDoubleLE(newMultiplier, 170 + 48);
     return connection(meteoraAccounts({ [WBTC]: { ...accounts[WBTC]!, owner: TOKEN_2022_PROGRAM_ID.toBase58(), data: data.toString("base64") } })).conn;
   };
@@ -89,6 +90,16 @@ describe("readMintSafety: settings opening does not handle yet (the engine's poo
     expect((await readMintSafety(scaled(1, 1), [WBTC])).get(WBTC)?.unsupported).toEqual([]);
     expect((await readMintSafety(scaled(1.0009, 1.0017), [WBTC])).get(WBTC)?.unsupported).toEqual([]);
     expect((await readMintSafety(scaled(1.02, 1.02), [WBTC])).get(WBTC)?.unsupported).toEqual([]);
+  });
+  it("keeps the complete schedule next to the effective value (NVDAx, change applied 2026-09-10 00:30Z)", async () => {
+    const result = await readMintSafety(scaled(1.0009180758490996, 1.001701196801074, 1_789_000_200n), [WBTC]);
+    expect(result.get(WBTC)).toMatchObject({
+      scaledUiMultiplier: 1.001701196801074,
+      scaledUiConfig: { multiplier: 1.0009180758490996, newMultiplier: 1.001701196801074, newMultiplierEffectiveTimestamp: 1_789_000_200 },
+    });
+  });
+  it("records no schedule when the multiplier is not usable", async () => {
+    expect((await readMintSafety(scaled(Number.POSITIVE_INFINITY, 1), [WBTC])).get(WBTC)).not.toHaveProperty("scaledUiConfig");
   });
 });
 

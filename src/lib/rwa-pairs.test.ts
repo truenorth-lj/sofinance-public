@@ -657,6 +657,16 @@ describe("applyOnchainFreezeRisk (Raydium rows)", () => {
     expect((await applyOnchainFreezeRisk(flagged.pairs, {} as never)).pairs[0]!.unsupported).toEqual(flagged.pairs[0]!.unsupported);
   });
 
+  it("stores the complete ScaledUiAmount schedule next to the effective multiplier (SNDKx 1 → 8 at 2026-11-20 09:30Z)", async () => {
+    const sndkx = { multiplier: 1, newMultiplier: 8, newMultiplierEffectiveTimestamp: 1_795_167_000 };
+    const safetyA = { freezeAuthority: true, blockReasons: [], unsupported: [], scaledUiMultiplier: 8, scaledUiConfig: sndkx };
+    freezeMock.read.mockResolvedValueOnce(new Map<string, boolean | { freezeAuthority: boolean; blockReasons: string[] }>([[MINT_A, safetyA], [MINT_B, false]]));
+    const { pairs } = await applyOnchainFreezeRisk([row()], {} as never);
+    expect(pairs[0]).toMatchObject({ multiplierA: 8, scaledUiConfigA: sndkx });
+    expect(pairs[0]).not.toHaveProperty("scaledUiConfigB");
+    expect(JSON.parse(JSON.stringify(pairs[0])).scaledUiConfigA).toEqual(sndkx);   // a JSON snapshot field, no migration
+  });
+
   it("blockOf: unknown mints (RPC miss) do not block; reasons keep a fixed order", () => {
     expect(blockOf([[MINT_A, undefined], [MINT_B, undefined]])).toBeUndefined();
     expect(blockOf([[MINT_A, { freezeAuthority: true, blockReasons: [], unsupported: [] }], [MINT_B, undefined]])).toBeUndefined();
