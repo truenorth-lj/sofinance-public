@@ -7,18 +7,19 @@ import { SLIPPAGE_BPS, USDC_MINT } from "@sofinance/engine/ids";
 import { meteoraBinPrice } from "@sofinance/engine/protocols/meteora/accounts";
 import { meteoraSpotBinCounts, meteoraSpotMinimumInput, meteoraSpotRoundsToZero, type MeteoraSideRate } from "@sofinance/engine/protocols/meteora/open";
 import { feeSwapLeg } from "@sofinance/engine/swap/leg";
-import { fetchJupiterPricesUsd } from "@sofinance/engine/token-prices";
+import { fetchTokenPricesUsd, type TokenPriceQuote } from "@sofinance/engine/token-prices";
+import { priceSingleAssets } from "@sofinance/engine/valuation/single-asset";
 import type { DepositMinimum } from "../adapter";
 import type { MeteoraOpenPlan } from "./open.server";
 
 /** Raw units of `side.mint` the deposit's swap leg would hand to `add_liquidity_by_strategy2` (Jupiter minOut, after fee). */
 export type MeteoraLegQuote = (input: { owner: string; inputMint: string; outputMint: string; spend: bigint; feeBps: number }) => Promise<bigint>;
-/** USD price per whole token, by mint (missing = unknown). */
-export type MeteoraUsdPrices = (mints: string[]) => Promise<Map<string, number>>;
+/** Price quotes by mint, with their unit (`basis`); missing = unknown. Valued through the asset registry (X3-5). */
+export type MeteoraUsdPrices = (mints: string[]) => Promise<Map<string, TokenPriceQuote>>;
 
 export const jupiterLegQuote: MeteoraLegQuote = async ({ owner, inputMint, outputMint, spend, feeBps }) =>
   (await feeSwapLeg({ wallet: owner, inputMint, outputMint, spend, feeBps, inputFee: feeBps > 0, build: false })).minOut;
-export const jupiterUsdPrices: MeteoraUsdPrices = (mints) => fetchJupiterPricesUsd(mints, fetch, getJupiterApiKey());
+export const jupiterUsdPrices: MeteoraUsdPrices = (mints) => fetchTokenPricesUsd(mints, fetch, getJupiterApiKey());
 
 /**
  * Extra haircut on a swapped side's rate, on top of the platform fee and the 0.5% slippage limit: covers the gap between
@@ -50,9 +51,22 @@ async function ruleRates(plan: MeteoraOpenPlan, usdPrices: MeteoraUsdPrices): Pr
   else {
     const inDecimals = STABLE_INPUT_DECIMALS[plan.inputMint];
     if (inDecimals === undefined) return null;
-    const usd = await usdPrices([lbPair.tokenXMint, lbPair.tokenYMint]);
-    const px = usd.get(lbPair.tokenXMint); const py = usd.get(lbPair.tokenYMint);
-    // raw X per raw input = (1 USD / 10^inDec) / (pX USD / 10^decX)
+    const quotes = await usdPrices([lbPair.tokenXMint, lbPair.tokenYMint]);
+    // USD per (raw / 10^decimals), multiplier applied from the pool's own mint read; never pair-guard corrected.
+    // An unknown multiplier leaves the side unpriced (the rule then falls back to the other side, or to the quote).
+    const priced = priceSingleAssets({
+      nowMs: Date.now(), quotesObservedAtMs: Date.now(),
+      assets: [
+        { mint: lbPair.tokenXMint, decimals: decimalsX, hints: plan.pool.mintHintX ? [plan.pool.mintHintX] : [], quote: quotes.get(lbPair.tokenXMint) },
+        { mint: lbPair.tokenYMint, decimals: decimalsY, hints: plan.pool.mintHintY ? [plan.pool.mintHintY] : [], quote: quotes.get(lbPair.tokenYMint) },
+      ],
+      warn: (warning) => {
+        // eslint-disable-next-line no-console -- deliberate marker: conflicting multiplier facts on a minimum rule (X3-5)
+        console.warn("[valuation]", JSON.stringify({ surface: "meteora-minimum", poolId: plan.pool.poolId, ...warning }));
+      },
+    });
+    const px = priced.get(lbPair.tokenXMint)?.usdPerRawUnit; const py = priced.get(lbPair.tokenYMint)?.usdPerRawUnit;
+    // raw X per raw input = (1 USD / 10^inDec) / (pX USD / 10^decX), pX per raw / 10^decX
     const fromX = px && px > 0 ? 10 ** (decimalsX - inDecimals) / px : NaN;
     const fromY = py && py > 0 ? (10 ** (decimalsY - inDecimals) / py) / price : NaN;
     const rawX = Number.isFinite(fromX) ? fromX : fromY;

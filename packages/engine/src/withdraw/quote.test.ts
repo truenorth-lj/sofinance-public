@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertImpactConfirmed, capReceivedAmount, principalMinimum, estimateUSDC, impactFlags, percentToBps, shouldSwap, targetUSDCToBps, transactionCount } from "./quote";
+import { assertImpactConfirmed, capReceivedAmount, principalMinimum, estimateUSDC, impactFlags, percentToBps, shouldSwap, targetUSDCToBps, transactionCount, withdrawFullEstimateUsd } from "./quote";
 import { withdrawPermit } from "./permit";
 import { createPermit } from "../auth/permit";
 describe("withdraw quote math", () => {
@@ -55,5 +55,34 @@ describe("withdraw permit", () => {
         expect(withdrawPermit.verify("secret", { ...input, summary: { ...input.summary, requiresSecondConfirmation: false } }, permit)).toBe(false);
         expect(withdrawPermit.verify("secret", input, "bad")).toBe(false);
         expect(createPermit("sofinance:open-position:v1").verify("secret", input, permit)).toBe(false);
+    });
+});
+
+describe("withdraw full estimate (X3-5, targetUSDC only)", () => {
+    // SNDK-type: ×8 ScaledUiAmount stock, Jupiter $78.63 per share → $629.04 per raw / 10^decimals; USDC on the other side.
+    const sndk = { currentAmounts: { a: "2890000", b: "100000000" }, decimalsA: 6, decimalsB: 6,
+        displayPricing: { usdPerRawUnitA: 78.63 * 8, usdPerRawUnitB: 1 } };
+    it("values each side as raw / 10^decimals × USD per raw unit (multiplier already applied)", () => {
+        expect(withdrawFullEstimateUsd(sndk)).toBeCloseTo(2.89 * 629.04 + 100, 6);
+    });
+    it("a $500 target maps to the share of the multiplier-aware estimate, not of a per-share (×1) one", () => {
+        const full = withdrawFullEstimateUsd(sndk);
+        expect(targetUSDCToBps(500, full)).toBe(Math.ceil(500 / full * 10000));
+        // The old per-share estimate (2.89 × 78.63 + 100 ≈ $327) would reject $500 as larger than the position.
+        expect(() => targetUSDCToBps(500, 2.89 * 78.63 + 100)).toThrow("Target must be within the position estimate");
+    });
+    it("a 0 price on either side is rejected like a missing one (it would shrink full and withdraw too much)", () => {
+        for (const displayPricing of [{ usdPerRawUnitA: 0, usdPerRawUnitB: 1 }, { usdPerRawUnitA: 78.63 * 8, usdPerRawUnitB: 0 }]) {
+            const full = withdrawFullEstimateUsd({ ...sndk, displayPricing });
+            expect(full).toBe(0);
+            expect(() => targetUSDCToBps(1, full)).toThrow("Target must be within the position estimate");
+        }
+    });
+    it("an unpriced side gives 0, so any target is rejected (never valued at a guess)", () => {
+        for (const displayPricing of [undefined, { usdPerRawUnitA: null, usdPerRawUnitB: 1 }, { usdPerRawUnitA: 1, usdPerRawUnitB: Number.NaN }]) {
+            const full = withdrawFullEstimateUsd({ ...sndk, displayPricing });
+            expect(full).toBe(0);
+            expect(() => targetUSDCToBps(1, full)).toThrow("Target must be within the position estimate");
+        }
     });
 });

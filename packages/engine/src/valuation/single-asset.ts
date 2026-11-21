@@ -4,7 +4,7 @@ import { assetKey } from "./asset";
 import { mintAccountHint } from "./multiplier-sources/token2022-scaled-ui";
 import { multiplierHintsFromQuote } from "./price-sources/token-price-quotes";
 import { assetRegistry } from "./registry";
-import type { ValuationWarning } from "./types";
+import type { MultiplierHint, ValuationWarning } from "./types";
 
 /** Display price of one token with no pair to cross-check (wallet balance, input amount): never guard-corrected. */
 export type SingleAssetPrice = {
@@ -19,15 +19,22 @@ export type SingleAssetPrice = {
  * An on-chain mint read wins over Jupiter's `scaledUiConfig`; a disagreement is reported through `warn`.
  */
 export function priceSingleAssets(input: {
-  assets: readonly { mint: string; decimals: number; account: AccountInfo<Buffer> | null | undefined; quote: TokenPriceQuote | undefined }[];
+  /**
+   * `account`: the mint account read in this request, if any. `hints`: facts already derived from one (e.g. a
+   * serializable `mintAccountHint` kept on a plan). Both are optional; with neither, only the quote's config can help.
+   */
+  assets: readonly {
+    mint: string; decimals: number; account?: AccountInfo<Buffer> | null; hints?: readonly MultiplierHint[];
+    quote: TokenPriceQuote | undefined;
+  }[];
   nowMs: number;
   quotesObservedAtMs: number;
   warn?: (warning: ValuationWarning) => void;
 }): Map<string, SingleAssetPrice> {
-  const resolved = assetRegistry.resolve(input.assets.map(({ mint, decimals, account, quote }) => {
+  const resolved = assetRegistry.resolve(input.assets.map(({ mint, decimals, account, hints = [], quote }) => {
     const hint = mintAccountHint(mint, account);
     return { ref: { chain: "solana" as const, address: mint }, decimals,
-      hints: [...(hint ? [hint] : []), ...(quote ? multiplierHintsFromQuote(quote, input.quotesObservedAtMs) : [])] };
+      hints: [...(hint ? [hint] : []), ...hints, ...(quote ? multiplierHintsFromQuote(quote, input.quotesObservedAtMs) : [])] };
   }), { nowMs: input.nowMs, warn: input.warn });
   const out = new Map<string, SingleAssetPrice>();
   for (const { mint, quote } of input.assets) {

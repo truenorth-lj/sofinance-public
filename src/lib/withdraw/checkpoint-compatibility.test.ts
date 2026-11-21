@@ -72,7 +72,7 @@ beforeEach(() => {
         }),
     } as unknown as Connection;
     mocks.rpc.mockReturnValue(connection);
-    mocks.state.mockResolvedValue({ wallet: wallet.toBase58(), positionMint: positionMint.toBase58(), positionAccount: positionKey.toBase58(), poolId: poolKey.toBase58(), mintA: mintA.toBase58(), mintB: mintB.toBase58(), nftAta: nft.toBase58(), nftProgram: TOKEN_PROGRAM_ID.toBase58(), liquidity: "1000", currentAmounts: { a: "200", b: "300" }, decimalsA: 6, decimalsB: 6, unsupportedExtensions: [], pricing: { priceUsdA: 1, priceUsdB: 1 } });
+    mocks.state.mockResolvedValue({ wallet: wallet.toBase58(), positionMint: positionMint.toBase58(), positionAccount: positionKey.toBase58(), poolId: poolKey.toBase58(), mintA: mintA.toBase58(), mintB: mintB.toBase58(), nftAta: nft.toBase58(), nftProgram: TOKEN_PROGRAM_ID.toBase58(), liquidity: "1000", currentAmounts: { a: "200", b: "300" }, decimalsA: 6, decimalsB: 6, unsupportedExtensions: [], pricing: { priceUsdA: 1, priceUsdB: 1 }, displayPricing: { usdPerRawUnitInput: null, multiplierInput: null, usdPerRawUnitA: 1, multiplierA: 1, usdPerRawUnitB: 1, multiplierB: 1 } });
     mocks.fee.mockResolvedValue({ instructions: [], routes: [] });
     mocks.leg.mockImplementation(async (input: {
         inputMint: string;

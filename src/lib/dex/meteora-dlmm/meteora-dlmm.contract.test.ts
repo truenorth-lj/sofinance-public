@@ -1,6 +1,7 @@
-import { AccountLayout, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { AccountLayout, ExtensionType, getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Keypair, PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { TokenPriceQuote } from "@sofinance/engine/token-prices";
 import { USDC_MINT, NATIVE_SOL_MINT } from "@sofinance/engine/ids";
 import { meteoraSpotSplit } from "@sofinance/engine/protocols/meteora/open";
 import { setFetchReplay } from "@/lib/test-support/offline-fetch";
@@ -371,8 +372,11 @@ describe("Meteora DLMM adapter specifics", () => {
     const oneToOne = async ({ outputMint, spend }: { outputMint: string; spend: bigint }) => { legs.push({ outputMint, spend }); return spend; };
     const failing = async (): Promise<bigint> => { throw new Error("Jupiter is busy"); };
     /** Fixture USD prices (datapi read of 8k2c, 2026-11-01): what the rule uses for a USDC input. */
-    const prices = async () => new Map([[TSLA, 400.10567118198486], [TSLAX, 399.6496888563945]]);
-    const noPrices = async () => new Map<string, number>();
+    const prices = async () => new Map<string, TokenPriceQuote>([
+      [TSLA, { price: 400.10567118198486, source: "jupiter", basis: "per-share" }],
+      [TSLAX, { price: 399.6496888563945, source: "jupiter", basis: "per-share" }],
+    ]);
+    const noPrices = async () => new Map<string, TokenPriceQuote>();
     const usdc = (amountRaw: string) => ({ ...request, input: { token: USDC_MINT, amountRaw } });
     let warn: ReturnType<typeof vi.spyOn>;
     beforeEach(() => { legs.length = 0; installHeldPositions(); warn = vi.spyOn(console, "warn").mockImplementation(() => {}); });
@@ -416,6 +420,32 @@ describe("Meteora DLMM adapter specifics", () => {
       expect(Number(tiny.minimumRaw)).toBe(MIN_USDC_RULE);
       expect((await adapter.quoteOpen(usdc(String(MIN_USDC_RULE)))).depositMinimum).toMatchObject({ tooSmall: false, minimumRaw: String(MIN_USDC_RULE) });
       expect((await adapter.quoteOpen(usdc(String(MIN_USDC_RULE - 1)))).depositMinimum).toMatchObject({ tooSmall: true });
+    });
+
+    it("USDC minimum uses the on-chain ×8 multiplier, not Jupiter's per-share price or conflicting ×3 config (X3-5)", async () => {
+      const account = chain.current.get(TSLA)!;
+      const data = Buffer.from(account.data);
+      let offset = 166;
+      while (offset + 4 <= data.length) {
+        const type = data.readUInt16LE(offset), len = data.readUInt16LE(offset + 2);
+        if (type === ExtensionType.ScaledUiAmountConfig) break;
+        offset += 4 + len;
+      }
+      const extended = Buffer.alloc(Math.max(data.length, offset + 60)); data.copy(extended);
+      extended.writeUInt16LE(ExtensionType.ScaledUiAmountConfig, offset); extended.writeUInt16LE(56, offset + 2);
+      extended.writeDoubleLE(8, offset + 4 + 32); extended.writeBigInt64LE(0n, offset + 4 + 40); extended.writeDoubleLE(8, offset + 4 + 48);
+      chain.current.set(TSLA, { ...account, data: extended });
+      const wrongConfig = async () => new Map<string, TokenPriceQuote>([[TSLA, { price: 400.10567118198486, source: "jupiter", basis: "per-share", scaledUiConfig: { multiplier: 3, newMultiplier: 3 } }]]);
+      const adapter = createMeteoraDlmmAdapter({ quoteLeg: failing, usdPrices: wrongConfig });
+      const minimum = (await adapter.quoteOpen(usdc("20000"))).depositMinimum!;
+      expect(minimum.tooSmall).toBe(true);
+      expect(Number(minimum.minimumRaw)).toBeGreaterThan(MIN_USDC_RULE * 7.9);
+      expect(Number(minimum.minimumRaw)).toBeLessThan(MIN_USDC_RULE * 8.1);
+      // The same effective price tagged per-raw-unit must give exactly the same threshold (never ×8 twice).
+      const perRaw = async () => new Map<string, TokenPriceQuote>([[TSLA, { price: 400.10567118198486 * 8, source: "raydium", basis: "per-raw-unit" }]]);
+      const fallback = (await createMeteoraDlmmAdapter({ quoteLeg: failing, usdPrices: perRaw }).quoteOpen(usdc("20000"))).depositMinimum!;
+      expect(fallback.minimumRaw).toBe(minimum.minimumRaw);
+      expect(chain.current.simulations).toEqual([]);
     });
 
     it("the hint is the threshold: entering the shown minimum passes the same check (Open and Add share it)", async () => {

@@ -21,7 +21,7 @@ import { estimateFeeForMessage, WITHDRAW_FEE_ESTIMATE_MESSAGE } from "../rpc/fee
 import { getSigningSecret, getSigningSecrets } from "../config/server-env";
 import { simulateAtContextSlot, simulateWithdraw } from "./simulation";
 import { withdrawPermit } from "./permit";
-import { assertImpactConfirmed, impactFlags, percentToBps, principalMinimum, capReceivedAmount, shouldSwap, targetUSDCToBps, transactionCount } from "./quote";
+import { assertImpactConfirmed, impactFlags, percentToBps, principalMinimum, capReceivedAmount, shouldSwap, targetUSDCToBps, transactionCount, withdrawFullEstimateUsd } from "./quote";
 import { withdrawPrepareSchema } from "./input";
 import { landedTransactionMatchesPrepared } from "../wallet-returned-tx";
 import type { WithdrawAsset, WithdrawPrepareRequest, WithdrawPrepared, WithdrawSummary } from "./types";
@@ -103,8 +103,9 @@ export async function buildWithdraw(raw: WithdrawPrepareRequest, preview = false
     const state = await readSelectedPositionState(request.wallet, { positionMint: request.positionMint, inputMint: NATIVE_SOL_MINT, inputKind: "native" }, connection, true, { displayPrices: request.targetUSDC !== undefined });
     if (state.paused || state.frozen || state.transferFee || state.unsupportedExtensions.length)
         throw new Error("Position assets cannot be safely withdrawn");
-    const full = state.pricing?.priceUsdA !== undefined && state.pricing?.priceUsdA !== null && state.pricing?.priceUsdB !== undefined && state.pricing?.priceUsdB !== null
-        ? Number(state.currentAmounts.a) / 10 ** state.decimalsA * state.pricing.priceUsdA + Number(state.currentAmounts.b) / 10 ** state.decimalsB * state.pricing.priceUsdB : 0;
+    // targetUSDC → bps only: the registry's unguarded USD per (raw / 10^decimals), multiplier applied (X3-5). Never a
+    // pair-guard-corrected price; the signed amounts still come from the Jupiter quote + slippage below.
+    const full = withdrawFullEstimateUsd(state);
     const percentBps = request.percent !== undefined ? percentToBps(request.percent) : targetUSDCToBps(request.targetUSDC!, full);
     const removed = BigInt(state.liquidity) * BigInt(percentBps) / 10000n;
     if (removed <= 0n && percentBps !== 10000)
