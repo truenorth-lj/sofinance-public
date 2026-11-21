@@ -94,18 +94,19 @@ export type StockPerformance = {
   symbol: string;
   /** The token-equivalent base-side mint whose Jupiter quote is displayed. */
   priceMint: string | null;
+  /** USD per share (registry price before the pair guard, ÷ the multiplier now). */
   priceUsd: number | null;
   /** Jupiter `priceChange24h` of `priceMint`, percent: rolling 24h of on-chain trading, not a US session. */
   change24hPct: number | null;
-  /** Shares in the position now: liquidity plus unclaimed fees. */
+  /** Shares in the position now (raw units × the multiplier now): liquidity plus unclaimed fees. */
   sharesNow: number;
   valueUsd: number | null;
-  /** Shares put in and still in the position: deposits minus withdrawn principal. */
+  /** Shares put in and still in the position (at the multiplier now): deposits minus withdrawn principal. */
   sharesIn: number | null;
   firstDepositAtIso: string | null;
-  /** Recorded deposit-time entry price; null until reliable records exist. */
+  /** Recorded deposit-time price per share at the multiplier now (split- and dividend-adjusted); null until recorded. */
   entryPriceUsd: number | null;
-  /** sharesIn × (priceUsd − entryPriceUsd). */
+  /** sharesIn × (priceUsd − entryPriceUsd), computed in raw units (the same figure). */
   priceChangeUsd: number | null;
   priceChangePct: number | null;
   /** Fees earned since the first deposit (collected plus unclaimed), in shares. */

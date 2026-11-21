@@ -267,7 +267,7 @@ export async function assemblePerformanceResult(input: {
     history: identity.history, positionId: identity.positionMint, poolId: identity.poolId,
     mintA: identity.mintA, mintB: identity.mintB, decimalsA: identity.decimalsA, decimalsB: identity.decimalsB,
     tokenNative: input.tokenNative, metrics: input.metrics, incomplete: input.stockIncomplete,
-    quotes: input.quotes, nowSeconds: identity.evaluatedAt, fetcher: input.fetcher, signal: input.signal,
+    quotes: input.quotes, pricing: input.pricing, nowSeconds: identity.evaluatedAt, fetcher: input.fetcher, signal: input.signal,
   });
   return {
     wallet: identity.wallet,

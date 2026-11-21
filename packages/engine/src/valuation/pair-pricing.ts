@@ -102,6 +102,14 @@ export function pricePair(input: {
     : { a: a.pricing, b: replaced(b.pricing, pA / r), guard };
 }
 
+/**
+ * One side's own registry price before the pair guard: the guard's recorded `ownUsdPerRawUnit` when it corrected this
+ * side, else the side's price as reported. Single-asset displays (the stock view) use it; they have no pair to check.
+ */
+export function ownUsdPerRawUnit(input: { usdPerRawUnit: number | null; side: PairSide; guard: PairGuard | null }): number | null {
+  return input.guard?.kind === "corrected" && input.guard.side === input.side ? input.guard.ownUsdPerRawUnit : input.usdPerRawUnit;
+}
+
 /** Pool price (token B per token A, raw units) from a Q64.64 sqrt price, as Raydium CLMM and Orca Whirlpool store it. */
 export function sqrtPriceX64ToPriceBPerA(sqrtPriceX64: bigint | string, decimalsA: number, decimalsB: number): number {
   const ratio = Number(BigInt(sqrtPriceX64)) / 2 ** 64;

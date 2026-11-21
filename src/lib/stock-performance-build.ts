@@ -3,12 +3,15 @@ import "server-only";
  * Server glue for the Performance stock view, shared by the Raydium, Meteora and Orca performance readers: picks the
  * base-side share quote and reuses the existing report's token-equivalent and USD metrics. The only extra reads are the
  * recorded deposit-time entry prices (`stock-entry.ts`: stored rows, at most a few RPC lookups per view, never candles).
- * Same-stock pools only (a token-equivalent exists); null otherwise. Never throws.
+ * The base mint's price and multiplier come from the report's registry pricing, before the pair guard (a single-asset
+ * display; X3-6). Same-stock pools only (a token-equivalent exists) with a known base multiplier; null otherwise.
+ * Never throws.
  */
 import type { TokenPriceQuote } from "@sofinance/engine/token-prices";
 import type { TokenNativeMetrics } from "@sofinance/engine/position-performance-math";
 import type { PositionCashflowEvent } from "./position-performance-events";
-import type { StockPerformance } from "./position-performance-report";
+import { ownUsdPerRawUnit } from "@sofinance/engine/valuation/pair-pricing";
+import type { PositionPricingReport, StockPerformance } from "./position-performance-report";
 import { computeStockPerformance } from "./stock-performance";
 import { resolveStockEntry, type StockEntryDeps } from "./stock-entry";
 
@@ -24,6 +27,8 @@ export async function buildStockPerformance(input: {
   metrics: { currentEquityUsd: number | null; feesEarnedUsd: number | null };
   incomplete: boolean;
   quotes: ReadonlyMap<string, TokenPriceQuote>;
+  /** The report's registry pricing of both sides (multiplier at evaluation time; guard recorded, not applied here). */
+  pricing: Pick<PositionPricingReport, "usdPerRawUnitA" | "usdPerRawUnitB" | "multiplierA" | "multiplierB" | "guard">;
   nowSeconds: number;
   fetcher?: typeof fetch;
   signal?: AbortSignal;
@@ -34,6 +39,12 @@ export async function buildStockPerformance(input: {
   if (!te) return null;
   try {
     const baseMint = te.baseSide === "A" ? input.mintA : input.mintB;
+    const side = te.baseSide === "A" ? "a" : "b";
+    const multiplier = side === "a" ? input.pricing.multiplierA : input.pricing.multiplierB;
+    // Unknown is never treated as 1: without it the raw amounts cannot be shown as shares.
+    if (typeof multiplier !== "number" || !Number.isFinite(multiplier) || multiplier <= 0) return null;
+    const usdPerRawUnit = ownUsdPerRawUnit({ side, guard: input.pricing.guard,
+      usdPerRawUnit: side === "a" ? input.pricing.usdPerRawUnitA : input.pricing.usdPerRawUnitB });
     // Share amounts use the report's base-side token-equivalent unit. Do not
     // multiply them by the other mint's price just because it has more liquidity.
     const priceMint = input.quotes.has(baseMint) ? baseMint : null;
@@ -56,7 +67,8 @@ export async function buildStockPerformance(input: {
       decimalsB: input.decimalsB,
       tokenEquivalent: te,
       incomplete: input.incomplete,
-      quote: quote && priceMint ? { mint: priceMint, usdPrice: quote.price, priceChange24hPct: quote.priceChange24hPct ?? null } : null,
+      quote: quote && priceMint ? { mint: priceMint, priceChange24hPct: quote.priceChange24hPct ?? null } : null,
+      basePricing: { usdPerRawUnit, multiplier },
       daily: null,
       hourly: null,
       historySource: null,
