@@ -3,10 +3,23 @@
 import { expect, test } from "../fixtures";
 import { ConnectModal } from "../../pages/connect-modal";
 import { readFileSync } from "node:fs";
+import { stubWalletApis } from "../../support/guards";
+import { installLayoutMocks } from "../../support/layout-mocks";
 
 const appkit = process.env.E2E_PROVIDER !== "adapter";
 
 test.describe("J1 connect wallet", () => {
+  // Every /api read answers from captured fixtures (rwa-pairs, stock-market, range APR, ...), so the server never calls
+  // Jupiter; any read left unmocked fails the test below. J1 is about connecting, so the wallet keeps no positions.
+  const unmocked = new Set<string>();
+  test.beforeEach(async ({ context, wallet }) => {
+    unmocked.clear();
+    await installLayoutMocks(context, wallet.address, unmocked);
+    await stubWalletApis(context, wallet.address);
+    await context.route("**/api/dex/*/positions**", (route) => route.fulfill({ json: { positions: [] } }));
+  });
+  test.afterEach(() => { expect([...unmocked], "API reads with no hermetic answer").toEqual([]); });
+
   test("lists the injected wallet, connects, shows the short address, asks for no signature", async ({ page, wallet }) => {
     await page.goto("/app", { waitUntil: "domcontentloaded" });
     const modal = new ConnectModal(page, wallet);

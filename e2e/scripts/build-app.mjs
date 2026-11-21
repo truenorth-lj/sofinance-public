@@ -25,7 +25,11 @@ for (const source of sources) {
 }
 const stamp = fingerprint.digest("hex");
 
-export const buildEnv = { ...process.env, JUPITER_API_KEY: "e2e-dummy-jupiter-key", SOFINANCE_SIGNING_SECRET: secret };
+// Snapshot reads go through the RWA store exactly as in production, but with no gateway and no database configured:
+// every server-side snapshot read (homepage / pools SSR, /api/rwa-pairs, APR) fails closed at once instead of
+// falling back to live Raydium + Jupiter discovery. Tests answer those reads in the browser with fixtures.
+export const buildEnv = { ...process.env, JUPITER_API_KEY: "e2e-dummy-jupiter-key", SOFINANCE_SIGNING_SECRET: secret,
+  SOFINANCE_RWA_DB_ENABLED: "true", SOFINANCE_RWA_STORE_MODE: "gateway", SOFINANCE_RWA_GATEWAY_URL: "", DATABASE_URL: "" };
 delete buildEnv.SOFINANCE_SIGNING_SECRET_PREVIOUS;
 delete buildEnv.NEXT_PUBLIC_REOWN_PROJECT_ID;
 if (variant === "appkit") buildEnv.NEXT_PUBLIC_REOWN_PROJECT_ID = "00000000000000000000000000000000";

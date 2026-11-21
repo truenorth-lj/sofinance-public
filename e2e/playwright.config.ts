@@ -8,6 +8,7 @@ export default defineConfig({
   testDir: "./tests",
   testMatch: "**/*.e2e.ts",
   outputDir: "./test-results",
+  globalTeardown: "./scripts/check-server-egress.ts",
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: true,

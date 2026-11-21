@@ -5,6 +5,8 @@ export const BLOCKED_THIRD_PARTY = [
   /(^|\.)web3modal\.org$/, /(^|\.)walletconnect\.(org|com)$/, /(^|\.)reown\.com$/,
   // xStock logos (issuer CDN), loaded for the compound success coins.
   /^xstocks-metadata\.backed\.fi$/,
+  // Pool token icons on the homepage table (Raydium's image CDN).
+  /^img-v1\.raydium\.io$/,
   /(^|\.)googleapis\.com$/, /(^|\.)gstatic\.com$/,
 ];
 
