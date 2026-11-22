@@ -62,7 +62,9 @@ export async function getPositionPerformance(input: GetPositionPerformanceInput)
       currentEquityRaw: result.metrics.currentEquityRaw,
       feesEarnedRaw: result.metrics.feesEarnedRaw,
       pnlRaw: result.metrics.pnlRaw,
-      // USD per (raw / 10^decimals) token unit, multiplier already applied (X3-8 adds explicit names, keeps these as aliases).
+      // USD per (raw / 10^decimals) token unit, multiplier already applied; priceUsdA/B are kept as aliases (same values).
+      usdPerRawUnitA: result.metrics.usdPerRawUnitA,
+      usdPerRawUnitB: result.metrics.usdPerRawUnitB,
       priceUsdA: result.metrics.priceUsdA,
       priceUsdB: result.metrics.priceUsdB,
       depositedUsd: result.metrics.depositedUsd,

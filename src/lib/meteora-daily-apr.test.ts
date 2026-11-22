@@ -59,6 +59,18 @@ describe("fetchMeteoraPoolDailyApr", () => {
     expect(failing.points[0]).toMatchObject({ tvlUsd: 36_500, aprPct: expect.closeTo(1, 10) });
     expect(failing.assumptions).toMatch(/no stored daily TVL covers these days \(the stored daily TVL could not be read\)\. Other days use today's TVL/);
   });
+  it("days without a stored TVL use today's TVL in the registry unit when the caller supplies it (X3-8)", async () => {
+    const fetcher = vi.fn(async (url: string | URL | Request) => (String(url).includes("/volume/history") ? json(history) : json(pool)));
+    const seen: unknown[] = [];
+    const result = await fetchMeteoraPoolDailyApr("P", { fetcher: fetcher as typeof fetch, nowSeconds: D0 + 2 * DAY, bypassCache: true,
+      tvlInRegistryUnit: (snapshot) => { seen.push(snapshot.tvlUsd); return 73_000; } });
+    expect(seen).toEqual([36_500]);
+    expect(result.points[0]).toMatchObject({ tvlUsd: 73_000, aprPct: expect.closeTo(0.5, 10) });
+    // A stored day keeps its stored value (already in the registry unit from X3-7 on).
+    const stored = await fetchMeteoraPoolDailyApr("P", { fetcher: fetcher as typeof fetch, nowSeconds: D0 + 2 * DAY, bypassCache: true,
+      storedTvl: async () => new Map([["2026-10-28", 10_000]]), tvlInRegistryUnit: () => 73_000 });
+    expect(stored.points[0]).toMatchObject({ tvlUsd: 10_000 });
+  });
   it("caches per pool for an hour", async () => {
     const fetcher = vi.fn(async (url: string | URL | Request) => (String(url).includes("/volume/history") ? json(history) : json(pool)));
     const options = { fetcher: fetcher as typeof fetch, nowSeconds: D0 + 2 * DAY };

@@ -299,8 +299,8 @@ async function readPositionValuation(positionMint: string, options: PositionValu
     },
     uncollectedFees: uncollected,
     holdingSeconds,
-    priceUsdA: pricing.usdPerRawUnitA,
-    priceUsdB: pricing.usdPerRawUnitB,
+    usdPerRawUnitA: pricing.usdPerRawUnitA,
+    usdPerRawUnitB: pricing.usdPerRawUnitB,
     decimalsA: snapshot.decimalsA,
     decimalsB: snapshot.decimalsB,
   });

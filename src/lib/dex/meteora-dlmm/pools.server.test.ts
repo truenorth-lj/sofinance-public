@@ -30,7 +30,8 @@ describe("listedMeteoraPool", () => {
   it("lists the static allowlist without touching the store", async () => {
     vi.stubEnv("SOFINANCE_RWA_DB_ENABLED", "false");
     const fixed = METEORA_ALLOWLISTED_POOLS[0]!;
-    expect(await listedMeteoraPool(fixed.poolAddress)).toEqual({ poolId: fixed.poolAddress, mints: [fixed.mintX, fixed.mintY], binStep: fixed.binStep, source: "allowlist" });
+    expect(await listedMeteoraPool(fixed.poolAddress)).toEqual({ poolId: fixed.poolAddress, mints: [fixed.mintX, fixed.mintY], binStep: fixed.binStep, source: "allowlist",
+      tvlMints: { mintsRead: false, tokenProgramX: fixed.tokenProgramX, tokenProgramY: fixed.tokenProgramY } });
     expect(store.request).not.toHaveBeenCalled();
   });
 
@@ -41,7 +42,8 @@ describe("listedMeteoraPool", () => {
 
   it("lists unblocked Meteora feed pools and caches the feed read", async () => {
     vi.stubEnv("SOFINANCE_RWA_DB_ENABLED", "true");
-    expect(await listedMeteoraPool(FEED_POOL)).toEqual({ poolId: FEED_POOL, mints: ["A", "B"], binStep: null, source: "rwa-feed" });
+    expect(await listedMeteoraPool(FEED_POOL)).toEqual({ poolId: FEED_POOL, mints: ["A", "B"], binStep: null, source: "rwa-feed",
+      tvlMints: { mintsRead: false } });
     expect(await listedMeteoraPool(BLOCKED_POOL)).toBeNull();
     expect(await listedMeteoraPool("RaydiumPool")).toBeNull();
     expect(store.request).toHaveBeenCalledTimes(1);

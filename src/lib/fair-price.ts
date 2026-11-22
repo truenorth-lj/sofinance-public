@@ -15,12 +15,12 @@ export { effectiveScaledUiMultiplier } from "@sofinance/engine/valuation/multipl
 import { uiFor } from "./dex/ui";
 import { poolPairLabelFromSymbols } from "./pool-names";
 
-export const FAIR_PRICE_MAX_RELATIVE_DIFF = 0.02;
+const FAIR_PRICE_MAX_RELATIVE_DIFF = 0.02;
 
 /** Half a unit in the 5th decimal — below this, a fair price is treated as 1 for display. */
-export const DISPLAY_ONE_EPS = 5e-6;
+const DISPLAY_ONE_EPS = 5e-6;
 
-export type FairPricePool = {
+type FairPricePool = {
   symbolA: string;
   symbolB: string;
   /** Effective ScaledUiAmount multiplier (1 when the mint has no config). */
@@ -30,7 +30,7 @@ export type FairPricePool = {
   price: number;
 };
 
-export type FairPrice = {
+type FairPrice = {
   fair: number;
   multiplierA: number;
   multiplierB: number;
@@ -114,7 +114,7 @@ export function fairPriceFor(pool: FairPricePool): FairPrice | null {
 }
 
 /** Same as fairPriceFor, from a list/page pool row. Missing price or multipliers → null (do not assume 1). */
-export function fairPriceFromPool(pool: {
+function fairPriceFromPool(pool: {
   symbolA: string;
   symbolB: string;
   protocol?: string;

@@ -1,13 +1,12 @@
 import "server-only";
-import { METEORA_ALLOWLISTED_POOLS, METEORA_DLMM_DATAPI, SPL_TOKEN_PROGRAM_ID } from "@sofinance/engine/protocols/meteora/constants";
+import { METEORA_ALLOWLISTED_POOLS, METEORA_DLMM_DATAPI } from "@sofinance/engine/protocols/meteora/constants";
 import { utcDate } from "@/lib/apr-series";
 import { parseMeteoraPoolSnapshot } from "@/lib/meteora-daily-apr";
 import { sanitizePublicError } from "@/lib/public-error";
 import { fetchJsonOnce } from "@/lib/range-apr/upstream-http";
 import { FEED_KEY, FEED_KEY_METEORA, SOLANA_FEED_PROTOCOL, SOLANA_POOL_ID } from "@/lib/rwa-store-types";
-import { scaledUiTvlUsd } from "@sofinance/engine/valuation/pool-tvl";
-import { knownMultiplier, tvlLeavesOutScaledUi } from "@/lib/pool-tvl-scaled-ui";
 import type { RwaPairRow } from "@/lib/rwa-pairs";
+import { feedRowTvlMints, meteoraSnapshotTvl, type MeteoraTvlMints } from "./snapshot-tvl";
 import type { DailyTvlRecord, DailyTvlRecordInput, DailyTvlStats } from "../registry";
 
 /**
@@ -40,22 +39,14 @@ export async function recordMeteoraDailyTvl(input: DailyTvlRecordInput & { apiBa
   for (const { pair } of feed ?? []) {
     if (pair.protocol === SOLANA_FEED_PROTOCOL[FEED_KEY_METEORA] && !pair.blocked) { listed.add(pair.poolAddress); rows.set(pair.poolAddress, pair); }
   }
-  const leavesOutScaledUi = tvlLeavesOutScaledUi(SOLANA_FEED_PROTOCOL[FEED_KEY_METEORA]);
   let unverified = 0;
   const inRegistryUnit = (poolId: string, snapshot: ReturnType<typeof parseMeteoraPoolSnapshot>): number | null => {
-    if (snapshot.tvlUsd === null || !leavesOutScaledUi) return snapshot.tvlUsd;
-    const row = rows.get(poolId), sides = snapshot.tvlSides, nowMs = clock(), allowlisted = allowlist.get(poolId);
-    // A mint the allowlist pins to the original SPL Token program has no extensions, so its multiplier is 1 without a read.
-    const multiplier = (program: string | undefined, config: RwaPairRow["scaledUiConfigA"]) => program === SPL_TOKEN_PROGRAM_ID
-      ? 1 : knownMultiplier({ known: row?.tvlScaledUi?.mintsRead === true, config }, nowMs);
-    const result = scaledUiTvlUsd({ sourceTvlUsd: snapshot.tvlUsd, sides: sides
-      ? [{ amount: sides.amountX, sharePriceUsd: sides.priceUsdX, multiplier: multiplier(allowlisted?.tokenProgramX, row?.scaledUiConfigA) },
-        { amount: sides.amountY, sharePriceUsd: sides.priceUsdY, multiplier: multiplier(allowlisted?.tokenProgramY, row?.scaledUiConfigB) }]
-      // No amounts in the answer: only a side known to be 1 without a read (SPL Token) can be counted as verified.
-      : [{ amount: 0, sharePriceUsd: null, multiplier: allowlisted?.tokenProgramX === SPL_TOKEN_PROGRAM_ID ? 1 : null },
-        { amount: 0, sharePriceUsd: null, multiplier: allowlisted?.tokenProgramY === SPL_TOKEN_PROGRAM_ID ? 1 : null }] });
-    if (result.kind === "unverified") unverified += 1;
-    return result.tvlUsd;
+    const allowlisted = allowlist.get(poolId), row = rows.get(poolId);
+    const mints: MeteoraTvlMints = { ...(row ? feedRowTvlMints(row) : { mintsRead: false }),
+      ...(allowlisted ? { tokenProgramX: allowlisted.tokenProgramX, tokenProgramY: allowlisted.tokenProgramY } : {}) };
+    const result = meteoraSnapshotTvl(snapshot, mints, clock());
+    if (result?.kind === "unverified") unverified += 1;
+    return result?.tvlUsd ?? null;
   };
   const pools = [...listed].filter((id) => SOLANA_POOL_ID.test(id)).slice(0, MAX_POOLS);
   const stats: DailyTvlStats = { date, pools: pools.length, alreadySaved: 0, saved: 0, failed: 0 };

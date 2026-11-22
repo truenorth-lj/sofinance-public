@@ -103,6 +103,8 @@ exports[`Meteora position performance characterization > records a pricing failu
       "b": "74",
     },
     "uncollectedFeesUsd": null,
+    "usdPerRawUnitA": null,
+    "usdPerRawUnitB": null,
     "withdrawnPrincipalRaw": {
       "a": "0",
       "b": "555743",
@@ -472,6 +474,8 @@ exports[`Meteora position performance characterization > records full history 1`
       "b": "74",
     },
     "uncollectedFeesUsd": 0.142,
+    "usdPerRawUnitA": 100000,
+    "usdPerRawUnitB": 100000,
     "withdrawnPrincipalRaw": {
       "a": "0",
       "b": "555743",
@@ -844,6 +848,8 @@ exports[`Meteora position performance characterization > records skipPricing 1`]
       "b": "74",
     },
     "uncollectedFeesUsd": null,
+    "usdPerRawUnitA": null,
+    "usdPerRawUnitB": null,
     "withdrawnPrincipalRaw": {
       "a": "0",
       "b": "555743",
@@ -1212,6 +1218,8 @@ exports[`Meteora position performance characterization > records truncated histo
       "b": "74",
     },
     "uncollectedFeesUsd": 0.142,
+    "usdPerRawUnitA": 100000,
+    "usdPerRawUnitB": 100000,
     "withdrawnPrincipalRaw": {
       "a": "0",
       "b": "555743",
@@ -1422,6 +1430,8 @@ exports[`Orca position performance characterization > records a pricing failure 
       "b": "145",
     },
     "uncollectedFeesUsd": null,
+    "usdPerRawUnitA": null,
+    "usdPerRawUnitB": null,
     "withdrawnPrincipalRaw": {
       "a": "508877",
       "b": "0",
@@ -1728,6 +1738,8 @@ exports[`Orca position performance characterization > records full history 1`] =
       "b": "145",
     },
     "uncollectedFeesUsd": 0.29100000000000004,
+    "usdPerRawUnitA": 100000,
+    "usdPerRawUnitB": 100000,
     "withdrawnPrincipalRaw": {
       "a": "508877",
       "b": "0",
@@ -2037,6 +2049,8 @@ exports[`Orca position performance characterization > records skipPricing 1`] = 
       "b": "145",
     },
     "uncollectedFeesUsd": null,
+    "usdPerRawUnitA": null,
+    "usdPerRawUnitB": null,
     "withdrawnPrincipalRaw": {
       "a": "508877",
       "b": "0",
@@ -2342,6 +2356,8 @@ exports[`Orca position performance characterization > records truncated history 
       "b": "145",
     },
     "uncollectedFeesUsd": 0.29100000000000004,
+    "usdPerRawUnitA": 100000,
+    "usdPerRawUnitB": 100000,
     "withdrawnPrincipalRaw": {
       "a": "508877",
       "b": "0",
@@ -2521,6 +2537,8 @@ exports[`Raydium position performance characterization > records a pricing failu
       "b": "0",
     },
     "uncollectedFeesUsd": null,
+    "usdPerRawUnitA": null,
+    "usdPerRawUnitB": null,
     "withdrawnPrincipalRaw": {
       "a": "0",
       "b": "0",
@@ -2712,6 +2730,8 @@ exports[`Raydium position performance characterization > records full history 1`
       "b": "0",
     },
     "uncollectedFeesUsd": 1.7,
+    "usdPerRawUnitA": 100000,
+    "usdPerRawUnitB": 100000,
     "withdrawnPrincipalRaw": {
       "a": "0",
       "b": "0",
@@ -2906,6 +2926,8 @@ exports[`Raydium position performance characterization > records skipPricing 1`]
       "b": "0",
     },
     "uncollectedFeesUsd": null,
+    "usdPerRawUnitA": null,
+    "usdPerRawUnitB": null,
     "withdrawnPrincipalRaw": {
       "a": "0",
       "b": "0",
@@ -3095,6 +3117,8 @@ exports[`Raydium position performance characterization > records truncated histo
       "b": "0",
     },
     "uncollectedFeesUsd": 1.7,
+    "usdPerRawUnitA": 100000,
+    "usdPerRawUnitB": 100000,
     "withdrawnPrincipalRaw": {
       "a": "0",
       "b": "0",

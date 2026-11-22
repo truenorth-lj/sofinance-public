@@ -51,9 +51,9 @@ export function describePositionPricing(
 }
 
 /** One side of a position to price: the mint, its decimals, and the multiplier hint its reader got in its own batch. */
-export type PricingSide = { mint: string; decimals: number; hint: MultiplierHint | null };
+type PricingSide = { mint: string; decimals: number; hint: MultiplierHint | null };
 
-export type PositionPricing = PositionPricingReport<PositionPricingSource>;
+type PositionPricing = PositionPricingReport<PositionPricingSource>;
 
 const UNPRICED: Omit<PositionPricing, "source" | "label"> = {
   usdPerRawUnitA: null, usdPerRawUnitB: null, sharePriceUsdA: null, sharePriceUsdB: null,

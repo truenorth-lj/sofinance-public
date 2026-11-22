@@ -28,7 +28,10 @@ import { fetchXstocksSolanaMintSet, getXstocksObservedAt } from "./rwa-xstocks-w
  * 3. FOOx/FOO ticker shape, then Jupiter `stocks`/`rwa` tags or the xStocks list on both mints
  *    (`matchSameAssetPair`): same underlying, different issuer. No other pairs (no SOL / USDC quote pools).
  * 4. Bin step ≤ 10 (`METEORA_RANGE_APR_MAX_BIN_STEP`); wider ones are counted in the summary, not listed.
- * 5. On-chain: LbPair protocol share and token programs, mint freeze authority and the Token-2022 block.
+ * 5. On-chain: LbPair protocol share and token programs, mint freeze authority and the Token-2022 block. The one
+ *    mint read also gives the ScaledUiAmount multipliers; it is reused by the freeze / TVL step (no second read).
+ * 6. TVL floor (`minTvl`) on the TVL in the registry unit (X3-7 correction), after step 5, so a ×8 pool is not
+ *    dropped on datapi's figure. Without a chain read the published figure is used, as before.
  */
 
 /** Curated Meteora stablecoin pools (USDC / USDT). Empty: none is listed (product decision, SCAN_DESIGN.md §12.1). */
@@ -140,7 +143,6 @@ export async function discoverMeteoraRwaPairs(options: DiscoverMeteoraRwaOptions
     if (!match.matched) continue;
     sameAssetPools += 1;
     if (pool.binStep > METEORA_RANGE_APR_MAX_BIN_STEP) { excludedBinStep += 1; continue; }
-    if ((pool.tvlUsd ?? 0) < (options.minTvl ?? 0)) continue;
     matched.push({ pool, identity: {
       baseSymbol: match.baseSymbol, wrappedSymbol: match.wrappedSymbol, plainSymbol: match.plainSymbol, wrapKind: match.wrapKind,
       relatedness: match.relatedness, qualificationA: match.qualificationA, qualificationB: match.qualificationB,
@@ -158,10 +160,9 @@ export async function discoverMeteoraRwaPairs(options: DiscoverMeteoraRwaOptions
     try { facts = await withTimeout(readMeteoraOnchainFacts(connection, matched.map((m) => m.pool)), FACTS_TIMEOUT_MS); } catch { /* datapi values */ }
   }
   const rows = matched.map(({ pool, identity }) => meteoraPairRow(pool, facts, identity));
-  const freeze = await applyOnchainFreezeRisk(rows, connection);
-  // The floor above ran on datapi's TVL, which leaves out the multiplier; run it again on the registry-unit TVL the
-  // mint read just gave (X3-7), so a pool whose corrected TVL is under the floor (m < 1) is not listed. Curated
-  // stable pools were never under the floor and stay exempt. An unverified row keeps the published value it passed with.
+  const freeze = await applyOnchainFreezeRisk(rows, connection, facts.mintSafety);
+  // Apply the floor only after the shared mint read and TVL correction: a ×8 pool can qualify even when datapi's
+  // figure was under the floor. Curated stable pools remain exempt; an unverified row uses the published figure.
   const floor = options.minTvl ?? 0;
   const pairs = sortPairs(freeze.pairs.filter((pair) => !thresholded.has(pair.poolAddress) || (pair.tvlUsd ?? 0) >= floor), options.sortBy ?? "estimatedFeeApr");
   const pageCounts = scanPageCounts(raw.size);

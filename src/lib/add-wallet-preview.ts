@@ -3,11 +3,11 @@
  * lists only the tokens coming back to it: the price-tolerance reserve (`dust`, the swap output the deposit does not
  * use). The rest of the swap output (`required`) goes into the position, which wallets do not show as incoming.
  */
-export type AddWalletPreviewQuote = {
+type AddWalletPreviewQuote = {
   requiredA: string; requiredB: string; dustA: string; dustB: string; decimalsA: number; decimalsB: number;
 };
 /** USD per (raw / 10^decimals) token unit, multiplier already applied (`SelectedDisplayPricing`); display only. */
-export type AddWalletPreviewPrices = { usdPerRawUnitA?: number | null; usdPerRawUnitB?: number | null };
+type AddWalletPreviewPrices = { usdPerRawUnitA?: number | null; usdPerRawUnitB?: number | null };
 
 const usdOf = (raw: string, decimals: number, usdPerRawUnit: number) => Number(BigInt(raw)) / 10 ** decimals * usdPerRawUnit;
 // A zero price is as unknown as a missing one (an unpriced token would read as "$0.00 coming back").

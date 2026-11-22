@@ -3,6 +3,7 @@ import { METEORA_ALLOWLISTED_POOLS } from "@sofinance/engine/protocols/meteora/c
 import { getRwaConfig } from "@/lib/config/rwa-env";
 import { getRwaStore } from "@/lib/rwa-store";
 import { FEED_KEY, FEED_KEY_METEORA } from "@/lib/rwa-store-types";
+import { feedRowTvlMints, type MeteoraTvlMints } from "./snapshot-tvl";
 
 /**
  * Which Meteora DLMM pools SoFinance opens in (DESIGN.md §3 PR4: the allowlist is derived from the RWA feed, then the
@@ -21,6 +22,8 @@ export type ListedMeteoraPool = {
   /** Static allowlist entries pin the bin step; feed rows leave it to the chain. */
   binStep: number | null;
   source: "allowlist" | "rwa-feed";
+  /** What is already known of the two mints, for TVL in the registry unit (`meteoraSnapshotTvl`); no read here. */
+  tvlMints?: MeteoraTvlMints;
 };
 
 export type MeteoraPoolList = (poolId: string) => Promise<ListedMeteoraPool | null>;
@@ -43,7 +46,8 @@ async function feedPools(now: number): Promise<Map<string, ListedMeteoraPool>> {
   const pools = new Map<string, ListedMeteoraPool>();
   for (const { pair } of rows) {
     if (pair.protocol !== "meteora-dlmm" || pair.blocked) continue;
-    pools.set(pair.poolAddress, { poolId: pair.poolAddress, mints: [pair.mintA, pair.mintB], binStep: null, source: "rwa-feed" });
+    pools.set(pair.poolAddress, { poolId: pair.poolAddress, mints: [pair.mintA, pair.mintB], binStep: null, source: "rwa-feed",
+      tvlMints: feedRowTvlMints(pair) });
   }
   feedCache = { at: now, pools };
   return pools;
@@ -55,7 +59,8 @@ export function clearMeteoraPoolListCache() {
 
 export const listedMeteoraPool: MeteoraPoolList = async (poolId) => {
   const fixed = METEORA_ALLOWLISTED_POOLS.find((pool) => pool.poolAddress === poolId);
-  if (fixed) return { poolId, mints: [fixed.mintX, fixed.mintY], binStep: fixed.binStep, source: "allowlist" };
+  if (fixed) return { poolId, mints: [fixed.mintX, fixed.mintY], binStep: fixed.binStep, source: "allowlist",
+    tvlMints: { mintsRead: false, tokenProgramX: fixed.tokenProgramX, tokenProgramY: fixed.tokenProgramY } };
   if (!getRwaConfig().enabled) return null;
   return (await feedPools(Date.now())).get(poolId) ?? null;
 };
