@@ -47,14 +47,15 @@ describe("Portfolio aggregation", () => {
     complete[2]!(); complete[0]!();
     expect((await pending).positions.map((row) => row.key)).toEqual([key(1), key(2), key(3)]); expect(max).toBe(2);
   });
-  it("returns good rows around failures and flags partial fee totals instead of inventing zero", async () => {
+  it("returns good rows around failures and flags a dash for incomplete fee history instead of inventing zero", async () => {
     mocks.figures.mockImplementation(async (value: string) => {
       if (value === mint(2)) throw new Error("provider URL with secret");
       return { figures: { ...figures, cumulativeFeesUsd: null }, historyComplete: false, historyRefreshResolved: false };
     });
     const result = await readPortfolio({ wallet: mint(7), positions: [1, 2, 3].map((n) => ({ key: key(n) })) }, signal());
     expect(result.positions.map((row) => row.status)).toEqual(["partial", "failed", "partial"]);
-    expect(result.totals).toMatchObject({ valueUsd: 200, unclaimedFeesUsd: 2, cumulativeFeesUsd: null, missing: 3 });
+    // Only the failed row is missing; a dash for incomplete cumulative fees is not counted as a missing value.
+    expect(result.totals).toMatchObject({ valueUsd: 200, unclaimedFeesUsd: 2, cumulativeFeesUsd: null, missing: 1 });
     expect(JSON.stringify(result)).not.toContain("secret");
   });
   it("isolates bad accounts and unknown sources, and stops dispatch after cancellation", async () => {
