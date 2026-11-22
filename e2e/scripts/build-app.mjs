@@ -28,8 +28,11 @@ const stamp = fingerprint.digest("hex");
 // Snapshot reads go through the RWA store exactly as in production, but with no gateway and no database configured:
 // every server-side snapshot read (homepage / pools SSR, /api/rwa-pairs, APR) fails closed at once instead of
 // falling back to live Raydium + Jupiter discovery. Tests answer those reads in the browser with fixtures.
+// SOFINANCE_STOCK_MARKET_LIVE=0: homepage ISR/SSR must not call Jupiter (the all-host egress guard would
+// refuse the request; skipping it keeps the ledger empty). Snapshot pool reads already fail closed via the empty gateway.
 export const buildEnv = { ...process.env, JUPITER_API_KEY: "e2e-dummy-jupiter-key", SOFINANCE_SIGNING_SECRET: secret,
-  SOFINANCE_RWA_DB_ENABLED: "true", SOFINANCE_RWA_STORE_MODE: "gateway", SOFINANCE_RWA_GATEWAY_URL: "", DATABASE_URL: "" };
+  SOFINANCE_RWA_DB_ENABLED: "true", SOFINANCE_RWA_STORE_MODE: "gateway", SOFINANCE_RWA_GATEWAY_URL: "", DATABASE_URL: "",
+  SOFINANCE_STOCK_MARKET_LIVE: "0" };
 delete buildEnv.SOFINANCE_SIGNING_SECRET_PREVIOUS;
 delete buildEnv.NEXT_PUBLIC_REOWN_PROJECT_ID;
 if (variant === "appkit") buildEnv.NEXT_PUBLIC_REOWN_PROJECT_ID = "00000000000000000000000000000000";

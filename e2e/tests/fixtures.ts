@@ -10,7 +10,7 @@ type Fixtures = { wallet: FakeWallet; guards: Guards };
 
 /**
  * `wallet`: a fresh random throwaway keypair per test (no funds, never persisted), installed as a Wallet Standard wallet.
- * `guards`: network allowlist + page/console error collection + the server's Jupiter egress ledger; the test fails in
+ * `guards`: network allowlist + page/console error collection + the server's all-host egress ledger; the test fails in
  *   teardown if anything unexpected happened.
  * `context` installs the wallet and the API stubs before any page exists; `guards` is automatic.
  */
@@ -34,8 +34,8 @@ export const test = base.extend<Options & Fixtures>({
     const egressBefore = readBlockedEgress().length;
     await use(guards);
     expect.soft(guards.failures(), "unexpected network hosts, page errors or console errors").toEqual([]);
-    // The hermetic server refuses real Jupiter (scripts/hermetic-egress-guard.mjs); a refusal during this test fails it.
-    expect.soft(describeBlockedEgress(readBlockedEgress().slice(egressBefore)), "server-side fetches to real Jupiter").toEqual([]);
+    // The hermetic server refuses every non-local host (scripts/hermetic-egress-guard.mjs); a refusal during this test fails it.
+    expect.soft(describeBlockedEgress(readBlockedEgress().slice(egressBefore)), "server-side requests to non-local hosts").toEqual([]);
   }, { auto: true }],
 });
 

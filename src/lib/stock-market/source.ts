@@ -63,6 +63,8 @@ function sharedInFlight<K, T>(read: (key: K) => Promise<T>): (key: K) => Promise
 
 /** The universe's Jupiter rows: ceil(218 / 100) = 3 search calls, one at a time. */
 export async function fetchJupiterStockRows(options: { fetcher?: typeof fetch } = {}): Promise<JupiterStockRow[]> {
+  // Hermetic e2e sets this to "0" so the production build / ISR never attempts a live Jupiter read.
+  if (process.env["SOFINANCE_STOCK_MARKET_LIVE"] === "0") throw new Error("Stock market live reads are disabled");
   const mints = STOCK_UNIVERSE.map(([mint]) => mint);
   const rows: JupiterStockRow[] = [];
   for (let i = 0; i < mints.length; i += STOCK_SEARCH_BATCH) {

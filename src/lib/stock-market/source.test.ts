@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ unstable_cache: <T,>(fn: T) => fn }));
@@ -13,6 +13,8 @@ import { STOCK_UNIVERSE } from "./universe";
 import { JupiterHttpError } from "@sofinance/engine/jupiter/errors";
 
 describe("fetchJupiterStockRows", () => {
+  beforeEach(() => { vi.stubEnv("SOFINANCE_STOCK_MARKET_LIVE", ""); });
+  afterEach(() => { vi.unstubAllEnvs(); });
   it("reads the whole universe in 3 comma-separated search calls, spaced for the 1 request/s free tier, matched by mint", async () => {
     const calls: { url: URL; at: number }[] = [];
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
@@ -51,6 +53,8 @@ describe("fetchJupiterStockRows", () => {
 });
 
 describe("in-flight sharing", () => {
+  beforeEach(() => { vi.stubEnv("SOFINANCE_STOCK_MARKET_LIVE", ""); });
+  afterEach(() => { vi.unstubAllEnvs(); });
   it("two market cache misses at once share one refresh (3 calls, not 6); a failed refresh is not kept", async () => {
     // Rows that pass no filter: the refresh fails ("No stock passed the filters"), which must not be cached.
     const fetchMock = vi.fn(async (input: RequestInfo | URL) =>
@@ -80,5 +84,15 @@ describe("isStockSourceUnavailable", () => {
     expect(isStockSourceUnavailable(Object.assign(new Error("t"), { name: "TimeoutError" }))).toBe(true);
     expect(isStockSourceUnavailable(new JupiterHttpError(400, "bad request", null))).toBe(false);
     expect(isStockSourceUnavailable(new Error("other"))).toBe(false);
+  });
+});
+
+describe("SOFINANCE_STOCK_MARKET_LIVE=0", () => {
+  afterEach(() => { vi.unstubAllEnvs(); });
+  it("does not call Jupiter", async () => {
+    vi.stubEnv("SOFINANCE_STOCK_MARKET_LIVE", "0");
+    const fetcher = vi.fn();
+    await expect(fetchJupiterStockRows({ fetcher })).rejects.toThrow(/Stock market live reads are disabled/);
+    expect(fetcher).not.toHaveBeenCalled();
   });
 });
