@@ -9,6 +9,7 @@
  */
 import { useSyncExternalStore } from "react";
 import type { StockBuyOption } from "@/lib/stock-market/public";
+import { APPKIT_CONNECTIONS, APPKIT_SOLANA_CONNECTOR } from "@/lib/wallet-restore";
 
 export type HomepageWalletState = {
   /** The providers are (being) loaded. Set by the first Connect wallet or Buy, or on load for a remembered wallet. */
@@ -119,9 +120,9 @@ export function hasRememberedHomepageWallet(): boolean {
   try {
     const storage = window.localStorage;
     const legacy = storage.getItem(REMEMBERED_WALLET_KEY);
-    if ((legacy && legacy !== "null") || storage.getItem("@appkit/solana:connected_connector_id")) return true;
+    if ((legacy && legacy !== "null") || storage.getItem(APPKIT_SOLANA_CONNECTOR)) return true;
     // AppKit can also restore a connection when only its connection list remains.
-    const connections = JSON.parse(storage.getItem("@appkit/connections") || "null");
+    const connections = JSON.parse(storage.getItem(APPKIT_CONNECTIONS) || "null");
     return Array.isArray(connections?.solana) && connections.solana.length > 0;
   } catch {
     return false;
