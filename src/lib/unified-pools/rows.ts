@@ -22,6 +22,8 @@ export type SolanaPoolRow = {
   priceBPerA?: number | null;
   multiplierA?: number;
   multiplierB?: number;
+  /** USD per real share (server `withUsdPerShare`); absent when unknown. */
+  usdPerShare?: number;
   token2022A: boolean;
   token2022B: boolean;
   freezeRisk: boolean;
@@ -52,6 +54,7 @@ export function solanaPool(row: SolanaPoolRow): UnifiedPool {
     ...(row.priceBPerA !== undefined && row.priceBPerA !== null ? { priceBPerA: row.priceBPerA } : {}),
     ...(row.multiplierA !== undefined ? { multiplierA: row.multiplierA } : {}),
     ...(row.multiplierB !== undefined ? { multiplierB: row.multiplierB } : {}),
+    ...(typeof row.usdPerShare === "number" && Number.isFinite(row.usdPerShare) && row.usdPerShare > 0 ? { usdPerShare: row.usdPerShare } : {}),
     ...(row.unsupported?.issues.length ? { unsupportedIssues: row.unsupported.issues } : {}),
   };
 }
