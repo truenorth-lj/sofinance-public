@@ -4,10 +4,10 @@ import Link from "next/link";
 import { ArrowUpRight, X } from "lucide-react";
 import Decimal from "decimal.js";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { DEFAULT_PLAN_AMOUNT, DEFAULT_PLAN_DAYS } from "@/lib/lp-plan-intent";
+import { DEFAULT_PLAN_DAYS } from "@/lib/lp-plan-intent";
 import { aprWindowAvgLabel } from "@/lib/lp-plan-best-apr";
 import { planPoolTerms, projectPoolPlanInAsset } from "@/lib/lp-plan-pool-terms";
-import { lowPlanApr, pairLabelSymbols, parsePlanAssetAmount, planAssetSymbol, planShareSymbol } from "@/lib/lp-plan-shares";
+import { lowPlanApr, pairLabelSymbols, parsePlanAssetAmount, planAssetAmounts, planAssetPresetLabel, planAssetSymbol, planShareSymbol } from "@/lib/lp-plan-shares";
 import { PLAN_HIDDEN_RISK_LINE, planDataNotice } from "@/lib/lp-plan-notice";
 import { dexDescriptors, uiFor } from "@/lib/dex/client";
 import { cn } from "@/lib/cn";
@@ -21,13 +21,6 @@ import { ProjectionChart } from "./projection-chart";
 /** Horizons offered in the dialog, as the chart's range switch. */
 const SHARE_CALC_DAYS = [30, 90, 180, 365] as const;
 const rangeLabel = (days: number) => (days === 365 ? "1Y" : `${days}D`);
-/**
- * Quick amounts under the input, in the pool's asset (SP-2): shares of the stock, or USDC for the stablecoin pool.
- * The first amount shown is the middle one.
- */
-const STOCK_PRESETS = ["1", "10", "100"] as const;
-const USDC_PRESETS = ["100", DEFAULT_PLAN_AMOUNT, "10000"] as const;
-const presetLabel = (value: string) => (Number(value) >= 1000 ? `${Number(value) / 1000}K` : value);
 
 const panel = "rounded-xl border border-white/10 bg-white/[0.03]";
 
@@ -75,8 +68,8 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
   const assetSymbol = planAssetSymbol(symbols) ?? symbols?.plainSymbol ?? pool.pairLabel;
   const usdPerUnit = typeof pool.usdPerShare === "number" && Number.isFinite(pool.usdPerShare) && pool.usdPerShare > 0 ? pool.usdPerShare : null;
   const unit = useMemo<AmountUnit>(() => ({ kind: "asset", symbol: assetSymbol, usdPerUnit }), [assetSymbol, usdPerUnit]);
-  const presets = shareSymbol ? STOCK_PRESETS : USDC_PRESETS;
-  const [amountText, setAmountText] = useState<string>(presets[1]);
+  const { presets, defaultAmount } = planAssetAmounts(shareSymbol);
+  const [amountText, setAmountText] = useState<string>(defaultAmount);
   const [days, setDays] = useState<number>(DEFAULT_PLAN_DAYS);
   const [now] = useState(() => Date.now());
   const amount = parsePlanAssetAmount(amountText);
@@ -168,7 +161,7 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
               {presets.map((value) => (
                 <button key={value} type="button" onClick={() => setAmountText(value)}
                   className="rounded-md bg-white/[0.08] px-2 py-0.5 text-[12px] font-medium text-cream/80 outline-none hover:bg-white/15 focus-visible:shadow-[0_0_0_2px_var(--color-lilac)]">
-                  {presetLabel(value)}
+                  {planAssetPresetLabel(value)}
                 </button>
               ))}
             </div>
@@ -194,7 +187,7 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
             <InfoRow label={`Est. fee APR · ${aprWindowAvgLabel(best)}`}>{formatPct(plan.apyPct)}</InfoRow>
             <InfoRow label="Fees collected">{formatInUnit(plan.feesEarned, unit)}</InfoRow>
             <InfoRow label="Protocol cut of fees">{`${Math.round((1 - terms.lpFeeShare) * 100)}%`}</InfoRow>
-            <InfoRow label="Opening cost">{formatCostInUnit(plan.entryCost, unit)}</InfoRow>
+            <InfoRow label="Opening cost (USDC deposit)">{formatCostInUnit(plan.entryCost, unit)}</InfoRow>
             <InfoRow label={exit === "usdc" ? "Closing cost (to USDC)" : "Closing cost (keep tokens)"}>{formatCostInUnit(plan.exitCost, unit)}</InfoRow>
             {projection.low && projection.lowWindow ? (
               <InfoRow label={`At the ${aprWindowAvgLabel(projection.lowWindow, "pool avg")}`}>{`${formatSignedInUnit(projection.low.vsHold, unit)} vs HODL`}</InfoRow>

@@ -94,7 +94,7 @@ describe("ShareCalcDialog (counted in the pool's asset, SP-2)", () => {
     expect(rows).toContain("Est. fee APR ·");
     expect(rows).not.toContain("Est. LP APY");
     expect(rows).toContain("Protocol cut of fees16%");
-    expect(rows).toContain("Opening cost−0.1 SPCX");
+    expect(rows).toContain("Opening cost (USDC deposit)−0.1 SPCX");
     expect(rows).toContain("Closing cost (keep tokens)0 SPCX");
     expect(rows).toMatch(/Fees collected\d\.\d{1,4} SPCX/);
     const horizons = node.querySelector('[aria-label="Difference vs HODL by horizon"]')!;
@@ -110,7 +110,7 @@ describe("ShareCalcDialog (counted in the pool's asset, SP-2)", () => {
   it("shows a free closing step as 0, not −0 (Meteora, keeping the pool tokens)", async () => {
     await render({ poolAddress: POOL, pairLabel: "TSLAx/TSLA", protocol: "meteora-dlmm", usdPerShare: 100 }, { kind: "open", onOpen: vi.fn() });
     const rows = node.querySelector("[data-testid=share-calc-assumptions]")!.textContent!;
-    expect(rows).toContain("Opening cost−0.11 TSLA");
+    expect(rows).toContain("Opening cost (USDC deposit)−0.11 TSLA");
     expect(rows).toContain("Closing cost (keep tokens)0 TSLA");
     expect(rows).not.toContain("−0 TSLA");
   });

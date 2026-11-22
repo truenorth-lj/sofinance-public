@@ -30,6 +30,7 @@ describe("landing page copy and routes", () => {
     "src/components/landing-page.tsx",
     "src/components/homepage-market.tsx",
     "src/components/homepage-pools-table.tsx",
+    "src/components/homepage-fee-estimator.tsx",
     "src/components/unified-pools/pool-results.tsx",
     "src/components/stocks/stock-cards.tsx",
     "src/lib/homepage-pools.ts",
@@ -130,6 +131,7 @@ describe("landing page copy and routes", () => {
       "src/components/unified-pools/pool-card.tsx",
       "src/components/public-pool-page.tsx",
       "src/lib/unified-pools/calculate-label.ts",
+      "src/components/homepage-fee-estimator.tsx",
     ];
     // `apyPct` and other camelCase identifiers are code, not copy.
     for (const file of files) {
@@ -138,6 +140,19 @@ describe("landing page copy and routes", () => {
       expect(text, file).not.toMatch(/Calculate shares/);
       expect(withoutAllowed(text.replace(/(const |\$?\{)earn\b/g, "$1_")), file).not.toMatch(FORBIDDEN);
     }
+  });
+
+  it("puts the no-wallet fee estimator above the two hero buttons, with its mandated copy (SP-2)", () => {
+    const estimator = readFileSync(resolve("src/components/homepage-fee-estimator.tsx"), "utf8");
+    const order = ["<h1", "<HomepageFeeEstimator", 'data-testid="hero-see-pools"', 'data-testid="hero-how-it-works"', "<HomepageTopPools"].map((tag) => market.indexOf(tag));
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(estimator).toContain('"Estimated fees collected"');
+    expect(estimator).toContain('"Assumes price stays in range. Not a prediction. Fees not guaranteed."');
+    expect(estimator).toContain("7-day average fee APR");
+    // No wallet, no request of its own: it reads the pools and APRs the homepage already loaded.
+    expect(estimator).not.toMatch(/useWallet|fetch\(|useSWR|\/api\//);
+    expect(estimator).not.toMatch(/\bAPY\b/);
   });
 
   it("mentions APR nowhere in the page's own copy (only the pools card and table keep the one 7-day estimate)", () => {

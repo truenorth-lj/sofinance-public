@@ -235,6 +235,37 @@ export function projectPoolPlanInAsset(input: {
   return { comparison, capped };
 }
 
+/**
+ * Estimated fees collected over `days` in the pool's asset, from the 7-day average fee APR of the pool's best range (the
+ * homepage estimator, SP-2). Same projection as the Calculate dialog (`projectPoolPlanInAsset`: daily compounding,
+ * counted in the asset); this APR is already the LPs' share (the range estimate takes the DEX's cut), so no cut is applied
+ * again. Bounded like the card's APR: at most every fee the pool's LPs took per day (`poolLpFeesPerDayUsd`), which needs
+ * a known share price to size; without one the APR alone applies, as in the dialog. Opening and closing costs are
+ * outside "fees collected".
+ */
+export function estimatedFeesInAsset(input: {
+  amount: string;
+  usdPerUnit: number | null;
+  aprPct: number;
+  days: number;
+  poolLpFeesPerDayUsd?: number | null;
+}): string {
+  const fees = input.poolLpFeesPerDayUsd;
+  return projectPoolPlanInAsset({
+    amount: input.amount,
+    usdPerUnit: input.usdPerUnit,
+    days: input.days,
+    window: {
+      aprPct: String(input.aprPct), sampleDays: 7, windowDays: 7,
+      ...(typeof fees === "number" && Number.isFinite(fees) && fees >= 0 ? { poolFeesPerDayUsd: String(fees) } : {}),
+    },
+    terms: { ...LEGACY_PLAN_TERMS, lpFeeShare: 1 },
+    exit: "tokens",
+    // No TVL: the cap is the pool's whole fee income (the card's rule), not a pro-rata split.
+    poolTvlUsd: null,
+  }).comparison.feesEarned;
+}
+
 /** Deposit the cards and the pools table price their APR at (the calculator's cap rule needs a deposit size). */
 export const CARD_APR_DEPOSIT_USD = 1_000;
 
