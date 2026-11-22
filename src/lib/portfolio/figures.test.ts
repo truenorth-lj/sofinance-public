@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PositionPerformanceReport } from "@/lib/position-performance-report";
-import { portfolioTotals, positionFigures, type FiguresState } from "./figures";
+import { cumulativeFeesUpdating, portfolioTotals, positionFigures, type FiguresState } from "./figures";
 
 const report = (metrics: Partial<PositionPerformanceReport["metrics"]>, stock?: Partial<NonNullable<PositionPerformanceReport["stock"]>>) =>
   ({ metrics: { currentEquityUsd: null, uncollectedFeesUsd: null, feesEarnedUsd: null, ...metrics },
@@ -56,5 +56,24 @@ describe("portfolioTotals", () => {
     expect(portfolioTotals([ready(100, 2, 10), { status: "failed" }], [null])).toMatchObject({ valueUsd: 100, missing: 2 });
     expect(portfolioTotals([{ status: "failed" }])).toMatchObject({ valueUsd: null, unclaimedFeesUsd: null, missing: 1 });
     expect(portfolioTotals([])).toMatchObject({ positions: 0, valueUsd: null });
+  });
+});
+
+describe("cumulativeFeesUpdating (row hint)", () => {
+  it("labels a retained value and a catching-up dash; not a fresh dash, a value, a failure or a loading row", () => {
+    expect(cumulativeFeesUpdating(ready(100, 1, 11.36, { retained: true, historyStatus: "updating" }))).toBe(true);
+    for (const historyStatus of ["updating", "stale", "unavailable"] as const)
+      expect(cumulativeFeesUpdating(ready(100, 1, null, { historyStatus }))).toBe(true);
+    expect(cumulativeFeesUpdating(ready(100, 1, null, { historyStatus: "fresh" }))).toBe(false);
+    expect(cumulativeFeesUpdating(ready(100, 1, null))).toBe(false);
+    expect(cumulativeFeesUpdating(ready(100, 1, 5, { historyStatus: "updating" }))).toBe(false);
+    expect(cumulativeFeesUpdating({ status: "failed" })).toBe(false);
+    expect(cumulativeFeesUpdating({ status: "loading" })).toBe(false);
+    expect(cumulativeFeesUpdating(undefined)).toBe(false);
+  });
+  it("matches what the totals count as cumulativePending (every pending row is labeled)", () => {
+    const states: FiguresState[] = [ready(1, 1, null, { historyStatus: "updating" }), ready(1, 1, null, { historyStatus: "stale" }), ready(1, 1, 2), ready(1, 1, null)];
+    expect(portfolioTotals(states).cumulativePending).toBe(2);
+    expect(states.filter((state) => cumulativeFeesUpdating(state) && state.status === "ready" && state.figures.cumulativeFeesUsd === null)).toHaveLength(2);
   });
 });

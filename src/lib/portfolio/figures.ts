@@ -41,6 +41,18 @@ export type FiguresState =
   | { status: "failed" }
   | { status: "ready"; figures: PositionFigures; historyStatus?: HistoryStatus; retained?: boolean };
 
+type ReadyFigures = Extract<FiguresState, { status: "ready" }>;
+const catchingUp = (state: ReadyFigures) => state.retained === true || isHistoryCatchingUp(state.historyStatus);
+
+/**
+ * The row labels its cumulative fee "Updating" while fee history catches up: a retained last complete value, or a dash
+ * because there is none yet (the position the totals count in `cumulativePending`).
+ */
+export function cumulativeFeesUpdating(state: FiguresState | undefined): boolean {
+  if (state?.status !== "ready") return false;
+  return state.retained === true || (catchingUp(state) && state.figures.cumulativeFeesUsd === null);
+}
+
 export type PortfolioTotals = {
   /** Open positions counted. */
   positions: number;
@@ -68,8 +80,6 @@ export type PortfolioTotals = {
 export function portfolioTotals(states: readonly FiguresState[], extraValue: readonly (number | null)[] = []): PortfolioTotals {
   const pending = states.filter((state) => state.status === "loading").length;
   const ready = states.flatMap((state) => state.status === "ready" ? [state] : []);
-  const catchingUp = (state: Extract<FiguresState, { status: "ready" }>) =>
-    state.retained === true || isHistoryCatchingUp(state.historyStatus);
   const sum = (values: (number | null)[]) => values.some((value) => value !== null)
     ? values.reduce<number>((total, value) => total + (value ?? 0), 0) : null;
   const values = [...ready.map((item) => item.figures.valueUsd), ...extraValue];

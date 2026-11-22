@@ -121,8 +121,22 @@ describe("cumulative fees while history updates", () => {
     })));
     expect(container.querySelector("[data-testid=portfolio-cumulative-fees] p")!.textContent).toBe("—");
     expect(container.querySelector("[data-testid=portfolio-cumulative-pending]")!.textContent).toBe("Cumulative fees exclude 1 position.");
+    // On the Cumulative fees card, not repeated under Total LP value. Phones hide that card, so the one card keeps the note
+    // under its cumulative fees line, phone-only (sm:hidden).
+    expect(container.querySelectorAll("[data-testid=portfolio-cumulative-pending]")).toHaveLength(1);
+    expect(container.querySelector("[data-testid=portfolio-cumulative-fees] [data-testid=portfolio-cumulative-pending]")).not.toBeNull();
+    expect(container.querySelector("[data-testid=portfolio-total-value] [data-testid=portfolio-cumulative-pending]")).toBeNull();
+    const phone = container.querySelector("[data-testid=portfolio-total-value] [data-testid=portfolio-cumulative-pending-phone]")!;
+    expect(phone.textContent).toBe("Cumulative fees exclude 1 position.");
+    expect(phone.className.split(" ")).toContain("sm:hidden");
     expect(container.textContent).not.toContain("Some values are unavailable");
     expect(container.querySelector("[data-testid=cumulative-fees-updating]")).toBeNull();
+  });
+
+  it("labels a catching-up dash on the row as updating, like a retained value", async () => {
+    await list({ figures: { stock: "SPCX", shares: 1, valueUsd: 100, unclaimedFeesUsd: 0, cumulativeFeesUsd: null }, cumulativeFeesUpdating: true });
+    expect(container.querySelector("[data-testid=position-row-cumulative]")!.textContent).toBe("—Updating");
+    expect(container.querySelectorAll("[data-testid=cumulative-fees-updating]").length).toBeGreaterThan(0);
   });
 
   it("still phrases a cumulative-fee null as values unavailable when history is not catching up", async () => {
