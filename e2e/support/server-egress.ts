@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 
-/** Written by scripts/hermetic-egress-guard.mjs inside the hermetic server: one JSON line per refused Jupiter fetch. */
+/** Written by scripts/hermetic-egress-guard.mjs inside the hermetic server: one JSON line per refused non-local request. */
 export const SERVER_EGRESS_LEDGER = new URL("../.server-egress-blocked.jsonl", import.meta.url);
 
-export type BlockedEgress = { at: string; host: string; path: string };
+export type BlockedEgress = { at: string; host: string; path: string; via?: string };
 
 export function readBlockedEgress(ledger: URL | string = SERVER_EGRESS_LEDGER): BlockedEgress[] {
   if (!existsSync(ledger)) return [];
@@ -11,4 +11,4 @@ export function readBlockedEgress(ledger: URL | string = SERVER_EGRESS_LEDGER): 
 }
 
 export const describeBlockedEgress = (entries: readonly BlockedEgress[]) =>
-  entries.map((entry) => `server-side fetch to real Jupiter blocked: ${entry.host}${entry.path}`);
+  entries.map((entry) => `server-side ${entry.via ?? "request"} to ${entry.host}${entry.path} blocked`);
