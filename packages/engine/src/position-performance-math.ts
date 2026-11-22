@@ -50,9 +50,9 @@ export type PositionPerformanceInputs = {
    */
   usdPerRawUnitA?: number | null;
   usdPerRawUnitB?: number | null;
-  /** @deprecated Alias of `usdPerRawUnitA` (same unit); read only when `usdPerRawUnitA` is not given. */
+  /** @deprecated Alias of `usdPerRawUnitA` (same unit); read only when the `usdPerRawUnitA` key is absent. */
   priceUsdA?: number | null;
-  /** @deprecated Alias of `usdPerRawUnitB` (same unit); read only when `usdPerRawUnitB` is not given. */
+  /** @deprecated Alias of `usdPerRawUnitB` (same unit); read only when the `usdPerRawUnitB` key is absent. */
   priceUsdB?: number | null;
   decimalsA: number;
   decimalsB: number;
@@ -160,8 +160,10 @@ export function computePositionPerformance(input: PositionPerformanceInputs): Po
   const pnlRaw = subSides(addSides(currentEquity, totalReturned), input.deposited);
 
   const holdingDays = holdingDaysFromSeconds(input.holdingSeconds);
-  const priceUsdA = input.usdPerRawUnitA ?? input.priceUsdA ?? null;
-  const priceUsdB = input.usdPerRawUnitB ?? input.priceUsdB ?? null;
+  // The explicit name wins whenever its key is present, even as null ("no price"): the deprecated alias is read only
+  // when the key is absent, so an unknown price never picks up a stale alias.
+  const priceUsdA = "usdPerRawUnitA" in input ? input.usdPerRawUnitA ?? null : input.priceUsdA ?? null;
+  const priceUsdB = "usdPerRawUnitB" in input ? input.usdPerRawUnitB ?? null : input.priceUsdB ?? null;
 
   const depositedUsd = sideUsd(input.deposited, input.decimalsA, input.decimalsB, priceUsdA, priceUsdB);
   const withdrawnPrincipalUsd = sideUsd(

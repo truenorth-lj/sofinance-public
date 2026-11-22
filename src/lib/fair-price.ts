@@ -62,10 +62,6 @@ export function formatShareMultiplier(multiplier: number): string {
   return trimTrailingZeros(multiplier.toFixed(4));
 }
 
-export function formatFairPrice(fair: number): string {
-  return formatShareMultiplier(fair);
-}
-
 /**
  * "Fair price: 1 NVDAx ≈ 1.0017 NVDA" — tokens in the same order as the on-screen pairLabel
  * (Solana: wrapped / plain). `fair` is token B per token A (raw).
