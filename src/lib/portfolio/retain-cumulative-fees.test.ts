@@ -18,13 +18,26 @@ describe("retainCumulativeFees", () => {
     const complete = base({ status: "ready", historyComplete: true, historyStatus: "fresh", figures: { cumulativeFeesUsd: 11.36 } });
     expect(retainCumulativeFees("A", complete).figures.cumulativeFeesUsd).toBe(11.36);
     const updating = base({ historyStatus: "updating", figures: { valueUsd: 120, unclaimedFeesUsd: 0, cumulativeFeesUsd: null } });
-    expect(retainCumulativeFees("A", updating).figures.cumulativeFeesUsd).toBe(11.36);
-    expect(retainCumulativeFees("A", { ...updating, historyStatus: "stale" }).figures.cumulativeFeesUsd).toBe(11.36);
+    const kept = retainCumulativeFees("A", updating);
+    expect(kept.figures.cumulativeFeesUsd).toBe(11.36);
+    expect(kept.retained).toBe(true);
+    expect(retainCumulativeFees("A", { ...updating, historyStatus: "stale" })).toMatchObject({ retained: true, figures: { cumulativeFeesUsd: 11.36 } });
+    expect(retainCumulativeFees("A", { ...updating, historyStatus: "unavailable" })).toMatchObject({ retained: true, figures: { cumulativeFeesUsd: 11.36 } });
   });
 
   it("leaves a dash when the position has never had a complete cumulative fee", () => {
     const updating = base({ historyStatus: "updating", figures: { cumulativeFeesUsd: null } });
     expect(retainCumulativeFees("A", updating).figures.cumulativeFeesUsd).toBeNull();
+  });
+
+  it("does not backfill a null when history is fresh or missing, even if a last complete value was cached", () => {
+    retainCumulativeFees("A", base({ status: "ready", historyComplete: true, historyStatus: "fresh", figures: { cumulativeFeesUsd: 11.36 } }));
+    const fresh = retainCumulativeFees("A", base({ historyStatus: "fresh", figures: { cumulativeFeesUsd: null } }));
+    expect(fresh.figures.cumulativeFeesUsd).toBeNull();
+    expect(fresh.retained).toBeFalsy();
+    const absent = retainCumulativeFees("A", base({ figures: { cumulativeFeesUsd: null } }));
+    expect(absent.figures.cumulativeFeesUsd).toBeNull();
+    expect(absent.retained).toBeFalsy();
   });
 
   it("does not reuse one wallet or position's complete value for another", () => {

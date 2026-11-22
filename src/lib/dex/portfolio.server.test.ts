@@ -54,8 +54,9 @@ describe("Portfolio aggregation", () => {
     });
     const result = await readPortfolio({ wallet: mint(7), positions: [1, 2, 3].map((n) => ({ key: key(n) })) }, signal());
     expect(result.positions.map((row) => row.status)).toEqual(["partial", "failed", "partial"]);
-    // Only the failed row is missing; a dash for incomplete cumulative fees is not counted as a missing value.
-    expect(result.totals).toMatchObject({ valueUsd: 200, unclaimedFeesUsd: 2, cumulativeFeesUsd: null, missing: 1 });
+    // No historyStatus on these rows (this test does not enable the history store), so the dashes count as missing.
+    // Catching-up classification is covered in figures.test.ts.
+    expect(result.totals).toMatchObject({ valueUsd: 200, unclaimedFeesUsd: 2, cumulativeFeesUsd: null, missing: 3, cumulativePending: 0 });
     expect(JSON.stringify(result)).not.toContain("secret");
   });
   it("isolates bad accounts and unknown sources, and stops dispatch after cancellation", async () => {

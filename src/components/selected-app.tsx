@@ -259,7 +259,7 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
   };
   const portfolio = portfolioTotals(allPositions.filter((item) => !isClosed(item) && reportedKeys.has(item.key)).map((item): FiguresState => {
     const loaded = figures[item.key];
-    return !loaded ? { status: "loading" } : loaded.status === "failed" ? { status: "failed" } : { status: "ready", figures: loaded.figures };
+    return !loaded ? { status: "loading" } : loaded.status === "failed" ? { status: "failed" } : { status: "ready", figures: loaded.figures, historyStatus: loaded.historyStatus, retained: loaded.retained };
   }), allPositions.filter((item) => !isClosed(item) && !reportedKeys.has(item.key)).map((item) => figuresOf(item)?.valueUsd ?? null));
   // One "Refresh" (was "Rescan wallet" + "Reload fees"): the Solana scan, the selected position's on-chain state and fees, the
   // registry DEXes and, on /app, the Robinhood Chain scan via the parent's refresh counter.
@@ -300,9 +300,7 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
     const pair = item.tokenA.id || item.tokenB.id ? pairOf(item) : "";
     const title = rowFigures?.stock ?? (pair || `Position ${id}`);
     const loaded = figures[item.key];
-    const historyStatus = loaded?.historyStatus;
-    const cumulativeFeesUpdating = Boolean(loaded && loaded.status !== "failed" && loaded.figures.cumulativeFeesUsd !== null
-      && (historyStatus === "updating" || historyStatus === "stale" || historyStatus === "unavailable"));
+    const cumulativeFeesUpdating = loaded?.retained === true;
     return [item.key, { item, figures: rowFigures, title,
       subtitle: [title !== pair ? pair : null, group.showSourceName ? sourceName(item) : null, title.endsWith(id) ? null : id].filter(Boolean).join(" · "),
       actions: rowActions(capabilitiesOf(item), isClosed(item), { activity: item.source === positionSource.id || registry.owns(item) }), compound: rowCompound(item),
@@ -379,12 +377,7 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
         </button>
       </div>
 
-      {allPositions.length > 0 && <PortfolioSummary totals={portfolio} cumulativeFeesUpdating={figureKeys.some((key) => {
-        const loaded = figures[key];
-        const status = loaded?.historyStatus;
-        return Boolean(loaded && loaded.status !== "failed" && loaded.figures.cumulativeFeesUsd !== null
-          && (status === "updating" || status === "stale" || status === "unavailable"));
-      })} />}
+      {allPositions.length > 0 && <PortfolioSummary totals={portfolio} cumulativeFeesUpdating={figureKeys.some((key) => figures[key]?.retained === true)} />}
       {allPositions.length > 0 && <PortfolioHistoryStatus rows={figureKeys.flatMap((key) => figures[key] ? [figures[key]!] : [])} />}
 
       <section aria-labelledby="all-positions-heading" className="mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-7">

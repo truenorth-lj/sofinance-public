@@ -143,12 +143,14 @@ describe("Portfolio client request lifecycle", () => {
     await render("A", 1);
     expect((container.firstElementChild as HTMLElement).getAttribute("data-cumulative")).toBe("2");
     expect(latest[key]?.figures.cumulativeFeesUsd).toBe(2);
+    expect(latest[key]?.retained).toBe(true);
     resetRetainedCumulativeFees();
     fetchMock.mockResolvedValueOnce(Response.json({ wallet: "A", positions: [{ ...row(), status: "partial", historyComplete: false, historyRefreshResolved: false,
       historyStatus: "updating", figures: { stock: "TSLA", shares: 1, valueUsd: 10, unclaimedFeesUsd: 0, cumulativeFeesUsd: null } }] }));
     await render("A", 2);
     expect((container.firstElementChild as HTMLElement).getAttribute("data-cumulative")).toBe("dash");
     expect(latest[key]?.figures.cumulativeFeesUsd).toBeNull();
+    expect(latest[key]?.retained).toBeFalsy();
   });
   it("keeps failed/missing rows explicit instead of counting them as zero", async () => {
     fetchMock.mockResolvedValue(Response.json({ wallet: "A", positions: [] }));

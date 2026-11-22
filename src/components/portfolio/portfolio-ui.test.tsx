@@ -55,7 +55,7 @@ describe("Compound all (LJ 11/14: greyed out, Coming soon, no transaction)", () 
 });
 
 describe("PortfolioSummary", () => {
-  const totals = { positions: 2, valueUsd: 1234.5, unclaimedFeesUsd: 3.25, cumulativeFeesUsd: 20, pending: 0, missing: 0 };
+  const totals = { positions: 2, valueUsd: 1234.5, unclaimedFeesUsd: 3.25, cumulativeFeesUsd: 20, pending: 0, missing: 0, cumulativePending: 0 };
   it("shows the three totals, with Compound all in the unclaimed card and under LP value on phones", async () => {
     await act(async () => root.render(createElement(PortfolioSummary, { totals })));
     const text = (id: string) => container.querySelector(`[data-testid=${id}]`)!.textContent!;
@@ -104,7 +104,7 @@ describe("cumulative fees while history updates", () => {
     expect(container.querySelector("[data-testid=position-row-cumulative]")!.textContent).toContain("Updating");
     expect(container.querySelectorAll("[data-testid=cumulative-fees-updating]").length).toBeGreaterThan(0);
     await act(async () => root.render(createElement(PortfolioSummary, {
-      totals: { positions: 1, valueUsd: 100, unclaimedFeesUsd: 0, cumulativeFeesUsd: 11.36, pending: 0, missing: 0 },
+      totals: { positions: 1, valueUsd: 100, unclaimedFeesUsd: 0, cumulativeFeesUsd: 11.36, pending: 0, missing: 0, cumulativePending: 0 },
       cumulativeFeesUpdating: true,
     })));
     expect(container.querySelector("[data-testid=portfolio-cumulative-fees]")!.textContent).toContain("$11.36");
@@ -112,15 +112,24 @@ describe("cumulative fees while history updates", () => {
     expect(container.textContent).not.toContain("Some values are unavailable");
   });
 
-  it("shows a dash when a position has never had a complete cumulative fee, and does not call that values unavailable", async () => {
+  it("shows a dash when a position has never had a complete cumulative fee, and notes that the total excludes it while history is catching up", async () => {
     await list({ figures: { stock: "SPCX", shares: 1, valueUsd: 100, unclaimedFeesUsd: 0, cumulativeFeesUsd: null }, cumulativeFeesUpdating: false });
     expect(container.querySelector("[data-testid=position-row-cumulative]")!.textContent).toBe("—");
     expect(container.querySelector("[data-testid=cumulative-fees-updating]")).toBeNull();
     await act(async () => root.render(createElement(PortfolioSummary, {
-      totals: { positions: 1, valueUsd: 100, unclaimedFeesUsd: 0, cumulativeFeesUsd: null, pending: 0, missing: 0 },
+      totals: { positions: 1, valueUsd: 100, unclaimedFeesUsd: 0, cumulativeFeesUsd: null, pending: 0, missing: 0, cumulativePending: 1 },
     })));
     expect(container.querySelector("[data-testid=portfolio-cumulative-fees] p")!.textContent).toBe("—");
+    expect(container.querySelector("[data-testid=portfolio-cumulative-pending]")!.textContent).toBe("Cumulative fees exclude 1 position.");
     expect(container.textContent).not.toContain("Some values are unavailable");
     expect(container.querySelector("[data-testid=cumulative-fees-updating]")).toBeNull();
+  });
+
+  it("still phrases a cumulative-fee null as values unavailable when history is not catching up", async () => {
+    await act(async () => root.render(createElement(PortfolioSummary, {
+      totals: { positions: 1, valueUsd: 100, unclaimedFeesUsd: 0, cumulativeFeesUsd: null, pending: 0, missing: 1, cumulativePending: 0 },
+    })));
+    expect(container.textContent).toContain("Some values are unavailable for 1 position; totals include available values only.");
+    expect(container.querySelector("[data-testid=portfolio-cumulative-pending]")).toBeNull();
   });
 });
