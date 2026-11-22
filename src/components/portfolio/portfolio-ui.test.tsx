@@ -139,6 +139,17 @@ describe("cumulative fees while history updates", () => {
     expect(container.querySelectorAll("[data-testid=cumulative-fees-updating]").length).toBeGreaterThan(0);
   });
 
+  it("hides the exclude note on both layouts while positions are still loading, and shows it once they are in", async () => {
+    const totals = { positions: 2, valueUsd: 100, unclaimedFeesUsd: 0, cumulativeFeesUsd: null, pending: 1, missing: 0, cumulativePending: 1 };
+    await act(async () => root.render(createElement(PortfolioSummary, { totals })));
+    expect(container.querySelector("[data-testid=portfolio-loading]")).not.toBeNull();
+    expect(container.querySelector("[data-testid=portfolio-cumulative-pending]")).toBeNull();
+    expect(container.querySelector("[data-testid=portfolio-cumulative-pending-phone]")).toBeNull();
+    await act(async () => root.render(createElement(PortfolioSummary, { totals: { ...totals, pending: 0 } })));
+    expect(container.querySelector("[data-testid=portfolio-cumulative-fees] [data-testid=portfolio-cumulative-pending]")!.textContent).toBe("Cumulative fees exclude 1 position.");
+    expect(container.querySelector("[data-testid=portfolio-cumulative-pending-phone]")).not.toBeNull();
+  });
+
   it("still phrases a cumulative-fee null as values unavailable when history is not catching up", async () => {
     await act(async () => root.render(createElement(PortfolioSummary, {
       totals: { positions: 1, valueUsd: 100, unclaimedFeesUsd: 0, cumulativeFeesUsd: null, pending: 0, missing: 1, cumulativePending: 0 },

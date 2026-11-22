@@ -46,9 +46,12 @@ function Total({ value, totals }: { value: number | null; totals: PortfolioTotal
   return <p aria-busy={totals.pending > 0} className={cn("mt-1 text-2xl font-semibold tabular-nums tracking-[-0.02em]", totals.pending ? "text-cream/60" : "text-cream")}>{formatUsd(value)}</p>;
 }
 
-/** Next to the cumulative fees figure only: the Cumulative fees card, or on phones the cumulative line of the one card. */
+/**
+ * Next to the cumulative fees figure only: the Cumulative fees card, or on phones the cumulative line of the one card.
+ * Hidden while positions are still loading (the count is not final; the loading hint says so).
+ */
 function ExcludeNote({ totals, phone = false }: { totals: PortfolioTotals; phone?: boolean }) {
-  if (!totals.cumulativePending || (phone && totals.pending)) return null;
+  if (!totals.cumulativePending || totals.pending) return null;
   return <p data-testid={phone ? "portfolio-cumulative-pending-phone" : "portfolio-cumulative-pending"} className={cn("mt-1 text-xs text-smoke", phone && "sm:hidden")}>
     Cumulative fees exclude {count(totals.cumulativePending)}.</p>;
 }

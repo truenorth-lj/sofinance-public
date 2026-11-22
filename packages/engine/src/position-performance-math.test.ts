@@ -103,6 +103,19 @@ describe("position-performance-math", () => {
     // The explicit name wins when both are given.
     expect(computePositionPerformance({ ...base, usdPerRawUnitA: 640, priceUsdA: 80, usdPerRawUnitB: 1 }).depositedUsd).toBe(641);
   });
+
+  it("an explicit usdPerRawUnitA/B: null means no price and never falls back to the deprecated alias", () => {
+    const base = {
+      deposited: { a: 1_000_000n, b: 1_000_000n }, withdrawnPrincipal: { a: 0n, b: 0n }, feesCollected: { a: 0n, b: 0n },
+      liquidityAmounts: { a: 1_000_000n, b: 1_000_000n }, uncollectedFees: { a: 0n, b: 0n }, holdingSeconds: 86_400, decimalsA: 6, decimalsB: 6,
+    };
+    const a = computePositionPerformance({ ...base, usdPerRawUnitA: null, priceUsdA: 80, usdPerRawUnitB: 1, priceUsdB: 1 });
+    expect(a).toMatchObject({ usdPerRawUnitA: null, priceUsdA: null, usdPerRawUnitB: 1, depositedUsd: null });
+    const b = computePositionPerformance({ ...base, usdPerRawUnitA: 640, usdPerRawUnitB: null, priceUsdB: 1 });
+    expect(b).toMatchObject({ usdPerRawUnitB: null, priceUsdB: null, depositedUsd: null });
+    // Key absent: the alias is still read.
+    expect(computePositionPerformance({ ...base, priceUsdA: 640, priceUsdB: 1 }).depositedUsd).toBe(641);
+  });
 });
 
 describe("token-native / token-equivalent", () => {
