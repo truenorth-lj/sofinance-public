@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { meteoraDlmmDescriptor } from "./dex/meteora-dlmm/descriptor";
 import type { DexDescriptor } from "./dex/types";
-import { effectiveExit, LEGACY_PLAN_TERMS, planPoolTerms, projectPoolPlan } from "./lp-plan-pool-terms";
+import { effectiveExit, LEGACY_PLAN_TERMS, planPoolTerms, projectPoolPlan, projectPoolPlanInAsset } from "./lp-plan-pool-terms";
 import { planEntryCost } from "./lp-plan-yield";
 
 describe("planPoolTerms", () => {
@@ -97,5 +97,29 @@ describe("LP share and closing cost", () => {
     expect(Number(usdc.exitValue)).toBeCloseTo(1335.14, 2);
     expect(usdc.breakEvenDay).toBe(24);
     expect(tokens.breakEvenDay).toBeLessThan(24);
+  });
+});
+
+describe("projectPoolPlanInAsset (SP-2)", () => {
+  const window = { aprPct: "40", sampleDays: 7, windowDays: 7, poolFeesPerDayUsd: "10" };
+  const usd = (capital: string) => projectPoolPlan({ capital, days: 90, window, terms: LEGACY_PLAN_TERMS, exit: "tokens", poolTvlUsd: 20_000 });
+
+  it("is the USD projection divided by the share price, fee cap included", () => {
+    const { comparison, capped } = projectPoolPlanInAsset({ amount: "10", usdPerUnit: 180, days: 90, window, terms: LEGACY_PLAN_TERMS, exit: "tokens", poolTvlUsd: 20_000 });
+    const dollars = usd("1800");
+    expect(capped).toBe(true);
+    expect(dollars.feeCapped).toBe(true);
+    expect(comparison.feeCapped).toBe(true);
+    for (const key of ["exitValue", "feesEarned", "vsHold", "entryCost", "exitCost"] as const) {
+      expect(Number(comparison[key])).toBeCloseTo(Number(dollars[key]) / 180, 9);
+    }
+    expect(comparison.breakEvenDay).toBe(dollars.breakEvenDay);
+  });
+
+  it("with no price runs on the APR alone (no cap, nothing converted)", () => {
+    const { comparison, capped } = projectPoolPlanInAsset({ amount: "10", usdPerUnit: null, days: 90, window, terms: LEGACY_PLAN_TERMS, exit: "tokens", poolTvlUsd: 20_000 });
+    const uncapped = projectPoolPlan({ capital: "10", days: 90, window: { aprPct: "40", sampleDays: 7, windowDays: 7 }, terms: LEGACY_PLAN_TERMS, exit: "tokens" });
+    expect(capped).toBe(false);
+    expect(comparison).toEqual(uncapped);
   });
 });

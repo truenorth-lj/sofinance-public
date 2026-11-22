@@ -4,17 +4,16 @@ import Link from "next/link";
 import { ArrowUpRight, X } from "lucide-react";
 import Decimal from "decimal.js";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { parseUsdc } from "@/lib/lp-intent";
 import { DEFAULT_PLAN_AMOUNT, DEFAULT_PLAN_DAYS } from "@/lib/lp-plan-intent";
 import { aprWindowAvgLabel } from "@/lib/lp-plan-best-apr";
-import { planPoolTerms, projectPoolPlan } from "@/lib/lp-plan-pool-terms";
-import { lowPlanApr, pairLabelSymbols, planShareSymbol } from "@/lib/lp-plan-shares";
+import { planPoolTerms, projectPoolPlanInAsset } from "@/lib/lp-plan-pool-terms";
+import { lowPlanApr, pairLabelSymbols, parsePlanAssetAmount, planAssetSymbol, planShareSymbol } from "@/lib/lp-plan-shares";
 import { PLAN_HIDDEN_RISK_LINE, planDataNotice } from "@/lib/lp-plan-notice";
 import { dexDescriptors, uiFor } from "@/lib/dex/client";
 import { cn } from "@/lib/cn";
 import { CALCULATE_LABEL } from "@/lib/unified-pools/calculate-label";
 import { HodlVsPool } from "../plan/hodl-vs-pool";
-import { formatCents, formatCostUsd, formatPct, formatSignedPct, formatSignedUsd } from "../plan/format";
+import { approxUsd, formatCostInUnit, formatInUnit, formatPct, formatSignedInUnit, formatSignedPct, type AmountUnit } from "../plan/format";
 import { usePoolYield } from "../plan/use-pool-yield";
 import type { OpenAction } from "./pool-list";
 import { ProjectionChart } from "./projection-chart";
@@ -22,9 +21,13 @@ import { ProjectionChart } from "./projection-chart";
 /** Horizons offered in the dialog, as the chart's range switch. */
 const SHARE_CALC_DAYS = [30, 90, 180, 365] as const;
 const rangeLabel = (days: number) => (days === 365 ? "1Y" : `${days}D`);
-/** Quick amounts under the input. */
-const PRESETS = ["100", "1000", "10000"] as const;
-const presetLabel = (value: string) => (value === "100" ? "$100" : `$${Number(value) / 1000}K`);
+/**
+ * Quick amounts under the input, in the pool's asset (SP-2): shares of the stock, or USDC for the stablecoin pool.
+ * The first amount shown is the middle one.
+ */
+const STOCK_PRESETS = ["1", "10", "100"] as const;
+const USDC_PRESETS = ["100", DEFAULT_PLAN_AMOUNT, "10000"] as const;
+const presetLabel = (value: string) => (Number(value) >= 1000 ? `${Number(value) / 1000}K` : value);
 
 const panel = "rounded-xl border border-white/10 bg-white/[0.03]";
 
@@ -32,6 +35,8 @@ export type ShareCalcPool = {
   poolAddress: string; pairLabel: string; protocol: string;
   /** Pool TVL from the list, used to split the pool's fees with your deposit; the daily data's newest TVL otherwise. */
   tvlUsd?: number | null;
+  /** USD per real share from the pools snapshot (X3 valuation, `withUsdPerShare`); absent when unknown, never guessed. */
+  usdPerShare?: number | null;
 };
 
 /** A label / value row of the side panel. */
@@ -64,10 +69,17 @@ function OpenCta({ action, label }: { action: OpenAction; label: string }) {
  * (`projectPoolPlan`); read-only. Too few days of data hides the numbers; a small pool gets a warning (`planDataNotice`).
  */
 export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; open: OpenAction; onClose: () => void }) {
-  const [amountText, setAmountText] = useState(DEFAULT_PLAN_AMOUNT);
+  const symbols = useMemo(() => pairLabelSymbols(pool.pairLabel), [pool.pairLabel]);
+  const shareSymbol = planShareSymbol(symbols);
+  // SP-2: counted in the pool's own asset (the stock, or USDC for the stablecoin pool), ≈$ only beside it.
+  const assetSymbol = planAssetSymbol(symbols) ?? symbols?.plainSymbol ?? pool.pairLabel;
+  const usdPerUnit = typeof pool.usdPerShare === "number" && Number.isFinite(pool.usdPerShare) && pool.usdPerShare > 0 ? pool.usdPerShare : null;
+  const unit = useMemo<AmountUnit>(() => ({ kind: "asset", symbol: assetSymbol, usdPerUnit }), [assetSymbol, usdPerUnit]);
+  const presets = shareSymbol ? STOCK_PRESETS : USDC_PRESETS;
+  const [amountText, setAmountText] = useState<string>(presets[1]);
   const [days, setDays] = useState<number>(DEFAULT_PLAN_DAYS);
   const [now] = useState(() => Date.now());
-  const amount = parseUsdc(amountText);
+  const amount = parsePlanAssetAmount(amountText);
   const closeRef = useRef<HTMLButtonElement>(null);
   const poolYield = usePoolYield(pool.poolAddress);
   const ready = poolYield.status === "ready" ? poolYield : null;
@@ -76,8 +88,6 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
   const notice = ready ? planDataNotice({ sampleDays: ready.best.sampleDays, poolTvlUsd }) : null;
   // Too few days of data: no numbers at all (see `planDataNotice`).
   const best = ready && notice?.kind !== "hide" ? ready.best : null;
-  const symbols = useMemo(() => pairLabelSymbols(pool.pairLabel), [pool.pairLabel]);
-  const shareSymbol = planShareSymbol(symbols);
   const holdLabel = shareSymbol ?? (symbols ? `${symbols.wrappedSymbol} + ${symbols.plainSymbol}` : pool.pairLabel);
   const terms = useMemo(
     () => planPoolTerms({
@@ -89,15 +99,18 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
     [pool.protocol, symbols],
   );
 
-  // No exit picker here, so the projection takes the conservative one: swapping back to USDC.
-  const exit = terms.exits.includes("usdc") ? "usdc" : terms.exits[0] ?? "tokens";
+  // No exit picker here; counted in the asset, the projection keeps the pool tokens (SP-2: no swap back to USDC).
+  const exit = terms.exits.includes("tokens") ? "tokens" : terms.exits[0] ?? "usdc";
   const projection = useMemo(() => {
     if (!best || !amount) return null;
-    const at = (window: { aprPct: string; sampleDays: number; windowDays: number; poolFeesPerDayUsd?: string }, horizon: number) =>
-      projectPoolPlan({ capital: amount, days: horizon, window, terms, exit, poolTvlUsd });
+    const run = (window: { aprPct: string; sampleDays: number; windowDays: number; poolFeesPerDayUsd?: string }, horizon: number) =>
+      projectPoolPlanInAsset({ amount, usdPerUnit, days: horizon, window, terms, exit, poolTvlUsd });
+    const at = (window: Parameters<typeof run>[0], horizon: number) => run(window, horizon).comparison;
     const lowWindow = lowPlanApr(best, best.windows);
+    const main = run(best, days);
     return {
-      best: at(best, days),
+      best: main.comparison,
+      capped: main.capped,
       low: lowWindow ? at(lowWindow, days) : null,
       lowWindow,
       // Difference vs HODL at every horizon of the range switch, like a vault page's 30D / 90D / 1Y returns.
@@ -106,7 +119,7 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
         return { days: horizon, pct: new Decimal(plan.vsHold).div(plan.capital).mul(100).toFixed() };
       }),
     };
-  }, [best, amount, days, terms, exit, poolTvlUsd]);
+  }, [best, amount, usdPerUnit, days, terms, exit, poolTvlUsd]);
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -116,7 +129,7 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
   }, [onClose]);
 
   const waiting = !amount
-    ? "Enter an amount in USDC to see the projection."
+    ? `Enter an amount in ${assetSymbol} to see the projection.`
     : notice?.kind === "hide"
       ? notice.message
       : poolYield.status === "unavailable"
@@ -142,17 +155,17 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
           <div className={cn(panel, "bg-white/[0.05] p-4")}>
             <div className="flex items-center justify-between text-[12px] text-smoke">
               <span>You put in</span>
-              <span className="tabular-nums">≈ ${amount ? formatCents(amount) : "0.00"}</span>
+              {amount && approxUsd(amount, unit) ? <span className="tabular-nums" data-testid="share-calc-input-usd">{approxUsd(amount, unit)}</span> : null}
             </div>
             <div className="mt-2 flex items-center justify-between gap-3">
-              <span className="rounded-lg bg-white/[0.06] px-2.5 py-1 text-sm font-semibold">USDC</span>
-              <input value={amountText} onChange={(event) => setAmountText(event.target.value)} inputMode="decimal" aria-label="Amount in USDC"
+              <span className="rounded-lg bg-white/[0.06] px-2.5 py-1 text-sm font-semibold">{assetSymbol}</span>
+              <input value={amountText} onChange={(event) => setAmountText(event.target.value)} inputMode="decimal" aria-label={`Amount in ${assetSymbol}`}
                 aria-invalid={!amount}
                 className={cn("w-0 min-w-0 flex-1 bg-transparent text-right text-2xl font-medium tabular-nums text-cream outline-none",
                   !amount && "text-coral")} />
             </div>
             <div className="mt-3 flex justify-end gap-1.5">
-              {PRESETS.map((value) => (
+              {presets.map((value) => (
                 <button key={value} type="button" onClick={() => setAmountText(value)}
                   className="rounded-md bg-white/[0.08] px-2 py-0.5 text-[12px] font-medium text-cream/80 outline-none hover:bg-white/15 focus-visible:shadow-[0_0_0_2px_var(--color-lilac)]">
                   {presetLabel(value)}
@@ -166,8 +179,9 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
               <span>After {rangeLabel(days)}, HODL + {shareSymbol ? "more shares" : "fees"}</span>
             </div>
             <p className={cn("mt-1 text-2xl font-medium tabular-nums", plan ? (ahead ? "text-mint" : "text-coral") : "text-cream/40")}>
-              {plan ? `$${formatCents(plan.exitValue)}` : "—"}
+              {plan ? formatInUnit(plan.exitValue, unit) : "—"}
             </p>
+            {plan && approxUsd(plan.exitValue, unit) ? <p className="text-[11px] tabular-nums text-smoke/80">{approxUsd(plan.exitValue, unit)}</p> : null}
             <p className="text-[12px] text-smoke">{holdLabel}{shareSymbol ? ` + more ${shareSymbol}` : ""}</p>
           </div>
 
@@ -178,25 +192,25 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
 
           {plan && projection && best ? <dl className={cn(panel, "px-4 py-2.5")} data-testid="share-calc-assumptions">
             <InfoRow label={`Est. fee APR · ${aprWindowAvgLabel(best)}`}>{formatPct(plan.apyPct)}</InfoRow>
-            <InfoRow label="Fees collected">${formatCents(plan.feesEarned)}</InfoRow>
+            <InfoRow label="Fees collected">{formatInUnit(plan.feesEarned, unit)}</InfoRow>
             <InfoRow label="Protocol cut of fees">{`${Math.round((1 - terms.lpFeeShare) * 100)}%`}</InfoRow>
-            <InfoRow label="Opening cost">{formatCostUsd(plan.entryCost)}</InfoRow>
-            <InfoRow label={exit === "usdc" ? "Closing cost (to USDC)" : "Closing cost"}>{formatCostUsd(plan.exitCost)}</InfoRow>
+            <InfoRow label="Opening cost">{formatCostInUnit(plan.entryCost, unit)}</InfoRow>
+            <InfoRow label={exit === "usdc" ? "Closing cost (to USDC)" : "Closing cost (keep tokens)"}>{formatCostInUnit(plan.exitCost, unit)}</InfoRow>
             {projection.low && projection.lowWindow ? (
-              <InfoRow label={`At the ${aprWindowAvgLabel(projection.lowWindow, "pool avg")}`}>{`${formatSignedUsd(projection.low.vsHold)} vs HODL`}</InfoRow>
+              <InfoRow label={`At the ${aprWindowAvgLabel(projection.lowWindow, "pool avg")}`}>{`${formatSignedInUnit(projection.low.vsHold, unit)} vs HODL`}</InfoRow>
             ) : null}
           </dl> : null}
           {notice?.kind === "hide" ? <p className="px-1 text-[11px] leading-relaxed text-smoke" data-testid="share-calc-risk">
             {PLAN_HIDDEN_RISK_LINE}
           </p> : <p className="px-1 text-[11px] leading-relaxed text-smoke" data-testid="share-calc-footnote">
-            {`Best case from the pool's past fees, compounded daily: fees ${terms.lpShareLabel}, ${terms.openCost.rowLabel} to open, ${terms.exitCost[exit].label}.${best?.poolFeesPerDayUsd !== undefined ? " Fees are capped at what the pool actually paid, shared with your deposit." : ""} The stock's own price moves both sides alike and is left out. Network fees are ignored. Not a forecast.`}
+            {`Best case from the pool's past fees, compounded daily, counted in ${assetSymbol}: fees ${terms.lpShareLabel}, ${terms.openCost.rowLabel} to open, ${terms.exitCost[exit].label}.${projection?.capped ? " Fees are capped at what the pool actually paid, shared with your deposit." : best?.poolFeesPerDayUsd !== undefined ? ` This pool's ${assetSymbol} price is unknown right now, so fees are not capped at what the pool paid and no dollar value is shown.` : ""} The stock's own price moves both sides alike and is left out. Network fees are ignored. Not a forecast.`}
           </p>}
         </aside>
 
         {/* Main column: tiles, then the chart. */}
         <div className="flex min-w-0 flex-col gap-4 lg:order-1">
           {plan ? <div className="pr-10">
-            <HodlVsPool comparison={plan} poolLabel={pool.pairLabel} shareSymbol={shareSymbol} holdLabel={holdLabel} />
+            <HodlVsPool comparison={plan} poolLabel={pool.pairLabel} shareSymbol={shareSymbol} holdLabel={holdLabel} unit={unit} />
           </div> : <p role="status" className="pr-10 pt-2 text-sm text-smoke">{waiting}</p>}
 
           <div className={cn(panel, "p-4")}>
@@ -213,7 +227,7 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
               </div>
             </div>
             <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
-              <p className="text-2xl font-medium tabular-nums">{plan ? `US$${formatCents(plan.exitValue)}` : "—"}</p>
+              <p className="text-2xl font-medium tabular-nums">{plan ? formatInUnit(plan.exitValue, unit) : "—"}</p>
               {projection ? <dl className="flex gap-4 text-right" aria-label="Difference vs HODL by horizon">
                 {projection.byHorizon.map((item) => (
                   <div key={item.days}>
@@ -226,7 +240,7 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
               </dl> : null}
             </div>
             <div className="mt-4">
-              {plan ? <ProjectionChart comparison={plan} low={projection?.low ?? null} now={now} />
+              {plan ? <ProjectionChart comparison={plan} low={projection?.low ?? null} now={now} unit={unit} />
                 : <div className="h-56 sm:h-64" aria-hidden="true" />}
             </div>
           </div>

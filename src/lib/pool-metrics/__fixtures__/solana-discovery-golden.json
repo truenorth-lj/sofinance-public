@@ -45,7 +45,11 @@
    "freezeRiskA": true,
    "freezeRiskB": true,
    "freezeRisk": true,
-   "priceBPerA": 0.9995505966131164
+   "priceBPerA": 0.9995505966131164,
+   "reserveAmounts": {
+    "amountA": 64.85183185,
+    "amountB": 43.929124
+   }
   },
   {
    "poolAddress": "8ug1sF47mzUxYhbnpGwYCf3bgb3TtrnwhABfdAfgtRfU",
@@ -93,7 +97,11 @@
    "freezeRiskA": true,
    "freezeRiskB": true,
    "freezeRisk": true,
-   "priceBPerA": 1.0034843119852956
+   "priceBPerA": 1.0034843119852956,
+   "reserveAmounts": {
+    "amountA": 2.22208372,
+    "amountB": 3.489933
+   }
   },
   {
    "poolAddress": "4gzWX5biAZxQsb2GhWPGds2YR6bgMowcGUS3SuWjejtY",
@@ -141,7 +149,11 @@
    "freezeRiskA": true,
    "freezeRiskB": true,
    "freezeRisk": true,
-   "priceBPerA": 0.9966254176215996
+   "priceBPerA": 0.9966254176215996,
+   "reserveAmounts": {
+    "amountA": 0.860911,
+    "amountB": 0.80542034
+   }
   },
   {
    "poolAddress": "6g65bzgeTNLeq9ubXPKvw7huT1s9JjMDjmbYYVkY1jCZ",
@@ -187,7 +199,11 @@
    "freezeRiskA": true,
    "freezeRiskB": true,
    "freezeRisk": true,
-   "priceBPerA": 0.9943556390287738
+   "priceBPerA": 0.9943556390287738,
+   "reserveAmounts": {
+    "amountA": 0.627474,
+    "amountB": 0.11715581
+   }
   },
   {
    "poolAddress": "DFphRgRLFyufhFGUnM3p82TJaSHQPaedRWvFWRUgFDEy",
@@ -235,7 +251,11 @@
    "freezeRiskA": true,
    "freezeRiskB": true,
    "freezeRisk": true,
-   "priceBPerA": 1.0016673200085622
+   "priceBPerA": 1.0016673200085622,
+   "reserveAmounts": {
+    "amountA": 21.11205104,
+    "amountB": 3.949862
+   }
   },
   {
    "poolAddress": "9nnephnEJQsBgUbHsDebKpf7vpC9S9Q6T5q1rYQQSoxT",
@@ -281,7 +301,11 @@
    "freezeRiskA": true,
    "freezeRiskB": true,
    "freezeRisk": true,
-   "priceBPerA": 0.9989581415886251
+   "priceBPerA": 0.9989581415886251,
+   "reserveAmounts": {
+    "amountA": 7.598973,
+    "amountB": 8.38315754
+   }
   },
   {
    "poolAddress": "FW2YA6rDDS7CkvLo3QoE7iWziWdqaWLU9gAveoyvZfy9",
@@ -328,7 +352,11 @@
    "freezeRiskA": true,
    "freezeRiskB": true,
    "freezeRisk": true,
-   "priceBPerA": 1.0030667612611741
+   "priceBPerA": 1.0030667612611741,
+   "reserveAmounts": {
+    "amountA": 1.83008727,
+    "amountB": 2.182308
+   }
   },
   {
    "poolAddress": "6upkM7TLLAvZhZwvQAM99S7LZYk14y6hC2xWPszxh2x2",
@@ -375,7 +403,11 @@
    "freezeRiskA": true,
    "freezeRiskB": true,
    "freezeRisk": true,
-   "priceBPerA": 1.0036643390066144
+   "priceBPerA": 1.0036643390066144,
+   "reserveAmounts": {
+    "amountA": 3.15375292,
+    "amountB": 2.439252
+   }
   },
   {
    "poolAddress": "FjUosHaSbH6XWodwzNfq2bFeSJkmdLkwi66zBjzc8KKS",
@@ -423,7 +455,11 @@
    "freezeRiskA": true,
    "freezeRiskB": true,
    "freezeRisk": true,
-   "priceBPerA": 0.9990344536279918
+   "priceBPerA": 0.9990344536279918,
+   "reserveAmounts": {
+    "amountA": 20.851546,
+    "amountB": 20.24314595
+   }
   },
   {
    "poolAddress": "85YT66QaFFzFZgvR9YAjKiR1ECuKkyYiswwMa5CqBogy",
@@ -471,7 +507,11 @@
    "freezeRiskA": true,
    "freezeRiskB": true,
    "freezeRisk": true,
-   "priceBPerA": 1.003949489827213
+   "priceBPerA": 1.003949489827213,
+   "reserveAmounts": {
+    "amountA": 7.13843113,
+    "amountB": 16.198015
+   }
   },
   {
    "poolAddress": "6jUkfJtnKw9VL1gcbcy3dGo4YRBmDsfpqUgha5VoqSWW",
@@ -519,7 +559,11 @@
    "freezeRiskA": true,
    "freezeRiskB": true,
    "freezeRisk": true,
-   "priceBPerA": 0.9963414554485319
+   "priceBPerA": 0.9963414554485319,
+   "reserveAmounts": {
+    "amountA": 1.057508,
+    "amountB": 0.53594572
+   }
   },
   {
    "poolAddress": "CxEUkLtuPsmiVgmnaCnEM7Ki6yzLiuP8wE7dVKUTWXdQ",
@@ -567,7 +611,11 @@
    "freezeRiskA": true,
    "freezeRiskB": true,
    "freezeRisk": true,
-   "priceBPerA": 1.0002834942697993
+   "priceBPerA": 1.0002834942697993,
+   "reserveAmounts": {
+    "amountA": 176.469401,
+    "amountB": 323.2968093
+   }
   },
   {
    "poolAddress": "BZtgQEyS6eXUXicYPHecYQ7PybqodXQMvkjUbP4R8mUU",
@@ -601,7 +649,11 @@
    "freezeRiskA": true,
    "freezeRiskB": true,
    "freezeRisk": true,
-   "priceBPerA": 1.0010203913058704
+   "priceBPerA": 1.0010203913058704,
+   "reserveAmounts": {
+    "amountA": 774691.880797,
+    "amountB": 1042776.826719
+   }
   },
   {
    "poolAddress": "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro",
@@ -648,7 +700,11 @@
    "freezeRiskA": true,
    "freezeRiskB": true,
    "freezeRisk": true,
-   "priceBPerA": 0.9998298202410433
+   "priceBPerA": 0.9998298202410433,
+   "reserveAmounts": {
+    "amountA": 1491.451948,
+    "amountB": 388.82036243
+   }
   },
   {
    "poolAddress": "3ofY6ksvi5m2wRfKmYebCm4EoCWbciWgimaiieeL36hW",
@@ -695,7 +751,11 @@
    "freezeRiskA": true,
    "freezeRiskB": true,
    "freezeRisk": true,
-   "priceBPerA": 1.0000557979250393
+   "priceBPerA": 1.0000557979250393,
+   "reserveAmounts": {
+    "amountA": 17.715476,
+    "amountB": 18.00878208
+   }
   },
   {
    "poolAddress": "5MBpNcWTqiWy3pZX17pYfgP2ZxrSkok4naQWLj3XLDLY",
@@ -743,7 +803,11 @@
    "freezeRiskA": true,
    "freezeRiskB": true,
    "freezeRisk": true,
-   "priceBPerA": 0.9995075556555307
+   "priceBPerA": 0.9995075556555307,
+   "reserveAmounts": {
+    "amountA": 50.41986515,
+    "amountB": 42.523193
+   }
   },
   {
    "poolAddress": "4bMbJzxWyiokwyQC4ndST5sJv6Qnb4viyACzhyFUgRbd",
@@ -791,7 +855,11 @@
    "freezeRiskA": true,
    "freezeRiskB": true,
    "freezeRisk": true,
-   "priceBPerA": 1.0004975185913927
+   "priceBPerA": 1.0004975185913927,
+   "reserveAmounts": {
+    "amountA": 1.530981,
+    "amountB": 4.01824345
+   }
   },
   {
    "poolAddress": "Dk8jvXxpjdNEHQWXHcW1uKpUFTyhkAuSxqonqAv7d9sD",
@@ -839,7 +907,11 @@
    "freezeRiskA": true,
    "freezeRiskB": true,
    "freezeRisk": true,
-   "priceBPerA": 0.9997636370458435
+   "priceBPerA": 0.9997636370458435,
+   "reserveAmounts": {
+    "amountA": 2.546362,
+    "amountB": 2.58560992
+   }
   }
  ],
  "freezeRiskSource": "tags",

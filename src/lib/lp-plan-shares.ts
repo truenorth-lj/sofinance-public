@@ -26,6 +26,28 @@ export function planShareSymbol(pair: { wrappedSymbol?: string; plainSymbol?: st
   return plain;
 }
 
+/**
+ * The asset the pools calculator counts in (SP-2, asset-denominated): the stock for a same-stock pair (`planShareSymbol`),
+ * USDC for a stablecoin pair, or null when the pair is neither (the caller then stays in dollars).
+ */
+export function planAssetSymbol(pair: { wrappedSymbol?: string; plainSymbol?: string } | null | undefined): string | null {
+  const share = planShareSymbol(pair);
+  if (share) return share;
+  const sides = [pair?.wrappedSymbol, pair?.plainSymbol].map((symbol) => symbol?.trim().toUpperCase() ?? "");
+  return sides.every((symbol) => STABLE_SYMBOLS.has(symbol)) ? "USDC" : null;
+}
+
+/** Largest amount of an asset the calculator accepts. */
+const MAX_PLAN_ASSET = new D("1000000000");
+
+/** "12.5" from the calculator's asset input (commas and spaces ignored, up to 9 decimals, above 0); null when invalid. */
+export function parsePlanAssetAmount(input: string): string | null {
+  const text = input.replace(/[,\s]/g, "");
+  if (!/^\d+(\.\d{0,9})?$/.test(text)) return null;
+  const value = new D(text);
+  return value.gt(0) && value.lte(MAX_PLAN_ASSET) ? value.toFixed() : null;
+}
+
 /** `SPCXx/SPCX` → its two symbols (wrapped first, as the pool list labels them); null for anything else. */
 export function pairLabelSymbols(label: string | null | undefined): { wrappedSymbol: string; plainSymbol: string } | null {
   const [wrappedSymbol, plainSymbol, extra] = (label ?? "").split("/");

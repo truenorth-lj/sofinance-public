@@ -87,3 +87,47 @@ export function completeDaysCopy(sampleDays: number): string {
 export function bestAprCopy(best: { windowDays: number; aprPct: string }): string {
   return `${aprWindowLabel(best.windowDays)} average fee APR of ${formatPct(best.aprPct)}`;
 }
+
+/**
+ * What the calculator counts in: US dollars (the Plan page) or the pool's own asset (the pools calculator, SP-2: shares
+ * of the stock, or USDC for the stablecoin pool). `usdPerUnit` is null when the share price is unknown; then no ≈$ is
+ * shown (never guessed).
+ */
+export type AmountUnit = { kind: "usd" } | { kind: "asset"; symbol: string; usdPerUnit: number | null };
+export const USD_UNIT: AmountUnit = { kind: "usd" };
+
+/** Places for an asset amount: fewer for big counts, more for fractions of a share. */
+const assetPlaces = (abs: Decimal) => (abs.gte(100) ? 2 : abs.gte(1) ? 4 : 6);
+
+/** "10.0532" / "1,250.5" / "0.004213" — an asset amount without a sign, trailing zeros trimmed. */
+export function formatAssetAmount(value: string | number): string {
+  const abs = new Decimal(value).abs();
+  return grouped(abs, assetPlaces(abs), true);
+}
+
+/** "$1,000.00" in dollars, "10.0532 NVDA" in the asset. */
+export function formatInUnit(value: string | number, unit: AmountUnit): string {
+  return unit.kind === "usd" ? `$${formatCents(value)}` : `${formatAssetAmount(value)} ${unit.symbol}`;
+}
+
+/** "+$2.65" / "+0.0532 NVDA" / "−0.01 NVDA" / "0 NVDA": a result with its sign. */
+export function formatSignedInUnit(value: string | number, unit: AmountUnit): string {
+  if (unit.kind === "usd") return formatSignedUsd(value);
+  const amount = new Decimal(value);
+  const shown = formatAssetAmount(amount.toFixed());
+  if (new Decimal(shown.replace(/,/g, "")).isZero()) return `0 ${unit.symbol}`;
+  return `${amount.isNegative() ? MINUS : "+"}${shown} ${unit.symbol}`;
+}
+
+/** "−$11.00" / "$0.00" in dollars; "−0.0532 NVDA" / "0 NVDA" in the asset (a cost, so the input's sign is ignored). */
+export function formatCostInUnit(value: string | number, unit: AmountUnit): string {
+  if (unit.kind === "usd") return formatCostUsd(value);
+  const shown = formatAssetAmount(value);
+  return new Decimal(shown.replace(/,/g, "")).isZero() ? `0 ${unit.symbol}` : `${MINUS}${shown} ${unit.symbol}`;
+}
+
+/** "≈ $1,850.00": an asset amount in dollars, as secondary text; null in dollars or when the price is unknown. */
+export function approxUsd(value: string | number, unit: AmountUnit): string | null {
+  if (unit.kind === "usd" || unit.usdPerUnit === null) return null;
+  return `≈ $${formatCents(new Decimal(value).abs().mul(unit.usdPerUnit).toFixed())}`;
+}

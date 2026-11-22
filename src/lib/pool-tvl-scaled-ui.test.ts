@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { knownMultiplier, tvlLeavesOutScaledUi, withScaledUiTvl } from "./pool-tvl-scaled-ui";
+import { knownMultiplier, tvlLeavesOutScaledUi, withScaledUiTvl, withUsdPerShare } from "./pool-tvl-scaled-ui";
 import type { RwaPairRow } from "./rwa-pairs";
 
 // Meteora NVDA/NVDAx (design P2): datapi TVL, amounts and prices as captured 2026-11-21.
@@ -51,5 +51,27 @@ describe("withScaledUiTvl", () => {
     expect(withScaledUiTvl(raydium, { a: 8, b: 8 })).toBe(raydium);
     const bare = { ...meteora, tvlSides: undefined } as RwaPairRow;
     expect(withScaledUiTvl(bare, { a: 1, b: 2 })).toBe(bare);
+  });
+});
+
+describe("withUsdPerShare (SP-2)", () => {
+  // Raydium SNDK/SNDKx (design §0): API TVL already includes the ×8 on both sides.
+  const sndk = { poolAddress: "sndk", protocol: "raydium-clmm", tvlUsd: 5556.72, reserveAmounts: { amountA: 5.660742, amountB: 2.8931764 } } as RwaPairRow;
+
+  it("prices a Raydium row in real shares from its TVL, reserves and multipliers", () => {
+    expect(withUsdPerShare(sndk, { a: 8, b: 8 }).usdPerShare).toBeCloseTo(81.2, 1);
+  });
+  it("prices a Meteora row only after its TVL is corrected", () => {
+    const corrected = withScaledUiTvl(meteora, { a: 1, b: 1.001701196801074 });
+    const priced = withUsdPerShare(corrected, { a: 1, b: 1.001701196801074 });
+    // Between datapi's two per-share prices ($127.41 and $127.61): one price for the same stock on both sides.
+    expect(priced.usdPerShare).toBeCloseTo(127.4, 1);
+    expect(withUsdPerShare(meteora, { a: 1, b: 1.001701196801074 })).not.toHaveProperty("usdPerShare");
+  });
+  it("drops the price (never guesses) when a multiplier is unknown or the reserves are missing, and is idempotent", () => {
+    const priced = withUsdPerShare(sndk, { a: 8, b: 8 });
+    expect(withUsdPerShare(priced, { a: 8, b: null })).not.toHaveProperty("usdPerShare");
+    expect(withUsdPerShare({ ...sndk, reserveAmounts: undefined } as RwaPairRow, { a: 8, b: 8 })).not.toHaveProperty("usdPerShare");
+    expect(withUsdPerShare(priced, { a: 8, b: 8 })).toEqual(priced);
   });
 });

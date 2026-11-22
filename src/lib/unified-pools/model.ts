@@ -46,6 +46,11 @@ export type UnifiedPool = {
   priceBPerA?: number | null;
   multiplierA?: number;
   multiplierB?: number;
+  /**
+   * USD per real share for a same-asset pool (TVL over reserves × known multipliers, from the snapshot); absent when
+   * unknown, never guessed. The calculator counts in the pool's asset and shows ≈$ only when this is set.
+   */
+  usdPerShare?: number;
   /** Estimated pool fee APR from the last 24h, percent. */
   poolFeeApr24hPct: number | null;
   /**

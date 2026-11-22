@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildPlanComparison, planEntryCost } from "./lp-plan-yield";
-import { endShares, lowPlanApr, planShareSymbol, profitToShareDelta } from "./lp-plan-shares";
+import { endShares, lowPlanApr, parsePlanAssetAmount, planAssetSymbol, planShareSymbol, profitToShareDelta } from "./lp-plan-shares";
 
 function plan(capital: string, days: number, aprPct: string) {
   return buildPlanComparison({ capital, days, aprPct, sampleDays: 29, aprWindowDays: 30, entryCost: planEntryCost(capital) });
@@ -53,5 +53,19 @@ describe("lowPlanApr", () => {
 
   it("has no range when every window matches the best", () => {
     expect(lowPlanApr(best, [best])).toBeNull();
+  });
+});
+
+describe("planAssetSymbol and parsePlanAssetAmount (SP-2)", () => {
+  it("counts a same-stock pool in the stock, the stablecoin pool in USDC, anything else in nothing", () => {
+    expect(planAssetSymbol({ wrappedSymbol: "NVDAx", plainSymbol: "NVDA" })).toBe("NVDA");
+    expect(planAssetSymbol({ wrappedSymbol: "USDC", plainSymbol: "USDT" })).toBe("USDC");
+    expect(planAssetSymbol({ wrappedSymbol: "USDC" })).toBeNull();
+    expect(planAssetSymbol(null)).toBeNull();
+  });
+  it("accepts positive amounts up to 9 decimals and rejects the rest", () => {
+    expect(parsePlanAssetAmount("1,250.5")).toBe("1250.5");
+    expect(parsePlanAssetAmount("0.000000001")).toBe("0.000000001");
+    for (const bad of ["", "0", "-1", "1.0000000001", "abc", "2000000000"]) expect(parsePlanAssetAmount(bad)).toBeNull();
   });
 });

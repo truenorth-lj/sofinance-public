@@ -202,6 +202,39 @@ export function projectPoolPlan(input: {
   });
 }
 
+/**
+ * `projectPoolPlan` counted in the pool's own asset (SP-2): `amount` is in that asset (shares for a same-stock pool,
+ * USDC for the stablecoin pool) and every amount in the result is too. The math is linear in the deposit, so with a
+ * known `usdPerUnit` this is the USD projection divided by the price; the pool's fees and TVL (USD) are brought into the
+ * asset for the cap. With no price (a multiplier or the reserves unknown) the cap cannot be sized against the pool, so
+ * the projection runs on the fee APR alone and `capped` is false; nothing is converted with a guessed price.
+ */
+export function projectPoolPlanInAsset(input: {
+  amount: string;
+  /** USD per one unit of the asset, or null when unknown. */
+  usdPerUnit: number | null;
+  days: number;
+  window: { aprPct: string; sampleDays: number; windowDays: number; poolFeesPerDayUsd?: string };
+  terms: PlanPoolTerms;
+  exit: ExitAsset;
+  poolTvlUsd?: number | null;
+}): { comparison: PlanYieldComparison; capped: boolean } {
+  const { amount, usdPerUnit, window, poolTvlUsd } = input;
+  const price = usdPerUnit !== null && Number.isFinite(usdPerUnit) && usdPerUnit > 0 ? new Decimal(usdPerUnit) : null;
+  const { poolFeesPerDayUsd, ...rest } = window;
+  const capped = price !== null && poolFeesPerDayUsd !== undefined;
+  const comparison = projectPoolPlan({
+    capital: amount,
+    days: input.days,
+    window: capped ? { ...rest, poolFeesPerDayUsd: new Decimal(poolFeesPerDayUsd).div(price).toFixed() } : rest,
+    terms: input.terms,
+    exit: input.exit,
+    poolTvlUsd: price !== null && poolTvlUsd !== undefined && poolTvlUsd !== null && Number.isFinite(poolTvlUsd) && poolTvlUsd > 0
+      ? new Decimal(poolTvlUsd).div(price).toNumber() : null,
+  });
+  return { comparison, capped };
+}
+
 /** Deposit the cards and the pools table price their APR at (the calculator's cap rule needs a deposit size). */
 export const CARD_APR_DEPOSIT_USD = 1_000;
 

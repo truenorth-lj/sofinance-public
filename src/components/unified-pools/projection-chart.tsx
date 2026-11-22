@@ -4,7 +4,7 @@ import { useId, useMemo } from "react";
 import Decimal from "decimal.js";
 import { breakEvenInPeriod } from "@/lib/lp-plan-chart";
 import type { PlanYieldComparison } from "@/lib/lp-plan-yield";
-import { formatCents } from "../plan/format";
+import { formatCents, formatInUnit, USD_UNIT, type AmountUnit } from "../plan/format";
 
 const W = 1000;
 const H = 280;
@@ -16,14 +16,22 @@ function axisUsd(value: number, span: number): string {
   return span >= 20 ? `$${formatCents(Math.round(value)).replace(/\.00$/, "")}` : `$${formatCents(value)}`;
 }
 
+/** An asset count for the axis: places shrink as the range widens (no symbol; the HODL line names the unit). */
+function axisAsset(value: number, span: number): string {
+  const places = span >= 20 ? 0 : span >= 1 ? 2 : span >= 0.01 ? 4 : 6;
+  return value.toLocaleString("en-US", { minimumFractionDigits: places, maximumFractionDigits: places });
+}
+
 /**
  * What the position would be worth on each day if you closed it then (after the opening and closing costs), against
  * the same money held. An area under the best case, a faint line for the lowest recent window, the hold level dashed,
  * dates along the bottom from today and values on the right, in the pools page's dark style. SVG for the shapes only
  * (stretched to the box); every label is HTML, so text stays the same size at any width.
  */
-export function ProjectionChart({ comparison, low = null, now }: {
+export function ProjectionChart({ comparison, low = null, now, unit = USD_UNIT }: {
   comparison: PlanYieldComparison;
+  /** What amounts are counted in (SP-2: the pool's asset); dollars by default. */
+  unit?: AmountUnit;
   low?: PlanYieldComparison | null;
   /** Day 0 for the date axis (ms). */
   now: number;
@@ -70,7 +78,7 @@ export function ProjectionChart({ comparison, low = null, now }: {
         <div key={tick.value} className="absolute inset-x-0 border-t border-dotted border-white/10" style={{ top: `${tick.top}%` }} />
       ))}
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 h-full w-full overflow-visible"
-        role="img" aria-label={`Projected value over ${comparison.days} days, from $${formatCents(comparison.capital)} to $${formatCents(comparison.exitValue)}`}>
+        role="img" aria-label={`Projected value over ${comparison.days} days, from ${formatInUnit(comparison.capital, unit)} to ${formatInUnit(comparison.exitValue, unit)}`}>
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={stroke} stopOpacity="0.28" />
@@ -90,7 +98,7 @@ export function ProjectionChart({ comparison, low = null, now }: {
       {/* Values on the right, outside the plot. */}
       {chart.ticks.map((tick) => (
         <span key={tick.value} className="absolute -right-16 w-14 -translate-y-1/2 text-right text-[11px] tabular-nums text-smoke" style={{ top: `${tick.top}%` }}>
-          {axisUsd(tick.value, chart.span)}
+          {unit.kind === "usd" ? axisUsd(tick.value, chart.span) : axisAsset(tick.value, chart.span)}
         </span>
       ))}
     </div>

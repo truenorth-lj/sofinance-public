@@ -5,6 +5,7 @@
  */
 import { multiplierAt } from "@sofinance/engine/valuation/multiplier";
 import { scaledUiTvlUsd } from "@sofinance/engine/valuation/pool-tvl";
+import { sameAssetUsdPerShare } from "@sofinance/engine/valuation/pool-share-price";
 import type { ScaledUiMultiplierConfig } from "@sofinance/engine/valuation/types";
 import { uiFor } from "./dex/ui";
 import { estimateFeeAprPct } from "./rwa-pairing";
@@ -42,4 +43,22 @@ export function withScaledUiTvl(row: RwaPairRow, multipliers: { a: number | null
       ? { status: "corrected", sourceTvlUsd, mintsRead }
       : { status: "unverified", sourceTvlUsd, mintsRead, reason: result.reason },
   };
+}
+
+/**
+ * The row with `usdPerShare` (USD per real share, engine `sameAssetUsdPerShare`) from its TVL, reserves and the same
+ * mint read's multipliers, or without it when any of those is unknown. Run after `withScaledUiTvl`: a source whose TVL
+ * leaves out the multiplier counts only once that TVL is `corrected`. Pure; never adds a read. Idempotent.
+ */
+export function withUsdPerShare(row: RwaPairRow, multipliers: { a: number | null; b: number | null }): RwaPairRow {
+  const rest: RwaPairRow = { ...row };
+  delete rest.usdPerShare;
+  const reserves = row.tvlSides ?? row.reserveAmounts;
+  const tvlInRegistryUnit = !tvlLeavesOutScaledUi(row.protocol) || row.tvlScaledUi?.status === "corrected";
+  if (!reserves || !tvlInRegistryUnit) return rest;
+  const price = sameAssetUsdPerShare({ tvlUsd: row.tvlUsd, sides: [
+    { amount: reserves.amountA, multiplier: multipliers.a },
+    { amount: reserves.amountB, multiplier: multipliers.b },
+  ] });
+  return price.kind === "known" ? { ...rest, usdPerShare: price.usdPerShare } : rest;
 }

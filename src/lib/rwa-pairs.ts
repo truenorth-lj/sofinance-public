@@ -27,7 +27,7 @@ import { readMintSafety, type MintSafety } from "./onchain-mint-freeze";
 import { unsupportedOf, type PoolMintUnsupported } from "./pool-mint-unsupported";
 import type { MintBlockReason } from "@sofinance/engine/token-safety";
 import type { ScaledUiMultiplierConfig } from "@sofinance/engine/valuation/types";
-import { knownMultiplier, withScaledUiTvl } from "./pool-tvl-scaled-ui";
+import { knownMultiplier, withScaledUiTvl, withUsdPerShare } from "./pool-tvl-scaled-ui";
 
 export const RAYDIUM_API_V3 = "https://api-v3.raydium.io";
 const DEFAULT_PAGE_SIZE = 1000;
@@ -120,6 +120,14 @@ export type RwaPairRow = {
    * published (a multiplier was unknown, or a scaled side unpriced). `mintsRead`: both mints' multipliers were read.
    */
   tvlScaledUi?: { status: "corrected" | "unverified"; sourceTvlUsd: number; mintsRead: boolean; reason?: string };
+  /** Reserves as raw / 10^decimals, for a source that publishes them without per-side prices (Raydium API `mintAmountA/B`). */
+  reserveAmounts?: { amountA: number; amountB: number };
+  /**
+   * USD per real share of a same-asset pool (engine `sameAssetUsdPerShare`: TVL over reserves × multipliers), set at the
+   * mint read only when both multipliers are known and the TVL is in the registry's unit. Absent means unknown. Only
+   * meaningful for same-stock and stablecoin pairs (the calculator's pools); SP-2 uses it for ≈$ and the fee cap.
+   */
+  usdPerShare?: number;
 };
 
 
@@ -168,6 +176,8 @@ type RaydiumPool = {
     apr?: unknown;
   };
   price?: unknown;
+  mintAmountA?: unknown;
+  mintAmountB?: unknown;
 };
 
 type CacheEntry = {
@@ -307,7 +317,15 @@ function pairRowFromCandidate(
     freezeRiskB,
     freezeRisk: freezeRiskA || freezeRiskB,
     priceBPerA: asNumber(pool.price),
+    ...reserveAmountsOf(pool),
   };
+}
+
+/** Raydium's published reserves (raw / 10^decimals), when both are numbers. */
+function reserveAmountsOf(pool: RaydiumPool): Pick<RwaPairRow, "reserveAmounts"> {
+  const amountA = asNumber(pool.mintAmountA);
+  const amountB = asNumber(pool.mintAmountB);
+  return amountA !== null && amountB !== null ? { reserveAmounts: { amountA, amountB } } : {};
 }
 
 /** Build a pair row when the curated allowlist or wrap + Jupiter/xStocks qualification passes. */
@@ -655,10 +673,11 @@ export async function applyOnchainFreezeRisk(pairs: RwaPairRow[], connection?: C
     if (unsupported) row.unsupported = unsupported;
     else if (a && b) delete row.unsupported;
     // Same mint read: a source whose TVL leaves out the multiplier gets it here (X3-7); others pass through.
-    return withScaledUiTvl(row, {
+    const multipliers = {
       a: knownMultiplier({ known: a?.scaledUiKnown === true, config: a?.scaledUiConfig }, nowMs),
       b: knownMultiplier({ known: b?.scaledUiKnown === true, config: b?.scaledUiConfig }, nowMs),
-    });
+    };
+    return withUsdPerShare(withScaledUiTvl(row, multipliers), multipliers);
   });
   const source: "onchain" | "tags" | "mixed" = known === pairs.length * 2 ? "onchain" : known === 0 ? "tags" : "mixed";
   return { pairs: updated, source };
