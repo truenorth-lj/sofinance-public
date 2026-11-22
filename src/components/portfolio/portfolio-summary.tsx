@@ -46,9 +46,11 @@ function Total({ value, totals }: { value: number | null; totals: PortfolioTotal
   return <p aria-busy={totals.pending > 0} className={cn("mt-1 text-2xl font-semibold tabular-nums tracking-[-0.02em]", totals.pending ? "text-cream/60" : "text-cream")}>{formatUsd(value)}</p>;
 }
 
-function ExcludeNote({ totals }: { totals: PortfolioTotals }) {
-  if (!totals.cumulativePending) return null;
-  return <p data-testid="portfolio-cumulative-pending" className="mt-1 text-xs text-smoke">Cumulative fees exclude {count(totals.cumulativePending)}.</p>;
+/** Next to the cumulative fees figure only: the Cumulative fees card, or on phones the cumulative line of the one card. */
+function ExcludeNote({ totals, phone = false }: { totals: PortfolioTotals; phone?: boolean }) {
+  if (!totals.cumulativePending || (phone && totals.pending)) return null;
+  return <p data-testid={phone ? "portfolio-cumulative-pending-phone" : "portfolio-cumulative-pending"} className={cn("mt-1 text-xs text-smoke", phone && "sm:hidden")}>
+    Cumulative fees exclude {count(totals.cumulativePending)}.</p>;
 }
 
 function Note({ totals }: { totals: PortfolioTotals }) {
@@ -56,7 +58,6 @@ function Note({ totals }: { totals: PortfolioTotals }) {
     <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />Loading {totals.positions - totals.pending} of {totals.positions} positions…</p>;
   return <>
     {totals.missing ? <p className="mt-1 text-xs text-smoke">Some values are unavailable for {count(totals.missing)}; totals include available values only.</p> : null}
-    <ExcludeNote totals={totals} />
   </>;
 }
 
@@ -76,6 +77,7 @@ export function PortfolioSummary({ totals, cumulativeFeesUpdating = false }: { t
       <Total value={totals.valueUsd} totals={totals} />
       <p className="mt-1 text-xs text-smoke">{count(totals.positions)} · includes unclaimed fees</p>
       <p className="mt-2 text-xs tabular-nums text-smoke sm:hidden">Cumulative fees <span className="text-cream">{fees(totals.cumulativeFeesUsd)}</span>{updating} · Unclaimed <span className="text-cream">{fees(totals.unclaimedFeesUsd)}</span></p>
+      <ExcludeNote totals={totals} phone />
       <CompoundAllButton className="mt-3 sm:hidden" />
       <Note totals={totals} />
     </div>

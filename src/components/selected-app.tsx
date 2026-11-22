@@ -45,7 +45,7 @@ import { shortAddress } from "@/lib/format/address";
 import { PortfolioSummary, PortfolioHistoryStatus } from "./portfolio/portfolio-summary";
 import { PortfolioPositionList, rowActions, type PortfolioRow, type RowTool } from "./portfolio/portfolio-rows";
 import { usePortfolioFigures } from "./portfolio/use-portfolio-figures";
-import { portfolioTotals, type FiguresState, type PositionFigures } from "@/lib/portfolio/figures";
+import { cumulativeFeesUpdating as cumulativeFeesUpdatingOf, portfolioTotals, type FiguresState, type PositionFigures } from "@/lib/portfolio/figures";
 
 const short = shortAddress;
 const money = (value: string, decimals: number, digits = 6) => formatAmount(value, decimals, digits);
@@ -257,10 +257,11 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
     const loaded = figures[item.key];
     return loaded && loaded.status !== "failed" ? loaded.figures : null;
   };
-  const portfolio = portfolioTotals(allPositions.filter((item) => !isClosed(item) && reportedKeys.has(item.key)).map((item): FiguresState => {
+  const figuresState = (item: UnifiedPosition): FiguresState => {
     const loaded = figures[item.key];
     return !loaded ? { status: "loading" } : loaded.status === "failed" ? { status: "failed" } : { status: "ready", figures: loaded.figures, historyStatus: loaded.historyStatus, retained: loaded.retained };
-  }), allPositions.filter((item) => !isClosed(item) && !reportedKeys.has(item.key)).map((item) => figuresOf(item)?.valueUsd ?? null));
+  };
+  const portfolio = portfolioTotals(allPositions.filter((item) => !isClosed(item) && reportedKeys.has(item.key)).map(figuresState), allPositions.filter((item) => !isClosed(item) && !reportedKeys.has(item.key)).map((item) => figuresOf(item)?.valueUsd ?? null));
   // One "Refresh" (was "Rescan wallet" + "Reload fees"): the Solana scan, the selected position's on-chain state and fees, the
   // registry DEXes and, on /app, the Robinhood Chain scan via the parent's refresh counter.
   const refreshAll = () => {
@@ -299,8 +300,8 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
     const id = `#${String(item.nativeId).length > 12 ? short(String(item.nativeId)) : String(item.nativeId)}`;
     const pair = item.tokenA.id || item.tokenB.id ? pairOf(item) : "";
     const title = rowFigures?.stock ?? (pair || `Position ${id}`);
-    const loaded = figures[item.key];
-    const cumulativeFeesUpdating = loaded?.retained === true;
+    // Retained last complete value, or a dash while history catches up: both labeled "Updating" on the row.
+    const cumulativeFeesUpdating = reportedKeys.has(item.key) && cumulativeFeesUpdatingOf(figuresState(item));
     return [item.key, { item, figures: rowFigures, title,
       subtitle: [title !== pair ? pair : null, group.showSourceName ? sourceName(item) : null, title.endsWith(id) ? null : id].filter(Boolean).join(" · "),
       actions: rowActions(capabilitiesOf(item), isClosed(item), { activity: item.source === positionSource.id || registry.owns(item) }), compound: rowCompound(item),
