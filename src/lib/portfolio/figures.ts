@@ -28,8 +28,18 @@ export function positionFigures(report: PositionPerformanceReport | null | undef
   };
 }
 
+export type HistoryStatus = "fresh" | "updating" | "stale" | "unavailable";
+
+/** Fee history is still catching up: a last complete cumulative fee may be shown, labeled as updating. */
+export function isHistoryCatchingUp(status: HistoryStatus | undefined): boolean {
+  return status === "updating" || status === "stale" || status === "unavailable";
+}
+
 /** One open position as the totals see it: its figures once read, or still loading / failed. */
-export type FiguresState = { status: "loading" } | { status: "failed" } | { status: "ready"; figures: PositionFigures };
+export type FiguresState =
+  | { status: "loading" }
+  | { status: "failed" }
+  | { status: "ready"; figures: PositionFigures; historyStatus?: HistoryStatus; retained?: boolean };
 
 export type PortfolioTotals = {
   /** Open positions counted. */
@@ -39,30 +49,42 @@ export type PortfolioTotals = {
   cumulativeFeesUsd: number | null;
   /** Positions whose numbers are still being read; the totals so far add up the rest (the card shows a loading hint). */
   pending: number;
-  /** Positions whose numbers could not be read (or have no USD price): a total over the rest says so. */
+  /** Positions whose value, unclaimed fees, or cumulative fees could not be read (or have no USD price), except a
+   *  cumulative-fee dash while fee history is still catching up. The card says so. */
   missing: number;
+  /** Positions whose cumulative fees are still catching up and are not in the total (no last complete value). */
+  cumulativePending: number;
 };
 
 /**
  * The three numbers at the top of Portfolio. Totals add up progressively as positions are read (PM review of #395), with
  * `pending` driving a loading hint until all are in; a position that failed or has no price is left out and counted in
- * `missing` (the card says so). A total with nothing read yet is null (a dash), never 0.
+ * `missing` (the card says so). A cumulative-fee dash while history is catching up is counted in `cumulativePending`
+ * instead (the card notes that the total excludes those positions). Other cumulative-fee nulls still count as missing.
+ * A retained last complete value is included in the sum and labeled updating by the row. A total with nothing read yet
+ * is null (a dash), never 0.
  * `extraValueUsd`: value of positions without a Performance report (Robinhood Chain), added to the LP total only.
  */
 export function portfolioTotals(states: readonly FiguresState[], extraValue: readonly (number | null)[] = []): PortfolioTotals {
   const pending = states.filter((state) => state.status === "loading").length;
-  const ready = states.flatMap((state) => state.status === "ready" ? [state.figures] : []);
+  const ready = states.flatMap((state) => state.status === "ready" ? [state] : []);
+  const catchingUp = (state: Extract<FiguresState, { status: "ready" }>) =>
+    state.retained === true || isHistoryCatchingUp(state.historyStatus);
   const sum = (values: (number | null)[]) => values.some((value) => value !== null)
     ? values.reduce<number>((total, value) => total + (value ?? 0), 0) : null;
-  const values = [...ready.map((item) => item.valueUsd), ...extraValue];
+  const values = [...ready.map((item) => item.figures.valueUsd), ...extraValue];
   const missing = states.filter((state) => state.status === "failed").length
-    + ready.filter((item) => item.valueUsd === null || item.unclaimedFeesUsd === null || item.cumulativeFeesUsd === null).length + extraValue.filter((value) => value === null).length;
+    + ready.filter((item) => item.figures.valueUsd === null || item.figures.unclaimedFeesUsd === null
+      || (item.figures.cumulativeFeesUsd === null && !catchingUp(item))).length
+    + extraValue.filter((value) => value === null).length;
+  const cumulativePending = ready.filter((item) => catchingUp(item) && item.figures.cumulativeFeesUsd === null).length;
   return {
     positions: states.length + extraValue.length,
     valueUsd: sum(values),
-    unclaimedFeesUsd: sum(ready.map((item) => item.unclaimedFeesUsd)),
-    cumulativeFeesUsd: sum(ready.map((item) => item.cumulativeFeesUsd)),
+    unclaimedFeesUsd: sum(ready.map((item) => item.figures.unclaimedFeesUsd)),
+    cumulativeFeesUsd: sum(ready.map((item) => item.figures.cumulativeFeesUsd)),
     pending,
     missing,
+    cumulativePending,
   };
 }

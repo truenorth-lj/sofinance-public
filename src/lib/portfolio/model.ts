@@ -29,6 +29,8 @@ export const portfolioPositionSchema = z.object({
   historyUpdatedAt: z.iso.datetime().nullable().optional(),
   historyStatus: z.enum(["fresh", "updating", "stale", "unavailable"]).optional(),
   historyRefreshAfter: z.iso.datetime().optional(),
+  /** Client-only: a last complete cumulative fee was kept while history is catching up. */
+  retained: z.boolean().optional(),
 });
 export type PortfolioPosition = z.infer<typeof portfolioPositionSchema>;
 export type PortfolioResponse = {

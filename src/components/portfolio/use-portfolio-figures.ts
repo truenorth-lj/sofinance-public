@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { MAX_PORTFOLIO_POSITIONS, PORTFOLIO_POLL_MS, portfolioPositionSchema, type PortfolioPosition, type PortfolioResponse } from "@/lib/portfolio/model";
 import { clearPositionHistoryRefresh, POSITION_HISTORY_REFRESH_EVENT, POSITION_HISTORY_REFRESH_STORAGE_KEY, readPositionHistoryRefresh } from "@/lib/position-history-refresh";
 import { positionFigures } from "@/lib/portfolio/figures";
+import { retainCumulativeFees } from "@/lib/portfolio/retain-cumulative-fees";
 
 type Loaded = { wallet: string; rows: Record<string, PortfolioPosition> };
 const failed = (key: string): PortfolioPosition => ({ key, status: "failed", figures: positionFigures(null), evaluatedAt: null, historyComplete: false, historyRefreshResolved: false });
@@ -39,6 +40,7 @@ export function usePortfolioFigures(wallet: string | null, keys: readonly string
     const wanted = [...new Set(keyList.split("|"))];
     const maxRequests = Math.max(MAX_REQUESTS, Math.ceil(wanted.length / MAX_PORTFOLIO_POSITIONS));
     const markers = new Map(wanted.map((key) => [key, readPositionHistoryRefresh(key.split(":")[1]!)]));
+    const keep = (row: PortfolioPosition) => retainCumulativeFees(wallet, row);
     void (async () => {
       const rows: Record<string, PortfolioPosition> = {};
       let pending = wanted, requests = 0;
@@ -48,7 +50,7 @@ export function usePortfolioFigures(wallet: string | null, keys: readonly string
         for (let offset = 0; offset < pending.length; offset += MAX_PORTFOLIO_POSITIONS) {
           if (controller.signal.aborted) return;
           const batch = pending.slice(offset, offset + MAX_PORTFOLIO_POSITIONS);
-          if (requests >= maxRequests) { for (const key of batch) rows[key] = rows[key] ? stopped(rows[key]!) : failed(key); continue; }
+          if (requests >= maxRequests) { for (const key of batch) rows[key] = keep(rows[key] ? stopped(rows[key]!) : failed(key)); continue; }
           requests++;
           try {
             const response = await fetch("/api/portfolio", { method: "POST", headers: { "Content-Type": "application/json" }, cache: "no-store", signal: controller.signal,
@@ -63,10 +65,10 @@ export function usePortfolioFigures(wallet: string | null, keys: readonly string
               const checked = portfolioPositionSchema.safeParse(body.positions.find((item) => item.key === key));
               if (!checked.success) throw new Error("Invalid Portfolio row");
               if (round && checked.data.status === "failed" && rows[key]) {
-                rows[key] = stopped(rows[key]!);
+                rows[key] = keep(stopped(rows[key]!));
                 continue;
               }
-              rows[key] = checked.data;
+              rows[key] = keep(checked.data);
               const marker = markers.get(key);
               const acknowledged = rows[key]!.historyComplete && rows[key]!.historyRefreshResolved;
               if (marker && rows[key]!.status !== "failed" && acknowledged) clearPositionHistoryRefresh(key.split(":")[1]!, marker.version);
@@ -74,13 +76,13 @@ export function usePortfolioFigures(wallet: string | null, keys: readonly string
             }
           } catch {
             if (controller.signal.aborted) return;
-            for (const key of batch) rows[key] = round && rows[key] ? stopped(rows[key]!) : failed(key);
+            for (const key of batch) rows[key] = keep(round && rows[key] ? stopped(rows[key]!) : failed(key));
           }
           setLoaded({ wallet, rows: { ...rows } });
         }
         pending = next.filter((key) => rows[key]?.historyStatus === "updating");
         if (round === MAX_POLL_ROUNDS || requests >= maxRequests) {
-          for (const key of pending) rows[key] = stopped(rows[key]!);
+          for (const key of pending) rows[key] = keep(stopped(rows[key]!));
           setLoaded({ wallet, rows: { ...rows } });
           break;
         }

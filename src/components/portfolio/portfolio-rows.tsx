@@ -47,6 +47,8 @@ export type PortfolioRow = {
   compound?: (slot: RowCompoundSlot) => ReactNode;
   /** A page-run operation in progress on this row (Add or Withdraw): that button keeps its popup reachable and says so. */
   busy?: { tool: RowTool; label: string };
+  /** Last complete cumulative fees are shown while fee history is still catching up. */
+  cumulativeFeesUpdating?: boolean;
 };
 
 export type RowCompoundSlot = {
@@ -156,11 +158,12 @@ function PositionRow({ row, disabled, popup, onOpenDetail, onAction, onClosePopu
         <span className="block font-semibold tabular-nums text-cream">{usd(figures?.valueUsd)}</span>
         <span className="block whitespace-nowrap text-xs tabular-nums text-smoke">{formatShares(figures?.shares)} shares</span>
         <span className="block whitespace-nowrap text-xs tabular-nums text-smoke">Unclaimed {usd(figures?.unclaimedFeesUsd)}</span>
+        <span className="block whitespace-nowrap text-xs tabular-nums text-smoke">Cumulative {usd(figures?.cumulativeFeesUsd)}{row.cumulativeFeesUpdating ? <> <span data-testid="cumulative-fees-updating">Updating</span></> : null}</span>
       </span>
       <span className="hidden tabular-nums text-cream/90 lg:block" data-testid="position-row-shares">{formatShares(figures?.shares)}</span>
       <span className="hidden tabular-nums text-cream/90 lg:block" data-testid="position-row-value">{usd(figures?.valueUsd)}</span>
       <span className="hidden tabular-nums text-cream/90 lg:block" data-testid="position-row-unclaimed">{usd(figures?.unclaimedFeesUsd)}</span>
-      <span className="hidden tabular-nums text-cream/90 lg:block" data-testid="position-row-cumulative">{usd(figures?.cumulativeFeesUsd)}</span>
+      <span className="hidden tabular-nums text-cream/90 lg:block" data-testid="position-row-cumulative">{usd(figures?.cumulativeFeesUsd)}{row.cumulativeFeesUpdating ? <span className="ml-1 text-[11px] font-medium text-smoke" data-testid="cumulative-fees-updating">Updating</span> : null}</span>
     </button>
     {primary?.tool === "compound" && row.compound
       ? row.compound({ disabled, otherActions: rest.map((target) => action(target, "border border-white/25 text-cream enabled:hover:border-white/50")),

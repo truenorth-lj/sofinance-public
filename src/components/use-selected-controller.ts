@@ -45,6 +45,7 @@ export function useSelectedController() {
   const error = tx.status === "failed" ? tx.error ?? "" : "";
   const [stateError, setStateError] = useState("");
   const [loadingDiscovery, setLoadingDiscovery] = useState(false);
+  const [discoveryError, setDiscoveryError] = useState("");
   const [loadingState, setLoadingState] = useState(false);
   const [now, setNow] = useState(0);
   const walletRef = useRef(wallet);
@@ -68,7 +69,7 @@ export function useSelectedController() {
     invalidatePreview();
     const timer = window.setTimeout(() => {
       setDiscovery(null); setSelection(null); setSelectedState(null); clearPreview();
-      setAmount(""); setStateError(""); clearError(); clearQuoteErrors();
+      setAmount(""); setStateError(""); setDiscoveryError(""); clearError(); clearQuoteErrors();
     }, 0);
     return () => window.clearTimeout(timer);
   }, [wallet, invalidatePreview, clearPreview, clearQuoteErrors, clearError]);
@@ -82,7 +83,7 @@ export function useSelectedController() {
   }, [selection, invalidatePreview, clearPreview]);
 
   const refreshDiscovery = useCallback(async () => {
-    if (!wallet) { setDiscovery(null); return; }
+    if (!wallet) { setDiscovery(null); setDiscoveryError(""); return; }
     const requestId = ++discoveryRequestRef.current;
     setLoadingDiscovery(true); setStateError("");
     try {
@@ -92,6 +93,7 @@ export function useSelectedController() {
       if (walletRef.current !== wallet || requestId !== discoveryRequestRef.current) return;
       const found = data as WalletDiscovery;
       setDiscovery(found);
+      setDiscoveryError("");
       setSelection((current) => {
         if (current && found.positions.some((item) => item.positionMint === current.positionMint) &&
           found.assets.some((item) => item.kind === current.inputKind && item.mint === current.inputMint && item.eligible)) return current;
@@ -103,7 +105,9 @@ export function useSelectedController() {
       });
     } catch (caught) {
       if (walletRef.current === wallet && requestId === discoveryRequestRef.current) {
-        setDiscovery(null); setStateError(caught instanceof Error ? caught.message : "Wallet scan failed");
+        // Keep the last successful list for this wallet; only clear when there is nothing to show.
+        setDiscovery((current) => current?.wallet === wallet ? current : null);
+        setDiscoveryError(caught instanceof Error ? caught.message : "Wallet scan failed");
       }
     } finally {
       if (walletRef.current === wallet && requestId === discoveryRequestRef.current) setLoadingDiscovery(false);
@@ -172,7 +176,8 @@ export function useSelectedController() {
     if (!connected) return "Please connect wallet first";
     if (submitStage === "checking") return "Your wallet returned an error. Checking Solana in case it went through; please wait.";
     if (submitStage === "confirming") return "Sent. Confirming on Solana…";
-    if (loadingDiscovery) return "Scanning wallet assets and Raydium CLMM positions";
+    if (loadingDiscovery && !discovery) return "Scanning wallet assets and Raydium CLMM positions";
+    if (discoveryError && !discovery) return discoveryError;
     if (stateError) return stateError;
     if (!discovery?.positions.length) return "Wallet has no identifiable Raydium CLMM position NFT";
     if (!discovery.assets.some((item) => item.eligible)) return "Wallet has no available for input assets";
@@ -245,5 +250,5 @@ export function useSelectedController() {
     actionLabel, actionDisabled, walletBlocked, primaryAction, changeAmount, changeTolerance, fillMax,
     choosePosition, chooseAsset, refreshDiscovery, refreshState,
     retryCalculation: () => { if (!busy) retryCalculation(); },
-    loadingDiscovery, loadingState, stateError };
+    loadingDiscovery, loadingState, stateError, discoveryError };
 }

@@ -39,5 +39,5 @@ export async function readPortfolio(input: PortfolioInput, signal: AbortSignal):
     }
   });
   return { wallet: input.wallet, positions: results, totals: portfolioTotals(results.map((result) => result.status === "failed"
-    ? { status: "failed" } : { status: "ready", figures: result.figures })), timings: { totalMs: Date.now() - started, positions: timings } };
+    ? { status: "failed" } : { status: "ready", figures: result.figures, historyStatus: result.historyStatus })), timings: { totalMs: Date.now() - started, positions: timings } };
 }
