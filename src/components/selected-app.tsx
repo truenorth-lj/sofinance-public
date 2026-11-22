@@ -84,7 +84,7 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
     busy: addBusy, retryAdd, calculating, now, quote, fresh, status, insufficientInput,
     actionLabel, actionDisabled: addDisabled, primaryAction: addAction, changeAmount, changeTolerance, fillMax,
     choosePosition, chooseAsset, refreshDiscovery, refreshState, retryCalculation,
-    loadingDiscovery, loadingState, stateError } = controller;
+    loadingDiscovery, loadingState, stateError, discoveryError } = controller;
   // My positions from DEXes served through the registry (PR5): every Solana-wallet DEX except the inline source above.
   const [registryRefresh, setRegistryRefresh] = useState(0);
   // A confirmed operation or Refresh re-reads one aggregate of all Portfolio numbers.
@@ -247,7 +247,7 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
     ...registry.positions.filter((item) => !isClosed(item) && registry.capabilities(item)?.performance.supported).map((item) => item.key),
   ];
   const figures = usePortfolioFigures(connected ? wallet || null : null, figureKeys, {
-    refresh: reportsRefresh, paused: loadingDiscovery || (!discovery && !stateError) || Boolean(registry.loading),
+    refresh: reportsRefresh, paused: loadingDiscovery || (!discovery && !stateError && !discoveryError) || Boolean(registry.loading),
   });
   const reportedKeys = new Set(figureKeys);
   const capabilitiesOf = (item: UnifiedPosition): SourceCapabilities => item.source === positionSource.id ? capabilitiesFor(positionSource, item)
@@ -276,8 +276,8 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
   const popupBusy = anyBusy || popupRegistryLock.busy || popupRegistryLock.cancelPending;
   const popupTarget = popup && allPositions.find((item) => item.key === popup.key);
   const popupAligned = Boolean(popupTarget && popup.key === selectedKey);
-  const loadingPositions = connected && (loadingDiscovery || !discovery) && !stateError;
-  const showEmpty = !allPositions.length && !loadingPositions && !registry.loadingNames.length;
+  const loadingPositions = connected && (loadingDiscovery || !discovery) && !stateError && !discoveryError;
+  const showEmpty = !allPositions.length && !loadingPositions && !registry.loadingNames.length && !discoveryError;
   // Portfolio rows (every tool's list). On Performance, stock positions are covered by the overview above them.
   const sourceName = (item: UnifiedPosition) => item.source === positionSource.id ? positionSource.displayName
     : registry.owns(item) ? registry.optionSource(item, metadata).displayName : external?.source.displayName ?? "";
@@ -294,15 +294,20 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
       onConfirmed={() => { setRegistryRefresh((value) => value + 1); void refreshDiscovery(); refreshReports(); }} />; };
   };
   const portfolioRows = new Map<string, PortfolioRow>(groups.flatMap((group) => group.positions.map((item): [string, PortfolioRow] => {
-    const figures = figuresOf(item);
+    const rowFigures = figuresOf(item);
     // Position number tells apart two positions in the same pair (an NFT mint shortened, an EVM token id as-is).
     const id = `#${String(item.nativeId).length > 12 ? short(String(item.nativeId)) : String(item.nativeId)}`;
     const pair = item.tokenA.id || item.tokenB.id ? pairOf(item) : "";
-    const title = figures?.stock ?? (pair || `Position ${id}`);
-    return [item.key, { item, figures, title,
+    const title = rowFigures?.stock ?? (pair || `Position ${id}`);
+    const loaded = figures[item.key];
+    const historyStatus = loaded?.historyStatus;
+    const cumulativeFeesUpdating = Boolean(loaded && loaded.status !== "failed" && loaded.figures.cumulativeFeesUsd !== null
+      && (historyStatus === "updating" || historyStatus === "stale" || historyStatus === "unavailable"));
+    return [item.key, { item, figures: rowFigures, title,
       subtitle: [title !== pair ? pair : null, group.showSourceName ? sourceName(item) : null, title.endsWith(id) ? null : id].filter(Boolean).join(" · "),
       actions: rowActions(capabilitiesOf(item), isClosed(item), { activity: item.source === positionSource.id || registry.owns(item) }), compound: rowCompound(item),
-      busy: selectedKey === item.key ? addBusy ? { tool: "deposit", label: "Adding…" } : withdrawBusy ? { tool: "withdraw", label: "Withdrawing…" } : undefined : undefined }];
+      busy: selectedKey === item.key ? addBusy ? { tool: "deposit", label: "Adding…" } : withdrawBusy ? { tool: "withdraw", label: "Withdrawing…" } : undefined : undefined,
+      cumulativeFeesUpdating }];
   })));
   const openTool = (key: string, view: RowTool) => {
     const found = allPositions.find((item) => item.key === key || positionKeysEqual(item.key, key));
@@ -374,14 +379,23 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
         </button>
       </div>
 
-      {allPositions.length > 0 && <PortfolioSummary totals={portfolio} />}
+      {allPositions.length > 0 && <PortfolioSummary totals={portfolio} cumulativeFeesUpdating={figureKeys.some((key) => {
+        const loaded = figures[key];
+        const status = loaded?.historyStatus;
+        return Boolean(loaded && loaded.status !== "failed" && loaded.figures.cumulativeFeesUsd !== null
+          && (status === "updating" || status === "stale" || status === "unavailable"));
+      })} />}
       {allPositions.length > 0 && <PortfolioHistoryStatus rows={figureKeys.flatMap((key) => figures[key] ? [figures[key]!] : [])} />}
 
       <section aria-labelledby="all-positions-heading" className="mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-7">
         <h2 id="all-positions-heading" className="mb-5 text-base font-semibold text-cream">All positions</h2>
         {showEmpty ? <PositionsEmptyState connected={connected} restoring={restoring} onConnect={connect} />
-          : !allPositions.length ? <p role="status" className="text-sm text-smoke">Loading positions…</p>
-          : <div>{renderPositionRows()}</div>}
+          : allPositions.length ? <div>{renderPositionRows()}</div>
+          : discoveryError ? null
+          : <p role="status" className="text-sm text-smoke">Loading positions…</p>}
+        {discoveryError ? <p role="alert" data-testid="raydium-positions-error" className="mt-2 text-xs text-cream/80">{discovery
+          ? "Couldn't refresh positions. Showing the last list."
+          : "Couldn't load positions. Refresh to retry."}</p> : null}
         {registry.loadingNames.length ? <p role="status" className="mt-2 text-xs text-smoke" data-testid="registry-positions-loading">Loading {registry.loadingNames.join(", ")} positions…</p> : null}
         {registry.errors.map((message) => <p key={message} role="alert" className="mt-2 text-xs text-cream/80" data-testid="registry-positions-error">{message}</p>)}
         {external?.status}

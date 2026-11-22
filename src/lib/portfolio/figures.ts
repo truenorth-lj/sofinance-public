@@ -39,14 +39,16 @@ export type PortfolioTotals = {
   cumulativeFeesUsd: number | null;
   /** Positions whose numbers are still being read; the totals so far add up the rest (the card shows a loading hint). */
   pending: number;
-  /** Positions whose numbers could not be read (or have no USD price): a total over the rest says so. */
+  /** Positions whose value or unclaimed fees could not be read (or have no USD price): a total over the rest says so.
+   *  A missing cumulative-fee figure (fee history still loading) is not counted here. */
   missing: number;
 };
 
 /**
  * The three numbers at the top of Portfolio. Totals add up progressively as positions are read (PM review of #395), with
  * `pending` driving a loading hint until all are in; a position that failed or has no price is left out and counted in
- * `missing` (the card says so). A total with nothing read yet is null (a dash), never 0.
+ * `missing` (the card says so). Incomplete fee history (a dash for cumulative fees) is not counted as a missing value.
+ * A total with nothing read yet is null (a dash), never 0.
  * `extraValueUsd`: value of positions without a Performance report (Robinhood Chain), added to the LP total only.
  */
 export function portfolioTotals(states: readonly FiguresState[], extraValue: readonly (number | null)[] = []): PortfolioTotals {
@@ -56,7 +58,7 @@ export function portfolioTotals(states: readonly FiguresState[], extraValue: rea
     ? values.reduce<number>((total, value) => total + (value ?? 0), 0) : null;
   const values = [...ready.map((item) => item.valueUsd), ...extraValue];
   const missing = states.filter((state) => state.status === "failed").length
-    + ready.filter((item) => item.valueUsd === null || item.unclaimedFeesUsd === null || item.cumulativeFeesUsd === null).length + extraValue.filter((value) => value === null).length;
+    + ready.filter((item) => item.valueUsd === null || item.unclaimedFeesUsd === null).length + extraValue.filter((value) => value === null).length;
   return {
     positions: states.length + extraValue.length,
     valueUsd: sum(values),

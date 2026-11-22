@@ -3,6 +3,7 @@ import { act, createElement, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { usePortfolioFigures } from "./use-portfolio-figures";
+import { resetRetainedCumulativeFees } from "@/lib/portfolio/retain-cumulative-fees";
 import { notifyPositionHistoryChange, readPositionHistoryRefresh } from "@/lib/position-history-refresh";
 import { PublicKey } from "@solana/web3.js";
 import type { PortfolioPosition } from "@/lib/portfolio/model";
@@ -16,10 +17,11 @@ const fetchMock = vi.fn();
 function Probe({ wallet, refresh = 0, paused = false, keys = [key] }: { wallet: string | null; refresh?: number; paused?: boolean; keys?: string[] }) {
   const rows = usePortfolioFigures(wallet, keys, { refresh, paused });
   useEffect(() => { latest = rows; }, [rows]);
-  return createElement("div", null, rows[key]?.figures.valueUsd ?? "loading");
+  return createElement("div", { "data-cumulative": rows[key] ? (rows[key].figures.cumulativeFeesUsd ?? "dash") : "loading" }, rows[key]?.figures.valueUsd ?? "loading");
 }
 const render = async (wallet: string | null, refresh = 0, paused = false) => act(async () => root.render(createElement(Probe, { wallet, refresh, paused })));
 beforeEach(() => {
+  resetRetainedCumulativeFees();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); vi.stubGlobal("fetch", fetchMock); fetchMock.mockReset(); localStorage.clear();
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
 });
@@ -130,6 +132,23 @@ describe("Portfolio client request lifecycle", () => {
     await act(async () => finish(Response.json({ wallet: "A", positions: [{ ...row(), key: keys[50] }] })));
     expect(Object.keys(latest)).toHaveLength(51);
     expect(Object.values(latest).every((value) => value.status === "ready")).toBe(true);
+  });
+
+  it("keeps the last complete cumulative fee while history is updating, and dashes when none was ever complete", async () => {
+    fetchMock.mockResolvedValueOnce(Response.json({ wallet: "A", positions: [row()] }));
+    await render("A");
+    expect((container.firstElementChild as HTMLElement).getAttribute("data-cumulative")).toBe("2");
+    fetchMock.mockResolvedValueOnce(Response.json({ wallet: "A", positions: [{ ...row(), status: "partial", historyComplete: false, historyRefreshResolved: false,
+      historyStatus: "updating", figures: { stock: "TSLA", shares: 1, valueUsd: 10, unclaimedFeesUsd: 1, cumulativeFeesUsd: null } }] }));
+    await render("A", 1);
+    expect((container.firstElementChild as HTMLElement).getAttribute("data-cumulative")).toBe("2");
+    expect(latest[key]?.figures.cumulativeFeesUsd).toBe(2);
+    resetRetainedCumulativeFees();
+    fetchMock.mockResolvedValueOnce(Response.json({ wallet: "A", positions: [{ ...row(), status: "partial", historyComplete: false, historyRefreshResolved: false,
+      historyStatus: "updating", figures: { stock: "TSLA", shares: 1, valueUsd: 10, unclaimedFeesUsd: 0, cumulativeFeesUsd: null } }] }));
+    await render("A", 2);
+    expect((container.firstElementChild as HTMLElement).getAttribute("data-cumulative")).toBe("dash");
+    expect(latest[key]?.figures.cumulativeFeesUsd).toBeNull();
   });
   it("keeps failed/missing rows explicit instead of counting them as zero", async () => {
     fetchMock.mockResolvedValue(Response.json({ wallet: "A", positions: [] }));

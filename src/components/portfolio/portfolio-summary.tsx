@@ -60,21 +60,22 @@ const card = "rounded-2xl border border-white/12 bg-char p-4 sm:p-5";
  * unclaimed) and unclaimed fees, with the greyed "Compound all". Phones get one card: LP value, the two fee totals on one
  * line, then "Compound all".
  */
-export function PortfolioSummary({ totals }: { totals: PortfolioTotals }) {
+export function PortfolioSummary({ totals, cumulativeFeesUpdating = false }: { totals: PortfolioTotals; cumulativeFeesUpdating?: boolean }) {
   const fees = (value: number | null) => formatUsd(value);
+  const updating = cumulativeFeesUpdating ? <span data-testid="cumulative-fees-updating" className="text-smoke"> Updating</span> : null;
   return <section aria-label="Portfolio totals" data-testid="portfolio-summary" className="mt-3 grid gap-3 sm:grid-cols-3">
     <div className={card} data-testid="portfolio-total-value">
       <h2 className="text-xs font-semibold text-smoke">Total LP value</h2>
       <Total value={totals.valueUsd} totals={totals} />
       <p className="mt-1 text-xs text-smoke">{count(totals.positions)} · includes unclaimed fees</p>
-      <p className="mt-2 text-xs tabular-nums text-smoke sm:hidden">Cumulative fees <span className="text-cream">{fees(totals.cumulativeFeesUsd)}</span> · Unclaimed <span className="text-cream">{fees(totals.unclaimedFeesUsd)}</span></p>
+      <p className="mt-2 text-xs tabular-nums text-smoke sm:hidden">Cumulative fees <span className="text-cream">{fees(totals.cumulativeFeesUsd)}</span>{updating} · Unclaimed <span className="text-cream">{fees(totals.unclaimedFeesUsd)}</span></p>
       <CompoundAllButton className="mt-3 sm:hidden" />
       <Note totals={totals} />
     </div>
     <div className={cn(card, "hidden sm:block")} data-testid="portfolio-cumulative-fees">
       <h2 className="text-xs font-semibold text-smoke">Cumulative fees</h2>
       <Total value={totals.cumulativeFeesUsd} totals={totals} />
-      <p className="mt-1 text-xs text-smoke">Collected + unclaimed</p>
+      <p className="mt-1 text-xs text-smoke">Collected + unclaimed{updating}</p>
     </div>
     <div className={cn(card, "hidden border-white/20 sm:block")} data-testid="portfolio-unclaimed-fees">
       <h2 className="text-xs font-semibold text-smoke">Unclaimed fees</h2>

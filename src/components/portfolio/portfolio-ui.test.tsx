@@ -4,7 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SourceCapabilities } from "@/lib/unified-positions/model";
 import { CompoundAllButton, PortfolioSummary } from "./portfolio-summary";
-import { rowActions } from "./portfolio-rows";
+import { PortfolioPositionList, rowActions, type PortfolioRow } from "./portfolio-rows";
+import type { UnifiedPosition } from "@/lib/unified-positions/model";
 
 const no = { supported: false as const, reason: "Not available for this pool yet" };
 const caps = (over: Partial<SourceCapabilities>): SourceCapabilities => ({
@@ -80,5 +81,46 @@ describe("PortfolioSummary", () => {
     expect(container.querySelector("[data-testid=portfolio-total-value] p")!.getAttribute("aria-busy")).toBe("false");
     await act(async () => root.render(createElement(PortfolioSummary, { totals: { ...totals, missing: 1 } })));
     expect(container.textContent).toContain("Some values are unavailable for 1 position; totals include available values only.");
+  });
+});
+
+describe("cumulative fees while history updates", () => {
+  const item: UnifiedPosition = {
+    key: "raydium-clmm:11111111111111111111111111111111", source: "raydium-clmm", chain: "solana",
+    nativeId: "11111111111111111111111111111111", poolId: "p",
+    tokenA: { id: "a", symbol: "USDC", decimals: 6 }, tokenB: { id: "b", symbol: "SPCX", decimals: 8 },
+    range: { mode: "tick", tickLower: -10, tickUpper: 10, currentTick: 0 }, rangeStatus: "in", liquidity: "1", native: {},
+  };
+  const list = (row: Partial<PortfolioRow> & { figures: PortfolioRow["figures"]; cumulativeFeesUpdating?: boolean }) =>
+    act(async () => root.render(createElement(PortfolioPositionList, {
+      groups: [{ chain: "solana", label: "Solana", positions: [item], showSourceName: false }],
+      rows: new Map([[item.key, { item, title: "SPCX", subtitle: "", actions: [], ...row }]]),
+      disabled: false, popup: null, onOpenDetail: () => undefined, onAction: () => undefined, onClosePopup: () => undefined,
+    })));
+
+  it("shows the last complete cumulative fee labeled as updating", async () => {
+    await list({ figures: { stock: "SPCX", shares: 1, valueUsd: 100, unclaimedFeesUsd: 0, cumulativeFeesUsd: 11.36 }, cumulativeFeesUpdating: true });
+    expect(container.querySelector("[data-testid=position-row-cumulative]")!.textContent).toContain("$11.36");
+    expect(container.querySelector("[data-testid=position-row-cumulative]")!.textContent).toContain("Updating");
+    expect(container.querySelectorAll("[data-testid=cumulative-fees-updating]").length).toBeGreaterThan(0);
+    await act(async () => root.render(createElement(PortfolioSummary, {
+      totals: { positions: 1, valueUsd: 100, unclaimedFeesUsd: 0, cumulativeFeesUsd: 11.36, pending: 0, missing: 0 },
+      cumulativeFeesUpdating: true,
+    })));
+    expect(container.querySelector("[data-testid=portfolio-cumulative-fees]")!.textContent).toContain("$11.36");
+    expect(container.querySelector("[data-testid=portfolio-cumulative-fees]")!.textContent).toContain("Updating");
+    expect(container.textContent).not.toContain("Some values are unavailable");
+  });
+
+  it("shows a dash when a position has never had a complete cumulative fee, and does not call that values unavailable", async () => {
+    await list({ figures: { stock: "SPCX", shares: 1, valueUsd: 100, unclaimedFeesUsd: 0, cumulativeFeesUsd: null }, cumulativeFeesUpdating: false });
+    expect(container.querySelector("[data-testid=position-row-cumulative]")!.textContent).toBe("—");
+    expect(container.querySelector("[data-testid=cumulative-fees-updating]")).toBeNull();
+    await act(async () => root.render(createElement(PortfolioSummary, {
+      totals: { positions: 1, valueUsd: 100, unclaimedFeesUsd: 0, cumulativeFeesUsd: null, pending: 0, missing: 0 },
+    })));
+    expect(container.querySelector("[data-testid=portfolio-cumulative-fees] p")!.textContent).toBe("—");
+    expect(container.textContent).not.toContain("Some values are unavailable");
+    expect(container.querySelector("[data-testid=cumulative-fees-updating]")).toBeNull();
   });
 });
