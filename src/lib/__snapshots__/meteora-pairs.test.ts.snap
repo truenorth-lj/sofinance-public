@@ -30,6 +30,12 @@ exports[`Meteora pair rows > maps the captured cbBTC/WBTC pool to a read-only me
   "symbolB": "WBTC",
   "token2022A": false,
   "token2022B": false,
+  "tvlSides": {
+    "amountA": 2.18049319,
+    "amountB": 1.95571161,
+    "sharePriceUsdA": 81550.39278837232,
+    "sharePriceUsdB": 81237.995020534,
+  },
   "tvlUsd": 336203.47025545826,
   "volume24hUsd": 44848.20467564547,
   "wrapKind": "same-asset",

@@ -30,6 +30,11 @@ export type MintSafety = {
   scaledUiMultiplier?: number;
   /** The complete ScaledUiAmount schedule (timestamp in seconds), so readers evaluate it at read time. Same omission. */
   scaledUiConfig?: ScaledUiMultiplierConfig;
+  /**
+   * Set when the full mint layout was read and its multiplier is known: no ScaledUiAmount extension (1), or one with a
+   * finite config (`scaledUiConfig`). Omitted when only the base layout could be read or the config was unusable.
+   */
+  scaledUiKnown?: true;
 };
 
 /**
@@ -52,6 +57,7 @@ export async function readMintSafety(connection: Connection, mints: readonly str
     try { freezeAuthority = mintDataHasFreezeAuthority(info.data); } catch { return; /* left out */ }
     let blockReasons: MintBlockReason[] = [], unsupported: string[] = [], scaledUiMultiplier: number | undefined;
     let scaledUiConfig: ScaledUiMultiplierConfig | undefined;
+    let scaledUiKnown = false;
     try {
       const mint = unpackMint(new PublicKey(unique[index]!), info, info.owner);
       blockReasons = mintBlockReasons(mint);
@@ -64,8 +70,9 @@ export async function readMintSafety(connection: Connection, mints: readonly str
           scaledUiConfig = scaledUiConfigFromExtension(scaled) ?? undefined;
         }
       }
+      scaledUiKnown = !scaled || scaledUiConfig !== undefined;
     } catch { /* base layout only */ }
-    result.set(unique[index]!, { freezeAuthority, blockReasons, unsupported,
+    result.set(unique[index]!, { freezeAuthority, blockReasons, unsupported, ...(scaledUiKnown ? { scaledUiKnown: true as const } : {}),
       ...(scaledUiMultiplier !== undefined ? { scaledUiMultiplier } : {}), ...(scaledUiConfig ? { scaledUiConfig } : {}) });
   });
   return result;

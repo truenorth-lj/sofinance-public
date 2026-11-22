@@ -47,7 +47,7 @@ describe("readMintSafety", () => {
   it("returns freeze authority and no block reasons for classic SPL mints, from the same single batch", async () => {
     const { conn, calls } = connection();
     const result = await readMintSafety(conn, [CBBTC, WBTC]);
-    expect([...result]).toEqual([[CBBTC, { freezeAuthority: true, blockReasons: [], unsupported: [] }], [WBTC, { freezeAuthority: false, blockReasons: [], unsupported: [] }]]);
+    expect([...result]).toEqual([[CBBTC, { freezeAuthority: true, blockReasons: [], unsupported: [], scaledUiKnown: true }], [WBTC, { freezeAuthority: false, blockReasons: [], unsupported: [], scaledUiKnown: true }]]);
     expect(calls).toEqual([[CBBTC, WBTC]]);
   });
 
@@ -63,7 +63,7 @@ describe("readMintSafety", () => {
     const T22 = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
     const { conn } = connection(meteoraAccounts({ [WBTC]: { ...accounts[WBTC]!, owner: T22, data: data.toString("base64") } }));
     const result = await readMintSafety(conn, [WBTC, "So11111111111111111111111111111111111111112"]);
-    expect([...result]).toEqual([[WBTC, { freezeAuthority: false, blockReasons: ["paused"], unsupported: [] }]]);
+    expect([...result]).toEqual([[WBTC, { freezeAuthority: false, blockReasons: ["paused"], unsupported: [], scaledUiKnown: true }]]);
     expect([...(await readMintFreezeAuthorities(conn, [WBTC]))]).toEqual([[WBTC, false]]);
   });
 });
@@ -89,6 +89,8 @@ describe("readMintSafety: settings opening does not handle yet (the engine's poo
   it("a finite multiplier, including values other than 1, is fine", async () => {
     expect((await readMintSafety(scaled(1, 1), [WBTC])).get(WBTC)?.unsupported).toEqual([]);
     expect((await readMintSafety(scaled(1.0009, 1.0017), [WBTC])).get(WBTC)?.unsupported).toEqual([]);
+    // The multiplier is known (a finite schedule): X3-7's TVL step may use it. A non-finite one above stays unknown.
+    expect((await readMintSafety(scaled(1.0009, 1.0017), [WBTC])).get(WBTC)?.scaledUiKnown).toBe(true);
     expect((await readMintSafety(scaled(1.02, 1.02), [WBTC])).get(WBTC)?.unsupported).toEqual([]);
   });
   it("keeps the complete schedule next to the effective value (NVDAx, change applied 2026-09-10 00:30Z)", async () => {

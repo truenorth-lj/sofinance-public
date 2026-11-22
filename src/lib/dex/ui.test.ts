@@ -26,7 +26,7 @@ describe("uiFor (E-move registry UI)", () => {
     expect(uiFor("meteora-dlmm").externalPoolUrl).toBeUndefined();
     expect(uiFor("meteora-dlmm").planFallback).toBeUndefined();
     expect(meteoraDlmmDescriptor.ui).toEqual({ rangeApr: { route: "protocol", cacheScope: "protocol", rwaListRoute: "pool" },
-      openUi: "registry", useDescriptorPlanTerms: true, listPriceIncludesScaledUi: true,
+      openUi: "registry", useDescriptorPlanTerms: true, listPriceIncludesScaledUi: true, tvlIncludesScaledUi: false,
       planOpenUnavailableReason: "Opening Meteora positions isn't available yet" });
     expect(uiFor("meteora-dlmm").listPriceIncludesScaledUi).toBe(true);
     expect(uiFor("raydium-clmm").listPriceIncludesScaledUi).toBeUndefined();

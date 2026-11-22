@@ -5,7 +5,7 @@ vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: () => ({}) }));
 const ext = vi.hoisted(() => ({
   xstocks: new Set<string>(),
   tags: new Map<string, string[]>(),
-  safety: new Map<string, { freezeAuthority: boolean; blockReasons: string[] }>(),
+  safety: new Map<string, { freezeAuthority: boolean; blockReasons: string[]; scaledUiKnown?: true; scaledUiConfig?: { multiplier: number; newMultiplier: number } }>(),
 }));
 vi.mock("./rwa-xstocks-whitelist", () => ({ fetchXstocksSolanaMintSet: async () => ext.xstocks, getXstocksObservedAt: () => "2026-11-01T00:00:00Z" }));
 vi.mock("./rwa-jupiter-tags", () => ({
@@ -135,6 +135,31 @@ describe("Meteora DLMM RWA scan", () => {
     expect(tsla.blocked).toBeTruthy();
     expect(tsla).toMatchObject({ freezeRiskA: true, freezeRiskB: false });
     expect(result.meteora).toMatchObject({ blocked: 1, onchainVerified: 0 });
+  });
+
+  it("runs the $5k floor again on the registry-unit TVL: a m < 1 pool corrected under it is not listed; unverified keeps the published value (X3-7)", async () => {
+    tagged();
+    // datapi: $6,000 = 30 TSLAx × $100/share + 30 TSLA × $100. With TSLAx at ×0.5 the pool holds $4,500 (6,000 + 30 × (0.5 − 1) × 100).
+    const half = pool("PxTsLaHalf11111111111111111111111111111111111", [TSLAX, "TSLAx", "Tesla xStock"], [TSLA, "TSLA", "Tesla - Backpack Securities"], 8, 6_000);
+    const withSides = { ...half, token_x_amount: 30, token_y_amount: 30, token_x: { ...half.token_x, price: 100 }, token_y: { ...half.token_y, price: 100 } };
+    const connection = { getMultipleAccountsInfo: async (keys: unknown[]) => keys.map(() => null) } as unknown as Connection;
+    const scan = () => discoverMeteoraRwaPairs({ fetcher: datapi([...POOLS, withSides]) as unknown as typeof fetch, connection, minTvl: METEORA_SCAN_MIN_TVL_USD });
+
+    ext.safety = new Map([
+      [TSLAX, { freezeAuthority: false, blockReasons: [], scaledUiKnown: true, scaledUiConfig: { multiplier: 0.5, newMultiplier: 0.5 } }],
+      [TSLA, { freezeAuthority: false, blockReasons: [], scaledUiKnown: true }],
+    ]);
+    const corrected = await scan();
+    expect(corrected.pairs.map((p) => p.poolAddress)).not.toContain("PxTsLaHalf11111111111111111111111111111111111");
+    // The ×1 pools around it are corrected to their own value and stay listed.
+    expect(corrected.pairs.find((p) => p.poolAddress === "PxMstrTen11111111111111111111111111111111111")).toBeDefined();
+
+    // Mints not read: the pool is listed at datapi's figure, marked unverified, never shown as corrected.
+    ext.safety = new Map();
+    const unread = await scan();
+    const row = unread.pairs.find((p) => p.poolAddress === "PxTsLaHalf11111111111111111111111111111111111")!;
+    expect(row.tvlUsd).toBe(6_000);
+    expect(row.tvlScaledUi).toMatchObject({ status: "unverified", sourceTvlUsd: 6_000, mintsRead: false });
   });
 
   it("page counts split scanned pools into ≤ 1000-row pages (store schema)", () => {

@@ -2,6 +2,8 @@
 
 exports[`parseMeteoraPool > parses the captured datapi pool (golden) 1`] = `
 {
+  "amountX": 2.18049319,
+  "amountY": 1.95571161,
   "baseFeeBps": 1,
   "baseFeeRate": 0.0001,
   "binStep": 1,
@@ -21,6 +23,8 @@ exports[`parseMeteoraPool > parses the captured datapi pool (golden) 1`] = `
   "nameY": "Wrapped BTC (Portal)",
   "poolAddress": "53oyyjgybx6dH7i5aGeKfBUi3xPJQDeBkaENPri57x2H",
   "price": 1.0016012005601815,
+  "priceUsdX": 81550.39278837232,
+  "priceUsdY": 81237.995020534,
   "protocolFeeShare": 0.05,
   "protocolFees24hUsd": 0.35919833168257265,
   "reserveX": "5LaTKNpjhHoxmWrCFPqhSkUHKdzpK3b95PdDwQecCxmH",

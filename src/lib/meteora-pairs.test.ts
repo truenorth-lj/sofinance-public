@@ -17,7 +17,9 @@ describe("Meteora pair rows", () => {
       symbolA: "cbBTC", symbolB: "WBTC", baseSymbol: "BTC", wrapKind: "same-asset", relatedness: "allowlisted",
       feeTierBps: 1, feeRate: 0.0001, token2022A: false, token2022B: false, raydiumFeeApr24h: null,
       // cbBTC still has a freeze authority (Meteora reports freeze_authority_disabled=false); WBTC does not.
-      freezeRiskA: true, freezeRiskB: false, freezeRisk: true });
+      freezeRiskA: true, freezeRiskB: false, freezeRisk: true,
+      // datapi's own TVL inputs, kept for the multiplier step (X3-7); BTC has no multiplier, so TVL is as published.
+      tvlSides: { amountA: 2.18049319, amountB: 1.95571161, sharePriceUsdA: 81550.39278837232, sharePriceUsdB: 81237.995020534 } });
     // LP-share 24h fees / TVL × 365 × 100 ≈ 0.42 %.
     expect(row.estimatedFeeAprPct).toBeCloseTo((4.247998606572472 - 0.35919833168257265) / 336203.47025545826 * 365 * 100, 6);
     expect(row).toMatchSnapshot();

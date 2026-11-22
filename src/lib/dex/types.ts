@@ -157,6 +157,12 @@ export type DexUi = {
    * Omitted or false = the price is decimals-only raw (Raydium and the default).
    */
   listPriceIncludesScaledUi?: boolean;
+  /**
+   * False when the source's pool TVL values raw amounts at per-share prices (no ScaledUiAmount multiplier), so the
+   * snapshot adds the missing part (`@sofinance/engine/valuation/pool-tvl`). Omitted or true = the TVL is used as
+   * published (Raydium's API already includes the multiplier; Orca is unverified and has no multiplier pools yet).
+   */
+  tvlIncludesScaledUi?: boolean;
 };
 
 /** Existing native transports use their own contracts while the generic adapter rolls out. */

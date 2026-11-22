@@ -12,6 +12,7 @@ vi.mock("./onchain-mint-freeze", () => ({
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: () => ({}) }));
 
 import { listablePairs } from "./rwa-listable";
+import type { RwaPairRow } from "./rwa-pairs";
 import {
   applyOnchainFreezeRisk,
   blockOf,
@@ -665,6 +666,32 @@ describe("applyOnchainFreezeRisk (Raydium rows)", () => {
     expect(pairs[0]).toMatchObject({ multiplierA: 8, scaledUiConfigA: sndkx });
     expect(pairs[0]).not.toHaveProperty("scaledUiConfigB");
     expect(JSON.parse(JSON.stringify(pairs[0])).scaledUiConfigA).toEqual(sndkx);   // a JSON snapshot field, no migration
+  });
+
+  it("adds the multiplier part to a Meteora row's TVL from the same mint read; Raydium rows keep theirs (X3-7)", async () => {
+    const nvdax = { multiplier: 1.000918, newMultiplier: 1.001701196801074, newMultiplierEffectiveTimestamp: 1_789_000_200 };
+    const meteora = { ...row(), protocol: "meteora-dlmm", tvlUsd: 39_347.15, fees24hUsd: 50,
+      tvlSides: { amountA: 90.63, amountB: 218.23, sharePriceUsdA: 127.41, sharePriceUsdB: 127.61 } } as RwaPairRow;
+    const safety = new Map<string, boolean | { freezeAuthority: boolean; blockReasons: string[] }>([
+      [MINT_A, { freezeAuthority: false, blockReasons: [], unsupported: [], scaledUiKnown: true } as never],
+      [MINT_B, { freezeAuthority: false, blockReasons: [], unsupported: [], scaledUiKnown: true,
+        scaledUiMultiplier: 1.001701196801074, scaledUiConfig: nvdax } as never],
+    ]);
+    freezeMock.read.mockResolvedValueOnce(safety);
+    const [corrected] = (await applyOnchainFreezeRisk([meteora], {} as never)).pairs;
+    expect(corrected!.tvlUsd).toBeCloseTo(39_347.15 + 218.23 * 0.001701196801074 * 127.61, 6);
+    expect(corrected!.tvlScaledUi).toEqual({ status: "corrected", sourceTvlUsd: 39_347.15, mintsRead: true });
+    expect(corrected!.estimatedFeeAprPct).toBeCloseTo(50 / corrected!.tvlUsd! * 365 * 100, 9);
+    // RPC miss on one mint: published TVL kept, marked unverified (never treated as 1).
+    freezeMock.read.mockResolvedValueOnce(new Map([[MINT_A, { freezeAuthority: false, blockReasons: [], unsupported: [], scaledUiKnown: true } as never]]));
+    const [unread] = (await applyOnchainFreezeRisk([meteora], {} as never)).pairs;
+    expect(unread).toMatchObject({ tvlUsd: 39_347.15, tvlScaledUi: { status: "unverified", mintsRead: false, reason: "multiplier-unknown" } });
+    // A Raydium row with the same inputs is used as published (descriptor flag absent).
+    freezeMock.read.mockResolvedValueOnce(safety);
+    const raydium = { ...meteora, protocol: "raydium-clmm" } as RwaPairRow;
+    const [kept] = (await applyOnchainFreezeRisk([raydium], {} as never)).pairs;
+    expect(kept!.tvlUsd).toBe(39_347.15);
+    expect(kept).not.toHaveProperty("tvlScaledUi");
   });
 
   it("blockOf: unknown mints (RPC miss) do not block; reasons keep a fixed order", () => {
