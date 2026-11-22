@@ -1,5 +1,5 @@
 import "server-only";
-import { METEORA_ALLOWLISTED_POOLS, METEORA_DLMM_DATAPI } from "@sofinance/engine/protocols/meteora/constants";
+import { METEORA_ALLOWLISTED_POOLS, METEORA_DLMM_DATAPI, SPL_TOKEN_PROGRAM_ID } from "@sofinance/engine/protocols/meteora/constants";
 import { utcDate } from "@/lib/apr-series";
 import { parseMeteoraPoolSnapshot } from "@/lib/meteora-daily-apr";
 import { sanitizePublicError } from "@/lib/public-error";
@@ -20,8 +20,8 @@ import type { DailyTvlRecord, DailyTvlRecordInput, DailyTvlStats } from "../regi
  * A datapi 429 stops the run at once (no new requests; reads already in flight finish); the rest wait for the next run.
  * datapi's TVL leaves out the ScaledUiAmount multiplier (descriptor `tvlIncludesScaledUi: false`), so each saved value
  * adds it from the feed row's last mint read (`tvlScaledUi.mintsRead` + `scaledUiConfigA/B`, evaluated at this run's
- * clock). No mint read here. A pool without that (allowlist-only, mints unread) is saved as published and counted in
- * `scaledUiUnverified`. Rows saved before X3-7 are left as they are.
+ * clock). No mint read here. An allowlisted side on the original SPL Token program is 1 (no extensions possible). A pool
+ * still without a known multiplier is saved as published and counted in `scaledUiUnverified`. Rows saved before X3-7 are left as they are.
  */
 const METEORA_TVL_BUDGET_MS = 15_000;
 const METEORA_TVL_CONCURRENCY = 4;
@@ -34,7 +34,8 @@ export async function recordMeteoraDailyTvl(input: DailyTvlRecordInput & { apiBa
   const date = utcDate(Math.floor(clock() / 1000));
   const issues: string[] = [];
   const feed = await store.request({ op: "activePools", feedKeys: [FEED_KEY, FEED_KEY_METEORA] });
-  const listed = new Set(METEORA_ALLOWLISTED_POOLS.map((pool) => pool.poolAddress));
+  const allowlist = new Map(METEORA_ALLOWLISTED_POOLS.map((pool) => [pool.poolAddress, pool]));
+  const listed = new Set(allowlist.keys());
   const rows = new Map<string, RwaPairRow>();
   for (const { pair } of feed ?? []) {
     if (pair.protocol === SOLANA_FEED_PROTOCOL[FEED_KEY_METEORA] && !pair.blocked) { listed.add(pair.poolAddress); rows.set(pair.poolAddress, pair); }
@@ -43,12 +44,16 @@ export async function recordMeteoraDailyTvl(input: DailyTvlRecordInput & { apiBa
   let unverified = 0;
   const inRegistryUnit = (poolId: string, snapshot: ReturnType<typeof parseMeteoraPoolSnapshot>): number | null => {
     if (snapshot.tvlUsd === null || !leavesOutScaledUi) return snapshot.tvlUsd;
-    const row = rows.get(poolId), sides = snapshot.tvlSides, nowMs = clock();
-    const multiplier = (config: RwaPairRow["scaledUiConfigA"]) => knownMultiplier({ known: row?.tvlScaledUi?.mintsRead === true, config }, nowMs);
+    const row = rows.get(poolId), sides = snapshot.tvlSides, nowMs = clock(), allowlisted = allowlist.get(poolId);
+    // A mint the allowlist pins to the original SPL Token program has no extensions, so its multiplier is 1 without a read.
+    const multiplier = (program: string | undefined, config: RwaPairRow["scaledUiConfigA"]) => program === SPL_TOKEN_PROGRAM_ID
+      ? 1 : knownMultiplier({ known: row?.tvlScaledUi?.mintsRead === true, config }, nowMs);
     const result = scaledUiTvlUsd({ sourceTvlUsd: snapshot.tvlUsd, sides: sides
-      ? [{ amount: sides.amountX, sharePriceUsd: sides.priceUsdX, multiplier: multiplier(row?.scaledUiConfigA) },
-        { amount: sides.amountY, sharePriceUsd: sides.priceUsdY, multiplier: multiplier(row?.scaledUiConfigB) }]
-      : [{ amount: 0, sharePriceUsd: null, multiplier: null }, { amount: 0, sharePriceUsd: null, multiplier: null }] });
+      ? [{ amount: sides.amountX, sharePriceUsd: sides.priceUsdX, multiplier: multiplier(allowlisted?.tokenProgramX, row?.scaledUiConfigA) },
+        { amount: sides.amountY, sharePriceUsd: sides.priceUsdY, multiplier: multiplier(allowlisted?.tokenProgramY, row?.scaledUiConfigB) }]
+      // No amounts in the answer: only a side known to be 1 without a read (SPL Token) can be counted as verified.
+      : [{ amount: 0, sharePriceUsd: null, multiplier: allowlisted?.tokenProgramX === SPL_TOKEN_PROGRAM_ID ? 1 : null },
+        { amount: 0, sharePriceUsd: null, multiplier: allowlisted?.tokenProgramY === SPL_TOKEN_PROGRAM_ID ? 1 : null }] });
     if (result.kind === "unverified") unverified += 1;
     return result.tvlUsd;
   };

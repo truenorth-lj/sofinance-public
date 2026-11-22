@@ -147,6 +147,7 @@ export async function discoverMeteoraRwaPairs(options: DiscoverMeteoraRwaOptions
       preferredTags: match.preferredTags, jupiterTagsA: tagsX, jupiterTagsB: tagsY,
     } });
   }
+  const thresholded = new Set(matched.map((m) => m.pool.poolAddress));
   const stable = await stablePoolRows(options.stablePools ?? METEORA_ALLOWLISTED_STABLE_POOLS, fetcher, apiBase, options.signal);
   for (const entry of stable) if (!matched.some((m) => m.pool.poolAddress === entry.pool.poolAddress)) matched.push(entry);
 
@@ -158,7 +159,11 @@ export async function discoverMeteoraRwaPairs(options: DiscoverMeteoraRwaOptions
   }
   const rows = matched.map(({ pool, identity }) => meteoraPairRow(pool, facts, identity));
   const freeze = await applyOnchainFreezeRisk(rows, connection);
-  const pairs = sortPairs(freeze.pairs, options.sortBy ?? "estimatedFeeApr");
+  // The floor above ran on datapi's TVL, which leaves out the multiplier; run it again on the registry-unit TVL the
+  // mint read just gave (X3-7), so a pool whose corrected TVL is under the floor (m < 1) is not listed. Curated
+  // stable pools were never under the floor and stay exempt. An unverified row keeps the published value it passed with.
+  const floor = options.minTvl ?? 0;
+  const pairs = sortPairs(freeze.pairs.filter((pair) => !thresholded.has(pair.poolAddress) || (pair.tvlUsd ?? 0) >= floor), options.sortBy ?? "estimatedFeeApr");
   const pageCounts = scanPageCounts(raw.size);
   return {
     pairs,
