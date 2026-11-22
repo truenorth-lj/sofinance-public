@@ -9,11 +9,11 @@ import { McpConnectionCard } from "@/components/mcp-connection-card";
 import { Wallet, Code, Link as LinkIcon } from "lucide-react";
 
 export default function AIManagementPage() {
-  const { address: wallet, connected, restoring, connect, disconnect } = useWalletConnection();
+  const { address: wallet, connected, restoring, restoreStalled, connect, disconnect } = useWalletConnection();
 
   return (
     <InkShell maxWidth="5xl">
-      <SiteHeader wallet={wallet} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
+      <SiteHeader wallet={wallet} connected={connected} restoring={restoring} restoreStalled={restoreStalled} onConnect={connect} onDisconnect={disconnect} />
 
       <main id="main">
       <PageHeader

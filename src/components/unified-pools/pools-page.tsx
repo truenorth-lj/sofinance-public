@@ -26,10 +26,10 @@ export function PoolsPage({ flags, rhcSigningEnabled, deepLinkPool, deepLinkCalc
   flags: UnifiedPoolFlags; rhcSigningEnabled: boolean; deepLinkPool?: string; deepLinkCalc?: string; initialQuery?: string;
   detailHrefs?: Readonly<Record<string, string>>;
 }) {
-  const { address, connected, restoring, connect, disconnect } = useWalletConnection();
+  const { address, connected, restoring, restoreStalled, connect, disconnect } = useWalletConnection();
   const [rhcOpen, setRhcOpen] = useState<RhcPoolView | null>(null);
   return <InkShell>
-    <SiteHeader wallet={address} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
+    <SiteHeader wallet={address} connected={connected} restoring={restoring} restoreStalled={restoreStalled} onConnect={connect} onDisconnect={disconnect} />
     <main id="main">
     <div className="mt-5 px-1">
       <h1 className="text-xl font-semibold text-cream sm:text-2xl">{POOLS_PAGE_TITLE}</h1>

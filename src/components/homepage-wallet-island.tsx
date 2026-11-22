@@ -6,6 +6,7 @@ import { LoaderCircle, Wallet } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { hasRememberedHomepageWallet, homepageWallet, useHomepageWallet } from "./homepage-wallet";
 import { shortAddress } from "@/lib/format/address";
+import { hasPickerRequestAfterReload } from "@/lib/wallet-restore";
 
 const HomepageWalletRoot = dynamic(() => import("./homepage-wallet-root").then((module) => module.HomepageWalletRoot), { ssr: false });
 
@@ -18,7 +19,8 @@ const HomepageWalletRoot = dynamic(() => import("./homepage-wallet-root").then((
 export function HomepageWalletIsland() {
   const { mounted } = useHomepageWallet();
   useEffect(() => {
-    if (hasRememberedHomepageWallet()) homepageWallet.mount();
+    // A retry after a stuck restore reloads with no remembered wallet; the providers still load to open the picker.
+    if (hasRememberedHomepageWallet() || hasPickerRequestAfterReload()) homepageWallet.mount();
     // Cancel a click still waiting for restoration when the visitor leaves the homepage.
     return () => { homepageWallet.takeConnectRequest(); };
   }, []);

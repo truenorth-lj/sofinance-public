@@ -8,6 +8,8 @@ export type WalletConnection = {
   connected: boolean;
   /** The provider is initializing or restoring/connecting a session; absence of an address is not final yet. */
   restoring?: boolean;
+  /** Restoring the remembered wallet failed or timed out (e.g. a locked extension); show a retry instead of waiting. */
+  restoreStalled?: boolean;
   connect: () => void;
   disconnect: () => void;
   isMobile: boolean;

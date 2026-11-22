@@ -77,7 +77,7 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
   const [detail, setDetail] = useState<string | null>(null);
   const [withdrawBusy,setWithdrawBusy]=useState(false);
   const controller = useSelectedController();
-  const { restoring } = useWalletConnection();
+  const { restoring, restoreStalled } = useWalletConnection();
   const { wallet, connected, connect, disconnect, connectionError,
     discovery, selection, state, amount, tolerancePercent, result, attempt, attemptStatus,
     error, reprepare, quoteError, quoteErrorCode, quoteErrorOutputMint, quoteErrorAmount, showQuoteRecalculate,
@@ -366,7 +366,7 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
   const popupOpen = Boolean(popupIsPanel && popup.open);
   return <div className="min-h-screen bg-canvas text-cream">
     <div className="relative mx-auto max-w-[1280px] px-3 pb-32 pt-3 max-sm:pb-[max(8rem,calc(var(--tx-notice-bottom-offset,0px)+2rem))] sm:px-5 sm:pt-5">
-      <SiteHeader wallet={wallet} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
+      <SiteHeader wallet={wallet} connected={connected} restoring={restoring} restoreStalled={restoreStalled} onConnect={connect} onDisconnect={disconnect} />
 
       <main id="main">
       <div className="relative">

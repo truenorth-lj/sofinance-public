@@ -159,6 +159,13 @@ describe("homepage wallet", () => {
     expect(wallet.providerMounts).toBe(0);
   });
 
+  it("after a retry dropped a stuck restore and reloaded, the providers load even though no wallet is remembered", async () => {
+    window.sessionStorage.setItem("sofi:open-wallet-picker", "1");
+    await act(async () => root.render(page()));
+    expect(wallet.providerMounts).toBe(1);
+    window.sessionStorage.clear();
+  });
+
   it("Connect wallet loads the providers in place and opens the wallet picker once per click", async () => {
     await act(async () => root.render(page()));
     await act(async () => button().click());

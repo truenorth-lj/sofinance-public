@@ -31,7 +31,7 @@ const short = shortAddress;
 export default function SignPage() {
   const params = useParams<{ token: string }>();
   const router = useRouter();
-  const { address: wallet, connected, restoring, connect, disconnect } = useWalletConnection();
+  const { address: wallet, connected, restoring, restoreStalled, connect, disconnect } = useWalletConnection();
   const txWallet = useTxWallet();
   
   const [payload, setPayload] = useState<PendingSignPayload | null>(null);
@@ -258,7 +258,7 @@ export default function SignPage() {
 
   return (
     <InkShell>
-      <SiteHeader wallet={wallet} connected={connected} restoring={restoring} onConnect={connect} onDisconnect={disconnect} />
+      <SiteHeader wallet={wallet} connected={connected} restoring={restoring} restoreStalled={restoreStalled} onConnect={connect} onDisconnect={disconnect} />
       
       <div className="mx-auto max-w-3xl">
       <PageHeader title="Sign transaction" subline="Review and sign the prepared transaction" />

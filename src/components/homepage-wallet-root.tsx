@@ -22,7 +22,7 @@ export function HomepageWalletRoot() {
 
 /** Reports the wallet to the store, and opens the wallet picker once per Connect wallet click. */
 function WalletBridge() {
-  const { address, connected, restoring, connect, disconnect } = useWalletConnection();
+  const { address, connected, restoring, restoreStalled = false, connect, disconnect } = useWalletConnection();
   const { connectRequests } = useHomepageWallet();
   const current = connected && address ? address : null;
   // The provider's functions are new on every render: keep the latest in a ref instead of reporting them.
@@ -32,7 +32,7 @@ function WalletBridge() {
     homepageWallet.setDisconnect(() => latestDisconnect.current());
     return () => homepageWallet.unmounted();
   }, []);
-  useEffect(() => { homepageWallet.report(current, restoring); }, [current, restoring]);
+  useEffect(() => { homepageWallet.report(current, restoring, restoreStalled); }, [current, restoring, restoreStalled]);
   // Answered once per click across roots (the store remembers), so coming back to the homepage replays nothing.
   useEffect(() => {
     if (!restoring && homepageWallet.takeConnectRequest() && !current) connect();
