@@ -2,9 +2,12 @@
 export const WALLET_RESTORE_FAILED = "Wallet restoration failed, please reconnect.";
 
 const OPEN_PICKER_AFTER_RELOAD = "sofi:open-wallet-picker";
-// AppKit 1.8 keeps the remembered Solana connector under these keys (also read by hasRememberedHomepageWallet).
-const APPKIT_SOLANA_CONNECTOR = "@appkit/solana:connected_connector_id";
-const APPKIT_CONNECTIONS = "@appkit/connections";
+// AppKit's own storage keys for the remembered Solana connector (also read by hasRememberedHomepageWallet).
+// Verified against @reown/appkit 1.8.24; wallet-restore.appkit-keys.test.ts fails when AppKit is upgraded or the keys
+// change, so re-check them (and update APPKIT_STORAGE_KEYS_VERIFIED_VERSION) on every AppKit bump.
+export const APPKIT_STORAGE_KEYS_VERIFIED_VERSION = "1.8.24";
+export const APPKIT_SOLANA_CONNECTOR = "@appkit/solana:connected_connector_id";
+export const APPKIT_CONNECTIONS = "@appkit/connections";
 
 /**
  * AppKit cannot cancel a restore whose wallet never answers, and if that wallet answers later it replaces whatever the
