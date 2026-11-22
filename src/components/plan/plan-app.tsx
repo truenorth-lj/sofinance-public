@@ -131,7 +131,7 @@ export function PlanApp() {
   return (
     <div className="min-h-screen bg-canvas text-cream">
       <div className="mx-auto max-w-[1280px] px-3 pb-16 pt-3 sm:px-5 sm:pt-5">
-        <SiteHeader wallet={wallet.address} connected={wallet.connected} restoring={wallet.restoring} onConnect={wallet.connect} onDisconnect={wallet.disconnect} />
+        <SiteHeader wallet={wallet.address} connected={wallet.connected} restoring={wallet.restoring} restoreStalled={wallet.restoreStalled} onConnect={wallet.connect} onDisconnect={wallet.disconnect} />
 
         <main id="main" className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-12">
           <section

@@ -52,6 +52,7 @@ export function SiteHeader(props: InkNavProps = {}) {
         wallet: props.wallet,
         connected: props.connected,
         restoring: props.restoring,
+        restoreStalled: props.restoreStalled,
         onConnect: props.onConnect,
         onDisconnect: props.onDisconnect,
       }
@@ -59,6 +60,7 @@ export function SiteHeader(props: InkNavProps = {}) {
         wallet: island.address,
         connected: Boolean(island.address),
         restoring: island.mounted && !island.ready,
+        restoreStalled: island.restoreStalled,
         onConnect: homepageWallet.requestConnect,
         onDisconnect: homepageWallet.disconnect,
       };
@@ -96,6 +98,7 @@ export function SiteHeader(props: InkNavProps = {}) {
               wallet={solana.wallet}
               connected={solana.connected}
               restoring={solana.restoring}
+              restoreStalled={solana.restoreStalled}
               onConnect={solana.onConnect}
               onDisconnect={solana.onDisconnect}
               {...evm}

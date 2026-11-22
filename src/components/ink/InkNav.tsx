@@ -5,11 +5,14 @@ import { cn } from "@/lib/cn";
 import { useOptionalEvmWalletConnection } from "@/components/evm-wallet-connection";
 import { RHC_CHAIN_ID } from "@/lib/rhc-wallet/eip1193";
 import { shortAddress } from "@/lib/format/address";
+import { WALLET_RESTORE_FAILED } from "@/lib/wallet-restore";
 
 export interface InkNavProps {
   wallet?: string | null;
   connected?: boolean;
   restoring?: boolean;
+  /** Restoring the remembered Solana wallet failed or timed out: the button offers a retry and the message shows. */
+  restoreStalled?: boolean;
   onConnect?: () => void;
   onDisconnect?: () => void;
   /** Used when this slot is outside `EvmWalletProvider` (marketing pages, public pool pages). */
@@ -35,7 +38,7 @@ const walletOn = "border-white/40 text-cream hover:border-white/70";
  * Wallet buttons only render when the page passes Solana handlers; plan/sign pages without handlers show none.
  */
 export function InkNav({
-  wallet, connected, restoring = false, onConnect, onDisconnect,
+  wallet, connected, restoring = false, restoreStalled = false, onConnect, onDisconnect,
   evmEnabled, evmWallet, evmBusy: evmBusyProp, evmChainId, evmError, onEvmConnect, onEvmDisconnect, onEvmDismissError,
 }: InkNavProps) {
   const evm = useOptionalEvmWalletConnection();
@@ -43,6 +46,7 @@ export function InkNav({
   const evmOn = evm ? evm.enabled : Boolean(evmEnabled);
   const showEvm = showSolana && Boolean(evmOn);
   const solanaConnected = Boolean(connected && wallet);
+  const solanaStalled = !solanaConnected && !restoring && restoreStalled;
   const evmAddress = evm?.wallet?.address ?? evmWallet ?? null;
   const evmBusy = evm ? evm.status === "connecting" || evm.status === "restoring" : Boolean(evmBusyProp);
   const evmOnRhc = (evm ? evm.chainId : evmChainId) === RHC_CHAIN_ID;
@@ -64,14 +68,19 @@ export function InkNav({
           onClick={solanaConnected ? onDisconnect : onConnect}
           disabled={!solanaConnected && restoring}
           aria-busy={!solanaConnected && restoring ? true : undefined}
-          title={solanaConnected ? "Disconnect Solana wallet" : restoring ? "Restoring Solana wallet…" : "Connect a Solana wallet (Phantom, Solflare, …)"}
-          aria-label={solanaConnected && wallet ? `Solana wallet ${short(wallet)}, connected. Disconnect` : "Connect a Solana wallet"}
+          title={solanaConnected ? "Disconnect Solana wallet" : restoring ? "Restoring Solana wallet…" : solanaStalled ? "Unlock your wallet or click to retry" : "Connect a Solana wallet (Phantom, Solflare, …)"}
+          aria-label={solanaConnected && wallet ? `Solana wallet ${short(wallet)}, connected. Disconnect` : solanaStalled ? "Unlock your Solana wallet or click to retry" : "Connect a Solana wallet"}
           data-testid="nav-solana-wallet"
           data-connected={solanaConnected ? "true" : "false"}
           className={cn(walletPill, solanaConnected ? walletOn : walletOff, !solanaConnected && restoring && "disabled:cursor-wait disabled:opacity-60")}
         >
           <Wallet className="hidden h-4 w-4 shrink-0 sm:block" aria-hidden="true" />
-          {solanaConnected && wallet ? <WalletLabel address={short(wallet)} chain="SOL" /> : <span className="shrink-0">{restoring ? "Connecting…" : "Solana"}</span>}
+          {solanaConnected && wallet
+            ? <WalletLabel address={short(wallet)} chain="SOL" />
+            : solanaStalled
+              // The 375 row has no room for the sentence: "Retry" there, the full text in the title and aria-label.
+              ? <span className="shrink-0"><span className="sm:hidden">Retry</span><span className="hidden sm:inline">Unlock your wallet or click to retry</span></span>
+              : <span className="shrink-0">{restoring ? "Connecting…" : "Solana"}</span>}
         </button>
         {/* No network tag or switch here (LJ 11/14): another network is only asked about where it matters (RHC Close).
             The address shows a chain tag only on Robinhood Chain. */}
@@ -93,6 +102,10 @@ export function InkNav({
           </button>
         )}
       </div>
+      {solanaStalled && (
+        // Below sm the logo + pills + Menu row has no room for a second line: screen readers still get it, the pill says Retry.
+        <p role="alert" className="sr-only w-full text-right text-xs text-red-200 sm:not-sr-only" data-testid="nav-solana-error">Solana wallet: {WALLET_RESTORE_FAILED}</p>
+      )}
       {showEvm && evmAlert && (
         <p role="alert" className="w-full text-right text-xs text-red-200" data-testid="nav-evm-error">
           <span>EVM wallet: {evmAlert}</span>

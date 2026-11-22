@@ -73,6 +73,21 @@ describe("InkNav wallets", () => {
     expect(solana.connect).not.toHaveBeenCalled();
   });
 
+  it("offers a clickable retry and shows the error when restoring the Solana wallet stalled", async () => {
+    await act(async () => {
+      root.render(createElement(InkNav, {
+        wallet: null, connected: false, restoring: false, restoreStalled: true,
+        onConnect: solana.connect, onDisconnect: solana.disconnect,
+      }));
+    });
+    expect(sol().disabled).toBe(false);
+    expect(sol().textContent).toContain("Unlock your wallet or click to retry");
+    expect(sol().getAttribute("aria-label")).toBe("Unlock your Solana wallet or click to retry");
+    expect(container.querySelector("[data-testid=nav-solana-error]")?.textContent).toBe("Solana wallet: Wallet restoration failed, please reconnect.");
+    await click(sol());
+    expect(solana.connect).toHaveBeenCalledTimes(1);
+  });
+
   it("connecting the EVM wallet leaves Solana alone, and the reverse", async () => {
     localStorage.setItem("sofi:evm-wallet:v1", JSON.stringify({ disconnected: true }));
     await render();

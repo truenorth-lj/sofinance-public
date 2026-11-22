@@ -27,7 +27,7 @@ vi.mock("./transactions/tx-notice-host", () => ({ TxNoticeHost: () => null }));
 
 // Ensure the real provider constructs its AppKit instance in both env-matrix runs.
 vi.stubEnv("NEXT_PUBLIC_REOWN_PROJECT_ID", "restoration-test");
-const { MobileWalletProvider } = await import("./mobile-wallet-provider");
+const { MobileWalletProvider, WALLET_RESTORE_TIMEOUT_MS } = await import("./mobile-wallet-provider");
 vi.unstubAllEnvs();
 
 let root: Root;
@@ -48,7 +48,7 @@ beforeEach(() => {
   sdk.open.mockClear(); sdk.disconnect.mockClear();
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
 });
-afterEach(() => { act(() => root.unmount()); host.remove(); });
+afterEach(() => { act(() => root.unmount()); host.remove(); vi.useRealTimers(); });
 
 describe("AppKit session restoration", () => {
   it("waits for SDK ready even if the initial account snapshot says disconnected", async () => {
@@ -80,5 +80,106 @@ describe("AppKit session restoration", () => {
     expect(connection.connectionError).toBe("Wallet restoration failed, please reconnect.");
     await act(async () => connection.connect());
     expect(sdk.open).toHaveBeenCalledExactlyOnceWith({ view: "Connect", namespace: "solana" });
+  });
+});
+
+// A remembered wallet that never answers (locked extension, closed unlock popup) used to keep the button disabled forever.
+describe("AppKit session restoration time limit", () => {
+  const RESTORE_FAILED = "Wallet restoration failed, please reconnect.";
+  const REMEMBERED = "@appkit/solana:connected_connector_id";
+  const pastTimeLimit = () => act(async () => { vi.advanceTimersByTime(WALLET_RESTORE_TIMEOUT_MS); });
+  let reload: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    vi.useFakeTimers();
+    localStorage.clear(); sessionStorage.clear();
+    reload = vi.fn();
+    vi.stubGlobal("location", { ...window.location, reload });
+  });
+  afterEach(() => { vi.unstubAllGlobals(); });
+  const rememberWallet = () => {
+    localStorage.setItem(REMEMBERED, "Phantom");
+    localStorage.setItem("@appkit/connections", JSON.stringify({ solana: [{ connectorId: "Phantom", accounts: [{ address: "remembered" }] }] }));
+  };
+  const reloadPage = async () => {
+    act(() => root.unmount());
+    sdk.ready = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
+    sdk.account = { address: undefined, isConnected: false, status: "disconnected" };
+    root = createRoot(host);
+    await act(async () => render());
+  };
+
+  it("never settles: releases the button after the time limit, and a retry drops the stuck restore before the picker opens", async () => {
+    rememberWallet();
+    sdk.account.status = "connecting"; // AppKit keeps reporting the stuck restore
+    await act(async () => render());
+    await act(async () => { vi.advanceTimersByTime(WALLET_RESTORE_TIMEOUT_MS - 1); });
+    expect(connection.restoring).toBe(true);
+    await act(async () => { vi.advanceTimersByTime(1); });
+    expect(connection.restoring).toBe(false);
+    expect(connection.restoreStalled).toBe(true);
+    expect(connection.connectionError).toBe(RESTORE_FAILED);
+
+    await act(async () => connection.connect());
+    // The stuck wallet is forgotten and the page reloads, so a late answer from it cannot replace the visitor's pick.
+    expect(localStorage.getItem(REMEMBERED)).toBeNull();
+    expect(JSON.parse(localStorage.getItem("@appkit/connections")!).solana).toEqual([]);
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(sdk.open).not.toHaveBeenCalled();
+
+    // After the reload nothing is left to restore: the picker opens once by itself, and only once.
+    await reloadPage();
+    expect(sdk.open).not.toHaveBeenCalled();
+    await act(async () => resolveReady());
+    expect(sdk.open).toHaveBeenCalledExactlyOnceWith({ view: "Connect", namespace: "solana" });
+    expect(connection.restoring).toBe(false);
+    expect(connection.connectionError).toBe("");
+    await reloadPage();
+    await act(async () => resolveReady());
+    expect(sdk.open).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects: releases the button right away, and Connect opens the picker in place", async () => {
+    rememberWallet();
+    await act(async () => render());
+    await act(async () => rejectReady(new Error("restore failed")));
+    expect(connection.restoring).toBe(false);
+    expect(connection.restoreStalled).toBe(true);
+    expect(connection.connectionError).toBe(RESTORE_FAILED);
+    await act(async () => connection.connect());
+    expect(sdk.open).toHaveBeenCalledExactlyOnceWith({ view: "Connect", namespace: "solana" });
+    expect(reload).not.toHaveBeenCalled();
+    await pastTimeLimit();
+    expect(connection.connectionError).toBe("");
+    expect(connection.restoreStalled).toBe(false);
+  });
+
+  it("late success after the time limit connects normally, with no picker and no reload", async () => {
+    rememberWallet();
+    sdk.account.status = "connecting";
+    await act(async () => render());
+    await pastTimeLimit();
+    expect(connection.restoreStalled).toBe(true);
+    sdk.account = { address: "restored-wallet", isConnected: true, status: "connected" };
+    await act(async () => { resolveReady(); render(); });
+    expect(connection.connected).toBe(true);
+    expect(connection.address).toBe("restored-wallet");
+    expect(connection.restoring).toBe(false);
+    expect(connection.restoreStalled).toBe(false);
+    expect(connection.connectionError).toBe("");
+    expect(sdk.open).not.toHaveBeenCalled();
+    expect(reload).not.toHaveBeenCalled();
+    expect(localStorage.getItem(REMEMBERED)).toBe("Phantom");
+  });
+
+  it("empty storage: nothing to restore, no error and no retry prompt, before or after the time limit", async () => {
+    await act(async () => { render(); resolveReady(); });
+    expect(connection.restoring).toBe(false);
+    await pastTimeLimit();
+    expect(connection.restoring).toBe(false);
+    expect(connection.restoreStalled).toBe(false);
+    expect(connection.connectionError).toBe("");
+    await act(async () => connection.connect());
+    expect(sdk.open).toHaveBeenCalledExactlyOnceWith({ view: "Connect", namespace: "solana" });
+    expect(reload).not.toHaveBeenCalled();
   });
 });

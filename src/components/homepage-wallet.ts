@@ -19,6 +19,8 @@ export type HomepageWalletState = {
   connectRequests: number;
   /** The connected Solana wallet, or null. */
   address: string | null;
+  /** Restoring the remembered Solana wallet failed or timed out; the header offers a retry. */
+  restoreStalled: boolean;
   /** The stock whose Buy modal is open. */
   buy: StockBuyOption | null;
   /** Bumped by every EVM connect click; the root opens the EVM flow once per bump. */
@@ -31,7 +33,7 @@ export type HomepageWalletState = {
   evmError: string | null;
 };
 
-const INITIAL: HomepageWalletState = { mounted: false, ready: false, connectRequests: 0, address: null, buy: null, evmConnectRequests: 0, evmAddress: null, evmReady: false, evmChainId: null, evmError: null };
+const INITIAL: HomepageWalletState = { mounted: false, ready: false, connectRequests: 0, address: null, restoreStalled: false, buy: null, evmConnectRequests: 0, evmAddress: null, evmReady: false, evmChainId: null, evmError: null };
 let state = INITIAL;
 const listeners = new Set<() => void>();
 /**
@@ -74,7 +76,7 @@ export const homepageWallet = {
     return true;
   },
   /** Called by the root; mounting a provider alone does not finish its async session restoration. */
-  report: (address: string | null, restoring = false) => set({ ready: !restoring, address }),
+  report: (address: string | null, restoring = false, restoreStalled = false) => set({ ready: !restoring, address, restoreStalled }),
   /** Called by the root: how to disconnect (not part of the state, see `disconnectWallet`). */
   setDisconnect: (disconnect: (() => void) | null) => { disconnectWallet = disconnect; },
   requestEvmConnect: () => set({ mounted: true, evmConnectRequests: state.evmConnectRequests + 1 }),
@@ -92,7 +94,7 @@ export const homepageWallet = {
   unmounted: () => {
     disconnectWallet = null;
     disconnectEvmWallet = null;
-    set({ ready: false, address: null, buy: null, evmReady: false, evmAddress: null, evmChainId: null, evmError: null });
+    set({ ready: false, address: null, restoreStalled: false, buy: null, evmReady: false, evmAddress: null, evmChainId: null, evmError: null });
   },
   /** Tests only. */
   reset: () => {
