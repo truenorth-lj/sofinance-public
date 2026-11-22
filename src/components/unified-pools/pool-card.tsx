@@ -10,9 +10,9 @@ import { HIGHEST_RANGE_COLUMN_LABEL, HIGHEST_RANGE_HELP } from "@/lib/range-apr/
 import { unavailableReasonText } from "@/lib/range-apr/format";
 import { pairIssuerLabel } from "@/lib/rwa-pair-names";
 import type { TokenIconMap } from "@/lib/token-icons/map";
-import { planShareSymbol, pairLabelSymbols } from "@/lib/lp-plan-shares";
 import { scaledUiFairNote } from "@/lib/fair-price";
 import { isLowTvl, PROTOCOL_LABELS, type UnifiedPool } from "@/lib/unified-pools/model";
+import { CALCULATE_LABEL } from "@/lib/unified-pools/calculate-label";
 import { poolPlanCapability } from "@/lib/unified-pools/plan-support";
 import { InfoTip } from "../info-tip";
 import { PairTokenIcons } from "../pair-token-icons";
@@ -65,8 +65,6 @@ export function PoolCard({ pool, apr, action, icons, onCalculate, calculateHref,
   const scaledNote = scaledUiFairNote(pool);
   const externalUrl = ui.externalPoolUrl?.(pool.poolAddress);
   const plan = poolPlanCapability(pool);
-  // Stock pools count shares; the stablecoin pool has no stock, so its button just says Calculate.
-  const calcLabel = planShareSymbol(pairLabelSymbols(pool.pairLabel)) ? "Calculate shares" : "Calculate";
   return <li className="flex min-w-0 flex-col rounded-[28px] bg-cream p-6 text-ink" data-pool={pool.key} data-chain={pool.chain}>
     <div className="flex flex-wrap items-center gap-1.5"><ChainBadge chain={pool.chain} /><span className={cn(chip, "border border-ink/25")}>{PROTOCOL_LABELS[pool.protocol]}</span>
       {isLowTvl(pool) && apr?.status !== "new" && <LowTvlTag tone="light" />}</div>
@@ -116,17 +114,17 @@ export function PoolCard({ pool, apr, action, icons, onCalculate, calculateHref,
       <OpenButton action={action} label={pool.pairLabel} />
       {/* `border-beam` (globals.css): a quiet streak of light circling the border; still for reduced motion. */}
       {plan?.supported && (calculateHref
-        ? <Link href={calculateHref} aria-label={`${calcLabel} for ${pool.pairLabel}`}
+        ? <Link href={calculateHref} aria-label={`${CALCULATE_LABEL} for ${pool.pairLabel}`}
           className="border-beam inline-flex h-11 items-center rounded-full border border-ink/25 px-4 text-sm font-semibold outline-none transition-colors hover:border-ink/60 focus-visible:shadow-[0_0_0_3px_var(--color-lilac)]">
-          {calcLabel}
+          {CALCULATE_LABEL}
         </Link>
-        : <button type="button" onClick={onCalculate} aria-haspopup="dialog" aria-label={`${calcLabel} for ${pool.pairLabel}`}
+        : <button type="button" onClick={onCalculate} aria-haspopup="dialog" aria-label={`${CALCULATE_LABEL} for ${pool.pairLabel}`}
           className="border-beam inline-flex h-11 items-center rounded-full border border-ink/25 px-4 text-sm font-semibold outline-none transition-colors hover:border-ink/60 focus-visible:shadow-[0_0_0_3px_var(--color-lilac)]">
-          {calcLabel}
+          {CALCULATE_LABEL}
         </button>)}
       {plan && !plan.supported && <span aria-disabled="true" title={plan.reason} data-testid="plan-unavailable"
         className="inline-flex h-11 cursor-not-allowed items-center rounded-full border border-ink/15 px-4 text-sm font-semibold text-ink/40">
-        {calcLabel}<span className="sr-only">: {plan.reason}</span>
+        {CALCULATE_LABEL}<span className="sr-only">: {plan.reason}</span>
       </span>}
       {externalUrl
         ? <a href={externalUrl} target="_blank" rel="noreferrer" title={`Open pool ${pool.poolAddress} on Raydium`}

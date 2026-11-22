@@ -173,7 +173,7 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", deepLin
     return () => window.clearTimeout(timer);
   }, [deepLinkPool, deepLinked, loading, pools, openPool]);
 
-  // Deep link (`/pools?calc=…`, including from the homepage "Calculate shares" link): open the calculator once the pool is listed.
+  // Deep link (`/pools?calc=…`, including from the homepage "Calculate" link): open the calculator once the pool is listed.
   const [deepCalced, setDeepCalced] = useState(false);
   useEffect(() => {
     if (deepCalced || !deepLinkCalc || loading) return;

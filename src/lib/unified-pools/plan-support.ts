@@ -4,7 +4,7 @@ import type { Capability } from "@/lib/unified-positions/model";
 import type { UnifiedPool } from "./model";
 
 /**
- * The plan capability that decides whether a pool card shows Calculate shares.
+ * The plan capability that decides whether a pool card shows Calculate.
  *
  * A registered `plan` capability only drives the chip when plan terms or the open UI come from
  * the registry (`useDescriptorPlanTerms` or `openUi` registry/none). RHC keeps `rhc-dialog` and
@@ -18,7 +18,7 @@ export function poolPlanCapability(pool: Pick<UnifiedPool, "protocol">): Capabil
     ?? (ui.planFallback ?? null);
 }
 
-/** True when the card (and the public pool page) offer a working Calculate shares control. */
+/** True when the card (and the public pool page) offer a working Calculate control. */
 export function poolSupportsCalculator(pool: Pick<UnifiedPool, "protocol">): boolean {
   return poolPlanCapability(pool)?.supported === true;
 }

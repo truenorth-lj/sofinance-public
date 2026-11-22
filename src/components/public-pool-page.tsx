@@ -10,6 +10,7 @@ import { PUBLIC_POOL_APR_LABEL, type PublicPoolPageModel } from "@/lib/public-po
 import { PUBLIC_POOLS_H1 } from "@/lib/public-pools-table";
 import { openAction } from "@/lib/unified-pools/open-action";
 import { NOT_SUPPORTED_LABEL } from "@/lib/unified-pools/model";
+import { CALCULATE_LABEL } from "@/lib/unified-pools/calculate-label";
 import { poolSupportsCalculator } from "@/lib/unified-pools/plan-support";
 
 function Fact({ term, value }: { term: string; value: string }) {
@@ -88,9 +89,9 @@ export function PublicPoolPage({ model }: { model: PublicPoolPageModel }) {
             <Link
               href={buildCalculatePath(model.pool.poolAddress)}
               className={calcPill}
-              aria-label={`Calculate shares for ${model.pairLabel}`}
+              aria-label={`${CALCULATE_LABEL} for ${model.pairLabel}`}
             >
-              Calculate shares
+              {CALCULATE_LABEL}
             </Link>
           )}
         </div>

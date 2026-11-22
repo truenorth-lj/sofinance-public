@@ -12,6 +12,7 @@ import { lowPlanApr, pairLabelSymbols, planShareSymbol } from "@/lib/lp-plan-sha
 import { PLAN_HIDDEN_RISK_LINE, planDataNotice } from "@/lib/lp-plan-notice";
 import { dexDescriptors, uiFor } from "@/lib/dex/client";
 import { cn } from "@/lib/cn";
+import { CALCULATE_LABEL } from "@/lib/unified-pools/calculate-label";
 import { HodlVsPool } from "../plan/hodl-vs-pool";
 import { formatCents, formatCostUsd, formatPct, formatSignedPct, formatSignedUsd } from "../plan/format";
 import { usePoolYield } from "../plan/use-pool-yield";
@@ -55,7 +56,7 @@ function OpenCta({ action, label }: { action: OpenAction; label: string }) {
 }
 
 /**
- * "Calculate shares" from a pool card: HODL vs HODL + earned shares for this one pool, in a dialog over the pools list.
+ * "Calculate" from a pool card: HODL vs HODL + earned shares for this one pool, in a dialog over the pools list.
  * Laid out like a vault page: stat tiles and a projection chart with a range switch on the left, the amount, the open
  * button and the assumptions on the right (stacked on phones, amount first). The only planning surface while
  * `/app/plan` is off (it redirects here): best of the 7 / 30 / 90-day averages, the LP's share of fees capped at what
@@ -128,7 +129,7 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
 
   return <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" data-testid="share-calc-dialog">
     <button type="button" tabIndex={-1} aria-label="Close share calculator" onClick={onClose} className="absolute inset-0 bg-black/70" />
-    <section role="dialog" aria-modal="true" aria-label={`${shareSymbol ? "Calculate shares" : "Calculate"} for ${pool.pairLabel}`}
+    <section role="dialog" aria-modal="true" aria-label={`${CALCULATE_LABEL} for ${pool.pairLabel}`}
       className="relative max-h-[100dvh] w-full overflow-y-auto rounded-t-2xl border border-white/10 bg-char p-4 text-cream sm:max-w-5xl sm:rounded-2xl sm:p-6">
       <button ref={closeRef} type="button" aria-label="Close" onClick={onClose}
         className="absolute right-3 top-3 z-10 rounded-lg p-2 text-cream/70 outline-none hover:bg-white/5 hover:text-cream focus-visible:shadow-[0_0_0_2px_var(--color-cream)]">

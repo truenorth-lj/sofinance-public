@@ -135,11 +135,11 @@ export function OutcomePanel({
               {`${formatCost(comparison.exitCost)} USDC (${terms.exitCost[setup.exitAsset].label})`}
             </Row>
             <Row
-              label="Est. best APY used · not a prediction"
+              label="Est. best fee APR used (compounded daily) · not a prediction"
               note={<>{bestAprCopy(best)}, {formatPct(comparison.aprPct)} to LPs {terms.lpShareLabel}, compounded daily, over {completeDaysCopy(best.sampleDays)}</>}
               noteTestId="plan-apy-note"
             >
-              {formatPct(comparison.apyPct)} est. APY
+              {formatPct(comparison.apyPct)} est.
             </Row>
             <Row label="Windows checked">
               {best.windows.map((window, index) => (
@@ -164,7 +164,7 @@ export function OutcomePanel({
 
           <div className="mt-auto pt-6">
             <p className="mb-4 text-xs leading-relaxed text-smoke">
-              {`Best case, not a probability or a promise. "Best APY" is the highest of this pool's 7, 30 and 90-day average fee rates (complete UTC days only), compounded daily with no price-shock path. Break-even is the first day the projection covers ${terms.openCost.breakEven}, plus the closing cost of the exit you chose. Network fees are ignored. Read-only: nothing here prepares, signs or sends a transaction.`}
+              {`Best case, not a probability or a promise. "Best fee APR" is the highest of this pool's 7, 30 and 90-day average fee rates (complete UTC days only), compounded daily with no price-shock path. Break-even is the first day the projection covers ${terms.openCost.breakEven}, plus the closing cost of the exit you chose. Network fees are ignored. Read-only: nothing here prepares, signs or sends a transaction.`}
             </p>
             {poolId && !terms.open.supported ? (
               <div aria-disabled="true" data-testid="plan-open-unavailable" title={terms.open.reason}

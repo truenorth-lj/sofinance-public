@@ -40,9 +40,9 @@ describe("ComparisonChart", () => {
     expect(markup).not.toContain("&quot;");
   });
 
-  it("names the best APY, its window and its sample in the legend", () => {
+  it("names the best fee APR, its window and its sample in the legend", () => {
     const markup = render(plan({ days: 30, aprPct: "36.5", windowDays: 7, sampleDays: 7 }));
-    expect(markup).toContain("Est. best APY 44% (not a prediction)");
+    expect(markup).toContain("Est. best fee APR (compounded daily) 44% (not a prediction)");
     expect(markup).toContain("7-day average fee APR of 36.5%");
     expect(markup).toContain("7 complete UTC days");
   });

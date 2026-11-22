@@ -119,6 +119,27 @@ describe("landing page copy and routes", () => {
     for (const file of files) expect(withoutAllowed(code(copyOf(file))), file).not.toMatch(FORBIDDEN);
   });
 
+  it("keeps APY and the old \"Calculate shares\" label out of the calculator and plan copy (SP-2)", () => {
+    const files = [
+      "src/components/plan/comparison-chart.tsx",
+      "src/components/plan/outcome-panel.tsx",
+      "src/components/plan/plan-app.tsx",
+      "src/components/plan/hodl-vs-pool.tsx",
+      "src/components/plan/format.ts",
+      "src/components/unified-pools/share-calc-dialog.tsx",
+      "src/components/unified-pools/pool-card.tsx",
+      "src/components/public-pool-page.tsx",
+      "src/lib/unified-pools/calculate-label.ts",
+    ];
+    // `apyPct` and other camelCase identifiers are code, not copy.
+    for (const file of files) {
+      const text = copyOf(file).replace(/\b\w*Apy\w*\b|\b\w*apy\w*\b/g, "");
+      expect(text, file).not.toMatch(/\bAPY\b/);
+      expect(text, file).not.toMatch(/Calculate shares/);
+      expect(withoutAllowed(text.replace(/(const |\$?\{)earn\b/g, "$1_")), file).not.toMatch(FORBIDDEN);
+    }
+  });
+
   it("mentions APR nowhere in the page's own copy (only the pools card and table keep the one 7-day estimate)", () => {
     for (const file of ["src/components/landing-page.tsx", "src/components/homepage-market.tsx"]) {
       expect(copyOf(file).replace(/\b\w*Apr\w*\b|\b[A-Z_]*APR[A-Z_0-9]*\b/g, ""), file).not.toMatch(/APR|APY/);
