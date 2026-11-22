@@ -17,15 +17,15 @@ export type MeteoraLegQuote = (input: { owner: string; inputMint: string; output
 /** Price quotes by mint, with their unit (`basis`); missing = unknown. Valued through the asset registry (X3-5). */
 export type MeteoraUsdPrices = (mints: string[]) => Promise<Map<string, TokenPriceQuote>>;
 
-export const jupiterLegQuote: MeteoraLegQuote = async ({ owner, inputMint, outputMint, spend, feeBps }) =>
+const jupiterLegQuote: MeteoraLegQuote = async ({ owner, inputMint, outputMint, spend, feeBps }) =>
   (await feeSwapLeg({ wallet: owner, inputMint, outputMint, spend, feeBps, inputFee: feeBps > 0, build: false })).minOut;
-export const jupiterUsdPrices: MeteoraUsdPrices = (mints) => fetchTokenPricesUsd(mints, fetch, getJupiterApiKey());
+const jupiterUsdPrices: MeteoraUsdPrices = (mints) => fetchTokenPricesUsd(mints, fetch, getJupiterApiKey());
 
 /**
  * Extra haircut on a swapped side's rate, on top of the platform fee and the 0.5% slippage limit: covers the gap between
  * the USD price and the route the build actually takes, and route dust (a venue that fills a few raw short).
  */
-export const MINIMUM_MARGIN_BPS = 200;
+const MINIMUM_MARGIN_BPS = 200;
 /** Stable inputs the rule prices at $1 without a lookup (the only non-pool input Meteora opens accept is USDC). */
 const STABLE_INPUT_DECIMALS: Record<string, number> = { [USDC_MINT]: 6 };
 const RATE_SCALE = 10n ** 12n;

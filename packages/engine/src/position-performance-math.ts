@@ -46,9 +46,13 @@ export type PositionPerformanceInputs = {
   holdingSeconds: number;
   /**
    * Optional USD per (raw / 10^decimals) token unit: the ScaledUiAmount multiplier is already applied. Never pass a
-   * per-share quote here. (Name kept; X3-8 adds explicit names and keeps these as aliases.)
+   * per-share quote here.
    */
+  usdPerRawUnitA?: number | null;
+  usdPerRawUnitB?: number | null;
+  /** @deprecated Alias of `usdPerRawUnitA` (same unit); read only when `usdPerRawUnitA` is not given. */
   priceUsdA?: number | null;
+  /** @deprecated Alias of `usdPerRawUnitB` (same unit); read only when `usdPerRawUnitB` is not given. */
   priceUsdB?: number | null;
   decimalsA: number;
   decimalsB: number;
@@ -66,8 +70,12 @@ export type PositionPerformanceMetrics = {
   feesEarnedRaw: { a: string; b: string };
   /** equity + withdrawnPrincipal + feesCollected − deposited (per side, raw) */
   pnlRaw: { a: string; b: string };
-  /** USD per (raw / 10^decimals) token unit used, multiplier already applied (see the input's `priceUsdA`). */
+  /** USD per (raw / 10^decimals) token unit used, multiplier already applied (see the input's `usdPerRawUnitA`). */
+  usdPerRawUnitA: number | null;
+  usdPerRawUnitB: number | null;
+  /** @deprecated Alias of `usdPerRawUnitA`: always the same value. */
   priceUsdA: number | null;
+  /** @deprecated Alias of `usdPerRawUnitB`: always the same value. */
   priceUsdB: number | null;
   depositedUsd: number | null;
   withdrawnPrincipalUsd: number | null;
@@ -152,8 +160,8 @@ export function computePositionPerformance(input: PositionPerformanceInputs): Po
   const pnlRaw = subSides(addSides(currentEquity, totalReturned), input.deposited);
 
   const holdingDays = holdingDaysFromSeconds(input.holdingSeconds);
-  const priceUsdA = input.priceUsdA ?? null;
-  const priceUsdB = input.priceUsdB ?? null;
+  const priceUsdA = input.usdPerRawUnitA ?? input.priceUsdA ?? null;
+  const priceUsdB = input.usdPerRawUnitB ?? input.priceUsdB ?? null;
 
   const depositedUsd = sideUsd(input.deposited, input.decimalsA, input.decimalsB, priceUsdA, priceUsdB);
   const withdrawnPrincipalUsd = sideUsd(
@@ -193,6 +201,8 @@ export function computePositionPerformance(input: PositionPerformanceInputs): Po
     currentEquityRaw: raw(currentEquity),
     feesEarnedRaw: raw(feesEarned),
     pnlRaw: raw(pnlRaw),
+    usdPerRawUnitA: priceUsdA,
+    usdPerRawUnitB: priceUsdB,
     priceUsdA,
     priceUsdB,
     depositedUsd,

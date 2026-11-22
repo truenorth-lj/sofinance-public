@@ -314,7 +314,7 @@ export async function getOrcaPositionPerformance(positionMint: string, options: 
     uncollectedFees: snapshot.uncollected,
   };
   const metrics = computePositionPerformance({ ...sides, holdingSeconds,
-    priceUsdA: pricing.usdPerRawUnitA, priceUsdB: pricing.usdPerRawUnitB,
+    usdPerRawUnitA: pricing.usdPerRawUnitA, usdPerRawUnitB: pricing.usdPerRawUnitB,
     decimalsA: snapshot.decimalsA, decimalsB: snapshot.decimalsB });
 
   const metadataStarted = Date.now();

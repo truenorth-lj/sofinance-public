@@ -615,12 +615,13 @@ const FREEZE_READ_TIMEOUT_MS = 8_000;
 /**
  * Freeze risk from each mint's on-chain freeze authority, plus the Token-2022 block (paused / transfer fee /
  * default-frozen), from one batched read. A mint the chain read could not resolve (RPC down, timeout, malformed)
- * keeps Raydium's `hasFreeze` tag value and is not blocked.
+ * keeps Raydium's `hasFreeze` tag value and is not blocked. A caller that already read these mints passes
+ * `mintSafety` and no read is made.
  */
-export async function applyOnchainFreezeRisk(pairs: RwaPairRow[], connection?: Connection | null) {
+export async function applyOnchainFreezeRisk(pairs: RwaPairRow[], connection?: Connection | null, mintSafety?: ReadonlyMap<string, MintSafety>) {
   if (pairs.length === 0) return { pairs, source: "onchain" as const };
-  let chain = new Map<string, MintSafety>();
-  if (connection !== null) {
+  let chain: ReadonlyMap<string, MintSafety> = mintSafety ?? new Map<string, MintSafety>();
+  if (!mintSafety && connection !== null) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       chain = await Promise.race([

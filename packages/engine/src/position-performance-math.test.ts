@@ -90,6 +90,19 @@ describe("position-performance-math", () => {
     expect(metrics.feeOnlyAprPct).toBeNull();
     expect(metrics.feesEarnedRaw.a).toBe("1");
   });
+
+  it("takes USD per raw unit under its explicit name; priceUsdA/B stay as aliases with the same value", () => {
+    const base = {
+      deposited: { a: 1_000_000n, b: 1_000_000n }, withdrawnPrincipal: { a: 0n, b: 0n }, feesCollected: { a: 0n, b: 0n },
+      liquidityAmounts: { a: 1_000_000n, b: 1_000_000n }, uncollectedFees: { a: 0n, b: 0n }, holdingSeconds: 86_400, decimalsA: 6, decimalsB: 6,
+    };
+    const named = computePositionPerformance({ ...base, usdPerRawUnitA: 8 * 80, usdPerRawUnitB: 1 });
+    const alias = computePositionPerformance({ ...base, priceUsdA: 8 * 80, priceUsdB: 1 });
+    expect(named).toEqual(alias);
+    expect(named).toMatchObject({ usdPerRawUnitA: 640, usdPerRawUnitB: 1, priceUsdA: 640, priceUsdB: 1, depositedUsd: 641 });
+    // The explicit name wins when both are given.
+    expect(computePositionPerformance({ ...base, usdPerRawUnitA: 640, priceUsdA: 80, usdPerRawUnitB: 1 }).depositedUsd).toBe(641);
+  });
 });
 
 describe("token-native / token-equivalent", () => {

@@ -3,6 +3,7 @@ import { fetchMeteoraPoolDailyApr } from "@/lib/meteora-daily-apr";
 import type { PoolDailyAprResult } from "@/lib/pool-daily-apr";
 import { DexError } from "../errors";
 import { listedMeteoraPool, type MeteoraPoolList } from "./pools.server";
+import { meteoraSnapshotTvl } from "./snapshot-tvl";
 import { storedMeteoraTvl } from "./tvl.server";
 
 /**
@@ -15,7 +16,7 @@ import { storedMeteoraTvl } from "./tvl.server";
  */
 export async function meteoraPoolDailyApr(
   poolId: string,
-  deps: { listedPool?: MeteoraPoolList; load?: typeof fetchMeteoraPoolDailyApr; storedTvl?: typeof storedMeteoraTvl } = {},
+  deps: { listedPool?: MeteoraPoolList; load?: typeof fetchMeteoraPoolDailyApr; storedTvl?: typeof storedMeteoraTvl; now?: () => number } = {},
 ): Promise<PoolDailyAprResult | null> {
   let listed;
   try {
@@ -25,8 +26,11 @@ export async function meteoraPoolDailyApr(
   }
   if (!listed) return null;
   try {
-    // Each day's stored TVL where the APR refresh saved one (`dex/meteora-dlmm/daily-tvl.server.ts`), today's TVL otherwise.
-    return await (deps.load ?? fetchMeteoraPoolDailyApr)(poolId, { storedTvl: deps.storedTvl ?? storedMeteoraTvl });
+    // Each day's stored TVL where the APR refresh saved one (`dex/meteora-dlmm/daily-tvl.server.ts`), today's TVL otherwise,
+    // in the registry unit from what the listing already knows of the mints (unknown multiplier: published figure kept).
+    const { tvlMints } = listed;
+    return await (deps.load ?? fetchMeteoraPoolDailyApr)(poolId, { storedTvl: deps.storedTvl ?? storedMeteoraTvl,
+      tvlInRegistryUnit: (snapshot) => meteoraSnapshotTvl(snapshot, tvlMints, (deps.now ?? Date.now)())?.tvlUsd ?? null });
   } catch (error) {
     throw new DexError("UPSTREAM", error instanceof Error && error.message ? error.message : "Meteora did not answer for this pool.");
   }

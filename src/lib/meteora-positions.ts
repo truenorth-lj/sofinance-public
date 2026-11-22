@@ -355,7 +355,7 @@ export async function getMeteoraPositionPerformance(positionAccount: string, opt
     uncollectedFees: { a: snapshot.uncollected.x, b: snapshot.uncollected.y },
   };
   const metrics = computePositionPerformance({ ...sides, holdingSeconds,
-    priceUsdA: pricing.usdPerRawUnitA, priceUsdB: pricing.usdPerRawUnitB,
+    usdPerRawUnitA: pricing.usdPerRawUnitA, usdPerRawUnitB: pricing.usdPerRawUnitB,
     decimalsA: snapshot.decimalsX, decimalsB: snapshot.decimalsY });
 
   const metadataStarted = Date.now();

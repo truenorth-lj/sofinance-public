@@ -48,6 +48,11 @@ export type FetchMeteoraPoolDailyAprOptions = {
   bypassCache?: boolean;
   /** Stored daily TVL (`date` → USD) for the pool between two UTC days; a throw means "unavailable", never a failure. */
   storedTvl?: (poolId: string, from: string, to: string) => Promise<ReadonlyMap<string, number>>;
+  /**
+   * Today's datapi TVL in the registry unit (datapi leaves out the ScaledUiAmount multiplier), used for the days with no
+   * stored TVL. Absent: the published figure (as before X3-8).
+   */
+  tvlInRegistryUnit?: (snapshot: MeteoraPoolSnapshot) => number | null;
 };
 
 type Json = Record<string, unknown>;
@@ -166,7 +171,8 @@ async function load(poolId: string, options: FetchMeteoraPoolDailyAprOptions): P
   const sources: string[] = [];
   if (pool.ok) sources.push(`${base}/pools/{address} (current TVL, base fee, 24h fee/TVL)`);
   if (days) sources.push(`${base}/pools/{address}/volume/history (daily USD volume and fees)`);
-  const points = buildMeteoraDailyAprPoints({ days: days ?? [], tvlUsd: snapshot.tvlUsd, createdAtSeconds: snapshot.createdAtSeconds, nowSeconds,
+  const todayTvlUsd = options.tvlInRegistryUnit ? options.tvlInRegistryUnit(snapshot) : snapshot.tvlUsd;
+  const points = buildMeteoraDailyAprPoints({ days: days ?? [], tvlUsd: todayTvlUsd, createdAtSeconds: snapshot.createdAtSeconds, nowSeconds,
     storedTvl: stored.tvl });
   const storedDays = points.filter((point) => stored.tvl.has(point.date)).length;
   if (storedDays) sources.push(`SoFinance store: the Meteora datapi pool TVL saved once per UTC day (${storedDays} ${storedDays === 1 ? "day" : "days"})`);

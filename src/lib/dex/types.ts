@@ -160,7 +160,8 @@ export type DexUi = {
   /**
    * False when the source's pool TVL values raw amounts at per-share prices (no ScaledUiAmount multiplier), so the
    * snapshot adds the missing part (`@sofinance/engine/valuation/pool-tvl`). Omitted or true = the TVL is used as
-   * published (Raydium's API already includes the multiplier; Orca is unverified and has no multiplier pools yet).
+   * published (Raydium's API already includes the multiplier; so does Orca's `tvlUsdc`, checked on its live NVDAx/USDC
+   * pool on 2026-11-22: within 0.07% of the per-raw-unit value, 0.23% above the per-share one).
    */
   tvlIncludesScaledUi?: boolean;
 };

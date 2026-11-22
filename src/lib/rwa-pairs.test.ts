@@ -694,6 +694,19 @@ describe("applyOnchainFreezeRisk (Raydium rows)", () => {
     expect(kept).not.toHaveProperty("tvlScaledUi");
   });
 
+  it("uses a mint read the caller already made and reads nothing itself (X3-8)", async () => {
+    const meteora = { ...row(), protocol: "meteora-dlmm", tvlUsd: 1_000, fees24hUsd: 1,
+      tvlSides: { amountA: 5, amountB: 5, sharePriceUsdA: 100, sharePriceUsdB: 100 } } as RwaPairRow;
+    const given = new Map([
+      [MINT_A, { freezeAuthority: false, blockReasons: [], unsupported: [], scaledUiKnown: true as const, scaledUiMultiplier: 8, scaledUiConfig: { multiplier: 8, newMultiplier: 8 } }],
+      [MINT_B, { freezeAuthority: false, blockReasons: [], unsupported: [], scaledUiKnown: true as const }],
+    ]);
+    freezeMock.read.mockClear();
+    const [out] = (await applyOnchainFreezeRisk([meteora], {} as never, given)).pairs;
+    expect(freezeMock.read).not.toHaveBeenCalled();
+    expect(out).toMatchObject({ tvlUsd: 1_000 + 5 * 7 * 100, multiplierA: 8, tvlScaledUi: { status: "corrected", sourceTvlUsd: 1_000 } });
+  });
+
   it("blockOf: unknown mints (RPC miss) do not block; reasons keep a fixed order", () => {
     expect(blockOf([[MINT_A, undefined], [MINT_B, undefined]])).toBeUndefined();
     expect(blockOf([[MINT_A, { freezeAuthority: true, blockReasons: [], unsupported: [] }], [MINT_B, undefined]])).toBeUndefined();

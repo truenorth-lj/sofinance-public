@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: () => ({}) }));
 const ext = vi.hoisted(() => ({
+  mintReads: 0,
   xstocks: new Set<string>(),
   tags: new Map<string, string[]>(),
   safety: new Map<string, { freezeAuthority: boolean; blockReasons: string[]; scaledUiKnown?: true; scaledUiConfig?: { multiplier: number; newMultiplier: number } }>(),
@@ -13,7 +14,10 @@ vi.mock("./rwa-jupiter-tags", () => ({
   getJupiterTagsObservedAt: () => "2026-11-01T00:00:00Z",
 }));
 vi.mock("./onchain-mint-freeze", () => ({
-  readMintSafety: async (_c: unknown, mints: string[]) => new Map(mints.flatMap((m) => (ext.safety.has(m) ? [[m, ext.safety.get(m)!]] : []))),
+  readMintSafety: async (_c: unknown, mints: string[]) => {
+    ext.mintReads += 1;
+    return new Map(mints.flatMap((m) => (ext.safety.has(m) ? [[m, ext.safety.get(m)!]] : [])));
+  },
   readMintFreezeAuthorities: async () => new Map(),
 }));
 
@@ -22,7 +26,7 @@ import { USDC_MINT, USDT_MINT } from "./rwa-allowlist";
 
 const MSTRX = "MstrX11111111111111111111111111111111111111", MSTR = "Mstr111111111111111111111111111111111111111";
 const TSLAX = "TsLaX11111111111111111111111111111111111111", TSLA = "TsLa111111111111111111111111111111111111111";
-const NVDAX = "NvdaX11111111111111111111111111111111111111", SOL = "So11111111111111111111111111111111111111112";
+const NVDAX = "NvdaX11111111111111111111111111111111111111", SOL = "PxTsLaHuge111111111111111111111111111111111";
 const SKHY = "Skhy111111111111111111111111111111111111111";
 
 function pool(address: string, x: [string, string, string], y: [string, string, string], binStep: number, tvl: number) {
@@ -63,7 +67,7 @@ function datapi(pools: unknown[], options: { status?: number; pages?: number } =
   });
 }
 
-afterEach(() => { ext.xstocks = new Set(); ext.tags = new Map(); ext.safety = new Map(); });
+afterEach(() => { ext.xstocks = new Set(); ext.tags = new Map(); ext.safety = new Map(); ext.mintReads = 0; });
 function tagged() {
   ext.xstocks = new Set([MSTRX, TSLAX, NVDAX]);
   ext.tags = new Map([[MSTR, ["stocks"]], [TSLA, ["stocks"]], [MSTRX, ["stocks", "xstocks"]], [TSLAX, ["stocks", "xstocks"]]]);
@@ -160,6 +164,41 @@ describe("Meteora DLMM RWA scan", () => {
     const row = unread.pairs.find((p) => p.poolAddress === "PxTsLaHalf11111111111111111111111111111111111")!;
     expect(row.tvlUsd).toBe(6_000);
     expect(row.tvlScaledUi).toMatchObject({ status: "unverified", sourceTvlUsd: 6_000, mintsRead: false });
+  });
+
+  it("reads the mints before the $5k floor: a ×8 pool under the floor on datapi's figure is listed at its corrected TVL, one mint read (X3-8)", async () => {
+    tagged();
+    // datapi: $1,000 = 5 TSLAx × $100/share + 5 TSLA × $100. TSLAx ×8: the pool holds 1,000 + 5 × (8 − 1) × 100 = $4,500, under $5k;
+    // 10 + 10 tokens: datapi $2,000, corrected $9,000, over it.
+    const scaled = (address: string, amount: number) => {
+      const base = pool(address, [TSLAX, "TSLAx", "Tesla xStock"], [TSLA, "TSLA", "Tesla - Backpack Securities"], 8, amount * 200);
+      return { ...base, token_x_amount: amount, token_y_amount: amount, token_x: { ...base.token_x, price: 100 }, token_y: { ...base.token_y, price: 100 } };
+    };
+    const small = scaled("PxTsLaTiny111111111111111111111111111111111", 5), big = scaled("PxTsLaHuge111111111111111111111111111111111", 10);
+    ext.safety = new Map([
+      [TSLAX, { freezeAuthority: false, blockReasons: [], scaledUiKnown: true, scaledUiConfig: { multiplier: 8, newMultiplier: 8 } }],
+      [TSLA, { freezeAuthority: false, blockReasons: [], scaledUiKnown: true }],
+    ]);
+    const connection = { getMultipleAccountsInfo: async (keys: unknown[]) => keys.map(() => null) } as unknown as Connection;
+    // Valid addresses (the shared POOLS fixtures are not base58 keys, so their LbPair read throws and the scan falls back).
+    const dust = pool("PxTsLaDust111111111111111111111111111111111", [TSLAX, "TSLAx", "Tesla xStock"], [TSLA, "TSLA", "Tesla - Backpack Securities"], 8, 100);
+    const result = await discoverMeteoraRwaPairs({ fetcher: datapi([small, big, dust]) as unknown as typeof fetch, connection, minTvl: METEORA_SCAN_MIN_TVL_USD });
+    const listed = result.pairs.map((p) => p.poolAddress);
+    expect(listed).toContain("PxTsLaHuge111111111111111111111111111111111");
+    expect(listed).not.toContain("PxTsLaTiny111111111111111111111111111111111");
+    expect(result.pairs.find((p) => p.poolAddress === "PxTsLaHuge111111111111111111111111111111111")).toMatchObject({
+      tvlUsd: 9_000, tvlScaledUi: { status: "corrected", sourceTvlUsd: 2_000, mintsRead: true } });
+    // A pool without token amounts stays at datapi's figure and is still under the floor: the floor is moved, never skipped.
+    expect(listed).not.toContain("PxTsLaDust111111111111111111111111111111111");
+    // One mint read serves the facts and the freeze / multiplier step (no second read).
+    expect(ext.mintReads).toBe(1);
+  });
+
+  it("without a chain read the floor uses datapi's figure, as before (X3-8)", async () => {
+    tagged();
+    const result = await discoverMeteoraRwaPairs({ fetcher: datapi(POOLS) as unknown as typeof fetch, connection: null, minTvl: METEORA_SCAN_MIN_TVL_USD });
+    expect(result.pairs.map((p) => p.poolAddress)).not.toContain("PxMstrDust1111111111111111111111111111111111");
+    expect(ext.mintReads).toBe(0);
   });
 
   it("page counts split scanned pools into ≤ 1000-row pages (store schema)", () => {
