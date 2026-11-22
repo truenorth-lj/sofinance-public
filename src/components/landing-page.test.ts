@@ -152,7 +152,7 @@ describe("landing page copy and routes", () => {
     expect(estimator).toContain('"Estimate unavailable right now"');
     // No wallet; its one request is the dialog's own `usePoolYield`, for the selected pool only.
     expect(estimator).not.toMatch(/useWallet|fetch\(|useSWR|\/api\//);
-    expect(estimator).toContain("usePoolYield(pool?.poolAddress");
+    expect(estimator).toContain("usePoolYield(readKey, { delayMs: ESTIMATOR_SWITCH_DEBOUNCE_MS })");
     expect(estimator).not.toMatch(/\bAPY\b/);
   });
 
