@@ -5,6 +5,9 @@ import { parseMeteoraPoolSnapshot } from "@/lib/meteora-daily-apr";
 import { sanitizePublicError } from "@/lib/public-error";
 import { fetchJsonOnce } from "@/lib/range-apr/upstream-http";
 import { FEED_KEY, FEED_KEY_METEORA, SOLANA_FEED_PROTOCOL, SOLANA_POOL_ID } from "@/lib/rwa-store-types";
+import { scaledUiTvlUsd } from "@sofinance/engine/valuation/pool-tvl";
+import { knownMultiplier, tvlLeavesOutScaledUi } from "@/lib/pool-tvl-scaled-ui";
+import type { RwaPairRow } from "@/lib/rwa-pairs";
 import type { DailyTvlRecord, DailyTvlRecordInput, DailyTvlStats } from "../registry";
 
 /**
@@ -15,6 +18,10 @@ import type { DailyTvlRecord, DailyTvlRecordInput, DailyTvlStats } from "../regi
  * Listed = the engine allowlist plus the Meteora RWA feed's unblocked pools (as `listedMeteoraPool`). The feed's own
  * `tvl_usd` is not reused: it is the discovery scan's value, refreshed on its own cadence.
  * A datapi 429 stops the run at once (no new requests; reads already in flight finish); the rest wait for the next run.
+ * datapi's TVL leaves out the ScaledUiAmount multiplier (descriptor `tvlIncludesScaledUi: false`), so each saved value
+ * adds it from the feed row's last mint read (`tvlScaledUi.mintsRead` + `scaledUiConfigA/B`, evaluated at this run's
+ * clock). No mint read here. A pool without that (allowlist-only, mints unread) is saved as published and counted in
+ * `scaledUiUnverified`. Rows saved before X3-7 are left as they are.
  */
 const METEORA_TVL_BUDGET_MS = 15_000;
 const METEORA_TVL_CONCURRENCY = 4;
@@ -28,9 +35,23 @@ export async function recordMeteoraDailyTvl(input: DailyTvlRecordInput & { apiBa
   const issues: string[] = [];
   const feed = await store.request({ op: "activePools", feedKeys: [FEED_KEY, FEED_KEY_METEORA] });
   const listed = new Set(METEORA_ALLOWLISTED_POOLS.map((pool) => pool.poolAddress));
+  const rows = new Map<string, RwaPairRow>();
   for (const { pair } of feed ?? []) {
-    if (pair.protocol === SOLANA_FEED_PROTOCOL[FEED_KEY_METEORA] && !pair.blocked) listed.add(pair.poolAddress);
+    if (pair.protocol === SOLANA_FEED_PROTOCOL[FEED_KEY_METEORA] && !pair.blocked) { listed.add(pair.poolAddress); rows.set(pair.poolAddress, pair); }
   }
+  const leavesOutScaledUi = tvlLeavesOutScaledUi(SOLANA_FEED_PROTOCOL[FEED_KEY_METEORA]);
+  let unverified = 0;
+  const inRegistryUnit = (poolId: string, snapshot: ReturnType<typeof parseMeteoraPoolSnapshot>): number | null => {
+    if (snapshot.tvlUsd === null || !leavesOutScaledUi) return snapshot.tvlUsd;
+    const row = rows.get(poolId), sides = snapshot.tvlSides, nowMs = clock();
+    const multiplier = (config: RwaPairRow["scaledUiConfigA"]) => knownMultiplier({ known: row?.tvlScaledUi?.mintsRead === true, config }, nowMs);
+    const result = scaledUiTvlUsd({ sourceTvlUsd: snapshot.tvlUsd, sides: sides
+      ? [{ amount: sides.amountX, sharePriceUsd: sides.priceUsdX, multiplier: multiplier(row?.scaledUiConfigA) },
+        { amount: sides.amountY, sharePriceUsd: sides.priceUsdY, multiplier: multiplier(row?.scaledUiConfigB) }]
+      : [{ amount: 0, sharePriceUsd: null, multiplier: null }, { amount: 0, sharePriceUsd: null, multiplier: null }] });
+    if (result.kind === "unverified") unverified += 1;
+    return result.tvlUsd;
+  };
   const pools = [...listed].filter((id) => SOLANA_POOL_ID.test(id)).slice(0, MAX_POOLS);
   const stats: DailyTvlStats = { date, pools: pools.length, alreadySaved: 0, saved: 0, failed: 0 };
   const done = new Set((await store.request({ op: "meteoraTvlDay", date })).pools);
@@ -40,7 +61,7 @@ export async function recordMeteoraDailyTvl(input: DailyTvlRecordInput & { apiBa
 
   const base = input.apiBase ?? METEORA_DLMM_DATAPI;
   const budget = AbortSignal.any([signal, AbortSignal.timeout(METEORA_TVL_BUDGET_MS)]);
-  const rows: { poolId: string; tvlUsd: number }[] = [];
+  const saved: { poolId: string; tvlUsd: number }[] = [];
   const problems: string[] = [];
   let next = 0;
   let throttled = false;
@@ -48,19 +69,20 @@ export async function recordMeteoraDailyTvl(input: DailyTvlRecordInput & { apiBa
     while (next < missing.length && !budget.aborted && !throttled) {
       const poolId = missing[next++]!;
       const result = await fetchJsonOnce(fetcher, `${base}/pools/${encodeURIComponent(poolId)}`, METEORA_TVL_TIMEOUT_MS, { signal: budget, cache: "no-store" });
-      const tvlUsd = result.ok ? parseMeteoraPoolSnapshot(result.body).tvlUsd : null;
-      if (tvlUsd !== null) rows.push({ poolId, tvlUsd });
+      const tvlUsd = result.ok ? inRegistryUnit(poolId, parseMeteoraPoolSnapshot(result.body)) : null;
+      if (tvlUsd !== null) saved.push({ poolId, tvlUsd });
       else problems.push(result.ok ? "no TVL in the answer" : result.reason);
       if (!result.ok && result.status === 429) throttled = true;
     }
   };
   await Promise.all(Array.from({ length: Math.min(METEORA_TVL_CONCURRENCY, missing.length) }, worker));
-  const unread = missing.length - rows.length;
+  const unread = missing.length - saved.length;
   stats.failed = unread;
   if (throttled) {
     stats.stoppedBy = "429";
     issues.push(`Meteora TVL: datapi answered 429 (rate limited), so the run stopped; ${unread} of ${missing.length} pools not read for ${date}; retried next run`);
   } else if (unread) issues.push(`Meteora TVL: ${unread} of ${missing.length} pools not read for ${date} (${sanitizePublicError(new Error(problems[0] ?? "time budget"), "datapi error").slice(0, 120)}); retried next run`);
-  if (rows.length) stats.saved = (await store.request({ op: "saveMeteoraTvl", lease, data: { date, rows } })).saved;
+  if (unverified) stats.scaledUiUnverified = unverified;
+  if (saved.length) stats.saved = (await store.request({ op: "saveMeteoraTvl", lease, data: { date, rows: saved } })).saved;
   return { stats, issues };
 }

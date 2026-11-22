@@ -27,6 +27,7 @@ import { readMintSafety, type MintSafety } from "./onchain-mint-freeze";
 import { unsupportedOf, type PoolMintUnsupported } from "./pool-mint-unsupported";
 import type { MintBlockReason } from "@sofinance/engine/token-safety";
 import type { ScaledUiMultiplierConfig } from "@sofinance/engine/valuation/types";
+import { knownMultiplier, withScaledUiTvl } from "./pool-tvl-scaled-ui";
 
 export const RAYDIUM_API_V3 = "https://api-v3.raydium.io";
 const DEFAULT_PAGE_SIZE = 1000;
@@ -109,6 +110,16 @@ export type RwaPairRow = {
   /** Complete ScaledUiAmount schedules behind `multiplierA/B` (evaluated at read time by `@sofinance/engine/valuation`). */
   scaledUiConfigA?: ScaledUiMultiplierConfig;
   scaledUiConfigB?: ScaledUiMultiplierConfig;
+  /**
+   * The source's own per-side TVL inputs, for a source whose TVL leaves out the multiplier (descriptor
+   * `tvlIncludesScaledUi: false`): reserves as raw / 10^decimals and USD per share.
+   */
+  tvlSides?: { amountA: number; amountB: number; sharePriceUsdA: number | null; sharePriceUsdB: number | null };
+  /**
+   * How `tvlUsd` relates to the source's figure (X3-7). `corrected`: the multiplier part was added. `unverified`: kept as
+   * published (a multiplier was unknown, or a scaled side unpriced). `mintsRead`: both mints' multipliers were read.
+   */
+  tvlScaledUi?: { status: "corrected" | "unverified"; sourceTvlUsd: number; mintsRead: boolean; reason?: string };
 };
 
 
@@ -619,6 +630,7 @@ export async function applyOnchainFreezeRisk(pairs: RwaPairRow[], connection?: C
     } catch { /* RPC down: keep the tags */ } finally { if (timer) clearTimeout(timer); }
   }
   let known = 0;
+  const nowMs = Date.now();
   const updated = pairs.map((pair) => {
     const a = chain.get(pair.mintA);
     const b = chain.get(pair.mintB);
@@ -641,7 +653,11 @@ export async function applyOnchainFreezeRisk(pairs: RwaPairRow[], connection?: C
     // A mint the read could not resolve keeps whatever the row already said.
     if (unsupported) row.unsupported = unsupported;
     else if (a && b) delete row.unsupported;
-    return row;
+    // Same mint read: a source whose TVL leaves out the multiplier gets it here (X3-7); others pass through.
+    return withScaledUiTvl(row, {
+      a: knownMultiplier({ known: a?.scaledUiKnown === true, config: a?.scaledUiConfig }, nowMs),
+      b: knownMultiplier({ known: b?.scaledUiKnown === true, config: b?.scaledUiConfig }, nowMs),
+    });
   });
   const source: "onchain" | "tags" | "mixed" = known === pairs.length * 2 ? "onchain" : known === 0 ? "tags" : "mixed";
   return { pairs: updated, source };

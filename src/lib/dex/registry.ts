@@ -99,6 +99,8 @@ export type DailyTvlStats = {
   date: string; pools: number; alreadySaved: number; saved: number; failed: number;
   /** Set when the upstream rate-limited the run and it stopped early (the rest are retried next run). */
   stoppedBy?: "429";
+  /** Saved rows whose source TVL leaves out the multiplier but could not be corrected (kept as published; X3-7). */
+  scaledUiUnverified?: number;
 };
 export type DailyTvlRecord = { stats: DailyTvlStats; issues: string[] };
 

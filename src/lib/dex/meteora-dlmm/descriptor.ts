@@ -83,6 +83,8 @@ export const meteoraDlmmDescriptor: DexDescriptor = Object.freeze({
     openUi: "registry", useDescriptorPlanTerms: true,
     /** datapi `current_price` includes the ScaledUiAmount multiplier. */
     listPriceIncludesScaledUi: true,
+    /** datapi `tvl` is raw amount × per-share price (X3-7: e.g. NVDA/NVDAx ~$47 low on ~$39k). */
+    tvlIncludesScaledUi: false,
     planOpenUnavailableReason: "Opening Meteora positions isn't available yet",
   }),
 } satisfies DexDescriptor);

@@ -61,6 +61,8 @@ export type MeteoraPoolSnapshot = {
   /** Rolling 24h fee APR, percent. */
   dayFeeAprPct: number | null;
   createdAtSeconds: number | null;
+  /** datapi's own TVL inputs (reserves as raw / 10^decimals, USD per share), when both amounts are published (X3-7). */
+  tvlSides?: { amountX: number; amountY: number; priceUsdX: number | null; priceUsdY: number | null };
 };
 
 /** `/pools/{address}`: current TVL, base fee, rolling 24h fee/TVL (percent) and creation time (ms). */
@@ -70,11 +72,15 @@ export function parseMeteoraPoolSnapshot(body: unknown): MeteoraPoolSnapshot {
   const baseFeePct = finite(record(pool?.pool_config)?.base_fee_pct);
   const ratio24h = finite(record(pool?.fee_tvl_ratio)?.["24h"]);
   const createdMs = finite(pool?.created_at);
+  const nonNegative = (value: unknown) => { const parsed = finite(value); return parsed !== null && parsed >= 0 ? parsed : null; };
+  const amountX = nonNegative(pool?.token_x_amount), amountY = nonNegative(pool?.token_y_amount);
   return {
     tvlUsd: tvl !== null && tvl >= 0 ? tvl : null,
     baseFeeRate: baseFeePct !== null && baseFeePct >= 0 ? baseFeePct / 100 : null,
     dayFeeAprPct: ratio24h !== null && ratio24h >= 0 ? ratio24h * 365 : null,
     createdAtSeconds: createdMs !== null && createdMs > 0 ? Math.floor(createdMs / 1000) : null,
+    ...(amountX !== null && amountY !== null ? { tvlSides: { amountX, amountY,
+      priceUsdX: nonNegative(record(pool?.token_x)?.price), priceUsdY: nonNegative(record(pool?.token_y)?.price) } } : {}),
   };
 }
 

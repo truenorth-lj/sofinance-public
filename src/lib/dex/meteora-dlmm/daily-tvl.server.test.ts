@@ -12,14 +12,14 @@ const RAYDIUM = "Ray1111111111111111111111111111111111111111";
 const ALLOWLISTED = METEORA_ALLOWLISTED_POOLS.map((pool) => pool.poolAddress);
 const lease = { job: "rwa-apr-refresh" as const, owner: "00000000-0000-4000-8000-000000000000", epoch: 1 };
 
-function store(savedToday: string[] = [], extraFeed: string[] = []) {
+function store(savedToday: string[] = [], extraFeed: string[] = [], feedOverrides: Record<string, object> = {}) {
   const calls: { op: string; date?: string; data?: { date: string; rows: { poolId: string; tvlUsd: number }[] } }[] = [];
   const s = { request: async (input: (typeof calls)[number]) => {
     storeRequestSchema.parse(input); // the real store's request contract
     calls.push(input);
     if (input.op === "activePools") return [
-      { pair: { poolAddress: TSLA, protocol: "meteora-dlmm" } },
-      { pair: { poolAddress: SPCX, protocol: "meteora-dlmm" } },
+      { pair: { poolAddress: TSLA, protocol: "meteora-dlmm", ...feedOverrides[TSLA] } },
+      { pair: { poolAddress: SPCX, protocol: "meteora-dlmm", ...feedOverrides[SPCX] } },
       { pair: { poolAddress: BLOCKED, protocol: "meteora-dlmm", blocked: { reasons: ["freeze"], mints: [] } } },
       { pair: { poolAddress: RAYDIUM, protocol: "raydium-clmm" } },
       ...extraFeed.map((poolAddress) => ({ pair: { poolAddress, protocol: "meteora-dlmm" } })),
@@ -55,7 +55,26 @@ describe("recordMeteoraDailyTvl (inside the APR refresh)", () => {
     const read = fetcher.mock.calls.map(([url]) => String(url));
     expect(read.some((url) => url.includes(BLOCKED) || url.includes(RAYDIUM))).toBe(false);
     expect(read.every((url) => url.startsWith("https://dlmm.datapi.meteora.ag/pools/"))).toBe(true);
-    expect(stats).toEqual({ date: "2026-10-31", pools: ALLOWLISTED.length + 2, alreadySaved: 0, saved: ALLOWLISTED.length + 2, failed: 0 });
+    // This answer has no token amounts, so no multiplier step: saved as published and counted (X3-7).
+    expect(stats).toEqual({ date: "2026-10-31", pools: ALLOWLISTED.length + 2, alreadySaved: 0, saved: ALLOWLISTED.length + 2, failed: 0,
+      scaledUiUnverified: ALLOWLISTED.length + 2 });
+  });
+
+  it("adds the multiplier part from the feed row's last mint read; an unread pool is saved as published (X3-7)", async () => {
+    // TSLA stands in for a pool whose Y mint is ×1.001701 (NVDAx-like schedule, already effective at the run's clock).
+    const config = { multiplier: 1.000918, newMultiplier: 1.001701196801074, newMultiplierEffectiveTimestamp: 1_789_000_200 };
+    const { s, calls } = store(ALLOWLISTED, [], {
+      [TSLA]: { scaledUiConfigB: config, tvlScaledUi: { status: "corrected", sourceTvlUsd: 1, mintsRead: true } },
+      [SPCX]: { scaledUiConfigB: config, tvlScaledUi: { status: "unverified", sourceTvlUsd: 1, mintsRead: false, reason: "multiplier-unknown" } },
+    });
+    const body = { tvl: 39_347.15, token_x_amount: 90.63, token_y_amount: 218.23, token_x: { price: 127.41 }, token_y: { price: 127.61 } };
+    const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+      new Response(JSON.stringify({ address: new URL(String(input)).pathname.split("/").at(-1), ...body }), { status: 200 }));
+    const { stats } = await run(s, fetcher);
+    const rows = calls.find((call) => call.op === "saveMeteoraTvl")!.data!.rows;
+    expect(rows.find((row) => row.poolId === TSLA)!.tvlUsd).toBeCloseTo(39_347.15 + 218.23 * 0.001701196801074 * 127.61, 6);
+    expect(rows.find((row) => row.poolId === SPCX)!.tvlUsd).toBe(39_347.15);
+    expect(stats).toMatchObject({ saved: 2, scaledUiUnverified: 1 });
   });
 
   it("later runs the same day read nothing when every pool has its row (idempotent)", async () => {

@@ -32,6 +32,15 @@ export type MeteoraPoolSummary<Spec extends MeteoraPoolSpec = MeteoraAllowlisted
   /** Token Y per token X. */
   price: number | null;
   tvlUsd: number | null;
+  /** datapi `token_x_amount` / `token_y_amount`: reserves as raw / 10^decimals (no ScaledUiAmount multiplier). */
+  amountX: number | null;
+  amountY: number | null;
+  /**
+   * datapi `token_x.price` / `token_y.price`, USD. Within ~0.2% of Jupiter's per-share price in the X3-7 checks; it only
+   * scales the small multiplier part of the TVL (`valuation/pool-tvl`), so that spread is second order.
+   */
+  priceUsdX: number | null;
+  priceUsdY: number | null;
   volume24hUsd: number | null;
   /** Gross 24h swap fees (USD) as published by Meteora (includes the protocol share). */
   fees24hUsd: number | null;
@@ -104,6 +113,8 @@ export function parseMeteoraPool(raw: unknown, expected?: MeteoraPoolSpec): Mete
     protocolFeeShare: protocolFeePct / 100,
     price: nonNegative(num(pool.current_price)),
     tvlUsd: nonNegative(num(pool.tvl)),
+    amountX: nonNegative(num(pool.token_x_amount)), amountY: nonNegative(num(pool.token_y_amount)),
+    priceUsdX: nonNegative(num(tokenX.price)), priceUsdY: nonNegative(num(tokenY.price)),
     volume24hUsd: nonNegative(num(volume["24h"])),
     fees24hUsd,
     protocolFees24hUsd,

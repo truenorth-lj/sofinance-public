@@ -9,6 +9,7 @@ import { estimateFeeAprPct, FEE_APR_ESTIMATE_LABEL, isToken2022Program } from ".
 import { readMintSafety, type MintSafety } from "./onchain-mint-freeze";
 import { unsupportedOf } from "./pool-mint-unsupported";
 import type { RwaPairRow } from "./rwa-pairs";
+import { knownMultiplier, withScaledUiTvl } from "./pool-tvl-scaled-ui";
 
 /** On-chain facts that override Meteora's datapi in the rows. */
 export type MeteoraOnchainFacts = {
@@ -65,6 +66,10 @@ export function meteoraPairRow(pool: MeteoraPoolSummary<MeteoraPoolSpec>, facts:
     feeRate: pool.baseFeeRate,
     feeTierBps: pool.baseFeeBps,
     tvlUsd: pool.tvlUsd,
+    // datapi's own TVL inputs; `applyOnchainFreezeRisk` adds the multiplier part once the mints are read (X3-7).
+    ...(pool.amountX !== null && pool.amountY !== null
+      ? { tvlSides: { amountA: pool.amountX, amountB: pool.amountY, sharePriceUsdA: pool.priceUsdX, sharePriceUsdB: pool.priceUsdY } }
+      : {}),
     // datapi `current_price` includes the ScaledUiAmount multiplier; fairPriceFromPool converts it to raw.
         priceBPerA: pool.price,
     volume24hUsd: pool.volume24hUsd,
@@ -155,7 +160,12 @@ export async function discoverMeteoraPairs(
   const result: MeteoraPairsResult = {
     protocol: "meteora-dlmm",
     readOnly: true,
-    pairs: pools.map((pool) => meteoraPairRow(pool, facts)),
+    pairs: pools.map((pool) => {
+      // Same mint read as the facts: TVL in the registry's unit (X3-7); an unread mint keeps datapi's figure.
+      const mint = (address: string) => ({ known: facts.mintSafety?.get(address)?.scaledUiKnown === true, config: facts.mintSafety?.get(address)?.scaledUiConfig });
+      const nowMs = Date.now();
+      return withScaledUiTvl(meteoraPairRow(pool, facts), { a: knownMultiplier(mint(pool.mintX), nowMs), b: knownMultiplier(mint(pool.mintY), nowMs) });
+    }),
     fetchedAt: new Date().toISOString(),
     source: "https://dlmm.datapi.meteora.ag/pools/{address} (allowlist: cbBTC/WBTC); Solana RPC: LbPair protocol share, mint freeze authority",
     onchainSource: onchain ? "onchain" : "datapi",
