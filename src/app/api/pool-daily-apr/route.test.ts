@@ -179,18 +179,32 @@ describe("GET /api/pool-daily-apr (listed Meteora pools, recorded datapi)", () =
     expect(await anonymous.text()).toBe(await response.text());
   });
 
-  it("too little data (3 days, below the calculator's minimum) is a 200 that no CDN keeps (SP-2)", async () => {
+  it("too little data on the Raydium in-memory fast path keeps the same five-minute headers (SP-2)", async () => {
+    store.enabled = false;
+    vi.stubGlobal("fetch", vi.fn(raydiumFixtures));
+    const { GET } = await import("./route");
+    const { getCachedPoolDailyApr } = await import("@/lib/pool-daily-apr");
+    const fresh = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${RAYDIUM_POOL}`));
+    expect(getCachedPoolDailyApr(RAYDIUM_POOL)).not.toBeNull(); // the next answer comes from memory
+    const cached = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${RAYDIUM_POOL}`));
+    for (const response of [fresh, cached]) {
+      expect(response.status).toBe(200);
+      expect(response.headers.get("cache-control")).toBe("public, max-age=0, must-revalidate");
+      expect(response.headers.get("cdn-cache-control")).toBe("public, s-maxage=300");
+      expect(response.headers.get("vercel-cdn-cache-control")).toBe("public, s-maxage=300");
+    }
+  });
+
+  it("too little data (3 days, below the calculator's minimum) is a 200 kept only five minutes at the CDN (SP-2)", async () => {
     const { GET } = await import("./route");
     const response = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${METEORA_TSLA}`));
     expect(response.status).toBe(200);
     expect((await response.json()).points).toHaveLength(3);
-    expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(response.headers.get("cdn-cache-control")).toBeNull();
-    expect(response.headers.get("vercel-cdn-cache-control")).toBeNull();
+    const thin = (r: Response) => [r.headers.get("cache-control"), r.headers.get("cdn-cache-control"), r.headers.get("vercel-cdn-cache-control")];
+    expect(thin(response)).toEqual(["public, max-age=0, must-revalidate", "public, s-maxage=300", "public, s-maxage=300"]);
     // The in-memory answer served next is held to the same rule.
     const again = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${METEORA_TSLA}`));
-    expect(again.headers.get("cache-control")).toBe("no-store");
-    expect(again.headers.get("cdn-cache-control")).toBeNull();
+    expect(thin(again)).toEqual(["public, max-age=0, must-revalidate", "public, s-maxage=300", "public, s-maxage=300"]);
   });
 
   it("an upstream 429 is an error no CDN keeps (SP-2)", async () => {
