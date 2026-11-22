@@ -3,10 +3,12 @@ import type { PortfolioPosition } from "./model";
 import { retainCumulativeFees, resetRetainedCumulativeFees } from "./retain-cumulative-fees";
 
 const key = "raydium-clmm:11111111111111111111111111111111";
-const base = (over: Partial<PortfolioPosition> & { figures?: Partial<PortfolioPosition["figures"]> } = {}): PortfolioPosition => ({
-  key, status: "partial", figures: { stock: "SPCX", shares: 1, valueUsd: 100, unclaimedFeesUsd: 0, cumulativeFeesUsd: null, ...over.figures },
-  evaluatedAt: "2026-11-21T00:00:00Z", historyComplete: false, historyRefreshResolved: false,
-  ...over, figures: { stock: "SPCX", shares: 1, valueUsd: 100, unclaimedFeesUsd: 0, cumulativeFeesUsd: null, ...over.figures },
+const figures = (over: Partial<PortfolioPosition["figures"]> = {}): PortfolioPosition["figures"] => ({
+  stock: "SPCX", shares: 1, valueUsd: 100, unclaimedFeesUsd: 0, cumulativeFeesUsd: null, ...over,
+});
+const base = (over: Partial<Omit<PortfolioPosition, "figures">> & { figures?: Partial<PortfolioPosition["figures"]> } = {}): PortfolioPosition => ({
+  key, status: "partial", evaluatedAt: "2026-11-21T00:00:00Z", historyComplete: false, historyRefreshResolved: false,
+  ...over, figures: figures(over.figures),
 });
 
 describe("retainCumulativeFees", () => {
