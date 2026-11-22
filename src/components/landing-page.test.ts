@@ -149,16 +149,22 @@ describe("landing page copy and routes", () => {
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(estimator).toContain('"Estimated fees collected"');
     expect(estimator).toContain('"Assumes price stays in range. Not a prediction. Fees not guaranteed."');
-    expect(estimator).toContain("7-day average fee APR");
-    // No wallet, no request of its own: it reads the pools and APRs the homepage already loaded.
+    expect(estimator).toContain('"Estimate unavailable right now"');
+    // No wallet; its one request is the dialog's own `usePoolYield`, for the selected pool only.
     expect(estimator).not.toMatch(/useWallet|fetch\(|useSWR|\/api\//);
+    expect(estimator).toContain("usePoolYield(pool?.poolAddress");
     expect(estimator).not.toMatch(/\bAPY\b/);
   });
 
   it("mentions APR nowhere in the page's own copy (only the pools card and table keep the one 7-day estimate)", () => {
-    for (const file of ["src/components/landing-page.tsx", "src/components/homepage-market.tsx"]) {
+    // The fee estimator (SP-2) is included: its only APR wording is the dialog's shared label (`planAprLabel`).
+    const files = ["src/components/landing-page.tsx", "src/components/homepage-market.tsx", "src/components/homepage-fee-estimator.tsx"];
+    for (const file of files) {
       expect(copyOf(file).replace(/\b\w*Apr\w*\b|\b[A-Z_]*APR[A-Z_0-9]*\b/g, ""), file).not.toMatch(/APR|APY/);
     }
+    expect(copyOf("src/components/homepage-fee-estimator.tsx")).toContain("planAprLabel(best)");
+    expect(copyOf("src/components/plan/pool-plan-basis.ts")).toContain("`Est. fee APR · ${aprWindowAvgLabel(window)}`");
+    expect(copyOf("src/components/unified-pools/share-calc-dialog.tsx")).toContain("label={planAprLabel(best)}");
     expect(copyOf("src/app/page.tsx")).not.toMatch(/\bAPR\b/);
     expect(table).not.toMatch(/apr24h|hideApr24h|APR · 24h/i); // one APR site-wide: the 7-day estimate
   });

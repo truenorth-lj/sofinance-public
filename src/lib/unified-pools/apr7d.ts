@@ -2,8 +2,7 @@ import { uiFor } from "@/lib/dex/ui";
 import { OPEN_RANGE_UI_PRESETS } from "@sofinance/engine/open-range-presets";
 import { highestRangeSummary } from "@/lib/range-apr/preset-list";
 import { rangeAprPayload } from "@/lib/range-apr/display-policy";
-import { poolLpFeesPerDayUsd } from "@/lib/range-apr/estimate-policy";
-export { poolLpFeesPerDayUsd };
+export { poolLpFeesPerDayUsd } from "@/lib/range-apr/estimate-policy";
 import type { PoolRangeAprPayload } from "@/lib/range-apr/types";
 import { aprSnapshotExpired, aprSnapshotLate } from "@/lib/rwa-freshness";
 import { poolRankGroup, type RankGroupLookup, type UnifiedPool, type UnifiedProtocol } from "./model";
@@ -21,8 +20,6 @@ export type Apr7dState =
     lowConfidence: boolean;
     /** 7-day average daily volume behind the estimate (for the volume divergence note). */
     avgDailyVolumeUsd: number | null;
-    /** Every fee the pool's LPs took per day (USD, `poolLpFeesPerDayUsd`): the ceiling on any deposit's fees. */
-    poolLpFeesPerDayUsd?: number | null;
     freshness?: AprFreshness;
   }
   /**
@@ -80,7 +77,6 @@ export function summarizeApr7d(payload: PoolRangeAprPayload, protocol: UnifiedPr
       ?? OPEN_RANGE_UI_PRESETS.find((preset) => preset.id === summary.id)?.label ?? summary.label,
     lowConfidence: payload.sample.confidence === "low",
     avgDailyVolumeUsd: Number.isFinite(payload.model?.avgDailyVolumeUsd) ? payload.model.avgDailyVolumeUsd : null,
-    poolLpFeesPerDayUsd: poolLpFeesPerDayUsd(payload),
   };
 }
 

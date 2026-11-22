@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WalletConnectionContext, type WalletConnection } from "../wallet-connection";
 import { PlanApp } from "./plan-app";
+import { clearPoolYieldMemory } from "./use-pool-yield";
 
 const POOL = "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro";
 const OTHER = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
@@ -142,6 +143,7 @@ const setDays = (value: string) => typeInto(/^\s*\d+ days?\s*$/, "Days it stays 
 const aprFetches = () => fetcher.mock.calls.filter((call) => String(call[0]).includes("/api/pool-daily-apr")).length;
 
 beforeEach(() => {
+  clearPoolYieldMemory();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("fetch", fetcher);
   fetcher.mockReset();

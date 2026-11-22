@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { meteoraDlmmDescriptor } from "./dex/meteora-dlmm/descriptor";
 import type { DexDescriptor } from "./dex/types";
-import { effectiveExit, estimatedFeesInAsset, LEGACY_PLAN_TERMS, planPoolTerms, projectPoolPlan, projectPoolPlanInAsset } from "./lp-plan-pool-terms";
+import { effectiveExit, LEGACY_PLAN_TERMS, planPoolTerms, projectPoolPlan, projectPoolPlanInAsset } from "./lp-plan-pool-terms";
 import { planEntryCost } from "./lp-plan-yield";
 
 describe("planPoolTerms", () => {
@@ -121,19 +121,5 @@ describe("projectPoolPlanInAsset (SP-2)", () => {
     const uncapped = projectPoolPlan({ capital: "10", days: 90, window: { aprPct: "40", sampleDays: 7, windowDays: 7 }, terms: LEGACY_PLAN_TERMS, exit: "tokens" });
     expect(capped).toBe(false);
     expect(comparison).toEqual(uncapped);
-  });
-});
-
-describe("estimatedFeesInAsset (homepage estimator, SP-2)", () => {
-  it("compounds the 7-day APR daily in the asset, with no second LP cut", () => {
-    // 36.5%/yr = 0.1%/day: 10 shares collect 0.01 the first day and ≈0.0702 over a week.
-    expect(Number(estimatedFeesInAsset({ amount: "10", usdPerUnit: 200, aprPct: 36.5, days: 1 }))).toBeCloseTo(0.01, 6);
-    expect(Number(estimatedFeesInAsset({ amount: "10", usdPerUnit: null, aprPct: 36.5, days: 7 }))).toBeCloseTo(10 * (1.001 ** 7 - 1), 6);
-  });
-
-  it("never exceeds every fee the pool's LPs took per day, when the share price is known", () => {
-    expect(Number(estimatedFeesInAsset({ amount: "10", usdPerUnit: 200, aprPct: 36.5, days: 1, poolLpFeesPerDayUsd: 0.2 }))).toBeCloseTo(0.001, 6);
-    // Without a price the cap can't be sized in shares, so the APR alone applies (as in the dialog).
-    expect(Number(estimatedFeesInAsset({ amount: "10", usdPerUnit: null, aprPct: 36.5, days: 1, poolLpFeesPerDayUsd: 0.2 }))).toBeCloseTo(0.01, 6);
   });
 });

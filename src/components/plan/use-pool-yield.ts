@@ -23,6 +23,18 @@ export type PoolYieldState =
 
 type LoadedYield = Extract<PoolYieldState, { status: "ready" | "unavailable" }>;
 
+/**
+ * Answers already read in this tab, by pool id, shared by every `usePoolYield` (the Calculate dialog and the homepage
+ * estimator), so going back to a pool reads it again from memory instead of the network. Only answers that depend on the
+ * data are kept (a series, or too little data); a failed lookup (error, 429) is not, so the next visit asks again.
+ */
+const memory = new Map<string, LoadedYield>();
+
+/** Test hook: forget every remembered answer. */
+export function clearPoolYieldMemory() {
+  memory.clear();
+}
+
 async function loadPoolDailyApr(poolId: string, signal: AbortSignal): Promise<PoolDailyAprPayload> {
   const response = await fetch(`/api/pool-daily-apr?poolId=${encodeURIComponent(poolId)}`, {
     signal,
@@ -42,15 +54,19 @@ function latestTvl(points: readonly DailyAprPoint[]): number | null {
 }
 
 /**
- * Fetches the pool's daily APR once per pool id and picks the best trailing-window average
+ * Fetches the pool's daily APR once per pool id per tab (remembered, see `memory`) and picks the best trailing-window average
  * (see `selectBestPlanApr`). Slider/day edits must not
  * retrigger this.
  */
-export function usePoolYield(poolId: string | undefined): PoolYieldState {
+export function usePoolYield(poolId: string | undefined, options?: {
+  /** Wait this long after the pool id last changed before asking (debounces quick pool switching); 0 by default. */
+  delayMs?: number;
+}): PoolYieldState {
   const [loaded, setLoaded] = useState<LoadedYield | null>(null);
+  const delayMs = options?.delayMs ?? 0;
 
   useEffect(() => {
-    if (!poolId) return;
+    if (!poolId || memory.has(poolId)) return;
     const aborter = new AbortController();
     const timer = window.setTimeout(() => {
       void (async () => {
@@ -62,21 +78,21 @@ export function usePoolYield(poolId: string | undefined): PoolYieldState {
             payload.points,
             Number.isFinite(fetchedAtSeconds) ? fetchedAtSeconds : undefined,
           );
-          if (best === null) {
-            setLoaded({
+          const answer: LoadedYield = best === null
+            ? {
               status: "unavailable",
               poolId,
               reason: "No complete UTC days with both volume and TVL, so there is no average fee rate to show.",
-            });
-            return;
-          }
-          setLoaded({
-            status: "ready",
-            poolId,
-            best,
-            fetchedAt: payload.fetchedAt,
-            latestTvlUsd: latestTvl(payload.points),
-          });
+            }
+            : {
+              status: "ready",
+              poolId,
+              best,
+              fetchedAt: payload.fetchedAt,
+              latestTvlUsd: latestTvl(payload.points),
+            };
+          memory.set(poolId, answer);
+          setLoaded(answer);
         } catch (error) {
           if (aborter.signal.aborted) return;
           setLoaded({
@@ -86,14 +102,16 @@ export function usePoolYield(poolId: string | undefined): PoolYieldState {
           });
         }
       })();
-    }, 0);
+    }, delayMs);
     return () => {
       window.clearTimeout(timer);
       aborter.abort();
     };
-  }, [poolId]);
+  }, [poolId, delayMs]);
 
   if (!poolId) return { status: "idle" };
+  const remembered = memory.get(poolId);
+  if (remembered) return remembered;
   if (!loaded || loaded.poolId !== poolId) return { status: "loading", poolId };
   return loaded;
 }

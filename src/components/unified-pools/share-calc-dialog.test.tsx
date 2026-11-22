@@ -6,6 +6,7 @@ import { ShareCalcDialog, type ShareCalcPool } from "./share-calc-dialog";
 import type { OpenAction } from "./pool-list";
 import { PLAN_HIDDEN_RISK_LINE } from "@/lib/lp-plan-notice";
 import { AMZN_LAUNCH_POINTS, AMZN_LAUNCH_POOL, AMZN_LAUNCH_TVL_USD } from "@/lib/amzn-launch-daily-apr.fixture";
+import { clearPoolYieldMemory } from "../plan/use-pool-yield";
 
 vi.mock("next/link", () => ({
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => createElement("a", { href, ...rest }, children),
@@ -40,6 +41,7 @@ async function render(pool: ShareCalcPool, open: OpenAction, onClose = vi.fn()) 
 }
 
 beforeEach(() => {
+  clearPoolYieldMemory();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("fetch", fetcher);
   fetcher.mockReset();

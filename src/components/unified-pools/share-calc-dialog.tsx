@@ -6,15 +6,14 @@ import Decimal from "decimal.js";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { DEFAULT_PLAN_DAYS } from "@/lib/lp-plan-intent";
 import { aprWindowAvgLabel } from "@/lib/lp-plan-best-apr";
-import { planPoolTerms, projectPoolPlanInAsset } from "@/lib/lp-plan-pool-terms";
-import { lowPlanApr, pairLabelSymbols, parsePlanAssetAmount, planAssetAmounts, planAssetPresetLabel, planAssetSymbol, planShareSymbol } from "@/lib/lp-plan-shares";
-import { PLAN_HIDDEN_RISK_LINE, planDataNotice } from "@/lib/lp-plan-notice";
-import { dexDescriptors, uiFor } from "@/lib/dex/client";
+import { lowPlanApr, parsePlanAssetAmount, planAssetAmounts, planAssetPresetLabel } from "@/lib/lp-plan-shares";
+import { PLAN_HIDDEN_RISK_LINE } from "@/lib/lp-plan-notice";
 import { cn } from "@/lib/cn";
 import { CALCULATE_LABEL } from "@/lib/unified-pools/calculate-label";
 import { HodlVsPool } from "../plan/hodl-vs-pool";
-import { approxUsd, formatCostInUnit, formatInUnit, formatPct, formatSignedInUnit, formatSignedPct, type AmountUnit } from "../plan/format";
+import { approxUsd, formatCostInUnit, formatInUnit, formatPct, formatSignedInUnit, formatSignedPct } from "../plan/format";
 import { usePoolYield } from "../plan/use-pool-yield";
+import { planAprLabel, poolPlanBasis, projectOnBasis, type PlanWindow, type PoolPlanBasis } from "../plan/pool-plan-basis";
 import type { OpenAction } from "./pool-list";
 import { ProjectionChart } from "./projection-chart";
 
@@ -54,6 +53,30 @@ function OpenCta({ action, label }: { action: OpenAction; label: string }) {
 }
 
 /**
+ * The dialog's projection at `days`: the best 7 / 30 / 90-day average (and the low one) on the pool's basis, plus the
+ * difference vs HODL at every horizon of the range switch. Null without numbers to show (`best` null). Exported so the
+ * homepage estimator's daily number can be checked against the dialog's own one-day run.
+ */
+export function shareCalcProjection(basis: PoolPlanBasis, amount: string, days: number) {
+  const best = basis.best;
+  if (!best) return null;
+  const at = (window: PlanWindow, horizon: number) => projectOnBasis(basis, amount, window, horizon).comparison;
+  const lowWindow = lowPlanApr(best, best.windows);
+  const main = projectOnBasis(basis, amount, best, days);
+  return {
+    best: main.comparison,
+    capped: main.capped,
+    low: lowWindow ? at(lowWindow, days) : null,
+    lowWindow,
+    // Difference vs HODL at every horizon of the range switch, like a vault page's 30D / 90D / 1Y returns.
+    byHorizon: SHARE_CALC_DAYS.map((horizon) => {
+      const plan = at(best, horizon);
+      return { days: horizon, pct: new Decimal(plan.vsHold).div(plan.capital).mul(100).toFixed() };
+    }),
+  };
+}
+
+/**
  * "Calculate" from a pool card: HODL vs HODL + earned shares for this one pool, in a dialog over the pools list.
  * Laid out like a vault page: stat tiles and a projection chart with a range switch on the left, the amount, the open
  * button and the assumptions on the right (stacked on phones, amount first). The only planning surface while
@@ -62,57 +85,17 @@ function OpenCta({ action, label }: { action: OpenAction; label: string }) {
  * (`projectPoolPlan`); read-only. Too few days of data hides the numbers; a small pool gets a warning (`planDataNotice`).
  */
 export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; open: OpenAction; onClose: () => void }) {
-  const symbols = useMemo(() => pairLabelSymbols(pool.pairLabel), [pool.pairLabel]);
-  const shareSymbol = planShareSymbol(symbols);
-  // SP-2: counted in the pool's own asset (the stock, or USDC for the stablecoin pool), ≈$ only beside it.
-  const assetSymbol = planAssetSymbol(symbols) ?? symbols?.plainSymbol ?? pool.pairLabel;
-  const usdPerUnit = typeof pool.usdPerShare === "number" && Number.isFinite(pool.usdPerShare) && pool.usdPerShare > 0 ? pool.usdPerShare : null;
-  const unit = useMemo<AmountUnit>(() => ({ kind: "asset", symbol: assetSymbol, usdPerUnit }), [assetSymbol, usdPerUnit]);
+  const poolYield = usePoolYield(pool.poolAddress);
+  const basis = useMemo(() => poolPlanBasis(pool, poolYield), [pool, poolYield]);
+  const { symbols, shareSymbol, assetSymbol, unit, notice, best, terms, exit } = basis;
   const { presets, defaultAmount } = planAssetAmounts(shareSymbol);
   const [amountText, setAmountText] = useState<string>(defaultAmount);
   const [days, setDays] = useState<number>(DEFAULT_PLAN_DAYS);
   const [now] = useState(() => Date.now());
   const amount = parsePlanAssetAmount(amountText);
   const closeRef = useRef<HTMLButtonElement>(null);
-  const poolYield = usePoolYield(pool.poolAddress);
-  const ready = poolYield.status === "ready" ? poolYield : null;
-  const poolTvlUsd = pool.tvlUsd !== undefined && pool.tvlUsd !== null && Number.isFinite(pool.tvlUsd) && pool.tvlUsd > 0
-    ? pool.tvlUsd : ready?.latestTvlUsd ?? null;
-  const notice = ready ? planDataNotice({ sampleDays: ready.best.sampleDays, poolTvlUsd }) : null;
-  // Too few days of data: no numbers at all (see `planDataNotice`).
-  const best = ready && notice?.kind !== "hide" ? ready.best : null;
   const holdLabel = shareSymbol ?? (symbols ? `${symbols.wrappedSymbol} + ${symbols.plainSymbol}` : pool.pairLabel);
-  const terms = useMemo(
-    () => planPoolTerms({
-      descriptor: dexDescriptors.descriptorFor(pool.protocol),
-      useDescriptorPlanTerms: uiFor(pool.protocol).useDescriptorPlanTerms,
-      listOpenReason: null,
-      symbols: symbols ? [symbols.wrappedSymbol, symbols.plainSymbol] : undefined,
-    }),
-    [pool.protocol, symbols],
-  );
-
-  // No exit picker here; counted in the asset, the projection keeps the pool tokens (SP-2: no swap back to USDC).
-  const exit = terms.exits.includes("tokens") ? "tokens" : terms.exits[0] ?? "usdc";
-  const projection = useMemo(() => {
-    if (!best || !amount) return null;
-    const run = (window: { aprPct: string; sampleDays: number; windowDays: number; poolFeesPerDayUsd?: string }, horizon: number) =>
-      projectPoolPlanInAsset({ amount, usdPerUnit, days: horizon, window, terms, exit, poolTvlUsd });
-    const at = (window: Parameters<typeof run>[0], horizon: number) => run(window, horizon).comparison;
-    const lowWindow = lowPlanApr(best, best.windows);
-    const main = run(best, days);
-    return {
-      best: main.comparison,
-      capped: main.capped,
-      low: lowWindow ? at(lowWindow, days) : null,
-      lowWindow,
-      // Difference vs HODL at every horizon of the range switch, like a vault page's 30D / 90D / 1Y returns.
-      byHorizon: SHARE_CALC_DAYS.map((horizon) => {
-        const plan = at(best, horizon);
-        return { days: horizon, pct: new Decimal(plan.vsHold).div(plan.capital).mul(100).toFixed() };
-      }),
-    };
-  }, [best, amount, usdPerUnit, days, terms, exit, poolTvlUsd]);
+  const projection = useMemo(() => (amount ? shareCalcProjection(basis, amount, days) : null), [basis, amount, days]);
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -184,7 +167,7 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
             className="rounded-xl border border-lemon/30 bg-lemon/10 px-4 py-3 text-[12px] leading-relaxed text-cream">{notice.message}</p> : null}
 
           {plan && projection && best ? <dl className={cn(panel, "px-4 py-2.5")} data-testid="share-calc-assumptions">
-            <InfoRow label={`Est. fee APR · ${aprWindowAvgLabel(best)}`}>{formatPct(plan.apyPct)}</InfoRow>
+            <InfoRow label={planAprLabel(best)}>{formatPct(plan.apyPct)}</InfoRow>
             <InfoRow label="Fees collected">{formatInUnit(plan.feesEarned, unit)}</InfoRow>
             <InfoRow label="Protocol cut of fees">{`${Math.round((1 - terms.lpFeeShare) * 100)}%`}</InfoRow>
             <InfoRow label="Opening cost (USDC deposit)">{formatCostInUnit(plan.entryCost, unit)}</InfoRow>
