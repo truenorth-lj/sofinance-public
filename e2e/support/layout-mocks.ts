@@ -21,6 +21,21 @@ const SOL = "So11111111111111111111111111111111111111112";
 const METEORA_POOL = "5pw5tNUaZJpUCnYjZ1V3gd7XkLbrb4zA9pir4LFph2mj";
 const RAYDIUM_POOL = "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro";
 
+/**
+ * A 30-day daily fee APR series for any pool (`/api/pool-daily-apr`), so the homepage fee estimator (it reads the
+ * selected pool's series) and the Calculate dialog have numbers. Synthetic and fixed in shape; complete UTC days only.
+ */
+function dailyAprSeries(poolId: string | null) {
+  const day = 86_400;
+  const today = Math.floor(Date.now() / 1000 / day) * day;
+  const points = Array.from({ length: 30 }, (_, index) => {
+    const time = today - (30 - index) * day;
+    return { time, date: new Date(time * 1000).toISOString().slice(0, 10), aprPct: 20 + (index % 7) * 3, volumeUsd: 40_000 + (index % 5) * 5_000, tvlUsd: 200_000 };
+  });
+  return { poolId, label: "Pool fee APR (daily, estimated)", assumptions: "Hermetic fixture.", published: { dayFeeApr: null, weekFeeApr: null, monthFeeApr: null },
+    points, sources: [], fetchedAt: new Date(today * 1000 + 6 * 3_600_000).toISOString() };
+}
+
 export async function installLayoutMocks(context: BrowserContext, owner: string, unmocked: Set<string> = new Set()) {
   const positionMint = randomAddress(), positionAccount = randomAddress(), meteoraPosition = randomAddress();
   const selection = { positionMint, inputMint: USDC, inputKind: "token" };
@@ -57,7 +72,8 @@ export async function installLayoutMocks(context: BrowserContext, owner: string,
     if (path === "/api/protocol-pools" && url.searchParams.get("protocol") === "uniswap-v4-rhc") return route.fulfill({ status: 200, contentType: "application/json", body: RHC_POOLS });
     // One captured Raydium range answer stands in for every Solana pool (the layout, not the numbers, is under test).
     if (path === "/api/pool-range-apr") return route.fulfill(json({ ...RANGE_APR, poolId: url.searchParams.get("poolId") }));
-    // Anything else (performance, daily APR, quotes, Robinhood Chain reads) answers like an unavailable upstream: the
+    if (path === "/api/pool-daily-apr") return route.fulfill(json(dailyAprSeries(url.searchParams.get("poolId"))));
+    // Anything else (performance, quotes, Robinhood Chain reads) answers like an unavailable upstream: the
     // panels then show their plain error copy, which has to fit a phone too. Never the real server or RPC.
     unmocked.add(`${route.request().method()} ${path}`);
     return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "This data is not available right now." }) });
