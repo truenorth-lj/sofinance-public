@@ -117,7 +117,7 @@ for (const width of widths) {
       const open = page.getByRole("button", { name: /^Open position in / });
       await open.first().waitFor();
       await check("rwa-pairs-cards");
-      // "Calculate shares" dialog (PR #312): fits the screen and every field is 16 px+ on phones, also scrolled to the end.
+      // "Calculate" dialog (PR #312): fits the screen and every field is 16 px+ on phones, also scrolled to the end.
       const calc = page.getByRole("button", { name: /^Calculate( shares)? for / }).first();
       await calc.waitFor();
       await calc.click();

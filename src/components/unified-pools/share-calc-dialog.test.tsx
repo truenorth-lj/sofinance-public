@@ -59,7 +59,7 @@ describe("ShareCalcDialog", () => {
     expect(fetcher.mock.calls.some((call) => String(call[0]) === `/api/pool-daily-apr?poolId=${POOL}`)).toBe(true);
     const dialog = node.querySelector('[role="dialog"]')!;
     expect(dialog.getAttribute("aria-modal")).toBe("true");
-    expect(dialog.getAttribute("aria-label")).toBe("Calculate shares for SPCXx/SPCX");
+    expect(dialog.getAttribute("aria-label")).toBe("Calculate for SPCXx/SPCX");
     expect(button("1Y").getAttribute("aria-pressed")).toBe("true");
     const cards = node.querySelector("[data-testid=hodl-vs-pool]")!;
     expect(cards.querySelector("h2")!.textContent).toBe("HODL vs. HODL + more shares");
@@ -69,8 +69,8 @@ describe("ShareCalcDialog", () => {
     expect(cards.querySelector('[aria-label="Difference"]')!.textContent).toContain("+$293.29");
     expect(node.querySelector("[data-testid=share-calc-footnote]")!.textContent)
       .toContain("fees after Raydium's 16% cut, about 1% to open, about 1% to swap back to USDC");
-    // The calculator shows the chart without the Plan page's summary, APY line and method paragraph.
-    expect(text()).not.toMatch(/read-only|per 100 held vs hold|Est\. best APY|Counted per 100/);
+    // The calculator shows the chart without the Plan page's summary, best-rate line and method paragraph.
+    expect(text()).not.toMatch(/read-only|per 100 held vs hold|Est\. best APY|Est\. best fee APR|Counted per 100/);
   });
 
   it("re-projects over the chosen horizon", async () => {

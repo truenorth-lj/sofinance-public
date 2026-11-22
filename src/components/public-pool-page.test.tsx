@@ -73,13 +73,14 @@ describe("PublicPoolPage (HTML without JS)", () => {
     vi.unstubAllEnvs();
   });
 
-  it("shows Open position and Calculate shares for a supported Solana pool, and drops the old text CTA", () => {
+  it("shows Open position and Calculate for a supported Solana pool, and drops the old text CTA", () => {
     expect(markup).toContain('aria-label="Open position in TSLAx / TSLA"');
     expect(markup).toContain('href="/pools?openPool=tsla-raydium"');
-    expect(markup).toContain('aria-label="Calculate shares for TSLAx / TSLA"');
+    expect(markup).toContain('aria-label="Calculate for TSLAx / TSLA"');
     expect(markup).toContain('href="/pools?calc=tsla-raydium"');
     expect(markup).toContain("Open position");
-    expect(markup).toContain("Calculate shares");
+    expect(markup).toContain(">Calculate</a>");
+    expect(markup).not.toContain("Calculate shares");
     expect(markup).toContain("All pools");
     expect(markup).not.toContain("Open this pool in the app");
     expect(markup).not.toContain("All same-stock pools");
@@ -87,7 +88,7 @@ describe("PublicPoolPage (HTML without JS)", () => {
 });
 
 describe("PublicPoolPage calculator support", () => {
-  it("omits Calculate shares on a Robinhood Chain pool page and keeps Open position", () => {
+  it("omits Calculate on a Robinhood Chain pool page and keeps Open position", () => {
     const rhc: HomepagePool = {
       key: "robinhood:0xnvda",
       chain: "robinhood",
@@ -109,7 +110,7 @@ describe("PublicPoolPage calculator support", () => {
     expect(html).toContain('aria-label="Open position in NVDA / NVDAon"');
     expect(html).toContain('href="/pools?openPool=0xnvda"');
     expect(html).toContain("Open position");
-    expect(html).not.toContain("Calculate shares");
+    expect(html).not.toContain("Calculate");
     expect(html).not.toContain("?calc=");
   });
 });

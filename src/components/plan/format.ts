@@ -83,7 +83,7 @@ export function completeDaysCopy(sampleDays: number): string {
   return `${sampleDays} ${sampleDays === 1 ? "complete UTC day" : "complete UTC days"}`;
 }
 
-/** What the best APY is, in words: "7-day average fee APR of 19.2%". */
+/** What the best fee APR is, in words: "7-day average fee APR of 19.2%". */
 export function bestAprCopy(best: { windowDays: number; aprPct: string }): string {
   return `${aprWindowLabel(best.windowDays)} average fee APR of ${formatPct(best.aprPct)}`;
 }

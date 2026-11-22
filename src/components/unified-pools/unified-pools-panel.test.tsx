@@ -475,8 +475,8 @@ describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {
     expect([...spcx.querySelectorAll("img")].map((img) => img.getAttribute("src"))).toEqual(["https://static.jup.ag/x1.png", "https://img-v1.raydium.io/icon/s1.png"]);
     expect(spcx.querySelector("h3 + p")!.getAttribute("title")).toBe("SPCXx name / SPCX name");
     const calculate = spcx.querySelector<HTMLButtonElement>("button[aria-haspopup=dialog]")!;
-    expect(calculate.textContent).toBe("Calculate shares");
-    expect(calculate.getAttribute("aria-label")).toBe("Calculate shares for SPCXx/SPCX");
+    expect(calculate.textContent).toBe("Calculate");
+    expect(calculate.getAttribute("aria-label")).toBe("Calculate for SPCXx/SPCX");
     // A streak of light circles its border (globals.css `border-beam`, still for reduced motion).
     expect(calculate.className).toContain("border-beam");
     await act(async () => { calculate.click(); });

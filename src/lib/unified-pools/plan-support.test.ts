@@ -5,13 +5,13 @@ import { poolPlanCapability, poolSupportsCalculator } from "./plan-support";
 const pool = (protocol: UnifiedPool["protocol"]): Pick<UnifiedPool, "protocol"> => ({ protocol });
 
 describe("poolSupportsCalculator", () => {
-  it("is true for Raydium and Meteora (the same pools whose cards show Calculate shares)", () => {
+  it("is true for Raydium and Meteora (the same pools whose cards show Calculate)", () => {
     expect(poolSupportsCalculator(pool("raydium-clmm"))).toBe(true);
     expect(poolPlanCapability(pool("raydium-clmm"))).toEqual({ supported: true });
     expect(poolSupportsCalculator(pool("meteora-dlmm"))).toBe(true);
   });
 
-  it("is false for Robinhood Chain (no planFallback; cards hide Calculate shares)", () => {
+  it("is false for Robinhood Chain (no planFallback; cards hide Calculate)", () => {
     expect(poolPlanCapability(pool("uniswap-v4-rhc"))).toBeNull();
     expect(poolSupportsCalculator(pool("uniswap-v4-rhc"))).toBe(false);
   });

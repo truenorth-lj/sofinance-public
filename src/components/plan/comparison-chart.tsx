@@ -36,7 +36,7 @@ export function ComparisonChart({
   shareSymbol?: string | null;
   /** The same plan at the lowest recent window's APR; drawn as the bottom of a range band. */
   low?: PlanYieldComparison | null;
-  /** Chart and line legend only: no summary row, APY line or method paragraph (the caller states those). */
+  /** Chart and line legend only: no summary row, best-rate line or method paragraph (the caller states those). */
   bare?: boolean;
 }) {
   const [picked, setPicked] = useState<ChartUnit | null>(null);
@@ -277,7 +277,7 @@ function ReadyChart({
           </span>
         ) : null}
         {bare ? null : <span>
-          Est. best APY {formatPct(comparison.apyPct)} (not a prediction) · {bestAprCopy({ windowDays: comparison.aprWindowDays, aprPct: comparison.aprPct })} ·{" "}
+          Est. best fee APR (compounded daily) {formatPct(comparison.apyPct)} (not a prediction) · {bestAprCopy({ windowDays: comparison.aprWindowDays, aprPct: comparison.aprPct })} ·{" "}
           {completeDaysCopy(comparison.sampleDays)}
           {thin ? " · unreliable sample" : ""}
         </span>}

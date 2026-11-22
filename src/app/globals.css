@@ -67,7 +67,7 @@ button:disabled { cursor: not-allowed; }
 }
 
 /*
- * Border beam: a short streak of light that travels around an element's border (the pool card's "Calculate shares").
+ * Border beam: a short streak of light that travels around an element's border (the pool card's "Calculate").
  * The conic gradient is masked down to a `--beam-width` ring; only `--beam-angle` animates. Still for reduced motion.
  */
 @property --beam-angle {
