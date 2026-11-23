@@ -48,6 +48,9 @@ import {
  * }
  */
 
+/** Same 60 s budget as `/api/position-performance` and `/api/portfolio`; also bounds the post-response open confirmation poll (~30 s) in after(). */
+export const maxDuration = 60;
+
 interface JsonRpcRequest {
   jsonrpc: "2.0";
   id?: string | number | null;

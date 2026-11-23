@@ -3,6 +3,9 @@ import { readPositionPerformance } from "@/lib/dex";
 import { PositionHistoryStoreError } from "@/lib/position-history-store-types";
 import bs58 from "bs58";
 import { NO_STORE_HEADERS } from "@/lib/http/no-store";
+import {
+  POSITION_PERFORMANCE_LOOKUPS_PER_IP_PER_MINUTE, POSITION_PERFORMANCE_RETRY_AFTER_SECONDS, positionPerformanceRateLimited,
+} from "@/lib/position-performance-rate-limit";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -33,6 +36,14 @@ export async function GET(request: Request) {
     if (historyAfterSignatures && (historyAfterSignatures.length > 8 || historyAfterSignatures.some(signature =>
       !/^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(signature) || bs58.decode(signature).length !== 64))) {
       throw new Error("Invalid history signatures");
+    }
+
+    // Per-IP limit after cheap validation, before any RPC. 429 is the client's, not ours: no Sentry.
+    if (positionPerformanceRateLimited(request, positionMint)) {
+      return Response.json({
+        error: `Too many performance lookups from your network (more than ${POSITION_PERFORMANCE_LOOKUPS_PER_IP_PER_MINUTE} positions a minute). Try again in a minute.`,
+        code: "RATE_LIMITED",
+      }, { status: 429, headers: { ...NO_STORE_HEADERS, "Retry-After": String(POSITION_PERFORMANCE_RETRY_AFTER_SECONDS) } });
     }
 
     const result = await readPositionPerformance("raydium-clmm", positionMint, {
