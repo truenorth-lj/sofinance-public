@@ -46,14 +46,21 @@ export function poolPlanBasis(pool: PlanBasisPool, poolYield: PoolYieldState) {
 }
 
 export type PoolPlanBasis = ReturnType<typeof poolPlanBasis>;
-export type PlanWindow = { aprPct: string; sampleDays: number; windowDays: number; poolFeesPerDayUsd?: string };
+export type PlanWindow = { aprPct: string; sampleDays: number; windowDays: number; coversAllData?: boolean; poolFeesPerDayUsd?: string };
 
-/** The one projection both surfaces run: `projectPoolPlanInAsset` on the basis's terms, exit and TVL split. */
+/**
+ * The one projection both surfaces run: `projectPoolPlanInAsset` on the basis's terms, exit and TVL split, with simple
+ * (non-compounded) growth, the cards' basis: the deposit earns the same after-cut, fee-capped amount every day.
+ */
 export function projectOnBasis(basis: PoolPlanBasis, amount: string, window: PlanWindow, days: number) {
   return projectPoolPlanInAsset({
     amount, usdPerUnit: basis.usdPerUnit, days, window, terms: basis.terms, exit: basis.exit, poolTvlUsd: basis.poolTvlUsd,
+    growth: "simple",
   });
 }
 
-/** "Est. fee APR · 7-day avg": the label beside the projected APR, in the dialog and the homepage estimator. */
-export const planAprLabel = (window: { windowDays: number; sampleDays: number }) => `Est. fee APR · ${aprWindowAvgLabel(window)}`;
+/**
+ * "Est. fee APR · 7-day avg": the label beside the projected APR, in the dialog and the homepage estimator. The number
+ * beside it is `cappedAprPct` (after the DEX's cut, held to the pool's fees, not compounded).
+ */
+export const planAprLabel = (window: { windowDays: number; sampleDays: number; coversAllData?: boolean }) => `Est. fee APR · ${aprWindowAvgLabel(window)}`;

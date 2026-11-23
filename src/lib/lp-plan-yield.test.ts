@@ -8,7 +8,9 @@ import {
   compoundedProfit,
   dailyRateFromAprPct,
   isThinPlanSample,
+  planAprContenders,
   planEntryCost,
+  planMinSampleDays,
   PLAN_MIN_RELIABLE_SAMPLE_DAYS,
   PLAN_OPEN_COST_BPS,
   planOpenCostPctLabel,
@@ -107,6 +109,29 @@ describe("isThinPlanSample", () => {
     expect(isThinPlanSample(6)).toBe(true);
     expect(isThinPlanSample(7)).toBe(false);
     expect(isThinPlanSample(29)).toBe(false);
+  });
+
+  it("given the window, also needs 80% of its days: 7 for 7d, 24 for 30d, 72 for 90d", () => {
+    expect([7, 30, 90].map((windowDays) => planMinSampleDays(windowDays))).toEqual([7, 24, 72]);
+    expect(planMinSampleDays()).toBe(7);
+    expect(isThinPlanSample(13, 90)).toBe(true); // NVDAx/NVDA Meteora: 13 days never stand in for 90
+    expect(isThinPlanSample(13, 30)).toBe(true);
+    expect(isThinPlanSample(13, 7)).toBe(false);
+    expect(isThinPlanSample(23, 30)).toBe(true);
+    expect(isThinPlanSample(24, 30)).toBe(false);
+    expect(isThinPlanSample(71, 90)).toBe(true);
+    expect(isThinPlanSample(72, 90)).toBe(false);
+    expect(isThinPlanSample(6, 7)).toBe(true);
+  });
+});
+
+describe("planAprContenders", () => {
+  const w = (windowDays: number, sampleDays: number) => ({ windowDays, sampleDays });
+  it("keeps only covered windows, else those with a week of data, else all", () => {
+    expect(planAprContenders([w(7, 7), w(30, 13), w(90, 13)])).toEqual([w(7, 7)]);
+    expect(planAprContenders([w(7, 6), w(30, 13)])).toEqual([w(30, 13)]);
+    expect(planAprContenders([w(7, 4)])).toEqual([w(7, 4)]);
+    expect(planAprContenders([w(7, 7), w(30, 30), w(90, 72)])).toHaveLength(3);
   });
 });
 
@@ -232,3 +257,34 @@ describe("closing cost", () => {
     expect(() => buildPlanComparison({ capital: "1000", days: 30, aprPct: "36.5", sampleDays: 30, aprWindowDays: 30, exitCostBps: -1 })).toThrow("exitCostBps is invalid");
   });
 });
+
+describe("buildPlanComparison growth: simple (the Calculate dialog and the homepage estimator)", () => {
+  const base = { capital: "1000", aprPct: "36.5", sampleDays: 30, aprWindowDays: 30 } as const;
+
+  it("earns the same fees every day: a week is seven days, a year is the APR, nothing compounds", () => {
+    const day = buildPlanComparison({ ...base, days: 1, growth: "simple" });
+    const week = buildPlanComparison({ ...base, days: 7, growth: "simple" });
+    const year = buildPlanComparison({ ...base, days: 365, growth: "simple" });
+    expect(day.feesEarned).toBe("1");
+    expect(week.feesEarned).toBe("7");
+    expect(year.feesEarned).toBe("365");
+    expect(year.cappedAprPct).toBe("36.5");
+    expect(year.apyPct).toBe("36.5");
+    // The compounding default is unchanged (the Plan page).
+    const compounded = buildPlanComparison({ ...base, days: 365 });
+    expect(new D(compounded.apyPct).toFixed(4)).toBe("44.0251");
+    expect(compounded.cappedAprPct).toBe("36.5");
+  });
+
+  it("holds each day to the pool's fees split with the deposit, as a simple APR", () => {
+    // Pool LPs take $10 a day on $10,000: $1,000 gets 1,000 / 11,000 of it, $0.9091 a day, under the APR's $1.
+    const feeCap = { poolLpFeesPerDayUsd: "10", poolTvlUsd: "10000" };
+    const year = buildPlanComparison({ ...base, days: 365, growth: "simple", feeCap, entryCost: "10" });
+    expect(year.feeCapped).toBe(true);
+    expect(new D(year.feesEarned).toFixed(4)).toBe("331.8182");
+    expect(new D(year.cappedAprPct).toFixed(4)).toBe("33.1818");
+    expect(new D(year.endSofinance).toFixed(4)).toBe("321.8182");
+    expect(year.breakEvenDay).toBe(11); // $10 to open ÷ $0.9091 a day
+  });
+});
+

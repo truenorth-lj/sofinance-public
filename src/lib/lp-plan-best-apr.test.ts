@@ -21,14 +21,14 @@ describe("trailingWindowAverage", () => {
   });
   it("averages only the last N UTC days that end on the newest point", () => {
     const points = series([...repeat(100, 3), ...repeat(10, 7)]);
-    expect(trailingWindowAverage(points, 7)).toEqual({ windowDays: 7, aprPct: "10", sampleDays: 7 });
-    expect(trailingWindowAverage(points, 10)).toEqual({ windowDays: 10, aprPct: "37", sampleDays: 10 });
+    expect(trailingWindowAverage(points, 7)).toEqual({ windowDays: 7, aprPct: "10", sampleDays: 7, coversAllData: false });
+    expect(trailingWindowAverage(points, 10)).toEqual({ windowDays: 10, aprPct: "37", sampleDays: 10, coversAllData: true });
   });
 
   it("skips gaps inside the window without filling them", () => {
     const points = series([10, null, 30, null, 50, 70, 90]);
-    expect(trailingWindowAverage(points, 7)).toEqual({ windowDays: 7, aprPct: "50", sampleDays: 5 });
-    expect(trailingWindowAverage(points, 2)).toEqual({ windowDays: 2, aprPct: "80", sampleDays: 2 });
+    expect(trailingWindowAverage(points, 7)).toEqual({ windowDays: 7, aprPct: "50", sampleDays: 5, coversAllData: true });
+    expect(trailingWindowAverage(points, 2)).toEqual({ windowDays: 2, aprPct: "80", sampleDays: 2, coversAllData: false });
   });
 
   it("counts a missing calendar day as a gap, not as an older day", () => {
@@ -36,7 +36,14 @@ describe("trailingWindowAverage", () => {
       { time: START, aprPct: 500 },
       { time: START + 9 * DAY, aprPct: 10 },
     ];
-    expect(trailingWindowAverage(points, 7)).toEqual({ windowDays: 7, aprPct: "10", sampleDays: 1 });
+    expect(trailingWindowAverage(points, 7)).toEqual({ windowDays: 7, aprPct: "10", sampleDays: 1, coversAllData: false });
+  });
+
+  it("knows whether the pool's history is older than the window (an older day with no APR still counts)", () => {
+    // Raydium-style: 60 days, only the last 29 with an APR (the TVL line starts there).
+    const points = series([...repeat(null, 31), ...repeat(10, 29)]);
+    expect(trailingWindowAverage(points, 30)).toMatchObject({ sampleDays: 29, coversAllData: false });
+    expect(aprWindowAvgLabel(trailingWindowAverage(points, 30)!)).toBe("29-day avg (gap days skipped)");
   });
 
   it("returns null when the window has nothing finite", () => {
@@ -48,7 +55,7 @@ describe("trailingWindowAverage", () => {
   it("drops a day that has not finished at asOf", () => {
     const points = series([10, 10, 90]);
     const asOf = START + 2 * DAY + 3600; // the third day is still open
-    expect(trailingWindowAverage(points, 7, asOf)).toEqual({ windowDays: 7, aprPct: "10", sampleDays: 2 });
+    expect(trailingWindowAverage(points, 7, asOf)).toEqual({ windowDays: 7, aprPct: "10", sampleDays: 2, coversAllData: true });
     expect(trailingWindowAverage(points, 7, START + 3 * DAY + 3600)?.sampleDays).toBe(3);
   });
 
@@ -66,10 +73,10 @@ describe("selectBestPlanApr", () => {
   it("picks the 7-day average when the latest week is the strongest", () => {
     const best = selectBestPlanApr(series([...repeat(10, 23), ...repeat(40, 7)]));
     expect(best).toMatchObject({ windowDays: 7, aprPct: "40", sampleDays: 7 });
+    // The 90-day window holds the same 30 days as the 30-day one, so it is dropped.
     expect(best!.windows.map((w) => [w.windowDays, w.aprPct])).toEqual([
       [7, "40"],
       [30, "17"],
-      [90, "17"],
     ]);
   });
 
@@ -85,8 +92,32 @@ describe("selectBestPlanApr", () => {
     expect(Number(best!.aprPct)).toBeCloseTo(43.333333, 4);
   });
 
-  it("prefers the longer window on a tie", () => {
-    expect(selectBestPlanApr(series(repeat(12, 40)))).toMatchObject({ windowDays: 90, aprPct: "12", sampleDays: 40 });
+  it("prefers the shorter window on a tie", () => {
+    // 40 days of 12%: the 30-day window is full and equal to the 7-day one; the 90-day one (40 < 72 days) cannot count.
+    const best = selectBestPlanApr(series(repeat(12, 40)));
+    expect(best).toMatchObject({ windowDays: 7, aprPct: "12", sampleDays: 7 });
+    expect(best!.windows.map((w) => [w.windowDays, w.sampleDays])).toEqual([[7, 7], [30, 30], [90, 40]]);
+  });
+
+  it("needs 80% of a window's days (and at least 7) before that window counts", () => {
+    // 13 days (NVDAx/NVDA Meteora, Nov 2026): strong first week, weaker last week. 30d and 90d hold the same 13 days.
+    const nvda = selectBestPlanApr(series([...repeat(200, 6), ...repeat(80, 7)]))!;
+    expect(nvda).toMatchObject({ windowDays: 7, sampleDays: 7, aprPct: "80" });
+    expect(nvda.windows.map((w) => [w.windowDays, w.sampleDays])).toEqual([[7, 7], [30, 13]]);
+    // 24 of 30 days is enough for the 30-day window; 23 is not.
+    expect(selectBestPlanApr(series([...repeat(90, 17), ...repeat(10, 7)]))).toMatchObject({ windowDays: 30, sampleDays: 24 });
+    expect(selectBestPlanApr(series([...repeat(90, 16), ...repeat(10, 7)]))).toMatchObject({ windowDays: 7, sampleDays: 7 });
+    // 72 of 90 days for the 90-day window.
+    expect(selectBestPlanApr(series([...repeat(90, 42), ...repeat(50, 23), ...repeat(10, 7)]))).toMatchObject({ windowDays: 90, sampleDays: 72 });
+    expect(selectBestPlanApr(series([...repeat(90, 41), ...repeat(50, 23), ...repeat(10, 7)]))).toMatchObject({ windowDays: 30, sampleDays: 30 });
+  });
+
+  it("with no window covered, picks among the windows with a week of data, then names it by its days", () => {
+    // A gap two days ago leaves the 7-day window 6 days; the 30-day window holds 13, all the data so far.
+    const points = series([...repeat(50, 7), 10, 10, 10, 10, null, 10, 10]);
+    const best = selectBestPlanApr(points)!;
+    expect(best).toMatchObject({ windowDays: 30, sampleDays: 13, coversAllData: true });
+    expect(aprWindowAvgLabel(best)).toBe("13-day avg (all data so far)");
   });
 
   it("ignores a thin window while a well-sampled one exists", () => {
@@ -98,9 +129,10 @@ describe("selectBestPlanApr", () => {
     expect(Number(best!.aprPct)).toBeLessThan(99);
   });
 
-  it("falls back to the highest thin window when no window has a week of data", () => {
+  it("falls back to the thin window when no window has a week of data (the numbers are then hidden)", () => {
     const best = selectBestPlanApr(series([10, 20, 30]));
-    expect(best).toMatchObject({ aprPct: "20", sampleDays: 3, windowDays: 90 });
+    expect(best).toMatchObject({ aprPct: "20", sampleDays: 3, windowDays: 7 });
+    expect(best!.windows).toHaveLength(1);
   });
 
   it("returns null when there is no finite day", () => {
@@ -110,10 +142,14 @@ describe("selectBestPlanApr", () => {
 });
 
 describe("aprWindowAvgLabel", () => {
-  it("keeps the plain label at full length and shows the real day count when short", () => {
+  it("keeps the plain label at full length and never names a window longer than its data", () => {
     expect(aprWindowAvgLabel({ windowDays: 90, sampleDays: 90 })).toBe("90-day avg");
-    expect(aprWindowAvgLabel({ windowDays: 90, sampleDays: 29 })).toBe("90-day avg (29 days of data)");
-    expect(aprWindowAvgLabel({ windowDays: 7, sampleDays: 1 }, "pool avg")).toBe("7-day pool avg (1 day of data)");
+    expect(aprWindowAvgLabel({ windowDays: 90, sampleDays: 13, coversAllData: true })).toBe("13-day avg (all data so far)");
+    expect(aprWindowAvgLabel({ windowDays: 30, sampleDays: 29, coversAllData: false })).toBe("29-day avg (gap days skipped)");
+    expect(aprWindowAvgLabel({ windowDays: 7, sampleDays: 1, coversAllData: true }, "pool avg")).toBe("1-day pool avg (all data so far)");
     expect(aprWindowAvgLabel({ windowDays: 7, sampleDays: 7 }, "pool avg")).toBe("7-day pool avg");
+    for (const sampleDays of [1, 6, 13, 29, 71]) {
+      expect(aprWindowAvgLabel({ windowDays: 90, sampleDays, coversAllData: true })).not.toMatch(/90-day/);
+    }
   });
 });

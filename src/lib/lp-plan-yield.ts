@@ -30,8 +30,33 @@ export function planOpenCostPctLabel(bps: number = PLAN_OPEN_COST_BPS): string {
 /** Complete UTC days needed before the average is shown as a normal headline. */
 export const PLAN_MIN_RELIABLE_SAMPLE_DAYS = MIN_DATA_DAYS;
 
-export function isThinPlanSample(sampleDays: number): boolean {
-  return sampleDays < PLAN_MIN_RELIABLE_SAMPLE_DAYS;
+/** Share of a trailing window's days that must hold data before that window can be picked as the best average. */
+export const PLAN_WINDOW_MIN_COVERAGE = 0.8;
+
+/**
+ * Days of data a trailing window needs to count: `PLAN_MIN_RELIABLE_SAMPLE_DAYS`, and for a window of `windowDays` also
+ * 80% of its length (a 30-day window needs 24 days, a 90-day window 72), so a short history never stands in for a long
+ * window. Without `windowDays` it is the plain 7-day bar below which nothing is shown.
+ */
+export function planMinSampleDays(windowDays?: number): number {
+  if (windowDays === undefined) return PLAN_MIN_RELIABLE_SAMPLE_DAYS;
+  return Math.max(PLAN_MIN_RELIABLE_SAMPLE_DAYS, Math.ceil(PLAN_WINDOW_MIN_COVERAGE * windowDays));
+}
+
+/** Too few days of data: under 7 overall, or, given the window's length, under `planMinSampleDays(windowDays)`. */
+export function isThinPlanSample(sampleDays: number, windowDays?: number): boolean {
+  return sampleDays < planMinSampleDays(windowDays);
+}
+
+/**
+ * The windows that may be picked (best or low): the ones that pass `isThinPlanSample` for their own length; when none
+ * does, the ones with at least 7 days; when none has that either, all of them (the caller then hides the numbers).
+ */
+export function planAprContenders<W extends { windowDays: number; sampleDays: number }>(windows: readonly W[]): readonly W[] {
+  const covered = windows.filter((window) => !isThinPlanSample(window.sampleDays, window.windowDays));
+  if (covered.length > 0) return covered;
+  const week = windows.filter((window) => !isThinPlanSample(window.sampleDays));
+  return week.length > 0 ? week : windows;
 }
 
 /**
@@ -57,8 +82,16 @@ export type PlanYieldComparison = {
   days: number;
   capital: string;
   aprPct: string;
-  /** `aprPct` compounded daily over a 365-day year, as a percent. */
+  /**
+   * A year of the projection as a percent: `aprPct` compounded daily (held to the fee cap) with `growth: "compound"`;
+   * with `growth: "simple"` nothing compounds and it equals `cappedAprPct`.
+   */
   apyPct: string;
+  /**
+   * `aprPct` held to the pool's real fees for this deposit (`poolFeeSharePerDay`), as a simple yearly percent, never
+   * compounded: day one's fees × 365 ÷ capital. The number shown under "Est. fee APR" (same basis as the cards).
+   */
+  cappedAprPct: string;
   /** Trailing window (in UTC days) whose average produced `aprPct`. */
   aprWindowDays: number;
   dailyRate: string;
@@ -104,6 +137,11 @@ export type PlanYieldInput = {
    * split with everyone already in the pool. Omitted, the APR compounds unchecked (the old behaviour).
    */
   feeCap?: PlanFeeCap;
+  /**
+   * "compound" (default, the Plan page): fees are added to the position every day. "simple" (the Calculate dialog and
+   * the homepage estimator): the deposit earns the same fees every day and nothing compounds, like the cards' APR.
+   */
+  growth?: "compound" | "simple";
 };
 
 export type PlanFeeCap = {
@@ -196,6 +234,11 @@ export function poolFeeSharePerDay(poolLpFeesPerDayUsd: Decimal, poolTvlUsd: Dec
   return poolLpFeesPerDayUsd.mul(value).div(poolTvlUsd.add(value));
 }
 
+function poolFeeShareOf(cap: PlanFeeCap, value: Decimal): Decimal {
+  const fees = requireDecimal(cap.poolLpFeesPerDayUsd, "poolLpFeesPerDayUsd", "0");
+  return poolFeeSharePerDay(fees, requireDecimal(cap.poolTvlUsd, "poolTvlUsd", "0"), value);
+}
+
 export function cappedGrowthPath(capital: string, dailyRate: Decimal, days: number, cap: PlanFeeCap): { values: Decimal[]; cappedFromDay: number | null } {
   requireDayCount(days, "days", 0);
   const fees = requireDecimal(cap.poolLpFeesPerDayUsd, "poolLpFeesPerDayUsd", "0");
@@ -229,13 +272,22 @@ export function buildPlanComparison(input: PlanYieldInput): PlanYieldComparison 
   const exitCostBps = requireExitBps(input.exitCostBps ?? 0);
   const capital = requireDecimal(input.capital, "capital", "0");
   const entry = requireDecimal(entryCost, "entryCost", "0");
-  // With a fee cap the growth is a day-by-day path (to a full year, for break-even and the one-year rate); without it,
+  // Day one's fees: the APR's share, held to the pool's real fees for this deposit. Simple growth earns this every day.
+  const byApr = capital.mul(rate);
+  const byPool = input.feeCap ? poolFeeShareOf(input.feeCap, capital) : null;
+  const firstDayCapped = byPool !== null && byPool.lt(byApr);
+  const firstDayFees = firstDayCapped ? byPool! : byApr;
+  const simple = input.growth === "simple";
+  // Compounding with a fee cap is a day-by-day path (to a full year, for break-even and the one-year rate); without it,
   // the closed form `capital × (1 + rate)^day` as before.
-  const path = input.feeCap ? cappedGrowthPath(input.capital, rate, MAX_PLAN_DAYS, input.feeCap) : null;
-  const grownOn = (day: number) => (path ? path.values[day]! : capital.mul(rate.add(1).pow(day)));
-  const profitOn = (day: number) => path
+  const path = !simple && input.feeCap ? cappedGrowthPath(input.capital, rate, MAX_PLAN_DAYS, input.feeCap) : null;
+  const grownOn = (day: number) => simple
+    ? capital.add(firstDayFees.mul(day))
+    : path ? path.values[day]! : capital.mul(rate.add(1).pow(day));
+  const profitOn = (day: number) => simple || path
     ? grownOn(day).sub(entry).mul(new D(10_000).sub(exitCostBps).div(10_000)).sub(capital)
     : compoundedProfit(input.capital, rate, day, entryCost, exitCostBps);
+  const cappedAprPct = firstDayFees.mul(PLAN_YIELD_DAYS_PER_YEAR).div(capital).mul(100).toFixed();
   const points: PlanYieldPoint[] = [];
   for (let day = 0; day <= days; day++) {
     points.push({ day, sofinance: profitOn(day).toFixed(), hold: "0" });
@@ -250,17 +302,19 @@ export function buildPlanComparison(input: PlanYieldInput): PlanYieldComparison 
     capital: capital.toFixed(),
     aprPct: requireDecimal(input.aprPct, "aprPct").toFixed(),
     // Capped: what a year of the capped path actually grows by, not the uncapped APR compounded.
-    apyPct: path ? grownOn(PLAN_YIELD_DAYS_PER_YEAR).div(capital).sub(1).mul(100).toFixed() : aprToApyPct(input.aprPct),
+    apyPct: simple ? cappedAprPct
+      : path ? grownOn(PLAN_YIELD_DAYS_PER_YEAR).div(capital).sub(1).mul(100).toFixed() : aprToApyPct(input.aprPct),
+    cappedAprPct,
     aprWindowDays: input.aprWindowDays,
     dailyRate: rate.toFixed(),
     entryCost: entry.toFixed(),
     exitCostBps,
     exitCost: grown.sub(entry).mul(exitCostBps).div(10_000).toFixed(),
     feesEarned: grown.sub(capital).toFixed(),
-    feeCapped: path !== null && path.cappedFromDay !== null && path.cappedFromDay <= days,
+    feeCapped: simple ? firstDayCapped : path !== null && path.cappedFromDay !== null && path.cappedFromDay <= days,
     sampleDays: input.sampleDays,
     points,
-    breakEvenDay: path
+    breakEvenDay: simple || path
       ? firstDayWhere((day) => profitOn(day).gte(0), MAX_PLAN_DAYS)
       : breakEvenDay(input.capital, rate, entryCost, MAX_PLAN_DAYS, exitCostBps),
     endSofinance,

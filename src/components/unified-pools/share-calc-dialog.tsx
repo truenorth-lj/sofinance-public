@@ -81,7 +81,7 @@ export function shareCalcProjection(basis: PoolPlanBasis, amount: string, days: 
  * Laid out like a vault page: stat tiles and a projection chart with a range switch on the left, the amount, the open
  * button and the assumptions on the right (stacked on phones, amount first). The only planning surface while
  * `/app/plan` is off (it redirects here): best of the 7 / 30 / 90-day averages, the LP's share of fees capped at what
- * the pool really paid and split with the deposit, daily compounding, the DEX's opening and closing costs
+ * the pool really paid and split with the deposit, the same fees every day with no compounding, the DEX's opening and closing costs
  * (`projectPoolPlan`); read-only. Too few days of data hides the numbers; a small pool gets a warning (`planDataNotice`).
  */
 export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; open: OpenAction; onClose: () => void }) {
@@ -167,7 +167,7 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
             className="rounded-xl border border-lemon/30 bg-lemon/10 px-4 py-3 text-[12px] leading-relaxed text-cream">{notice.message}</p> : null}
 
           {plan && projection && best ? <dl className={cn(panel, "px-4 py-2.5")} data-testid="share-calc-assumptions">
-            <InfoRow label={planAprLabel(best)}>{formatPct(plan.apyPct)}</InfoRow>
+            <InfoRow label={planAprLabel(best)}>{formatPct(plan.cappedAprPct)}</InfoRow>
             <InfoRow label="Fees collected">{formatInUnit(plan.feesEarned, unit)}</InfoRow>
             <InfoRow label="Protocol cut of fees">{`${Math.round((1 - terms.lpFeeShare) * 100)}%`}</InfoRow>
             <InfoRow label="Opening cost (USDC deposit)">{formatCostInUnit(plan.entryCost, unit)}</InfoRow>
@@ -179,7 +179,7 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
           {notice?.kind === "hide" ? <p className="px-1 text-[11px] leading-relaxed text-smoke" data-testid="share-calc-risk">
             {PLAN_HIDDEN_RISK_LINE}
           </p> : <p className="px-1 text-[11px] leading-relaxed text-smoke" data-testid="share-calc-footnote">
-            {`Best case from the pool's past fees, compounded daily, counted in ${assetSymbol}: fees ${terms.lpShareLabel}, ${terms.openCost.rowLabel} to open, ${terms.exitCost[exit].label}.${projection?.capped ? " Fees are capped at what the pool actually paid, shared with your deposit." : best?.poolFeesPerDayUsd !== undefined ? ` This pool's ${assetSymbol} price is unknown right now, so fees are not capped at what the pool paid and no dollar value is shown.` : ""} The stock's own price moves both sides alike and is left out. Network fees are ignored. Not a forecast.`}
+            {`Best case from the pool's past fees, the same fees every day (not compounded), counted in ${assetSymbol}: fees ${terms.lpShareLabel}, ${terms.openCost.rowLabel} to open, ${terms.exitCost[exit].label}.${projection?.capped ? " Fees are capped at what the pool actually paid, shared with your deposit." : best?.poolFeesPerDayUsd !== undefined ? ` This pool's ${assetSymbol} price is unknown right now, so fees are not capped at what the pool paid and no dollar value is shown.` : ""} The stock's own price moves both sides alike and is left out. Network fees are ignored. Not a forecast.`}
           </p>}
         </aside>
 

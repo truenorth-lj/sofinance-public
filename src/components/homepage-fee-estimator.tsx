@@ -123,7 +123,7 @@ export function HomepageFeeEstimator({ pools, apr, apr7d, group }: {
       </dl>
       : <p role="status" className="mt-3 text-sm text-smoke" data-testid="estimator-loading">Reading this pool&apos;s past fees…</p>}
     {best && day && !unavailable ? <p className="mt-3 text-[12px] leading-5 text-smoke" data-testid="estimator-basis">
-      {`${planAprLabel(best)} ${formatPct(day.apyPct)}`}
+      {`${planAprLabel(best)} ${formatPct(day.cappedAprPct)}`}
     </p> : null}
     <p className="mt-1 text-[12px] leading-5 text-smoke" data-testid="estimator-risk">{ESTIMATOR_RISK_LINE}</p>
   </section>;
