@@ -17,7 +17,7 @@ describe("/privacy draft", () => {
 
   it("states the data practices the code has today", () => {
     for (const phrase of ["No accounts.", "No keys.", "we do not keep a copy", "keyed by the position NFT, not by wallet",
-      "Do Not Track", "linked to its public address", "UTM parameters", "PostHog receives your IP address",
+      "Do Not Track", "linked to a SHA-256 hash of its public address", "UTM parameters", "PostHog receives your IP address",
       "session recording, heatmaps and surveys", "SHA-256 hash of the wallet address", "shared anonymous identifier",
       "No person profile is created, and location lookup is turned off", "Default personal data collection is off",
       "Session replay is off", "hosted on Vercel", "never blocked", "in server memory for one minute",
