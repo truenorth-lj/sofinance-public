@@ -2,7 +2,7 @@
 title: "How to collect xStocks xPoints with SoFinance: step-by-step"
 description: "A screen-by-screen walkthrough: register for xPoints, open a same-stock LP with SoFinance (it builds the Raydium or Meteora position for you), then check your points."
 datePublished: "2026-10-27"
-dateModified: "2026-11-20"
+dateModified: "2026-11-23"
 hero:
   src: /blog/xstocks-xpoints/hero.png
   alt: xPoints activity tiers — Hold, Lend, Provide liquidity
@@ -79,15 +79,15 @@ Open **Portfolio** and click **Connect wallet**. Tick **Terms of Service**, then
 
 Open [Pools](https://sofinancelab.xyz/pools). Each card shows the pair, chain, DEX, an **Est. APR · 7d**, TVL, 24h volume and the fee tier.
 
-![Pools: one card per pool, with Open position and Calculate shares. Card APRs are 7-day estimates as of 20 Nov 2026 (UTC). Not a prediction. Fees not guaranteed.](/blog/xstocks-xpoints/steps/step06_pools_list.png)
+![Pools: one card per pool, with Open position and Calculate. Card APRs are 7-day estimates as of 20 Nov 2026 (UTC). Not a prediction. Fees not guaranteed.](/blog/xstocks-xpoints/steps/step06_pools_list.png)
 
 Type **SPCX** in the **Search tokens** box. When one DEX on one chain has more than one pool for the same pair, the list shows only the pool with the highest estimated 7-day APR. Click **Show duplicates (N)** to see the others. On 20 Nov 2026 the search showed two SPCXx/SPCX cards on Solana (Meteora and Raydium, both **1 bps**) plus the Robinhood Chain SPCX/SPCXon pool, and **Show duplicates (1)** revealed the Raydium **5 bps** pool.
 
 ![Search tokens: SPCX. Two SPCXx/SPCX pools on Solana and one on Robinhood Chain. APRs are 7-day estimates as of 20 Nov 2026 (UTC). Not a prediction. Fees not guaranteed.](/blog/xstocks-xpoints/steps/step07_pools_search_spcx.png)
 
-## 5. Optional: Calculate shares
+## 5. Optional: Calculate
 
-Click **Calculate shares** on a card to compare holding SPCX on its own (HODL) with holding it in the pool (HODL + more shares) for an amount and a number of days. It is a best case built from the pool's past fees, not a forecast. Fees not guaranteed. When you're ready, click **Open position** in the same dialog.
+Click **Calculate** on a card to compare holding SPCX on its own (HODL) with holding it in the pool (HODL + more shares) for an amount and a number of days. It is a best case built from the pool's past fees, not a forecast. Fees not guaranteed. When you're ready, click **Open position** in the same dialog.
 
 ## 6. Open position
 
