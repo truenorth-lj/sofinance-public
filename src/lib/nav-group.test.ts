@@ -125,6 +125,7 @@ describe("navGroup", () => {
         "/learn": "marketing",
         "/learn/[slug]": "marketing",
         "/pools/[slug]": "app",
+        "/privacy": "marketing",
         "/terms": "marketing",
         "/use-cases/[slug]": "marketing",
       }
