@@ -13,7 +13,7 @@ vi.mock("@/lib/pool-range-apr", () => ({ fetchPoolRangeApr: backend.live }));
 
 import { POST } from "@/app/api/mcp/route";
 import { dispatchTool, isPublicTool, TOOL_DISPATCH } from "./dispatch";
-import { listToolDefinitions, PUBLIC_TOOL_NAMES, type ToolName } from "./tool-definitions";
+import { listToolDefinitions, PUBLIC_TOOL_NAMES, SNAPSHOT_TOOL_NAMES, type ToolName } from "./tool-definitions";
 import { quoteOpenPositionSchema, prepareOpenPositionSchema } from "./schemas";
 import { resetPoolSnapshotCache, ttlMemo } from "./tools/pool-snapshot";
 import { FEES_NOTE, POOL_NOT_LISTED_MESSAGE, WINDOW_LABEL } from "./tools/pool-apr";
@@ -181,7 +181,7 @@ describe("fee disclaimer and the 24h figure", () => {
     expect(one.note).toBe(FEES_NOTE);
     expect(one.window.label).toBe(WINDOW_LABEL);
     const definitions = listToolDefinitions("http");
-    for (const name of PUBLIC_TOOL_NAMES) {
+    for (const name of SNAPSHOT_TOOL_NAMES) {
       const description = definitions.find((tool) => tool.name === name)!.description ?? "";
       expect(description).toContain("Fees not guaranteed.");
       expect(withoutAllowed(description)).not.toMatch(/guarantee|\byield|\bearn\b|backtest/i);
@@ -215,8 +215,9 @@ describe("fee disclaimer and the 24h figure", () => {
 describe("protected tools keep their auth", () => {
   const protectedTools = (Object.keys(TOOL_DISPATCH) as ToolName[]).filter((name) => !isPublicTool(name));
 
-  it("exactly list_rwa_pairs and get_pool_range_apr are public, and metadata agrees with dispatch", () => {
+  it("exactly list_rwa_pairs, get_pool_range_apr and tx_status are public, and metadata agrees with dispatch", () => {
     expect((Object.keys(TOOL_DISPATCH) as ToolName[]).filter(isPublicTool).sort()).toEqual([...PUBLIC_TOOL_NAMES].sort());
+    expect([...PUBLIC_TOOL_NAMES].sort()).toEqual(["get_pool_range_apr", "list_rwa_pairs", "tx_status"]);
     expect(protectedTools).toHaveLength(14);
   });
 
@@ -234,7 +235,7 @@ describe("protected tools keep their auth", () => {
 
 describe("tool annotations", () => {
   const READ = ["list_rwa_pairs", "get_pool_range_apr", "list_positions", "get_position_range_status", "get_position_performance",
-    "quote_add_liquidity", "quote_compound", "quote_open_position"];
+    "quote_add_liquidity", "quote_compound", "quote_open_position", "tx_status"];
   it.each(["http", "stdio"] as const)("%s: every tool has annotations; reads are readOnly, submits destructive", (surface) => {
     for (const tool of listToolDefinitions(surface)) {
       expect(tool.annotations, tool.name).toBeDefined();

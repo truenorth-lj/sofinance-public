@@ -812,6 +812,41 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
         },
         "name": "submit_open_position",
       },
+      {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true,
+        },
+        "description": "Finality of one Solana transaction signature. No token needed. Use it after a wallet that broadcasts by itself (e.g. Phantom MCP solana_send) sends a transaction prepared here, instead of a submit_* tool. status: finalized | confirmed | failed (landed, but failed on-chain) | pending (ask again in a few seconds) | expired (never landed and its blockhash expired: safe to prepare again) | unknown (not seen yet and no lastValidBlockHeight given). One status lookup per call; poll no faster than every 2 seconds. Read-only.",
+        "inputSchema": {
+          "properties": {
+            "commitment": {
+              "default": "confirmed",
+              "description": "confirmed (default) reports a landed transaction as soon as the cluster confirms it; finalized waits for finalization.",
+              "enum": [
+                "confirmed",
+                "finalized",
+              ],
+              "type": "string",
+            },
+            "lastValidBlockHeight": {
+              "description": "lastValidBlockHeight from the prepare result (summary). With it, a signature Solana never saw is reported as pending until the blockhash expires, then expired.",
+              "type": "number",
+            },
+            "signature": {
+              "description": "Base58 transaction signature (64 bytes) returned by the wallet",
+              "type": "string",
+            },
+          },
+          "required": [
+            "signature",
+          ],
+          "type": "object",
+        },
+        "name": "tx_status",
+      },
     ],
   },
 }
@@ -1583,6 +1618,41 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       "type": "object",
     },
     "name": "submit_open_position",
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": true,
+    },
+    "description": "Finality of one Solana transaction signature. No token needed. Use it after a wallet that broadcasts by itself (e.g. Phantom MCP solana_send) sends a transaction prepared here, instead of a submit_* tool. status: finalized | confirmed | failed (landed, but failed on-chain) | pending (ask again in a few seconds) | expired (never landed and its blockhash expired: safe to prepare again) | unknown (not seen yet and no lastValidBlockHeight given). One status lookup per call; poll no faster than every 2 seconds. Read-only.",
+    "inputSchema": {
+      "properties": {
+        "commitment": {
+          "default": "confirmed",
+          "description": "confirmed (default) reports a landed transaction as soon as the cluster confirms it; finalized waits for finalization.",
+          "enum": [
+            "confirmed",
+            "finalized",
+          ],
+          "type": "string",
+        },
+        "lastValidBlockHeight": {
+          "description": "lastValidBlockHeight from the prepare result (summary). With it, a signature Solana never saw is reported as pending until the blockhash expires, then expired.",
+          "type": "number",
+        },
+        "signature": {
+          "description": "Base58 transaction signature (64 bytes) returned by the wallet",
+          "type": "string",
+        },
+      },
+      "required": [
+        "signature",
+      ],
+      "type": "object",
+    },
+    "name": "tx_status",
   },
   {
     "annotations": {

@@ -17,6 +17,7 @@ import {
   prepareWithdraw,
   submitWithdrawTransaction,
   submitOpenPosition,
+  txStatus,
 } from "./tools";
 import {
   listPositionsSchema,
@@ -34,6 +35,7 @@ import {
   prepareWithdrawSchema,
   submitWithdrawSchema,
   submitOpenPositionSchema,
+  txStatusSchema,
 } from "./schemas";
 
 export type McpDispatchContext =
@@ -133,6 +135,9 @@ export const TOOL_DISPATCH = {
   }),
   get_pool_range_apr: defineTool({
     access: "public", parser: getPoolRangeAprSchema, missingArgs: "raw", binding: noWallet, handler: getPoolRangeApr,
+  }),
+  tx_status: defineTool({
+    access: "public", parser: txStatusSchema, missingArgs: "raw", binding: noWallet, handler: txStatus,
   }),
   submit_withdraw: defineTool({
     parser: submitWithdrawSchema, missingArgs: "raw", binding: requiredWallet,

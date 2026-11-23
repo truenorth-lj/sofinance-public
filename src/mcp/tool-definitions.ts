@@ -436,6 +436,19 @@ const TOOL_DEFINITIONS = {
             required: ["signedTransaction", "permit", "wallet", "summary"],
         },
     },
+    tx_status: {
+        name: "tx_status",
+        description: "Finality of one Solana transaction signature. No token needed. Use it after a wallet that broadcasts by itself (e.g. Phantom MCP solana_send) sends a transaction prepared here, instead of a submit_* tool. status: finalized | confirmed | failed (landed, but failed on-chain) | pending (ask again in a few seconds) | expired (never landed and its blockhash expired: safe to prepare again) | unknown (not seen yet and no lastValidBlockHeight given). One status lookup per call; poll no faster than every 2 seconds. Read-only.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                signature: { type: "string", description: "Base58 transaction signature (64 bytes) returned by the wallet" },
+                lastValidBlockHeight: { type: "number", description: "lastValidBlockHeight from the prepare result (summary). With it, a signature Solana never saw is reported as pending until the blockhash expires, then expired." },
+                commitment: { type: "string", enum: ["confirmed", "finalized"], default: "confirmed", description: "confirmed (default) reports a landed transaction as soon as the cluster confirms it; finalized waits for finalization." },
+            },
+            required: ["signature"],
+        },
+    },
 } satisfies Record<string, Tool>;
 export type ToolName = keyof typeof TOOL_DEFINITIONS;
 type ToolAnnotations = NonNullable<Tool["annotations"]>;
@@ -465,11 +478,18 @@ const TOOL_ANNOTATIONS = {
     submit_compound_transaction: SUBMIT,
     submit_open_position: SUBMIT,
     submit_withdraw: SUBMIT,
+    tx_status: CHAIN_READ,
 } as const satisfies Record<ToolName, ToolAnnotations>;
-/** Tools the remote server answers without a bearer token (read-only snapshot tools). Mirrors dispatch `access`. */
-export const PUBLIC_TOOL_NAMES = ["list_rwa_pairs", "get_pool_range_apr"] as const satisfies readonly ToolName[];
+/** Read-only tools over the site's saved pool snapshot (no wallet, no chain call). */
+export const SNAPSHOT_TOOL_NAMES = ["list_rwa_pairs", "get_pool_range_apr"] as const satisfies readonly ToolName[];
+/** Tools the remote server answers without a bearer token. Mirrors dispatch `access`. */
+export const PUBLIC_TOOL_NAMES = [...SNAPSHOT_TOOL_NAMES, "tx_status"] as const satisfies readonly ToolName[];
+/** "a", "a and b", "a, b and c". */
+export function formatToolNames(names: readonly string[]): string {
+    return names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
 export type McpSurface = "http" | "stdio";
-const HTTP_ORDER = ["prepare_withdraw", "submit_withdraw", "get_position_performance", "get_position_range_status", "list_rwa_pairs", "get_pool_range_apr", "list_positions", "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction", "submit_signed_transaction", "submit_compound_transaction", "quote_open_position", "prepare_open_position", "submit_open_position"] as const satisfies readonly ToolName[];
+const HTTP_ORDER = ["prepare_withdraw", "submit_withdraw", "get_position_performance", "get_position_range_status", "list_rwa_pairs", "get_pool_range_apr", "list_positions", "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction", "submit_signed_transaction", "submit_compound_transaction", "quote_open_position", "prepare_open_position", "submit_open_position", "tx_status"] as const satisfies readonly ToolName[];
 const STDIO_ORDER: readonly ToolName[] = [
     ...HTTP_ORDER.filter(name => name !== "submit_compound_transaction"),
     "submit_compound_transaction",

@@ -11,7 +11,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/mcp/tools", () => Object.fromEntries([
   "listPositions", "quoteAddLiquidity", "prepareTransaction", "quoteCompound", "prepareCompoundTransaction",
   "submitSignedTransaction", "submitCompoundTransaction", "listRwaPairs", "getPositionPerformance",
-  "getPositionRangeStatus", "quoteOpenPosition", "prepareOpenPosition", "submitOpenPosition", "prepareWithdraw", "submitWithdrawTransaction", "getPoolRangeApr",
+  "getPositionRangeStatus", "quoteOpenPosition", "prepareOpenPosition", "submitOpenPosition", "prepareWithdraw", "submitWithdrawTransaction", "getPoolRangeApr", "txStatus",
 ].map((name) => [name, vi.fn()])));
 
 import { NextRequest } from "next/server";
@@ -21,7 +21,7 @@ const EXPECTED_NAMES = [
   "prepare_withdraw", "submit_withdraw",
   "get_position_performance", "get_position_range_status", "list_rwa_pairs", "get_pool_range_apr", "list_positions",
   "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction",
-  "submit_signed_transaction", "submit_compound_transaction", "quote_open_position", "prepare_open_position", "submit_open_position",
+  "submit_signed_transaction", "submit_compound_transaction", "quote_open_position", "prepare_open_position", "submit_open_position", "tx_status",
 ];
 const root = path.resolve(__dirname, "../..");
 let client: Client;
@@ -61,9 +61,9 @@ describe("stdio MCP server", () => {
     return Object.assign({}, ...Object.entries(value).map(([key, item]) => flatten(item, prefix ? `${prefix}.${key}` : key)));
   }
 
-  it("lists the same 16 tool names as the HTTP route", async () => {
+  it("lists the same 17 tool names as the HTTP route", async () => {
     const stdio = await client.listTools();
-    expect(stdio.tools).toHaveLength(16);
+    expect(stdio.tools).toHaveLength(17);
     expect(stdio.tools.map((tool) => tool.name).sort()).toEqual([...EXPECTED_NAMES].sort());
   });
 
@@ -89,7 +89,7 @@ describe("stdio MCP server", () => {
       "prepare_withdraw", "submit_withdraw",
   "get_position_performance", "get_position_range_status", "list_rwa_pairs", "get_pool_range_apr", "list_positions",
       "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction",
-      "submit_signed_transaction", "quote_open_position", "prepare_open_position", "submit_open_position",
+      "submit_signed_transaction", "quote_open_position", "prepare_open_position", "submit_open_position", "tx_status",
       "submit_compound_transaction",
     ]);
   });
