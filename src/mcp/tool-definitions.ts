@@ -510,6 +510,10 @@ const STDIO_OPEN_DEFINITION = {
         },
     },
 } satisfies Tool;
+/** Annotations of a known tool (analytics reads readOnlyHint/destructiveHint); undefined for an unknown name. */
+export function toolAnnotations(name: string): ToolAnnotations | undefined {
+    return Object.hasOwn(TOOL_ANNOTATIONS, name) ? TOOL_ANNOTATIONS[name as keyof typeof TOOL_ANNOTATIONS] : undefined;
+}
 /** Return detached metadata so callers cannot mutate another transport's definitions. */
 export function listToolDefinitions(surface: McpSurface): Tool[] {
     const order = surface === "http" ? HTTP_ORDER : STDIO_ORDER;

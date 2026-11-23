@@ -15,6 +15,10 @@ export const GROWTH_EVENTS = {
 export type GrowthEventName = (typeof GROWTH_EVENTS)[keyof typeof GROWTH_EVENTS];
 
 export type OpenEventProperties = {
+  /** Surface that broadcast the open. Web routes are `web`; /api/mcp sends `mcp` server-side (src/mcp/analytics.ts). */
+  source: "web";
+  /** Web open started from an MCP agent's sign link (`/app/sign/<token>`): broadcast by the app, initiated by an agent. */
+  mcp_sign_link?: boolean;
   pool?: string;
   pair?: string;
   wallet_address?: string;
@@ -29,6 +33,8 @@ export type OpenEventContext = {
   /** Connected wallet's public address (internal/test wallets are filtered in PostHog, not here). */
   wallet?: string | null;
   inputKind?: "native" | "token" | null;
+  /** True on `/app/sign/<token>` (an MCP agent's sign link). */
+  mcpSignLink?: boolean;
 };
 
 export function openEventProperties(pair: {
@@ -36,7 +42,9 @@ export function openEventProperties(pair: {
   symbolA: string;
   symbolB: string;
 } | null | undefined, context: OpenEventContext = {}): OpenEventProperties {
-  const properties: OpenEventProperties = context.wallet ? { wallet_address: context.wallet } : {};
+  const properties: OpenEventProperties = { source: "web" };
+  if (context.wallet) properties.wallet_address = context.wallet;
+  if (context.mcpSignLink) properties.mcp_sign_link = true;
   if (context.inputKind) properties.input_kind = context.inputKind;
   if (!pair) return properties;
   if (pair.poolAddress) properties.pool = pair.poolAddress;
