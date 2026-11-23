@@ -5,7 +5,7 @@ const TOOL_DEFINITIONS = {
     submit_withdraw: { name: "submit_withdraw", description: "Submit a wallet signed withdrawal. Verifies its HMAC permit and signature, checks expiry, and re-simulates before broadcast. Supply the unchanged summary and permit from prepare_withdraw. If the wallet appended extra instructions (e.g. Phantom Lighthouse), also pass unsignedTransaction from prepare_withdraw. High impact requires confirmHighImpact=true.", inputSchema: { type: "object" as const, properties: { wallet: { type: "string" }, signedTransaction: { type: "string" }, unsignedTransaction: { type: "string" }, permit: { type: "string" }, summary: { type: "object" }, confirmHighImpact: { type: "boolean" } }, required: ["wallet", "signedTransaction", "permit", "summary"] } },
     get_position_performance: {
         name: "get_position_performance",
-        description: "Compute holding-period return and realized fee APR for a Raydium CLMM position NFT from finalized history and current on-chain state (not Raydium pool 24h feeApr). Prefer token-native metrics: for same-asset RWA wrap pairs (e.g. SPCXx/SPCX) report TE in the plain/base ticker using current tick mid (1.0001^tick×10^(decA−decB)), plus raw A/B inventory, holdingDays, feeOnlyAprPct and annualizedReturnPct (HPR×365/days; feesEarned/deposited×365/days). USD is optional/secondary (Jupiter Price v3 / Raydium stable-leg, labeled current — not historical). metrics.usdPerRawUnitA/B (alias metrics.priceUsdA/B, same values) and pricing.usdPerRawUnitA/B are USD per (raw / 10^decimals) token unit, ScaledUiAmount multiplier already applied; pricing.sharePriceUsdA/B is the per-share price and pricing.guard the cross-check against the pool price. Discovers open/increase/decrease txs via personal-position signatures + Anchor events + current equity. After submitting a position transaction, use refreshHistory=true and historyAfterSignatures to require its finalized history. Read-only.",
+        description: "Compute holding-period return and realized fee APR for a Raydium CLMM position NFT from finalized history and current on-chain state (not Raydium pool 24h feeApr). Prefer token-native metrics: for same-asset RWA wrap pairs (e.g. SPCXx/SPCX) report TE in the plain/base ticker using current tick mid (1.0001^tick×10^(decA−decB)), plus raw A/B inventory, holdingDays, feeOnlyAprPct and annualizedReturnPct (HPR×365/days; feesEarned/deposited×365/days). USD is optional/secondary (Jupiter Price v3 / Raydium stable-leg, labeled current — not historical). metrics.usdPerRawUnitA/B (alias metrics.priceUsdA/B, same values) and pricing.usdPerRawUnitA/B are USD per (raw / 10^decimals) token unit, ScaledUiAmount multiplier already applied; pricing.sharePriceUsdA/B is the per-share price and pricing.guard the cross-check against the pool price. Discovers open/increase/decrease txs via personal-position signatures + Anchor events + current equity. After submitting a position transaction, use refreshHistory=true and historyAfterSignatures to require its finalized history. Read-only. No token needed: wallet is optional (public on-chain data). Limited to 12 position reads per minute per IP.",
         inputSchema: {
             type: "object",
             properties: {
@@ -35,7 +35,7 @@ const TOOL_DEFINITIONS = {
     },
     get_position_range_status: {
         name: "get_position_range_status",
-        description: "Compute live in-range / out-of-range status for a Raydium CLMM position from the current on-chain pool price versus tickLower/tickUpper (B per 1 A). Flags when price approaches a range edge. Read-only.",
+        description: "Compute live in-range / out-of-range status for a Raydium CLMM position from the current on-chain pool price versus tickLower/tickUpper (B per 1 A). Flags when price approaches a range edge. Read-only. No token needed: wallet is optional (public on-chain data). Limited to 12 position reads per minute per IP.",
         inputSchema: {
             type: "object",
             properties: {
@@ -99,7 +99,7 @@ const TOOL_DEFINITIONS = {
     },
     list_positions: {
         name: "list_positions",
-        description: "List all Raydium CLMM positions and wallet assets. Returns position NFTs (with pool, ticks, liquidity) and eligible input assets (SOL, tokens) with balances. Read-only, no private keys required. Use this first to discover available positions and assets.",
+        description: "List all Raydium CLMM positions and wallet assets. Returns position NFTs (with pool, ticks, liquidity) and eligible input assets (SOL, tokens) with balances. Read-only, no private keys required. Use this first to discover available positions and assets. No token needed: pass any wallet address (public on-chain data). Limited to 12 position reads per minute per IP.",
         inputSchema: {
             type: "object",
             properties: {
@@ -483,7 +483,9 @@ const TOOL_ANNOTATIONS = {
 /** Read-only tools over the site's saved pool snapshot (no wallet, no chain call). */
 export const SNAPSHOT_TOOL_NAMES = ["list_rwa_pairs", "get_pool_range_apr"] as const satisfies readonly ToolName[];
 /** Tools the remote server answers without a bearer token. Mirrors dispatch `access`. */
-export const PUBLIC_TOOL_NAMES = [...SNAPSHOT_TOOL_NAMES, "tx_status"] as const satisfies readonly ToolName[];
+/** Chain reads by wallet address or position mint: public on-chain data, like the site's portfolio. */
+export const POSITION_READ_TOOL_NAMES = ["list_positions", "get_position_range_status", "get_position_performance"] as const satisfies readonly ToolName[];
+export const PUBLIC_TOOL_NAMES = [...SNAPSHOT_TOOL_NAMES, ...POSITION_READ_TOOL_NAMES, "tx_status"] as const satisfies readonly ToolName[];
 /** "a", "a and b", "a, b and c". */
 export function formatToolNames(names: readonly string[]): string {
     return names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;

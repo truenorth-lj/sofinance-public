@@ -120,7 +120,7 @@ exports[`tools/list wire contract > matches the golden snapshot (names, descript
         "openWorldHint": true,
         "readOnlyHint": true,
       },
-      "description": "Compute holding-period return and realized fee APR for a Raydium CLMM position NFT from finalized history and current on-chain state (not Raydium pool 24h feeApr). Prefer token-native metrics: for same-asset RWA wrap pairs (e.g. SPCXx/SPCX) report TE in the plain/base ticker using current tick mid (1.0001^tick×10^(decA−decB)), plus raw A/B inventory, holdingDays, feeOnlyAprPct and annualizedReturnPct (HPR×365/days; feesEarned/deposited×365/days). USD is optional/secondary (Jupiter Price v3 / Raydium stable-leg, labeled current — not historical). metrics.usdPerRawUnitA/B (alias metrics.priceUsdA/B, same values) and pricing.usdPerRawUnitA/B are USD per (raw / 10^decimals) token unit, ScaledUiAmount multiplier already applied; pricing.sharePriceUsdA/B is the per-share price and pricing.guard the cross-check against the pool price. Discovers open/increase/decrease txs via personal-position signatures + Anchor events + current equity. After submitting a position transaction, use refreshHistory=true and historyAfterSignatures to require its finalized history. Read-only.",
+      "description": "Compute holding-period return and realized fee APR for a Raydium CLMM position NFT from finalized history and current on-chain state (not Raydium pool 24h feeApr). Prefer token-native metrics: for same-asset RWA wrap pairs (e.g. SPCXx/SPCX) report TE in the plain/base ticker using current tick mid (1.0001^tick×10^(decA−decB)), plus raw A/B inventory, holdingDays, feeOnlyAprPct and annualizedReturnPct (HPR×365/days; feesEarned/deposited×365/days). USD is optional/secondary (Jupiter Price v3 / Raydium stable-leg, labeled current — not historical). metrics.usdPerRawUnitA/B (alias metrics.priceUsdA/B, same values) and pricing.usdPerRawUnitA/B are USD per (raw / 10^decimals) token unit, ScaledUiAmount multiplier already applied; pricing.sharePriceUsdA/B is the per-share price and pricing.guard the cross-check against the pool price. Discovers open/increase/decrease txs via personal-position signatures + Anchor events + current equity. After submitting a position transaction, use refreshHistory=true and historyAfterSignatures to require its finalized history. Read-only. No token needed: wallet is optional (public on-chain data). Limited to 12 position reads per minute per IP.",
       "inputSchema": {
         "properties": {
           "historyAfterSignatures": {
@@ -168,7 +168,7 @@ exports[`tools/list wire contract > matches the golden snapshot (names, descript
         "openWorldHint": true,
         "readOnlyHint": true,
       },
-      "description": "Compute live in-range / out-of-range status for a Raydium CLMM position from the current on-chain pool price versus tickLower/tickUpper (B per 1 A). Flags when price approaches a range edge. Read-only.",
+      "description": "Compute live in-range / out-of-range status for a Raydium CLMM position from the current on-chain pool price versus tickLower/tickUpper (B per 1 A). Flags when price approaches a range edge. Read-only. No token needed: wallet is optional (public on-chain data). Limited to 12 position reads per minute per IP.",
       "inputSchema": {
         "properties": {
           "poolId": {
@@ -262,7 +262,7 @@ exports[`tools/list wire contract > matches the golden snapshot (names, descript
         "openWorldHint": true,
         "readOnlyHint": true,
       },
-      "description": "List all Raydium CLMM positions and wallet assets. Returns position NFTs (with pool, ticks, liquidity) and eligible input assets (SOL, tokens) with balances. Read-only, no private keys required. Use this first to discover available positions and assets.",
+      "description": "List all Raydium CLMM positions and wallet assets. Returns position NFTs (with pool, ticks, liquidity) and eligible input assets (SOL, tokens) with balances. Read-only, no private keys required. Use this first to discover available positions and assets. No token needed: pass any wallet address (public on-chain data). Limited to 12 position reads per minute per IP.",
       "inputSchema": {
         "properties": {
           "wallet": {

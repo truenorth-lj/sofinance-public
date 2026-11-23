@@ -5,6 +5,7 @@ import { inspect } from "node:util";
 import { SendTransactionError } from "@solana/web3.js";
 import { CROSS_TICK_USER_MESSAGE } from "@/lib/public-error";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetMcpRateLimit } from "@/lib/mcp-rate-limit";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/mcp/tools", () => Object.fromEntries([
@@ -63,7 +64,8 @@ const EXPECTED_TOOL_NAMES = [
   "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction",
   "submit_signed_transaction", "submit_compound_transaction", "quote_open_position", "prepare_open_position", "submit_open_position", "tx_status",
 ];
-const PUBLIC_TOOLS = ["list_rwa_pairs", "get_pool_range_apr", "tx_status"];
+const PUBLIC_TOOLS = ["list_rwa_pairs", "get_pool_range_apr", "list_positions", "get_position_range_status", "get_position_performance", "tx_status"];
+const POSITION_READS = ["list_positions", "get_position_range_status", "get_position_performance"];
 
 describe("removed tools", () => {
   it("get_pool_activity is gone from tools/list and a direct call is an unknown tool", async () => {
@@ -212,7 +214,7 @@ describe("JSON-RPC envelope", () => {
 });
 
 describe("authentication", () => {
-  const call = { jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "list_positions", arguments: { wallet } } };
+  const call = { jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "quote_compound", arguments: { wallet, positionMint: mint } } };
 
   it("tools/call without a bearer header => 401 / -32001 with plain next steps and a WWW-Authenticate challenge", async () => {
     const { response, json } = await send(call);
@@ -254,7 +256,7 @@ describe("authentication", () => {
       expect(json.error.message).toMatch(/^Unauthorized: Invalid or expired token\. /);
       expect(response.headers.get("www-authenticate")).toContain('error="invalid_token"');
     }
-    expect(toolFns.listPositions).not.toHaveBeenCalled();
+    expect(toolFns.quoteCompound).not.toHaveBeenCalled();
   });
 
   it("authenticated methods return a configuration error when the current secret is unavailable", async () => {
@@ -335,7 +337,7 @@ const IMPLEMENTATION: Record<string, string> = {
   get_position_performance: "getPositionPerformance", get_position_range_status: "getPositionRangeStatus",
   list_rwa_pairs: "listRwaPairs", get_pool_range_apr: "getPoolRangeApr", tx_status: "txStatus",
 };
-const WALLET_REQUIRED = EXPECTED_TOOL_NAMES.filter((name) => !["get_position_performance", "get_position_range_status", ...PUBLIC_TOOLS].includes(name));
+const WALLET_REQUIRED = EXPECTED_TOOL_NAMES.filter((name) => !PUBLIC_TOOLS.includes(name));
 
 describe("tools/call dispatch and wallet binding", () => {
   it("covers all 17 tools", () => {
@@ -360,11 +362,18 @@ describe("tools/call dispatch and wallet binding", () => {
     expect(toolFns[IMPLEMENTATION[name]!]).not.toHaveBeenCalled();
   });
 
-  it.each(["get_position_performance", "get_position_range_status"])("%s: optional wallet is bound when present, and may be omitted", async (name) => {
-    const mismatch = await callTool(name, { ...(VALID_ARGS[name] as object), wallet: otherWallet });
-    expect(mismatch.json.result.isError).toBe(true);
-    expect(toolFns[IMPLEMENTATION[name]!]).not.toHaveBeenCalled();
-    const omitted = await callTool(name, { positionMint: mint });
+  it.each(POSITION_READS)("%s: public position read for any wallet, with or without a token (the token's wallet is not bound)", async (name) => {
+    const other = { ...(VALID_ARGS[name] as object), wallet: otherWallet };
+    expect((await callTool(name, other)).json.result.isError).toBeUndefined();
+    const { response, json } = await send({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: other } });
+    expect(response.status).toBe(200);
+    expect(json.result.isError).toBeUndefined();
+    expect(toolFns[IMPLEMENTATION[name]!]).toHaveBeenCalledTimes(2);
+    expect(toolFns[IMPLEMENTATION[name]!]).toHaveBeenLastCalledWith(expect.objectContaining({ wallet: otherWallet }));
+  });
+
+  it.each(["get_position_performance", "get_position_range_status"])("%s: wallet may be omitted", async (name) => {
+    const omitted = await send({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: { positionMint: mint } } });
     expect(omitted.json.result.isError).toBeUndefined();
     expect(toolFns[IMPLEMENTATION[name]!]).toHaveBeenCalledOnce();
   });
@@ -376,13 +385,13 @@ describe("tools/call dispatch and wallet binding", () => {
 
   it("QUIRK: a token for wallet B cannot use wallet A's tools (symmetry check of the binding)", async () => {
     const other = generateMcpToken(otherWallet, SIGNING_SECRET);
-    const { json } = await callTool("list_positions", { wallet }, other);
+    const { json } = await callTool("quote_compound", { wallet, positionMint: mint }, other);
     expect(json.result.isError).toBe(true);
-    expect(toolFns.listPositions).not.toHaveBeenCalled();
+    expect(toolFns.quoteCompound).not.toHaveBeenCalled();
   });
 
   it("QUIRK: binding is a plain string comparison; schemas accept any 32-44 char base58-looking string as a wallet", async () => {
-    const { json } = await callTool("list_positions", { wallet: "1".repeat(32) });
+    const { json } = await callTool("quote_compound", { wallet: "1".repeat(32), positionMint: mint });
     expect(JSON.parse(json.result.content[0].text).error).toContain("Token wallet mismatch");
   });
 
@@ -481,7 +490,7 @@ describe("tools/call dispatch and wallet binding", () => {
   });
 
   it("STEP 2a: wallet-binding and unknown-tool messages are unchanged by sanitizing", async () => {
-    const mismatch = await callTool("list_positions", { wallet: otherWallet });
+    const mismatch = await callTool("quote_compound", { wallet: otherWallet, positionMint: mint });
     expect(JSON.parse(mismatch.json.result.content[0].text).error).toBe(
       `Token wallet mismatch: token is for ${wallet}, requested ${otherWallet}`,
     );
@@ -561,3 +570,6 @@ it.each(["api-key", "%61pi-key", "%2561pi-key", "%252561pi-key", "%FF%61pi-key",
     expect(JSON.stringify(data)).toBe(before);
   },
 );
+
+// /api/mcp keeps per-IP rate-limit counts in module memory; every test starts with fresh budgets.
+beforeEach(() => resetMcpRateLimit());

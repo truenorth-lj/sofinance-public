@@ -2,6 +2,7 @@
 // The sign page sends through the shared wallet pipeline (no per-flow HTTP submit routes).
 // Only builders, chain reads/simulation and physical RPC are disposable offline fixtures.
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { resetMcpRateLimit } from "@/lib/mcp-rate-limit";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -92,3 +93,6 @@ for (const surface of ["http", "stdio"] as const) for (const c of operations) {
     }
   });
 }
+
+// /api/mcp keeps per-IP rate-limit counts in module memory; every test starts with fresh budgets.
+beforeEach(() => resetMcpRateLimit());

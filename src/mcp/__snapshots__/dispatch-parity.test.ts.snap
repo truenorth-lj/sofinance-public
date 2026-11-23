@@ -592,7 +592,18 @@ exports[`http > get_position_performance preserves parsed arguments, exactly one
     },
   },
   {
-    "calls": {},
+    "calls": {
+      "getPositionPerformance": [
+        [
+          {
+            "maxSignatures": 100,
+            "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+            "skipPricing": false,
+            "wallet": "9hSR6S7WPtxmTojgo6GG3k4yDPecgJY292j7xrsUGWBu",
+          },
+        ],
+      ],
+    },
     "label": "wrong wallet",
     "response": {
       "body": {
@@ -602,12 +613,19 @@ exports[`http > get_position_performance preserves parsed arguments, exactly one
           "content": [
             {
               "text": "{
-  "error": "Token wallet mismatch: token is for AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9, requested 9hSR6S7WPtxmTojgo6GG3k4yDPecgJY292j7xrsUGWBu"
+  "ok": true,
+  "nested": {
+    "values": [
+      1,
+      null,
+      "繁體"
+    ]
+  },
+  "signature": "original-signature"
 }",
               "type": "text",
             },
           ],
-          "isError": true,
         },
       },
       "status": 200,
@@ -927,7 +945,16 @@ exports[`http > get_position_range_status preserves parsed arguments, exactly on
     },
   },
   {
-    "calls": {},
+    "calls": {
+      "getPositionRangeStatus": [
+        [
+          {
+            "positionMint": "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse",
+            "wallet": "9hSR6S7WPtxmTojgo6GG3k4yDPecgJY292j7xrsUGWBu",
+          },
+        ],
+      ],
+    },
     "label": "wrong wallet",
     "response": {
       "body": {
@@ -937,12 +964,19 @@ exports[`http > get_position_range_status preserves parsed arguments, exactly on
           "content": [
             {
               "text": "{
-  "error": "Token wallet mismatch: token is for AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9, requested 9hSR6S7WPtxmTojgo6GG3k4yDPecgJY292j7xrsUGWBu"
+  "ok": true,
+  "nested": {
+    "values": [
+      1,
+      null,
+      "繁體"
+    ]
+  },
+  "signature": "original-signature"
 }",
               "type": "text",
             },
           ],
-          "isError": true,
         },
       },
       "status": 200,
@@ -1259,7 +1293,15 @@ exports[`http > list_positions preserves parsed arguments, exactly one handler, 
     },
   },
   {
-    "calls": {},
+    "calls": {
+      "listPositions": [
+        [
+          {
+            "wallet": "9hSR6S7WPtxmTojgo6GG3k4yDPecgJY292j7xrsUGWBu",
+          },
+        ],
+      ],
+    },
     "label": "wrong wallet",
     "response": {
       "body": {
@@ -1269,12 +1311,19 @@ exports[`http > list_positions preserves parsed arguments, exactly one handler, 
           "content": [
             {
               "text": "{
-  "error": "Token wallet mismatch: token is for AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9, requested 9hSR6S7WPtxmTojgo6GG3k4yDPecgJY292j7xrsUGWBu"
+  "ok": true,
+  "nested": {
+    "values": [
+      1,
+      null,
+      "繁體"
+    ]
+  },
+  "signature": "original-signature"
 }",
               "type": "text",
             },
           ],
-          "isError": true,
         },
       },
       "status": 200,
@@ -1303,7 +1352,15 @@ exports[`http > list_positions preserves parsed arguments, exactly one handler, 
     },
   },
   {
-    "calls": {},
+    "calls": {
+      "listPositions": [
+        [
+          {
+            "wallet": "9hSR6S7WPtxmTojgo6GG3k4yDPecgJY292j7xrsUGWBu",
+          },
+        ],
+      ],
+    },
     "label": "invalid schema and mismatched wallet",
     "response": {
       "body": {
@@ -1313,12 +1370,19 @@ exports[`http > list_positions preserves parsed arguments, exactly one handler, 
           "content": [
             {
               "text": "{
-  "error": "Token wallet mismatch: token is for AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9, requested 9hSR6S7WPtxmTojgo6GG3k4yDPecgJY292j7xrsUGWBu"
+  "ok": true,
+  "nested": {
+    "values": [
+      1,
+      null,
+      "繁體"
+    ]
+  },
+  "signature": "original-signature"
 }",
               "type": "text",
             },
           ],
-          "isError": true,
         },
       },
       "status": 200,

@@ -5,7 +5,8 @@ import { verifyMcpToken } from "@/lib/mcp-auth";
 import { publicToolError } from "@/mcp/public-tool-error";
 import { sanitizePublicError } from "@/lib/public-error";
 import { captureApiRouteError } from "@/lib/sentry/capture";
-import { dispatchTool, isPublicTool, type McpDispatchContext } from "@/mcp/dispatch";
+import { dispatchTool, isPublicTool, toolRateClass, type McpDispatchContext } from "@/mcp/dispatch";
+import { MCP_RATE_LIMIT_RETRY_AFTER_SECONDS, mcpRateLimited, type McpRateLimitHit } from "@/lib/mcp-rate-limit";
 import { getSigningSecrets } from "@sofinance/engine/config/server-env";
 import { formatToolNames, PUBLIC_TOOL_NAMES } from "@/mcp/tool-definitions";
 import {
@@ -19,8 +20,9 @@ import {
  * Remote MCP-over-HTTP endpoint for AI agents (Cursor, Claude Desktop).
  * 
  * Protocol: JSON-RPC 2.0 over HTTP (Streamable HTTP, JSON responses only; versions in SUPPORTED_PROTOCOL_VERSIONS)
- * Authentication: none for the public read-only tools (PUBLIC_TOOL_NAMES: snapshot reads and tx_status); every other tools/call needs the
- * wallet-bound Bearer token from /app/ai.
+ * Authentication: none for the public read-only tools (PUBLIC_TOOL_NAMES: snapshot reads, position reads by wallet
+ * address and tx_status); every other tools/call needs the wallet-bound Bearer token from /app/ai.
+ * Rate limits: per IP (`mcpRateLimited`); over a limit is HTTP 429 with JSON-RPC error -32029 and Retry-After.
  * 
  * Supported methods:
  * - tools/list - List available tools
@@ -96,6 +98,17 @@ function unauthorized(id: string | number | null, reason: "missing" | "invalid")
   );
 }
 
+/** 429 for a client over a per-IP limit. Not reported to Sentry (a client error, not ours). */
+function rateLimited(id: string | number | null, hit: McpRateLimitHit) {
+  const what = hit.scope === "position-reads" ? "position reads" : hit.scope === "tool-calls" ? "tool calls" : "requests";
+  return NextResponse.json(
+    createJsonRpcError(id, -32029,
+      `Rate limited: more than ${hit.limitPerMinute} ${what} per minute from this IP. Retry after ${MCP_RATE_LIMIT_RETRY_AFTER_SECONDS} seconds.`,
+      { scope: hit.scope, limitPerMinute: hit.limitPerMinute, retryAfterSeconds: MCP_RATE_LIMIT_RETRY_AFTER_SECONDS }),
+    { status: 429, headers: { "Retry-After": String(MCP_RATE_LIMIT_RETRY_AFTER_SECONDS) } },
+  );
+}
+
 function createJsonRpcSuccess(
   id: string | number | null,
   result: unknown
@@ -128,6 +141,13 @@ export async function POST(request: NextRequest) {
     }
 
     const { id, method, params } = rpcRequest;
+
+    // Per-IP limits before any work (auth, RPC); tools/call also counts toward the call and position-read budgets.
+    const calledName = method === "tools/call" && params && typeof params === "object" && "name" in params
+      ? (params as { name: unknown }).name : undefined;
+    const overLimit = mcpRateLimited(request, method === "tools/call"
+      ? { positionRead: typeof calledName === "string" && toolRateClass(calledName) === "position-read" } : null);
+    if (overLimit) return rateLimited(id ?? null, overLimit);
 
     // Streamable HTTP: after initialize the client sends the negotiated version; reject one this server does not speak.
     const headerVersion = request.headers.get("mcp-protocol-version");
@@ -174,10 +194,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Public read-only snapshot tools run without a token (any Authorization header is ignored for them).
-    const toolName = method === "tools/call" && params && typeof params === "object" && "name" in params
-      ? (params as { name: unknown }).name : undefined;
-    const publicCall = typeof toolName === "string" && isPublicTool(toolName);
+    // Public read-only tools run without a token (any Authorization header is ignored for them).
+    const publicCall = typeof calledName === "string" && isPublicTool(calledName);
 
     let context: McpDispatchContext = { surface: "mcp-http-public" };
     if (!publicCall) {

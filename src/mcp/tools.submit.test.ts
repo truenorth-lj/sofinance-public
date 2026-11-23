@@ -4,6 +4,7 @@
 // Unlike tools.test.ts these use the REAL permit/HMAC code and real signed transactions; only RPC,
 // chain-state readers and simulation are mocked.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetMcpRateLimit } from "@/lib/mcp-rate-limit";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@sofinance/engine/rpc", () => ({ rpcConnection: vi.fn() }));
@@ -437,3 +438,6 @@ for (const surface of ["http", "stdio"] as const) describe(`${surface} real subm
     expect(rpcConnection).not.toHaveBeenCalled();
   });
 });
+
+// /api/mcp keeps per-IP rate-limit counts in module memory; every test starts with fresh budgets.
+beforeEach(() => resetMcpRateLimit());
