@@ -163,14 +163,71 @@ describe("GET /api/pool-daily-apr (listed Meteora pools, recorded datapi)", () =
     expect(body.sources).toContain("SoFinance store: the Meteora datapi pool TVL saved once per UTC day (1 day)");
   });
 
+  it("a success with enough data is kept an hour at the CDN, the same for every visitor (SP-2)", async () => {
+    const { GET } = await import("./route");
+    const response = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${METEORA_SPCX}`, {
+      headers: { cookie: "session=abc", authorization: "Bearer x" },
+    }));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("public, max-age=0, must-revalidate");
+    expect(response.headers.get("cdn-cache-control")).toBe("public, s-maxage=3600, stale-while-revalidate=86400");
+    expect(response.headers.get("vercel-cdn-cache-control")).toBe("public, s-maxage=3600, stale-while-revalidate=86400");
+    // Nothing user-specific: no Vary, no cookie, and a request with cookies gets the same bytes as one without.
+    expect(response.headers.get("vary")).toBeNull();
+    expect(response.headers.get("set-cookie")).toBeNull();
+    const anonymous = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${METEORA_SPCX}`));
+    expect(await anonymous.text()).toBe(await response.text());
+  });
+
+  it("too little data on the Raydium in-memory fast path keeps the same five-minute headers (SP-2)", async () => {
+    store.enabled = false;
+    vi.stubGlobal("fetch", vi.fn(raydiumFixtures));
+    const { GET } = await import("./route");
+    const { getCachedPoolDailyApr } = await import("@/lib/pool-daily-apr");
+    const fresh = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${RAYDIUM_POOL}`));
+    expect(getCachedPoolDailyApr(RAYDIUM_POOL)).not.toBeNull(); // the next answer comes from memory
+    const cached = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${RAYDIUM_POOL}`));
+    for (const response of [fresh, cached]) {
+      expect(response.status).toBe(200);
+      expect(response.headers.get("cache-control")).toBe("public, max-age=0, must-revalidate");
+      expect(response.headers.get("cdn-cache-control")).toBe("public, s-maxage=300");
+      expect(response.headers.get("vercel-cdn-cache-control")).toBe("public, s-maxage=300");
+    }
+  });
+
+  it("too little data (3 days, below the calculator's minimum) is a 200 kept only five minutes at the CDN (SP-2)", async () => {
+    const { GET } = await import("./route");
+    const response = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${METEORA_TSLA}`));
+    expect(response.status).toBe(200);
+    expect((await response.json()).points).toHaveLength(3);
+    const thin = (r: Response) => [r.headers.get("cache-control"), r.headers.get("cdn-cache-control"), r.headers.get("vercel-cdn-cache-control")];
+    expect(thin(response)).toEqual(["public, max-age=0, must-revalidate", "public, s-maxage=300", "public, s-maxage=300"]);
+    // The in-memory answer served next is held to the same rule.
+    const again = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${METEORA_TSLA}`));
+    expect(thin(again)).toEqual(["public, max-age=0, must-revalidate", "public, s-maxage=300", "public, s-maxage=300"]);
+  });
+
+  it("an upstream 429 is an error no CDN keeps (SP-2)", async () => {
+    // Meteora's datapi rate-limits; nothing else answers (GeckoTerminal is never asked, so its back-off stays clear).
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => (String(input instanceof Request ? input.url : input).includes("dlmm.datapi.meteora.ag")
+      ? new Response("too many requests", { status: 429 }) : new Response("not found", { status: 404 }))));
+    const { GET } = await import("./route");
+    const response = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${METEORA_SPCX}`));
+    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("cdn-cache-control")).toBeNull();
+    expect(response.headers.get("vercel-cdn-cache-control")).toBeNull();
+  });
+
   it("a degraded answer (stored daily TVL unreadable) is a 200 kept one minute at the CDN and never in unstable_cache", async () => {
+    // SPCX: 90 days of data, so only the degraded rule decides (a thin series is never CDN-cached, below).
     store.tvlFail = true;
     const { GET } = await import("./route");
-    const degraded = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${METEORA_TSLA}`));
+    const degraded = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${METEORA_SPCX}`));
     expect(degraded.status).toBe(200);
     const body = await degraded.json();
     expect(body.degraded).toBe("the stored daily TVL could not be read");
-    expect(body.points.every((point: { tvlUsd: number | null }) => point.tvlUsd === DATAPI_POOL_TSLA_TSLAX.tvl)).toBe(true);
+    expect(body.points.every((point: { tvlUsd: number | null }) => point.tvlUsd === DATAPI_POOL_SPCX.tvl)).toBe(true);
     expect(degraded.headers.get("cdn-cache-control")).toBe("public, s-maxage=60");
     expect(degraded.headers.get("vercel-cdn-cache-control")).toBe("public, s-maxage=60");
     expect(nextCache.size).toBe(0);
@@ -178,7 +235,7 @@ describe("GET /api/pool-daily-apr (listed Meteora pools, recorded datapi)", () =
     // Store back after the loader's one-minute reuse: the full answer, cached as before.
     vi.setSystemTime((RECORDED_AT + 61) * 1000);
     store.tvlFail = false;
-    const full = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${METEORA_TSLA}`));
+    const full = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${METEORA_SPCX}`));
     expect((await full.json()).degraded).toBeUndefined();
     expect(full.headers.get("cdn-cache-control")).toBe("public, s-maxage=3600, stale-while-revalidate=86400");
     expect(nextCache.size).toBe(1);

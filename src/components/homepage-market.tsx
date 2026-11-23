@@ -8,6 +8,7 @@ import { DOCS_ROUTES, GUIDE_ROUTES } from "@/lib/public-urls";
 import type { HomepageStocks } from "@/lib/stock-market/public";
 import { StockCards, useHomepageStocks } from "./stocks/stock-cards";
 import { HomepageTopPools, useHomepagePools } from "./homepage-pools-table";
+import { HomepageFeeEstimator } from "./homepage-fee-estimator";
 
 export const HERO_H1 = "Hold the stock. Collect the fees.";
 export const HERO_SUBLINE =
@@ -44,6 +45,8 @@ export function HomepageMarketView({ initialPools = null, initialStocks = null, 
         <p className="mx-auto mt-4 max-w-2xl text-balance text-sm leading-6 text-cream/70 sm:max-w-3xl sm:text-base sm:leading-7">
           {HERO_SUBLINE}
         </p>
+        {/* SP-2: no-wallet estimate, above the two buttons (which stay as they are). */}
+        <HomepageFeeEstimator pools={pools.pools} apr={pools.apr} apr7d={pools.apr7d} group={pools.group} />
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
           <a href={`#${TOP_POOLS_ANCHOR_ID}`} className={primaryBtn} data-testid="hero-see-pools">{HERO_SEE_POOLS}</a>
           <Link href={GUIDE_ROUTES.whatIsSameStock} className={secondaryBtn} data-testid="hero-how-it-works">{HERO_HOW_IT_WORKS}</Link>

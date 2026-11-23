@@ -37,6 +37,19 @@ export function planAssetSymbol(pair: { wrappedSymbol?: string; plainSymbol?: st
   return sides.every((symbol) => STABLE_SYMBOLS.has(symbol)) ? "USDC" : null;
 }
 
+/**
+ * Quick amounts and the default for an amount counted in the pool's asset (SP-2), shared by the Calculate dialog and
+ * the homepage estimator: shares of the stock (1 / 10 / 100, default 10), or USDC for the stablecoin pool (100 / 1K /
+ * 10K, default 1,000).
+ */
+export function planAssetAmounts(shareSymbol: string | null): { presets: readonly [string, string, string]; defaultAmount: string } {
+  const presets = shareSymbol ? (["1", "10", "100"] as const) : (["100", "1000", "10000"] as const);
+  return { presets, defaultAmount: presets[1] };
+}
+
+/** "1K" for 1000, "10" for 10: a quick-amount button's label. */
+export const planAssetPresetLabel = (value: string) => (Number(value) >= 1000 ? `${Number(value) / 1000}K` : value);
+
 /** Largest amount of an asset the calculator accepts. */
 const MAX_PLAN_ASSET = new D("1000000000");
 
