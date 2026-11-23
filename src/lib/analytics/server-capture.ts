@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { posthogUpstream } from "./relay";
+import { walletIdFromSha256Hex } from "./wallet-id";
 
 /**
  * Server-side PostHog capture (code-only events; no PostHog project settings).
@@ -17,9 +18,9 @@ export type ServerEvent = { event: string; distinctId: string; properties: Serve
 
 const CAPTURE_TIMEOUT_MS = 2_000;
 
-/** Same `wallet:<sha256 hex>` id the web app used before and sofi-metrics already folds with raw addresses. */
+/** `wallet:<sha256 hex>`, the same id the website sends (see wallet-id.ts); sofi-metrics folds it with raw addresses. */
 export function walletDistinctId(wallet: string): string {
-  return `wallet:${createHash("sha256").update(wallet, "utf8").digest("hex")}`;
+  return walletIdFromSha256Hex(createHash("sha256").update(wallet, "utf8").digest("hex"));
 }
 
 type Env = Record<string, string | undefined>;
