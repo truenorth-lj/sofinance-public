@@ -5,10 +5,10 @@ import { expect, test } from "../../support/readonly-fixture";
 import { ConnectModal } from "../../pages/connect-modal";
 
 const EXPECTED_TOOLS = [
-  "prepare_withdraw", "submit_withdraw",
-  "get_position_performance", "get_position_range_status", "list_rwa_pairs", "get_pool_range_apr", "list_positions",
-  "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction",
-  "submit_signed_transaction", "submit_compound_transaction", "quote_open_position", "prepare_open_position", "submit_open_position",
+  "lp_withdraw_prepare", "lp_withdraw_submit",
+  "position_get_performance", "position_get_range_status", "pools_list", "pool_get_range_apr", "positions_list",
+  "lp_add_quote", "lp_add_prepare", "lp_compound_quote", "lp_compound_prepare",
+  "lp_add_submit", "lp_compound_submit", "lp_open_quote", "lp_open_prepare", "lp_open_submit",
 ];
 
 test.describe("production, read-only", () => {
@@ -85,7 +85,7 @@ test.describe("production, read-only", () => {
   });
 
   test("MCP tools/call without a token is refused", async ({ request }) => {
-    const response = await request.post("/api/mcp", { maxRedirects: 0, maxRetries: 0, data: { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "get_position_performance", arguments: {} } } });
+    const response = await request.post("/api/mcp", { maxRedirects: 0, maxRetries: 0, data: { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "position_get_performance", arguments: {} } } });
     expect(response.status()).toBe(401);
     expect(response.headers()["www-authenticate"]).toBe('Bearer realm="sofinance-mcp"');
     expect((await response.json()).error.code).toBe(-32001);

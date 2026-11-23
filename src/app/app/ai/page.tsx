@@ -6,6 +6,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { useWalletConnection } from "@/components/wallet-connection";
 import { McpConnectionCard } from "@/components/mcp-connection-card";
+import { MCP_TOOL_COUNT } from "@/mcp/tool-names";
 import { Wallet, Code, Link as LinkIcon } from "lucide-react";
 
 export default function AIManagementPage() {
@@ -76,7 +77,7 @@ export default function AIManagementPage() {
                   </h2>
                   <p className="mt-2 text-sm leading-6 text-smoke">
                     Your AI agent will be able to list positions and pools, quote add-liquidity /
-                    compound / open-position, and prepare unsigned transactions (14 MCP tools). When
+                    compound / open-position, and prepare unsigned transactions ({MCP_TOOL_COUNT} MCP tools). When
                     ready to sign, open the provided link with your wallet connected for one-click approval.
                   </p>
                 </div>
@@ -149,7 +150,7 @@ export default function AIManagementPage() {
                       <p>
                         Your AI agent uses the MCP configuration to call the remote SoFinance API
                         at <code className="rounded bg-white/10 px-1.5 py-0.5">/api/mcp</code> over
-                        HTTPS (15 tools, including quote/prepare/submit_open_position and live range status). No local RPC or API keys needed.
+                        HTTPS ({MCP_TOOL_COUNT} tools, including lp_open_quote / lp_open_prepare / lp_open_submit and live range status). No local RPC or API keys needed.
                       </p>
                     </div>
                     <div className="flex gap-3">

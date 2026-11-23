@@ -62,7 +62,7 @@ function typeConstraints() {
   // @ts-expect-error HTTP context cannot omit the authenticated token wallet.
   const unauthenticated: McpDispatchContext = { surface: "mcp-http" };
   // @ts-expect-error Every ToolName needs an execution closure.
-  const incomplete: Record<ToolName, typeof TOOL_DISPATCH.list_positions> = { list_positions: TOOL_DISPATCH.list_positions };
+  const incomplete: Record<ToolName, typeof TOOL_DISPATCH.positions_list> = { positions_list: TOOL_DISPATCH.positions_list };
   void unauthenticated; void incomplete;
 }
 void typeConstraints;

@@ -360,15 +360,15 @@ for (const surface of ["http", "stdio"] as const) describe(`${surface} real subm
   });
   afterEach(() => { vi.restoreAllMocks(); });
   function input(name: string) {
-    if (name === "submit_signed_transaction") return selectedInput();
-    if (name === "submit_compound_transaction") {
+    if (name === "lp_add_submit") return selectedInput();
+    if (name === "lp_compound_submit") {
       const summary = compoundSummaryFixture({ wallet, blockhash: BLOCKHASH });
       vi.mocked(readCompoundPositionState).mockResolvedValue({ ...summary.state } as never);
       vi.mocked(simulateAndVerifyCompound).mockResolvedValue({ rewards: [] } as never);
       return { wallet, signedTransaction: toBase64(transaction), summary,
         permit: issueCompoundPermit(SIGNING_SECRET, { wallet, summary, message: messageBase64(transaction) }) };
     }
-    if (name === "submit_open_position") {
+    if (name === "lp_open_submit") {
       transaction = buildTransaction({ payer: walletKey, extraSigners: [nftKey] });
       const summary = openSummaryFixture({ wallet, nftMint: nftKey.publicKey.toBase58(), blockhash: BLOCKHASH });
       vi.mocked(readOpenPoolState).mockResolvedValue({ paused: false, frozen: false, transferFee: false, unsupportedExtensions: [], sufficientSol: true,
@@ -382,7 +382,7 @@ for (const surface of ["http", "stdio"] as const) describe(`${surface} real subm
     return { wallet, signedTransaction: toBase64(transaction), summary,
       permit: withdrawPermit.issue(SIGNING_SECRET, { wallet, summary, message: messageBase64(transaction) }) };
   }
-  const submissions = ["submit_signed_transaction", "submit_compound_transaction", "submit_open_position", "submit_withdraw"];
+  const submissions = ["lp_add_submit", "lp_compound_submit", "lp_open_submit", "lp_withdraw_submit"];
   it.each(submissions)("%s preserves exact bytes, one send and simulation-before-send", async name => {
     const args = input(name);
     const result = await call(name, args);
@@ -433,7 +433,7 @@ for (const surface of ["http", "stdio"] as const) describe(`${surface} real subm
     expect(signatureOf(transaction)).toBe(originalSignature);
   });
   it("withdraw's record summary remains accepted by the parser, then permit fails before backend", async () => {
-    const result = await call("submit_withdraw", { wallet, summary: {}, permit: "forged", signedTransaction: toBase64(transaction) });
+    const result = await call("lp_withdraw_submit", { wallet, summary: {}, permit: "forged", signedTransaction: toBase64(transaction) });
     expect(result.content).toEqual([{ type: "text", text: JSON.stringify({ error: "Withdrawal authorization does not match transaction" }, null, 2) }]);
     expect(rpcConnection).not.toHaveBeenCalled();
   });

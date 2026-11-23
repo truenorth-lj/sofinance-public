@@ -47,7 +47,7 @@ export function previewOnlyMintAddress(): string {
 /**
  * Prepare an unsigned open-position transaction. Prefer `nftMint` from an agent-held
  * Keypair: the server never signs. After the wallet signs, add the mint signature
- * to the transaction the wallet returns, zero the secret, then submit_open_position.
+ * to the transaction the wallet returns, zero the secret, then lp_open_submit.
  * Without `nftMint`, use signUrl: the sign page creates the mint in the browser.
  */
 export async function prepareOpenPosition(input: PrepareOpenPositionInput) {
@@ -89,14 +89,14 @@ export async function prepareOpenPosition(input: PrepareOpenPositionInput) {
     signUrl: buildSignUrl(signToken),
     instructions: {
       message: browserMint
-        ? "No nftMint was passed, so open signUrl in a browser: the sign page generates the position NFT mint there, re-prepares, has the wallet sign FIRST, then adds the mint signature. unsignedTransaction/summary here are a preview built with a placeholder mint and cannot be submitted directly. To submit programmatically, call prepare_open_position again with your own nftMint."
-        : "Sign unsignedTransaction with the wallet FIRST, then add the NFT mint signature to the transaction the wallet returns without modifying the message, then call submit_open_position with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned. signUrl cannot add the mint signature; use programmatic submit when you generated nftMint.",
+        ? "No nftMint was passed, so open signUrl in a browser: the sign page generates the position NFT mint there, re-prepares, has the wallet sign FIRST, then adds the mint signature. unsignedTransaction/summary here are a preview built with a placeholder mint and cannot be submitted directly. To submit programmatically, call lp_open_prepare again with your own nftMint."
+        : "Sign unsignedTransaction with the wallet FIRST, then add the NFT mint signature to the transaction the wallet returns without modifying the message, then call lp_open_submit with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned. signUrl cannot add the mint signature; use programmatic submit when you generated nftMint.",
     },
   };
 }
 
 /**
- * Submit a signed open-position transaction. Dedicated tool (not submit_signed_transaction)
+ * Submit a signed open-position transaction. Dedicated tool (not lp_add_submit)
  * because the v0 message has two required signers (wallet + ephemeral NFT mint).
  */
 export async function submitOpenPosition(input: SubmitOpenPositionInput) {

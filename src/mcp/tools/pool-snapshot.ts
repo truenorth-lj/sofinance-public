@@ -7,7 +7,7 @@ import type { RwaPairRow } from "@/lib/rwa-pairs";
 import type { PoolRangeAprPayload } from "@/lib/range-apr/types";
 
 /**
- * Read-only pool data for the public MCP tools (`list_rwa_pairs`, `get_pool_range_apr`).
+ * Read-only pool data for the public MCP tools (`pools_list`, `pool_get_range_apr`).
  *
  * Production (RWA store enabled) reads only the saved snapshots the pools page reads: the same `getRwaPairs` query as
  * `/api/rwa-pairs` (Raydium + Meteora feeds) and the saved per-pool APR snapshot behind `/api/pool-range-apr`. No

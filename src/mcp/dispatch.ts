@@ -1,5 +1,5 @@
 import type { WithdrawSummary } from "@sofinance/engine/withdraw/types";
-import type { ToolName } from "./tool-definitions";
+import { TOOL_ALIASES, type ToolName } from "./tool-definitions";
 import {
   listPositions,
   quoteAddLiquidity,
@@ -95,57 +95,57 @@ type ToolDispatch = ((args: unknown, context: McpDispatchContext) => Promise<unk
 export const TOOL_DISPATCH = {
   // Position reads are public (on-chain data, like the site's /api/portfolio): the wallet is a query parameter, not
   // an identity, so there is no binding; a token sent along is ignored (see the route).
-  list_positions: defineTool({
+  positions_list: defineTool({
     access: "public", rateClass: "position-read", parser: listPositionsSchema, missingArgs: "raw", binding: noWallet, handler: listPositions,
   }),
-  quote_add_liquidity: defineTool({
+  lp_add_quote: defineTool({
     parser: quoteAddLiquiditySchema, missingArgs: "raw", binding: requiredWallet, handler: quoteAddLiquidity,
   }),
-  prepare_transaction: defineTool({
+  lp_add_prepare: defineTool({
     parser: prepareTransactionSchema, missingArgs: "raw", binding: requiredWallet, handler: prepareTransaction,
   }),
-  quote_compound: defineTool({
+  lp_compound_quote: defineTool({
     parser: quoteCompoundSchema, missingArgs: "raw", binding: requiredWallet, handler: quoteCompound,
   }),
-  prepare_compound_transaction: defineTool({
+  lp_compound_prepare: defineTool({
     parser: quoteCompoundSchema, missingArgs: "raw", binding: requiredWallet, handler: prepareCompoundTransaction,
   }),
-  submit_signed_transaction: defineTool({
+  lp_add_submit: defineTool({
     parser: submitSignedTransactionSchema, missingArgs: "raw", binding: requiredWallet, handler: submitSignedTransaction,
   }),
-  submit_compound_transaction: defineTool({
+  lp_compound_submit: defineTool({
     parser: submitCompoundTransactionSchema, missingArgs: "raw", binding: requiredWallet, handler: submitCompoundTransaction,
   }),
-  quote_open_position: defineTool({
+  lp_open_quote: defineTool({
     parser: quoteOpenPositionSchema, missingArgs: "raw", binding: requiredWallet, handler: quoteOpenPosition,
   }),
-  prepare_open_position: defineTool({
+  lp_open_prepare: defineTool({
     parser: prepareOpenPositionSchema, missingArgs: "raw", binding: requiredWallet, handler: prepareOpenPosition,
   }),
-  submit_open_position: defineTool({
+  lp_open_submit: defineTool({
     parser: submitOpenPositionSchema, missingArgs: "raw", binding: requiredWallet, handler: submitOpenPosition,
   }),
-  prepare_withdraw: defineTool({
+  lp_withdraw_prepare: defineTool({
     parser: prepareWithdrawSchema, missingArgs: "raw", binding: requiredWallet, handler: prepareWithdraw,
   }),
-  get_position_performance: defineTool({
+  position_get_performance: defineTool({
     access: "public", rateClass: "position-read", parser: getPositionPerformanceSchema, missingArgs: "empty-object", binding: noWallet,
     handler: getPositionPerformance,
   }),
-  get_position_range_status: defineTool({
+  position_get_range_status: defineTool({
     access: "public", rateClass: "position-read", parser: getPositionRangeStatusSchema, missingArgs: "empty-object", binding: noWallet,
     handler: getPositionRangeStatus,
   }),
-  list_rwa_pairs: defineTool({
+  pools_list: defineTool({
     access: "public", parser: listRwaPairsSchema, missingArgs: "empty-object", binding: noWallet, handler: listRwaPairs,
   }),
-  get_pool_range_apr: defineTool({
+  pool_get_range_apr: defineTool({
     access: "public", parser: getPoolRangeAprSchema, missingArgs: "raw", binding: noWallet, handler: getPoolRangeApr,
   }),
   tx_status: defineTool({
     access: "public", parser: txStatusSchema, missingArgs: "raw", binding: noWallet, handler: txStatus,
   }),
-  submit_withdraw: defineTool({
+  lp_withdraw_submit: defineTool({
     parser: submitWithdrawSchema, missingArgs: "raw", binding: requiredWallet,
     handler: input => submitWithdrawTransaction({
       ...input,
@@ -161,25 +161,32 @@ function isToolName(name: string): name is ToolName {
   return Object.hasOwn(TOOL_DISPATCH, name);
 }
 
+/** The tool a called name runs: itself, or the new tool for a hidden pre-0.3 alias. Null for an unknown name. */
+function canonicalTool(name: string): ToolName | null {
+  if (isToolName(name)) return name;
+  return Object.hasOwn(TOOL_ALIASES, name) ? TOOL_ALIASES[name as keyof typeof TOOL_ALIASES] : null;
+}
+
 /** Rate class of a known tool; unknown names are `standard` (they fail fast in dispatch). */
 export function toolRateClass(name: string): ToolRateClass {
-  return isToolName(name) ? TOOL_DISPATCH[name].rateClass : "standard";
+  const tool = canonicalTool(name);
+  return tool ? TOOL_DISPATCH[tool].rateClass : "standard";
 }
 
-/**
- * Canonical tool for a called name. No aliases exist yet, so a known name maps to itself with `aliasUsed: false`;
- * the alias table (PR-5) fills this in without changing callers. Unknown names are null.
- */
-export function resolveToolName(name: string): { tool: string; aliasUsed: boolean } | null {
-  return isToolName(name) ? { tool: name, aliasUsed: false } : null;
+/** Canonical tool for a called name; `aliasUsed` when it was a hidden pre-0.3 alias. Unknown names are null. */
+export function resolveToolName(name: string): { tool: ToolName; aliasUsed: boolean } | null {
+  const tool = canonicalTool(name);
+  return tool ? { tool, aliasUsed: tool !== name } : null;
 }
 
-/** True only for a known tool whose dispatch entry is `access: "public"`. */
+/** True only for a known tool (or its alias) whose dispatch entry is `access: "public"`. */
 export function isPublicTool(name: string): boolean {
-  return isToolName(name) && TOOL_DISPATCH[name].access === "public";
+  const tool = canonicalTool(name);
+  return tool !== null && TOOL_DISPATCH[tool].access === "public";
 }
 
 export async function dispatchTool(name: string, args: unknown, context: McpDispatchContext): Promise<unknown> {
-  if (!isToolName(name)) throw new Error(`Unknown tool: ${name}`);
-  return TOOL_DISPATCH[name](args, context);
+  const tool = canonicalTool(name);
+  if (!tool) throw new Error(`Unknown tool: ${name}`);
+  return TOOL_DISPATCH[tool](args, context);
 }

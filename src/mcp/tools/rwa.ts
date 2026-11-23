@@ -13,7 +13,7 @@ function pairMatchesSymbol(pair: Pick<RwaPairRow, "symbolA" | "symbolB" | "baseS
 
 const NO_STORE_APR: PoolApr7dSummary = {
   status: "unavailable",
-  reason: "7-day estimates come from the hosted pools snapshot. Call get_pool_range_apr for one pool.",
+  reason: "7-day estimates come from the hosted pools snapshot. Call pool_get_range_apr for one pool.",
 };
 
 export const APR_24H_WARNING =

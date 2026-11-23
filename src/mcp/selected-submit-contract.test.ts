@@ -120,7 +120,7 @@ function install(f: Fixture, connection = f.connection) {
   });
 }
 async function call(surface: Surface, body: unknown, tokenWallet = testKeypair(1).publicKey.toBase58(), signal?: AbortSignal) {
-  const params = { name: "submit_signed_transaction", arguments: body };
+  const params = { name: "lp_add_submit", arguments: body };
   if (surface === "sdk") return { result: await client.request({ method: "tools/call", params }, CallToolResultSchema) };
   const response = await http(new NextRequest("http://localhost/api/mcp", { method: "POST", signal,
     headers: { Authorization: `Bearer ${generateMcpToken(tokenWallet, SIGNING_SECRET)}` },

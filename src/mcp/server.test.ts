@@ -19,10 +19,10 @@ import { NextRequest } from "next/server";
 import { POST } from "@/app/api/mcp/route";
 
 const EXPECTED_NAMES = [
-  "prepare_withdraw", "submit_withdraw",
-  "get_position_performance", "get_position_range_status", "list_rwa_pairs", "get_pool_range_apr", "list_positions",
-  "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction",
-  "submit_signed_transaction", "submit_compound_transaction", "quote_open_position", "prepare_open_position", "submit_open_position", "tx_status",
+  "lp_withdraw_prepare", "lp_withdraw_submit",
+  "position_get_performance", "position_get_range_status", "pools_list", "pool_get_range_apr", "positions_list",
+  "lp_add_quote", "lp_add_prepare", "lp_compound_quote", "lp_compound_prepare",
+  "lp_add_submit", "lp_compound_submit", "lp_open_quote", "lp_open_prepare", "lp_open_submit", "tx_status",
 ];
 const root = path.resolve(__dirname, "../..");
 let client: Client;
@@ -53,7 +53,7 @@ describe("stdio MCP server", () => {
   });
 
   it("identifies itself", () => {
-    expect(client.getServerVersion()).toMatchObject({ name: "sofinance-mcp-server", version: "0.2.0" });
+    expect(client.getServerVersion()).toMatchObject({ name: "sofinance-mcp-server", version: "0.3.0" });
     expect(client.getServerCapabilities()).toMatchObject({ tools: {} });
   });
 
@@ -80,18 +80,18 @@ describe("stdio MCP server", () => {
     const differing = Object.keys(a).filter((key) => a[key] !== b[key]).sort();
     // Preserve the existing surface-specific wording during metadata consolidation.
     expect(differing).toEqual([
-      "quote_open_position.inputSchema.properties.resaleFloorBps.description",
+      "lp_open_quote.inputSchema.properties.resaleFloorBps.description",
     ]);
   });
 
-  it("QUIRK: the stdio server lists the tools in a different ORDER than the HTTP route (submit_compound_transaction is last)", async () => {
+  it("QUIRK: the stdio server lists the tools in a different ORDER than the HTTP route (lp_compound_submit is last)", async () => {
     const names = (await client.listTools()).tools.map((tool) => tool.name);
     expect(names).toEqual([
-      "prepare_withdraw", "submit_withdraw",
-  "get_position_performance", "get_position_range_status", "list_rwa_pairs", "get_pool_range_apr", "list_positions",
-      "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction",
-      "submit_signed_transaction", "quote_open_position", "prepare_open_position", "submit_open_position", "tx_status",
-      "submit_compound_transaction",
+      "lp_withdraw_prepare", "lp_withdraw_submit",
+  "position_get_performance", "position_get_range_status", "pools_list", "pool_get_range_apr", "positions_list",
+      "lp_add_quote", "lp_add_prepare", "lp_compound_quote", "lp_compound_prepare",
+      "lp_add_submit", "lp_open_quote", "lp_open_prepare", "lp_open_submit", "tx_status",
+      "lp_compound_submit",
     ]);
   });
 
@@ -108,7 +108,7 @@ describe("stdio MCP server", () => {
   });
 
   it("QUIRK: the stdio server has NO wallet binding; argument validation (zod) is the only gate", async () => {
-    const result = await client.callTool({ name: "list_positions", arguments: { wallet: "not-a-wallet" } });
+    const result = await client.callTool({ name: "positions_list", arguments: { wallet: "not-a-wallet" } });
     expect(result.isError).toBe(true);
     // STEP 2a: the stdio catch uses the same sanitizer as the HTTP route (flattened zod error).
     expect(JSON.parse((result.content as { text: string }[])[0]!.text)).toEqual({ error: "Invalid arguments: wallet: Invalid Solana public key" });

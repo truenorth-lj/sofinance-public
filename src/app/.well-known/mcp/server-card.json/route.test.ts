@@ -7,10 +7,10 @@ describe("/.well-known/mcp/server-card.json", () => {
   it("serves a static card that matches the live tools/list", async () => {
     expect(dynamic).toBe("force-static");
     const card = await GET().json();
-    expect(card.serverInfo).toMatchObject({ name: "sofinance-mcp-server", version: "0.2.0" });
+    expect(card.serverInfo).toMatchObject({ name: "sofinance-mcp-server", version: "0.3.0" });
     expect(card.transport).toEqual({ type: "streamable-http", endpoint: "https://sofinancelab.xyz/api/mcp" });
     expect(card.protocolVersion).toBe("2025-06-18");
-    expect(card.authentication).toMatchObject({ required: false, schemes: ["bearer"], publicTools: ["list_rwa_pairs", "get_pool_range_apr", "list_positions", "get_position_range_status", "get_position_performance", "tx_status"] });
+    expect(card.authentication).toMatchObject({ required: false, schemes: ["bearer"], publicTools: ["pools_list", "pool_get_range_apr", "positions_list", "position_get_range_status", "position_get_performance", "tx_status"] });
     expect(card.tools).toEqual(listToolDefinitions("http"));
     expect(card.tools.every((tool: { annotations?: unknown }) => tool.annotations)).toBe(true);
   });

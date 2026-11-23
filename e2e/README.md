@@ -138,7 +138,7 @@ no-connect guards remain in force. Proxy containment covers browser HTTP(S)/WS(S
 trusted configuration, not every native/browser protocol or API/server transport.
 
 `APIRequestContext` does **not** pass browser routing. The two direct MCP actions remain explicitly public
-`tools/list` and unauthenticated `list_rwa_pairs` rejection (401 before dispatch), with redirects/retries disabled.
+`tools/list` and unauthenticated `pools_list` rejection (401 before dispatch), with redirects/retries disabled.
 They do not execute authenticated tools. Allowed public pages/APIs can perform server-side provider reads;
 this browser policy does not prove zero server-side provider activity or financial correctness.
 

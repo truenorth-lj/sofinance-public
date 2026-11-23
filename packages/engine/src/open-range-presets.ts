@@ -28,7 +28,7 @@ export const OPEN_RANGE_PRESETS = [
   },
 ] as const;
 
-/** Percent-band presets only: this exact list is also what MCP `list_rwa_pairs` publishes as `recommendedRanges`. */
+/** Percent-band presets only: this exact list is also what MCP `pools_list` publishes as `recommendedRanges`. */
 export type OpenRangePresetId = (typeof OPEN_RANGE_PRESETS)[number]["id"];
 /** Every preset the web quote API understands. `micro` is tick-based (see `range-apr/micro-range.ts`), web-only. */
 export type OpenRangePreset = typeof MICRO_PRESET_ID | OpenRangePresetId | "custom";

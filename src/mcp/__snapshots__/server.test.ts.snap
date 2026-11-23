@@ -75,7 +75,8 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           ],
           "type": "object",
         },
-        "name": "prepare_withdraw",
+        "name": "lp_withdraw_prepare",
+        "title": "Prepare withdrawal",
       },
       {
         "annotations": {
@@ -84,7 +85,7 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Submit a wallet signed withdrawal. Verifies its HMAC permit and signature, checks expiry, and re-simulates before broadcast. Supply the unchanged summary and permit from prepare_withdraw. If the wallet appended extra instructions (e.g. Phantom Lighthouse), also pass unsignedTransaction from prepare_withdraw. High impact requires confirmHighImpact=true.",
+        "description": "Submit a wallet signed withdrawal. Verifies its HMAC permit and signature, checks expiry, and re-simulates before broadcast. Supply the unchanged summary and permit from lp_withdraw_prepare. If the wallet appended extra instructions (e.g. Phantom Lighthouse), also pass unsignedTransaction from lp_withdraw_prepare. High impact requires confirmHighImpact=true.",
         "inputSchema": {
           "properties": {
             "confirmHighImpact": {
@@ -114,7 +115,8 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           ],
           "type": "object",
         },
-        "name": "submit_withdraw",
+        "name": "lp_withdraw_submit",
+        "title": "Submit withdrawal",
       },
       {
         "annotations": {
@@ -140,7 +142,7 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
               "type": "number",
             },
             "positionMint": {
-              "description": "Position NFT mint address (from list_positions)",
+              "description": "Position NFT mint address (from positions_list)",
               "type": "string",
             },
             "refreshHistory": {
@@ -162,7 +164,8 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           ],
           "type": "object",
         },
-        "name": "get_position_performance",
+        "name": "position_get_performance",
+        "title": "Position performance",
       },
       {
         "annotations": {
@@ -192,7 +195,8 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           ],
           "type": "object",
         },
-        "name": "get_position_range_status",
+        "name": "position_get_range_status",
+        "title": "Position range status",
       },
       {
         "annotations": {
@@ -201,7 +205,7 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           "openWorldHint": false,
           "readOnlyHint": true,
         },
-        "description": "List the same-stock Solana pools on the SoFinance pools page (https://sofinancelab.xyz/pools): Raydium CLMM and Meteora DLMM pools where both sides are the same stock from two issuers (e.g. TSLA/TSLAx, SPCX/SPCXx), plus the USDC/USDT pool. Served from the site's saved pools snapshot, the same list the page shows. Each pool has protocol, symbols, fee tier, TVL, 24h volume, apr7d (the highest 7-day range fee APR estimate and which of the 4 range presets it comes from: Micro, Tight, Standard, Wide), and an openPositionUrl. Filter with symbol (e.g. "TSLA"). Default order: 7-day APR, high to low. estimatedFeeAprPct / estimatedFeeAprLabel are the older pool-level 24-hour figure (last 24h fees / TVL, annualized), not a 7-day estimate; small pools can show very large values, and a pool without a 7-day estimate carries a warning. Estimates from past trading, not a promise of future fees. Fees not guaranteed. For the 4 presets of one pool call get_pool_range_apr. No wallet or token needed. Opening a position through MCP (quote_open_position / prepare_open_position) is Raydium CLMM only and needs a wallet token; Meteora pools open on the website.",
+        "description": "List the same-stock Solana pools on the SoFinance pools page (https://sofinancelab.xyz/pools): Raydium CLMM and Meteora DLMM pools, told apart by each pool's protocol field, where both sides are the same stock from two issuers (e.g. TSLA/TSLAx, SPCX/SPCXx), plus the USDC/USDT pool. Served from the site's saved pools snapshot, the same list the page shows. Each pool has protocol, symbols, fee tier, TVL, 24h volume, apr7d (the highest 7-day range fee APR estimate and which of the 4 range presets it comes from: Micro, Tight, Standard, Wide), and an openPositionUrl. Filter with symbol (e.g. "TSLA"). Default order: 7-day APR, high to low. estimatedFeeAprPct / estimatedFeeAprLabel are the older pool-level 24-hour figure (last 24h fees / TVL, annualized), not a 7-day estimate; small pools can show very large values, and a pool without a 7-day estimate carries a warning. Estimates from past trading, not a promise of future fees. Fees not guaranteed. For the 4 presets of one pool call pool_get_range_apr. No wallet or token needed. Opening a position through MCP (lp_open_quote / lp_open_prepare) supports Raydium CLMM only and requires a wallet token; open Meteora pools on the website.",
         "inputSchema": {
           "properties": {
             "maxPages": {
@@ -232,7 +236,7 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           "required": [],
           "type": "object",
         },
-        "name": "list_rwa_pairs",
+        "name": "pools_list",
         "title": "List same-stock pools",
       },
       {
@@ -242,11 +246,11 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           "openWorldHint": false,
           "readOnlyHint": true,
         },
-        "description": "Estimated 7-day fee APR of one listed pool (poolAddress from list_rwa_pairs, Raydium or Meteora) for each of the 4 range presets the site prices: Micro (±2 price steps), Tight (±0.05%), Standard (±0.3%), Wide (±1%). Per preset: price bounds (B per 1 A), APR %, share of the last 7 days' volume that traded inside the range, and fees per day at the site's $1,000 card basis. Also the highest-APR preset, the 7-day window, data freshness and confidence. Same saved snapshot as the pool cards on https://sofinancelab.xyz/pools. New pools (too few days of data) and missing snapshots return a status with a reason and no APR. Estimates from past trading, not a promise of future fees. Fees not guaranteed. No wallet or token needed.",
+        "description": "Estimated 7-day fee APR of one listed pool (poolAddress from pools_list, Raydium or Meteora) for each of the 4 range presets the site prices: Micro (±2 price steps), Tight (±0.05%), Standard (±0.3%), Wide (±1%). Per preset: price bounds (B per 1 A), APR %, share of the last 7 days' volume that traded inside the range, and fees per day at the site's $1,000 card basis. Also the highest-APR preset, the 7-day window, data freshness and confidence. Same saved snapshot as the pool cards on https://sofinancelab.xyz/pools. New pools (too few days of data) and missing snapshots return a status with a reason and no APR. Estimates from past trading, not a promise of future fees. Fees not guaranteed. No wallet or token needed.",
         "inputSchema": {
           "properties": {
             "poolId": {
-              "description": "Pool address (poolAddress from list_rwa_pairs)",
+              "description": "Pool address (poolAddress from pools_list)",
               "type": "string",
             },
           },
@@ -255,7 +259,7 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           ],
           "type": "object",
         },
-        "name": "get_pool_range_apr",
+        "name": "pool_get_range_apr",
         "title": "7-day range APR for a pool",
       },
       {
@@ -278,7 +282,8 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           ],
           "type": "object",
         },
-        "name": "list_positions",
+        "name": "positions_list",
+        "title": "List wallet positions",
       },
       {
         "annotations": {
@@ -303,11 +308,11 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
               "type": "string",
             },
             "inputMint": {
-              "description": "Input asset mint address (from list_positions assets)",
+              "description": "Input asset mint address (from positions_list assets)",
               "type": "string",
             },
             "positionMint": {
-              "description": "Position NFT mint address (from list_positions)",
+              "description": "Position NFT mint address (from positions_list)",
               "type": "string",
             },
             "resaleFloorBps": {
@@ -334,7 +339,8 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           ],
           "type": "object",
         },
-        "name": "quote_add_liquidity",
+        "name": "lp_add_quote",
+        "title": "Quote add liquidity",
       },
       {
         "annotations": {
@@ -343,7 +349,7 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Prepare an unsigned, fully-simulated transaction for adding liquidity. Returns base64-encoded transaction for signing, HMAC permit, and summary. The server NEVER holds private keys. Transaction must be signed by the user/agent wallet. Includes: full simulation, 1232-byte limit check, Jupiter swap + Raydium increase_liquidity_v2, short-lived permit. Failure modes: same as quote_add_liquidity, plus simulation failure, size limit, blockhash expiry. After signing, use submit_signed_transaction.",
+        "description": "Prepare an unsigned, fully-simulated transaction for adding liquidity. Returns base64-encoded transaction for signing, HMAC permit, and summary. The server NEVER holds private keys. Transaction must be signed by the user/agent wallet. Includes: full simulation, 1232-byte limit check, Jupiter swap + Raydium increase_liquidity_v2, short-lived permit. Failure modes: same as lp_add_quote, plus simulation failure, size limit, blockhash expiry. After signing, use lp_add_submit.",
         "inputSchema": {
           "properties": {
             "amount": {
@@ -390,7 +396,8 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           ],
           "type": "object",
         },
-        "name": "prepare_transaction",
+        "name": "lp_add_prepare",
+        "title": "Prepare add liquidity",
       },
       {
         "annotations": {
@@ -425,7 +432,8 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           ],
           "type": "object",
         },
-        "name": "quote_compound",
+        "name": "lp_compound_quote",
+        "title": "Quote fee compound",
       },
       {
         "annotations": {
@@ -434,7 +442,7 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Prepare an unsigned compound transaction. Returns base64 transaction, permit, and summary. Same safety as prepare_transaction: full simulation, HMAC permit, no private keys. After signing, use submit_compound_transaction.",
+        "description": "Prepare an unsigned compound transaction. Returns base64 transaction, permit, and summary. Same safety as lp_add_prepare: full simulation, HMAC permit, no private keys. After signing, use lp_compound_submit.",
         "inputSchema": {
           "properties": {
             "positionMint": {
@@ -460,7 +468,8 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           ],
           "type": "object",
         },
-        "name": "prepare_compound_transaction",
+        "name": "lp_compound_prepare",
+        "title": "Prepare fee compound",
       },
       {
         "annotations": {
@@ -469,7 +478,7 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Submit a signed add-liquidity transaction. Re-verifies HMAC permit, re-reads on-chain state, re-simulates, then broadcasts. Pass signedTransaction plus every field of submitArgs from the prepare_transaction response, unchanged. Failure modes: permit mismatch, state changed (liquidity, balance, NFT), expired (time or blockhash), simulation failure. Returns transaction signature on success.",
+        "description": "Submit a signed add-liquidity transaction. Re-verifies HMAC permit, re-reads on-chain state, re-simulates, then broadcasts. Pass signedTransaction plus every field of submitArgs from the lp_add_prepare response, unchanged. Failure modes: permit mismatch, state changed (liquidity, balance, NFT), expired (time or blockhash), simulation failure. Returns transaction signature on success.",
         "inputSchema": {
           "properties": {
             "expectedLiquidity": {
@@ -489,7 +498,7 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
               "type": "number",
             },
             "permit": {
-              "description": "HMAC permit from prepare_transaction",
+              "description": "HMAC permit from lp_add_prepare",
               "type": "string",
             },
             "rangeSide": {
@@ -556,7 +565,7 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
               "type": "string",
             },
             "unsignedTransaction": {
-              "description": "Base64 prepared transaction from prepare_transaction. Pass this when the wallet rewrote the message (Phantom Lighthouse / ComputeBudget).",
+              "description": "Base64 prepared transaction from lp_add_prepare. Pass this when the wallet rewrote the message (Phantom Lighthouse / ComputeBudget).",
               "type": "string",
             },
             "wallet": {
@@ -580,7 +589,8 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           ],
           "type": "object",
         },
-        "name": "submit_signed_transaction",
+        "name": "lp_add_submit",
+        "title": "Submit add liquidity",
       },
       {
         "annotations": {
@@ -589,11 +599,11 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Submit a signed compound transaction. Re-verifies permit and summary, then broadcasts. Returns signature on success. Same safety as submit_signed_transaction.",
+        "description": "Submit a signed compound transaction. Re-verifies permit and summary, then broadcasts. Returns signature on success. Same safety as lp_add_submit.",
         "inputSchema": {
           "properties": {
             "permit": {
-              "description": "HMAC permit from prepare_compound_transaction",
+              "description": "HMAC permit from lp_compound_prepare",
               "type": "string",
             },
             "signedTransaction": {
@@ -601,11 +611,11 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
               "type": "string",
             },
             "summary": {
-              "description": "Complete summary object from prepare_compound_transaction response, unchanged (bound by the permit)",
+              "description": "Complete summary object from lp_compound_prepare response, unchanged (bound by the permit)",
               "type": "object",
             },
             "unsignedTransaction": {
-              "description": "Base64 prepared transaction from prepare_compound_transaction. Pass this when the wallet rewrote the message (Phantom Lighthouse / ComputeBudget).",
+              "description": "Base64 prepared transaction from lp_compound_prepare. Pass this when the wallet rewrote the message (Phantom Lighthouse / ComputeBudget).",
               "type": "string",
             },
             "wallet": {
@@ -621,7 +631,8 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           ],
           "type": "object",
         },
-        "name": "submit_compound_transaction",
+        "name": "lp_compound_submit",
+        "title": "Submit fee compound",
       },
       {
         "annotations": {
@@ -658,7 +669,7 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
               "type": "string",
             },
             "poolId": {
-              "description": "Raydium CLMM pool id (from list_rwa_pairs)",
+              "description": "Raydium CLMM pool id (from pools_list)",
               "type": "string",
             },
             "rangePreset": {
@@ -696,7 +707,8 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           ],
           "type": "object",
         },
-        "name": "quote_open_position",
+        "name": "lp_open_quote",
+        "title": "Quote new position",
       },
       {
         "annotations": {
@@ -705,7 +717,7 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Prepare an unsigned, fully-simulated transaction that opens a new CLMM position. Prefer passing nftMint from an agent-held Keypair so the server never signs: wallet signs first, then add the mint signature on the wallet-returned tx and call submit_open_position. Without nftMint, open signUrl: the sign page generates the mint in the browser, re-prepares, wallet signs first, then the mint (the returned tx is a preview only). HMAC permit, summary, signUrl. 1232-byte limit, fresh blockhash, full simulation. Not submit_signed_transaction — this tx has two required signers.",
+        "description": "Prepare an unsigned, fully-simulated transaction that opens a new CLMM position. Prefer passing nftMint from an agent-held Keypair so the server never signs: wallet signs first, then add the mint signature on the wallet-returned tx and call lp_open_submit. Without nftMint, open signUrl: the sign page generates the mint in the browser, re-prepares, wallet signs first, then the mint (the returned tx is a preview only). HMAC permit, summary, signUrl. 1232-byte limit, fresh blockhash, full simulation. Not lp_add_submit — this tx has two required signers.",
         "inputSchema": {
           "properties": {
             "amount": {
@@ -769,7 +781,8 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           ],
           "type": "object",
         },
-        "name": "prepare_open_position",
+        "name": "lp_open_prepare",
+        "title": "Prepare new position",
       },
       {
         "annotations": {
@@ -778,11 +791,11 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           "openWorldHint": true,
           "readOnlyHint": false,
         },
-        "description": "Submit a signed open-position transaction. Re-verifies HMAC permit, re-reads pool/balances, re-simulates (sigVerify true, including the NFT-mint partial signature), then broadcasts. Pass signedTransaction plus permit, wallet, and the complete summary from prepare_open_position, unchanged. If the wallet rewrote the message (Phantom Lighthouse / ComputeBudget), also pass unsignedTransaction from prepare. Returns signature and the new positionMint.",
+        "description": "Submit a signed open-position transaction. Re-verifies HMAC permit, re-reads pool/balances, re-simulates (sigVerify true, including the NFT-mint partial signature), then broadcasts. Pass signedTransaction plus permit, wallet, and the complete summary from lp_open_prepare, unchanged. If the wallet rewrote the message (Phantom Lighthouse / ComputeBudget), also pass unsignedTransaction from prepare. Returns signature and the new positionMint.",
         "inputSchema": {
           "properties": {
             "permit": {
-              "description": "HMAC permit from prepare_open_position",
+              "description": "HMAC permit from lp_open_prepare",
               "type": "string",
             },
             "signedTransaction": {
@@ -790,11 +803,11 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
               "type": "string",
             },
             "summary": {
-              "description": "Complete summary object from prepare_open_position, unchanged (bound by the permit)",
+              "description": "Complete summary object from lp_open_prepare, unchanged (bound by the permit)",
               "type": "object",
             },
             "unsignedTransaction": {
-              "description": "Base64 prepared transaction from prepare_open_position. Pass this when the wallet rewrote the message (Phantom Lighthouse / ComputeBudget).",
+              "description": "Base64 prepared transaction from lp_open_prepare. Pass this when the wallet rewrote the message (Phantom Lighthouse / ComputeBudget).",
               "type": "string",
             },
             "wallet": {
@@ -810,7 +823,8 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           ],
           "type": "object",
         },
-        "name": "submit_open_position",
+        "name": "lp_open_submit",
+        "title": "Submit new position",
       },
       {
         "annotations": {
@@ -846,6 +860,7 @@ exports[`stdio MCP server > preserves the complete public HTTP discovery respons
           "type": "object",
         },
         "name": "tx_status",
+        "title": "Transaction status",
       },
     ],
   },
@@ -923,7 +938,8 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       ],
       "type": "object",
     },
-    "name": "prepare_withdraw",
+    "name": "lp_withdraw_prepare",
+    "title": "Prepare withdrawal",
   },
   {
     "annotations": {
@@ -932,7 +948,7 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       "openWorldHint": true,
       "readOnlyHint": false,
     },
-    "description": "Submit a wallet signed withdrawal. Verifies its HMAC permit and signature, checks expiry, and re-simulates before broadcast. Supply the unchanged summary and permit from prepare_withdraw. If the wallet appended extra instructions (e.g. Phantom Lighthouse), also pass unsignedTransaction from prepare_withdraw. High impact requires confirmHighImpact=true.",
+    "description": "Submit a wallet signed withdrawal. Verifies its HMAC permit and signature, checks expiry, and re-simulates before broadcast. Supply the unchanged summary and permit from lp_withdraw_prepare. If the wallet appended extra instructions (e.g. Phantom Lighthouse), also pass unsignedTransaction from lp_withdraw_prepare. High impact requires confirmHighImpact=true.",
     "inputSchema": {
       "properties": {
         "confirmHighImpact": {
@@ -962,7 +978,8 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       ],
       "type": "object",
     },
-    "name": "submit_withdraw",
+    "name": "lp_withdraw_submit",
+    "title": "Submit withdrawal",
   },
   {
     "annotations": {
@@ -988,7 +1005,7 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
           "type": "number",
         },
         "positionMint": {
-          "description": "Position NFT mint address (from list_positions)",
+          "description": "Position NFT mint address (from positions_list)",
           "type": "string",
         },
         "refreshHistory": {
@@ -1010,7 +1027,8 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       ],
       "type": "object",
     },
-    "name": "get_position_performance",
+    "name": "position_get_performance",
+    "title": "Position performance",
   },
   {
     "annotations": {
@@ -1040,7 +1058,8 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       ],
       "type": "object",
     },
-    "name": "get_position_range_status",
+    "name": "position_get_range_status",
+    "title": "Position range status",
   },
   {
     "annotations": {
@@ -1049,7 +1068,7 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       "openWorldHint": false,
       "readOnlyHint": true,
     },
-    "description": "List the same-stock Solana pools on the SoFinance pools page (https://sofinancelab.xyz/pools): Raydium CLMM and Meteora DLMM pools where both sides are the same stock from two issuers (e.g. TSLA/TSLAx, SPCX/SPCXx), plus the USDC/USDT pool. Served from the site's saved pools snapshot, the same list the page shows. Each pool has protocol, symbols, fee tier, TVL, 24h volume, apr7d (the highest 7-day range fee APR estimate and which of the 4 range presets it comes from: Micro, Tight, Standard, Wide), and an openPositionUrl. Filter with symbol (e.g. "TSLA"). Default order: 7-day APR, high to low. estimatedFeeAprPct / estimatedFeeAprLabel are the older pool-level 24-hour figure (last 24h fees / TVL, annualized), not a 7-day estimate; small pools can show very large values, and a pool without a 7-day estimate carries a warning. Estimates from past trading, not a promise of future fees. Fees not guaranteed. For the 4 presets of one pool call get_pool_range_apr. No wallet or token needed. Opening a position through MCP (quote_open_position / prepare_open_position) is Raydium CLMM only and needs a wallet token; Meteora pools open on the website.",
+    "description": "List the same-stock Solana pools on the SoFinance pools page (https://sofinancelab.xyz/pools): Raydium CLMM and Meteora DLMM pools, told apart by each pool's protocol field, where both sides are the same stock from two issuers (e.g. TSLA/TSLAx, SPCX/SPCXx), plus the USDC/USDT pool. Served from the site's saved pools snapshot, the same list the page shows. Each pool has protocol, symbols, fee tier, TVL, 24h volume, apr7d (the highest 7-day range fee APR estimate and which of the 4 range presets it comes from: Micro, Tight, Standard, Wide), and an openPositionUrl. Filter with symbol (e.g. "TSLA"). Default order: 7-day APR, high to low. estimatedFeeAprPct / estimatedFeeAprLabel are the older pool-level 24-hour figure (last 24h fees / TVL, annualized), not a 7-day estimate; small pools can show very large values, and a pool without a 7-day estimate carries a warning. Estimates from past trading, not a promise of future fees. Fees not guaranteed. For the 4 presets of one pool call pool_get_range_apr. No wallet or token needed. Opening a position through MCP (lp_open_quote / lp_open_prepare) supports Raydium CLMM only and requires a wallet token; open Meteora pools on the website.",
     "inputSchema": {
       "properties": {
         "maxPages": {
@@ -1080,7 +1099,7 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       "required": [],
       "type": "object",
     },
-    "name": "list_rwa_pairs",
+    "name": "pools_list",
     "title": "List same-stock pools",
   },
   {
@@ -1090,11 +1109,11 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       "openWorldHint": false,
       "readOnlyHint": true,
     },
-    "description": "Estimated 7-day fee APR of one listed pool (poolAddress from list_rwa_pairs, Raydium or Meteora) for each of the 4 range presets the site prices: Micro (±2 price steps), Tight (±0.05%), Standard (±0.3%), Wide (±1%). Per preset: price bounds (B per 1 A), APR %, share of the last 7 days' volume that traded inside the range, and fees per day at the site's $1,000 card basis. Also the highest-APR preset, the 7-day window, data freshness and confidence. Same saved snapshot as the pool cards on https://sofinancelab.xyz/pools. New pools (too few days of data) and missing snapshots return a status with a reason and no APR. Estimates from past trading, not a promise of future fees. Fees not guaranteed. No wallet or token needed.",
+    "description": "Estimated 7-day fee APR of one listed pool (poolAddress from pools_list, Raydium or Meteora) for each of the 4 range presets the site prices: Micro (±2 price steps), Tight (±0.05%), Standard (±0.3%), Wide (±1%). Per preset: price bounds (B per 1 A), APR %, share of the last 7 days' volume that traded inside the range, and fees per day at the site's $1,000 card basis. Also the highest-APR preset, the 7-day window, data freshness and confidence. Same saved snapshot as the pool cards on https://sofinancelab.xyz/pools. New pools (too few days of data) and missing snapshots return a status with a reason and no APR. Estimates from past trading, not a promise of future fees. Fees not guaranteed. No wallet or token needed.",
     "inputSchema": {
       "properties": {
         "poolId": {
-          "description": "Pool address (poolAddress from list_rwa_pairs)",
+          "description": "Pool address (poolAddress from pools_list)",
           "type": "string",
         },
       },
@@ -1103,7 +1122,7 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       ],
       "type": "object",
     },
-    "name": "get_pool_range_apr",
+    "name": "pool_get_range_apr",
     "title": "7-day range APR for a pool",
   },
   {
@@ -1126,7 +1145,8 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       ],
       "type": "object",
     },
-    "name": "list_positions",
+    "name": "positions_list",
+    "title": "List wallet positions",
   },
   {
     "annotations": {
@@ -1151,11 +1171,11 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
           "type": "string",
         },
         "inputMint": {
-          "description": "Input asset mint address (from list_positions assets)",
+          "description": "Input asset mint address (from positions_list assets)",
           "type": "string",
         },
         "positionMint": {
-          "description": "Position NFT mint address (from list_positions)",
+          "description": "Position NFT mint address (from positions_list)",
           "type": "string",
         },
         "resaleFloorBps": {
@@ -1182,7 +1202,8 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       ],
       "type": "object",
     },
-    "name": "quote_add_liquidity",
+    "name": "lp_add_quote",
+    "title": "Quote add liquidity",
   },
   {
     "annotations": {
@@ -1191,7 +1212,7 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       "openWorldHint": true,
       "readOnlyHint": false,
     },
-    "description": "Prepare an unsigned, fully-simulated transaction for adding liquidity. Returns base64-encoded transaction for signing, HMAC permit, and summary. The server NEVER holds private keys. Transaction must be signed by the user/agent wallet. Includes: full simulation, 1232-byte limit check, Jupiter swap + Raydium increase_liquidity_v2, short-lived permit. Failure modes: same as quote_add_liquidity, plus simulation failure, size limit, blockhash expiry. After signing, use submit_signed_transaction.",
+    "description": "Prepare an unsigned, fully-simulated transaction for adding liquidity. Returns base64-encoded transaction for signing, HMAC permit, and summary. The server NEVER holds private keys. Transaction must be signed by the user/agent wallet. Includes: full simulation, 1232-byte limit check, Jupiter swap + Raydium increase_liquidity_v2, short-lived permit. Failure modes: same as lp_add_quote, plus simulation failure, size limit, blockhash expiry. After signing, use lp_add_submit.",
     "inputSchema": {
       "properties": {
         "amount": {
@@ -1238,7 +1259,8 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       ],
       "type": "object",
     },
-    "name": "prepare_transaction",
+    "name": "lp_add_prepare",
+    "title": "Prepare add liquidity",
   },
   {
     "annotations": {
@@ -1273,7 +1295,8 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       ],
       "type": "object",
     },
-    "name": "quote_compound",
+    "name": "lp_compound_quote",
+    "title": "Quote fee compound",
   },
   {
     "annotations": {
@@ -1282,7 +1305,7 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       "openWorldHint": true,
       "readOnlyHint": false,
     },
-    "description": "Prepare an unsigned compound transaction. Returns base64 transaction, permit, and summary. Same safety as prepare_transaction: full simulation, HMAC permit, no private keys. After signing, use submit_compound_transaction.",
+    "description": "Prepare an unsigned compound transaction. Returns base64 transaction, permit, and summary. Same safety as lp_add_prepare: full simulation, HMAC permit, no private keys. After signing, use lp_compound_submit.",
     "inputSchema": {
       "properties": {
         "positionMint": {
@@ -1308,7 +1331,8 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       ],
       "type": "object",
     },
-    "name": "prepare_compound_transaction",
+    "name": "lp_compound_prepare",
+    "title": "Prepare fee compound",
   },
   {
     "annotations": {
@@ -1317,7 +1341,7 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       "openWorldHint": true,
       "readOnlyHint": false,
     },
-    "description": "Submit a signed add-liquidity transaction. Re-verifies HMAC permit, re-reads on-chain state, re-simulates, then broadcasts. Pass signedTransaction plus every field of submitArgs from the prepare_transaction response, unchanged. Failure modes: permit mismatch, state changed (liquidity, balance, NFT), expired (time or blockhash), simulation failure. Returns transaction signature on success.",
+    "description": "Submit a signed add-liquidity transaction. Re-verifies HMAC permit, re-reads on-chain state, re-simulates, then broadcasts. Pass signedTransaction plus every field of submitArgs from the lp_add_prepare response, unchanged. Failure modes: permit mismatch, state changed (liquidity, balance, NFT), expired (time or blockhash), simulation failure. Returns transaction signature on success.",
     "inputSchema": {
       "properties": {
         "expectedLiquidity": {
@@ -1337,7 +1361,7 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
           "type": "number",
         },
         "permit": {
-          "description": "HMAC permit from prepare_transaction",
+          "description": "HMAC permit from lp_add_prepare",
           "type": "string",
         },
         "rangeSide": {
@@ -1404,7 +1428,7 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
           "type": "string",
         },
         "unsignedTransaction": {
-          "description": "Base64 prepared transaction from prepare_transaction. Pass this when the wallet rewrote the message (Phantom Lighthouse / ComputeBudget).",
+          "description": "Base64 prepared transaction from lp_add_prepare. Pass this when the wallet rewrote the message (Phantom Lighthouse / ComputeBudget).",
           "type": "string",
         },
         "wallet": {
@@ -1428,7 +1452,8 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       ],
       "type": "object",
     },
-    "name": "submit_signed_transaction",
+    "name": "lp_add_submit",
+    "title": "Submit add liquidity",
   },
   {
     "annotations": {
@@ -1465,7 +1490,7 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
           "type": "string",
         },
         "poolId": {
-          "description": "Raydium CLMM pool id (from list_rwa_pairs)",
+          "description": "Raydium CLMM pool id (from pools_list)",
           "type": "string",
         },
         "rangePreset": {
@@ -1503,7 +1528,8 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       ],
       "type": "object",
     },
-    "name": "quote_open_position",
+    "name": "lp_open_quote",
+    "title": "Quote new position",
   },
   {
     "annotations": {
@@ -1512,7 +1538,7 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       "openWorldHint": true,
       "readOnlyHint": false,
     },
-    "description": "Prepare an unsigned, fully-simulated transaction that opens a new CLMM position. Prefer passing nftMint from an agent-held Keypair so the server never signs: wallet signs first, then add the mint signature on the wallet-returned tx and call submit_open_position. Without nftMint, open signUrl: the sign page generates the mint in the browser, re-prepares, wallet signs first, then the mint (the returned tx is a preview only). HMAC permit, summary, signUrl. 1232-byte limit, fresh blockhash, full simulation. Not submit_signed_transaction — this tx has two required signers.",
+    "description": "Prepare an unsigned, fully-simulated transaction that opens a new CLMM position. Prefer passing nftMint from an agent-held Keypair so the server never signs: wallet signs first, then add the mint signature on the wallet-returned tx and call lp_open_submit. Without nftMint, open signUrl: the sign page generates the mint in the browser, re-prepares, wallet signs first, then the mint (the returned tx is a preview only). HMAC permit, summary, signUrl. 1232-byte limit, fresh blockhash, full simulation. Not lp_add_submit — this tx has two required signers.",
     "inputSchema": {
       "properties": {
         "amount": {
@@ -1576,7 +1602,8 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       ],
       "type": "object",
     },
-    "name": "prepare_open_position",
+    "name": "lp_open_prepare",
+    "title": "Prepare new position",
   },
   {
     "annotations": {
@@ -1585,11 +1612,11 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       "openWorldHint": true,
       "readOnlyHint": false,
     },
-    "description": "Submit a signed open-position transaction. Re-verifies HMAC permit, re-reads pool/balances, re-simulates (sigVerify true, including the NFT-mint partial signature), then broadcasts. Pass signedTransaction plus permit, wallet, and the complete summary from prepare_open_position, unchanged. If the wallet rewrote the message (Phantom Lighthouse / ComputeBudget), also pass unsignedTransaction from prepare. Returns signature and the new positionMint.",
+    "description": "Submit a signed open-position transaction. Re-verifies HMAC permit, re-reads pool/balances, re-simulates (sigVerify true, including the NFT-mint partial signature), then broadcasts. Pass signedTransaction plus permit, wallet, and the complete summary from lp_open_prepare, unchanged. If the wallet rewrote the message (Phantom Lighthouse / ComputeBudget), also pass unsignedTransaction from prepare. Returns signature and the new positionMint.",
     "inputSchema": {
       "properties": {
         "permit": {
-          "description": "HMAC permit from prepare_open_position",
+          "description": "HMAC permit from lp_open_prepare",
           "type": "string",
         },
         "signedTransaction": {
@@ -1597,11 +1624,11 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
           "type": "string",
         },
         "summary": {
-          "description": "Complete summary object from prepare_open_position, unchanged (bound by the permit)",
+          "description": "Complete summary object from lp_open_prepare, unchanged (bound by the permit)",
           "type": "object",
         },
         "unsignedTransaction": {
-          "description": "Base64 prepared transaction from prepare_open_position. Pass this when the wallet rewrote the message (Phantom Lighthouse / ComputeBudget).",
+          "description": "Base64 prepared transaction from lp_open_prepare. Pass this when the wallet rewrote the message (Phantom Lighthouse / ComputeBudget).",
           "type": "string",
         },
         "wallet": {
@@ -1617,7 +1644,8 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       ],
       "type": "object",
     },
-    "name": "submit_open_position",
+    "name": "lp_open_submit",
+    "title": "Submit new position",
   },
   {
     "annotations": {
@@ -1653,6 +1681,7 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       "type": "object",
     },
     "name": "tx_status",
+    "title": "Transaction status",
   },
   {
     "annotations": {
@@ -1661,11 +1690,11 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       "openWorldHint": true,
       "readOnlyHint": false,
     },
-    "description": "Submit a signed compound transaction. Re-verifies permit and summary, then broadcasts. Returns signature on success. Same safety as submit_signed_transaction.",
+    "description": "Submit a signed compound transaction. Re-verifies permit and summary, then broadcasts. Returns signature on success. Same safety as lp_add_submit.",
     "inputSchema": {
       "properties": {
         "permit": {
-          "description": "HMAC permit from prepare_compound_transaction",
+          "description": "HMAC permit from lp_compound_prepare",
           "type": "string",
         },
         "signedTransaction": {
@@ -1673,11 +1702,11 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
           "type": "string",
         },
         "summary": {
-          "description": "Complete summary object from prepare_compound_transaction response, unchanged (bound by the permit)",
+          "description": "Complete summary object from lp_compound_prepare response, unchanged (bound by the permit)",
           "type": "object",
         },
         "unsignedTransaction": {
-          "description": "Base64 prepared transaction from prepare_compound_transaction. Pass this when the wallet rewrote the message (Phantom Lighthouse / ComputeBudget).",
+          "description": "Base64 prepared transaction from lp_compound_prepare. Pass this when the wallet rewrote the message (Phantom Lighthouse / ComputeBudget).",
           "type": "string",
         },
         "wallet": {
@@ -1693,7 +1722,8 @@ exports[`stdio MCP server > preserves the complete stdio discovery response 1`] 
       ],
       "type": "object",
     },
-    "name": "submit_compound_transaction",
+    "name": "lp_compound_submit",
+    "title": "Submit fee compound",
   },
 ]
 `;

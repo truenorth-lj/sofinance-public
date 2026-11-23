@@ -6,7 +6,7 @@ import { formatToolNames, POSITION_READ_TOOL_NAMES, SNAPSHOT_TOOL_NAMES } from "
 export const SERVER_INFO = {
   name: "sofinance-mcp-server",
   title: "SoFinance",
-  version: "0.2.0",
+  version: "0.3.0",
 } as const;
 
 /**

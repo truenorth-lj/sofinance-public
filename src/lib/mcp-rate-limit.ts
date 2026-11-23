@@ -8,7 +8,7 @@ import { clientIp, slidingWindowLimiter } from "@/lib/tx-send/rate-limit";
  *   brake on a client looping on discovery.
  * - Every tools/call: MCP_TOOL_CALLS_PER_IP_PER_MINUTE. Snapshot reads, tx_status (one status RPC; polling every 2 s
  *   is 30/min), quotes, prepares and submits.
- * - Position reads (`position-read` tools: list_positions, get_position_range_status, get_position_performance) also:
+ * - Position reads (`position-read` tools: positions_list, position_get_range_status, position_get_performance) also:
  *   MCP_POSITION_READS_PER_IP_PER_MINUTE, the same budget as the site's `/api/dex/*` positions reads. They are the
  *   costly RPC reads (account scans, signature history) and need no token, so anyone can ask.
  * A request refused by an earlier limit is not counted against a later one.

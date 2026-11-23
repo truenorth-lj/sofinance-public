@@ -188,18 +188,18 @@ All 14 MCP tools work remotely:
 
 | Tool | Auth Required | Notes |
 |------|--------------|-------|
-| `get_position_performance` | ❌ (optional wallet) | Read-only |
-| `list_rwa_pairs` | ❌ | Read-only, no wallet |
-| `list_positions` | ✅ | Wallet must match token |
-| `quote_add_liquidity` | ✅ | Wallet must match token |
-| `prepare_transaction` | ✅ | Wallet must match token |
-| `quote_compound` | ✅ | Wallet must match token |
-| `prepare_compound_transaction` | ✅ | Wallet must match token |
-| `submit_signed_transaction` | ✅ | Wallet must match token |
-| `submit_compound_transaction` | ✅ | Wallet must match token |
-| `quote_open_position` | ✅ | Wallet must match token |
-| `prepare_open_position` | ✅ | Wallet must match token |
-| `submit_open_position` | ✅ | Wallet must match token |
+| `position_get_performance` | ❌ (optional wallet) | Read-only |
+| `pools_list` | ❌ | Read-only, no wallet |
+| `positions_list` | ✅ | Wallet must match token |
+| `lp_add_quote` | ✅ | Wallet must match token |
+| `lp_add_prepare` | ✅ | Wallet must match token |
+| `lp_compound_quote` | ✅ | Wallet must match token |
+| `lp_compound_prepare` | ✅ | Wallet must match token |
+| `lp_add_submit` | ✅ | Wallet must match token |
+| `lp_compound_submit` | ✅ | Wallet must match token |
+| `lp_open_quote` | ✅ | Wallet must match token |
+| `lp_open_prepare` | ✅ | Wallet must match token |
+| `lp_open_submit` | ✅ | Wallet must match token |
 
 ## Testing Results
 
@@ -328,7 +328,7 @@ See [signing secret rotation](README.md#rotate-the-signing-secret) for the rollo
 12. ✅ **UI integration** - Auto-generate config after wallet connect + signature
 13. ✅ **No breaking changes** - Local stdio still works
 14. ✅ **Transport compatibility** - HTTP + zero-secret shim for stdio-only agents
-15. ✅ **Wallet match enforcement** - get_position_performance checks wallet when provided
+15. ✅ **Wallet match enforcement** - position_get_performance checks wallet when provided
 
 ## Next Steps
 

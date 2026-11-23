@@ -43,15 +43,15 @@ beforeEach(async () => {
   transaction = buildTransaction({ payer, signWith: [] });
   openTransaction = buildTransaction({ payer, extraSigners: [nft], signWith: [nft] });
   const balances = { input: "2000000", a: "10", b: "20" };
-  const selected = { simulated: true, quote: { ...VALID_ARGS.prepare_transaction, requested: "1000000", liquidity: "777", floorBps: 9900, rangeSide: "inside" }, startingLiquidity: "1000", startingBalances: balances, expiresAt: Date.now() + 60000, lastValidBlockHeight: 150, blockhash: BLOCKHASH };
+  const selected = { simulated: true, quote: { ...VALID_ARGS.lp_add_prepare, requested: "1000000", liquidity: "777", floorBps: 9900, rangeSide: "inside" }, startingLiquidity: "1000", startingBalances: balances, expiresAt: Date.now() + 60000, lastValidBlockHeight: 150, blockhash: BLOCKHASH };
   const compound = compoundSummaryFixture({ wallet, blockhash: BLOCKHASH });
   const open = openSummaryFixture({ wallet, nftMint: nft.publicKey.toBase58(), blockhash: BLOCKHASH });
-  const withdraw = { operation: "withdraw", wallet, positionMint: VALID_ARGS.prepare_withdraw.positionMint, stage: "atomic", transactions: 1, expiresAt: Date.now() + 60000, lastValidBlockHeight: 150, blockhash: BLOCKHASH, requiresSecondConfirmation: false };
+  const withdraw = { operation: "withdraw", wallet, positionMint: VALID_ARGS.lp_withdraw_prepare.positionMint, stage: "atomic", transactions: 1, expiresAt: Date.now() + 60000, lastValidBlockHeight: 150, blockhash: BLOCKHASH, requiresSecondConfirmation: false };
   backend.selected.mockResolvedValue({ summary: selected, transaction });
   backend.compound.mockResolvedValue({ summary: compound, transaction });
   backend.open.mockResolvedValue({ summary: open, transaction: openTransaction });
   backend.withdraw.mockResolvedValue({ summary: withdraw, unsignedTransaction: toBase64(transaction), permit: withdrawPermit.issue(SIGNING_SECRET, { wallet, message: messageBase64(transaction), summary: withdraw }) });
-  backend.selectedState.mockResolvedValue({ ...VALID_ARGS.prepare_transaction, ownsNft: true, paused: false, frozen: false, transferFee: false, unsupportedExtensions: [], sufficientSol: true, liquidity: "1000", rangeSide: "inside", balances });
+  backend.selectedState.mockResolvedValue({ ...VALID_ARGS.lp_add_prepare, ownsNft: true, paused: false, frozen: false, transferFee: false, unsupportedExtensions: [], sufficientSol: true, liquidity: "1000", rangeSide: "inside", balances });
   backend.compoundState.mockResolvedValue(compound.state);
   backend.openState.mockResolvedValue({ ...open, paused: false, frozen: false, transferFee: false, unsupportedExtensions: [], sufficientSol: true, balances: open.startingBalances });
   backend.compoundSim.mockResolvedValue({ rewards: [] });
@@ -63,10 +63,10 @@ beforeEach(async () => {
 });
 afterEach(async () => { await client?.close(); await server?.close(); vi.useRealTimers(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 const operations = [
-  { name: "prepare_transaction", kind: "add-liquidity", sim: backend.selectedSim },
-  { name: "prepare_compound_transaction", kind: "compound", sim: backend.compoundSim },
-  { name: "prepare_open_position", kind: "open-position", sim: backend.openSim },
-  { name: "prepare_withdraw", kind: "withdraw", sim: backend.withdrawSim },
+  { name: "lp_add_prepare", kind: "add-liquidity", sim: backend.selectedSim },
+  { name: "lp_compound_prepare", kind: "compound", sim: backend.compoundSim },
+  { name: "lp_open_prepare", kind: "open-position", sim: backend.openSim },
+  { name: "lp_withdraw_prepare", kind: "withdraw", sim: backend.withdrawSim },
 ] as const;
 for (const surface of ["http", "stdio"] as const) for (const c of operations) {
   it(`${surface} ${c.kind} prepare -> verified token preserves full authorization and signable bytes`, async () => {

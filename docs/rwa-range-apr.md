@@ -31,7 +31,7 @@ of volume, see below), resolved by the pure functions in `range-apr/preset-list.
 * The buttons carry the range only (name + half-width; Micro's is `microBandLabel`, its ±2 steps as a percent for this pool's spacing, e.g.
   `±0.02%`, and `±2 steps` only until the payload is loaded). Every estimate is in the **Est. fee APR** card below them: the selection as the
   headline figure, the candidates that are not selected under it as "Other ranges".
-* Clicking Best selects the resolved candidate's own preset id, so `quote_open_position` / `prepare_open_position` receive e.g. `tight`
+* Clicking Best selects the resolved candidate's own preset id, so `lp_open_quote` / `lp_open_prepare` receive e.g. `tight`
   and sign exactly the ticks that were priced. (Best itself is never sent to the API.)
 * Default selection stays **Standard**. If Standard *is* what Best resolved to, Standard has no button of its own, so the default
   selection shows as the highlighted **Best** button (same ticks).

@@ -25,7 +25,7 @@ export function protocolName(protocol: string): string {
 }
 
 export const POOL_NOT_LISTED_MESSAGE =
-  "This pool is not on the SoFinance pools list, so there is no saved 7-day estimate for it. Call list_rwa_pairs for the listed pools.";
+  "This pool is not on the SoFinance pools list, so there is no saved 7-day estimate for it. Call pools_list for the listed pools.";
 
 export type PoolApr7dSummary =
   | {

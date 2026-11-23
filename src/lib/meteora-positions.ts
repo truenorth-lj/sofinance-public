@@ -255,7 +255,7 @@ export type MeteoraPositionRangeFacts = PositionRangeFacts & {
 };
 
 /**
- * Range facts for `get_position_range_status`, or null when the address is not a Meteora position.
+ * Range facts for `position_get_range_status`, or null when the address is not a Meteora position.
  * Bins [lower, upper] are reported as ticks [lower, upper + 1) (bin step 1 only).
  */
 export async function readMeteoraPositionRangeFacts(positionAccount: string, options: MeteoraReadOptions = {}): Promise<MeteoraPositionRangeFacts | null> {

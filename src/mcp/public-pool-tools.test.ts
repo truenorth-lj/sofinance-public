@@ -1,4 +1,4 @@
-// Public, signature-free read tools (list_rwa_pairs, get_pool_range_apr): served from the saved pools snapshot only,
+// Public, signature-free read tools (pools_list, pool_get_range_apr): served from the saved pools snapshot only,
 // reachable on the remote route without a token, while every wallet-bound tool keeps its 401.
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -87,9 +87,9 @@ afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); vi.restoreAllMocks(); 
 /** Copy rule: "guaranteed" is banned except the one approved risk line, exactly "Fees not guaranteed" (LJ via PM). */
 const withoutAllowed = (text: string) => text.replace(/\bFees not guaranteed\b/g, "");
 
-describe("list_rwa_pairs over the remote route, no token", () => {
+describe("pools_list over the remote route, no token", () => {
   it("serves the saved snapshot incl. Meteora, with protocol and 7-day APR, ranked by 7-day APR", async () => {
-    const { response, value } = await rpc("list_rwa_pairs", {});
+    const { response, value } = await rpc("pools_list", {});
     expect(response.status).toBe(200);
     expect(backend.pairs).toHaveBeenCalledWith({ minTvl: 0, maxPages: 10, sortBy: "estimatedFeeApr" });
     expect(backend.live).not.toHaveBeenCalled();
@@ -109,32 +109,32 @@ describe("list_rwa_pairs over the remote route, no token", () => {
   });
 
   it("symbol filter answers 'which TSLA pool' with both Raydium and Meteora, reading APR only for matches", async () => {
-    const { value } = await rpc("list_rwa_pairs", { symbol: "tsla" });
+    const { value } = await rpc("pools_list", { symbol: "tsla" });
     expect(value.pairs.map((row: { protocol: string }) => row.protocol)).toEqual(["meteora-dlmm", "raydium-clmm"]);
     expect(backend.store.mock.calls.map(([request]) => request.poolId).sort()).toEqual([POOLS.meteoraTsla, POOLS.raydiumTsla].sort());
   });
 
   it("repeated calls reuse the cached snapshot (no new store reads within the TTL)", async () => {
-    await rpc("list_rwa_pairs", {});
+    await rpc("pools_list", {});
     const reads = backend.store.mock.calls.length;
-    await rpc("list_rwa_pairs", { sortBy: "tvl" });
-    await rpc("get_pool_range_apr", { poolId: POOLS.meteoraTsla });
+    await rpc("pools_list", { sortBy: "tvl" });
+    await rpc("pool_get_range_apr", { poolId: POOLS.meteoraTsla });
     expect(backend.pairs).toHaveBeenCalledTimes(1);
     expect(backend.store).toHaveBeenCalledTimes(reads);
   });
 
   it("a failed snapshot read is a plain tool error and is not cached", async () => {
     backend.pairs.mockRejectedValueOnce(new Error("Saved pool data is temporarily unavailable"));
-    const failed = await rpc("list_rwa_pairs", {});
+    const failed = await rpc("pools_list", {});
     expect(failed.response.status).toBe(200);
     expect(failed.json.result?.isError).toBe(true);
-    expect((await rpc("list_rwa_pairs", {})).value.count).toBe(4);
+    expect((await rpc("pools_list", {})).value.count).toBe(4);
   });
 });
 
-describe("get_pool_range_apr over the remote route, no token", () => {
+describe("pool_get_range_apr over the remote route, no token", () => {
   it("returns the four presets with 7-day APR from the saved snapshot (Meteora)", async () => {
-    const { response, value } = await rpc("get_pool_range_apr", { poolId: POOLS.meteoraTsla });
+    const { response, value } = await rpc("pool_get_range_apr", { poolId: POOLS.meteoraTsla });
     expect(response.status).toBe(200);
     expect(value).toMatchObject({
       poolId: POOLS.meteoraTsla, protocol: "meteora-dlmm", protocolName: "Meteora", pair: "TSLA/TSLAx",
@@ -152,14 +152,14 @@ describe("get_pool_range_apr over the remote route, no token", () => {
   });
 
   it("a new pool returns its status and no APR numbers", async () => {
-    const { value } = await rpc("get_pool_range_apr", { poolId: POOLS.newPool });
+    const { value } = await rpc("pool_get_range_apr", { poolId: POOLS.newPool });
     expect(value.status).toBe("new");
     expect(value.highestRange).toBeNull();
     for (const preset of value.presets) expect(preset).not.toHaveProperty("aprPct");
   });
 
   it("a pool outside the saved list is refused without any store or live read", async () => {
-    const { json } = await rpc("get_pool_range_apr", { poolId: VALID_ARGS.get_pool_range_apr.poolId });
+    const { json } = await rpc("pool_get_range_apr", { poolId: VALID_ARGS.pool_get_range_apr.poolId });
     expect(json.result?.isError).toBe(true);
     expect(json.result?.content[0]!.text).toContain(POOL_NOT_LISTED_MESSAGE.slice(0, 40));
     expect(backend.store).not.toHaveBeenCalled();
@@ -167,7 +167,7 @@ describe("get_pool_range_apr over the remote route, no token", () => {
   });
 
   it("validates poolId", async () => {
-    const { json } = await rpc("get_pool_range_apr", { poolId: "not a pool" });
+    const { json } = await rpc("pool_get_range_apr", { poolId: "not a pool" });
     expect(json.result?.isError).toBe(true);
   });
 });
@@ -176,9 +176,9 @@ describe("fee disclaimer and the 24h figure", () => {
   it("both public tools carry the window and the full fee disclaimer, in the approved wording only", async () => {
     expect(FEES_NOTE).toContain("Fees not guaranteed.");
     expect(withoutAllowed(FEES_NOTE)).not.toMatch(/guarantee/i);
-    const list = (await rpc("list_rwa_pairs", {})).value;
+    const list = (await rpc("pools_list", {})).value;
     expect(list).toMatchObject({ note: FEES_NOTE, aprWindow: WINDOW_LABEL });
-    const one = (await rpc("get_pool_range_apr", { poolId: POOLS.meteoraTsla })).value;
+    const one = (await rpc("pool_get_range_apr", { poolId: POOLS.meteoraTsla })).value;
     expect(one.note).toBe(FEES_NOTE);
     expect(one.window.label).toBe(WINDOW_LABEL);
     const definitions = listToolDefinitions("http");
@@ -190,7 +190,7 @@ describe("fee disclaimer and the 24h figure", () => {
   });
 
   it("labels estimatedFeeAprPct as 24h and warns only where there is no 7-day estimate, numbers unchanged", async () => {
-    const { value } = await rpc("list_rwa_pairs", {});
+    const { value } = await rpc("pools_list", {});
     for (const row of value.pairs) {
       expect(row.estimatedFeeAprWindow).toBe("24h");
       const input = SNAPSHOT_PAIRS.pairs.find((candidate) => candidate.poolAddress === row.poolAddress)!;
@@ -200,14 +200,14 @@ describe("fee disclaimer and the 24h figure", () => {
     }
     expect(value.pairs.find((row: { poolAddress: string }) => row.poolAddress === POOLS.newPool).warning).toBe(APR_24H_WARNING);
     expect(APR_24H_WARNING).toMatch(/24-hour figure/);
-    const description = listToolDefinitions("http").find((tool) => tool.name === "list_rwa_pairs")!.description ?? "";
+    const description = listToolDefinitions("http").find((tool) => tool.name === "pools_list")!.description ?? "";
     expect(description).toMatch(/estimatedFeeAprPct .*24-hour figure.*not a 7-day estimate/);
   });
 
   it("without the hosted store every pool gets the 24h warning", async () => {
     backend.enabled.value = false;
     backend.live.mockResolvedValue(undefined);
-    const { value } = await rpc("list_rwa_pairs", {});
+    const { value } = await rpc("pools_list", {});
     expect(value.pairs.length).toBeGreaterThan(0);
     for (const row of value.pairs) expect(row.warning).toBe(APR_24H_WARNING);
   });
@@ -218,8 +218,8 @@ describe("protected tools keep their auth", () => {
 
   it("exactly the snapshot reads, the three position reads and tx_status are public, and metadata agrees with dispatch", () => {
     expect((Object.keys(TOOL_DISPATCH) as ToolName[]).filter(isPublicTool).sort()).toEqual([...PUBLIC_TOOL_NAMES].sort());
-    expect([...PUBLIC_TOOL_NAMES].sort()).toEqual(["get_pool_range_apr", "get_position_performance", "get_position_range_status",
-      "list_positions", "list_rwa_pairs", "tx_status"]);
+    expect([...PUBLIC_TOOL_NAMES].sort()).toEqual(["pool_get_range_apr", "pools_list", "position_get_performance", "position_get_range_status",
+      "positions_list", "tx_status"]);
     expect(protectedTools).toHaveLength(11);
   });
 
@@ -236,13 +236,13 @@ describe("protected tools keep their auth", () => {
 });
 
 describe("tool annotations", () => {
-  const READ = ["list_rwa_pairs", "get_pool_range_apr", "list_positions", "get_position_range_status", "get_position_performance",
-    "quote_add_liquidity", "quote_compound", "quote_open_position", "tx_status"];
+  const READ = ["pools_list", "pool_get_range_apr", "positions_list", "position_get_range_status", "position_get_performance",
+    "lp_add_quote", "lp_compound_quote", "lp_open_quote", "tx_status"];
   it.each(["http", "stdio"] as const)("%s: every tool has annotations; reads are readOnly, submits destructive", (surface) => {
     for (const tool of listToolDefinitions(surface)) {
       expect(tool.annotations, tool.name).toBeDefined();
       expect(tool.annotations!.readOnlyHint, tool.name).toBe(READ.includes(tool.name));
-      expect(tool.annotations!.destructiveHint, tool.name).toBe(tool.name.startsWith("submit_"));
+      expect(tool.annotations!.destructiveHint, tool.name).toBe(tool.name.endsWith("_submit"));
     }
   });
 });
@@ -250,12 +250,12 @@ describe("tool annotations", () => {
 describe("open tools accept SOL / USDC symbols", () => {
   it.each([["USDC", "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"], ["usdc", "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"],
     ["SOL", "So11111111111111111111111111111111111111112"], [" sol ", "So11111111111111111111111111111111111111112"]])("%j resolves to its mint", (symbol, mint) => {
-    expect(quoteOpenPositionSchema.parse({ ...VALID_ARGS.quote_open_position, inputMint: symbol }).inputMint).toBe(mint);
-    expect(prepareOpenPositionSchema.parse({ ...VALID_ARGS.prepare_open_position, inputMint: symbol }).inputMint).toBe(mint);
+    expect(quoteOpenPositionSchema.parse({ ...VALID_ARGS.lp_open_quote, inputMint: symbol }).inputMint).toBe(mint);
+    expect(prepareOpenPositionSchema.parse({ ...VALID_ARGS.lp_open_prepare, inputMint: symbol }).inputMint).toBe(mint);
   });
   it("a mint address passes through and other text is still rejected", () => {
-    expect(quoteOpenPositionSchema.parse(VALID_ARGS.quote_open_position).inputMint).toBe(VALID_ARGS.quote_open_position.inputMint);
-    expect(quoteOpenPositionSchema.safeParse({ ...VALID_ARGS.quote_open_position, inputMint: "USDT" }).success).toBe(false);
+    expect(quoteOpenPositionSchema.parse(VALID_ARGS.lp_open_quote).inputMint).toBe(VALID_ARGS.lp_open_quote.inputMint);
+    expect(quoteOpenPositionSchema.safeParse({ ...VALID_ARGS.lp_open_quote, inputMint: "USDT" }).success).toBe(false);
   });
 });
 

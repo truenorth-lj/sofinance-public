@@ -59,13 +59,13 @@ afterEach(() => {
 
 // -------------------------------------------------------------------- tools/list contract
 const EXPECTED_TOOL_NAMES = [
-  "prepare_withdraw", "submit_withdraw",
-  "get_position_performance", "get_position_range_status", "list_rwa_pairs", "get_pool_range_apr", "list_positions",
-  "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction",
-  "submit_signed_transaction", "submit_compound_transaction", "quote_open_position", "prepare_open_position", "submit_open_position", "tx_status",
+  "lp_withdraw_prepare", "lp_withdraw_submit",
+  "position_get_performance", "position_get_range_status", "pools_list", "pool_get_range_apr", "positions_list",
+  "lp_add_quote", "lp_add_prepare", "lp_compound_quote", "lp_compound_prepare",
+  "lp_add_submit", "lp_compound_submit", "lp_open_quote", "lp_open_prepare", "lp_open_submit", "tx_status",
 ];
-const PUBLIC_TOOLS = ["list_rwa_pairs", "get_pool_range_apr", "list_positions", "get_position_range_status", "get_position_performance", "tx_status"];
-const POSITION_READS = ["list_positions", "get_position_range_status", "get_position_performance"];
+const PUBLIC_TOOLS = ["pools_list", "pool_get_range_apr", "positions_list", "position_get_range_status", "position_get_performance", "tx_status"];
+const POSITION_READS = ["positions_list", "position_get_range_status", "position_get_performance"];
 
 describe("removed tools", () => {
   it("get_pool_activity is gone from tools/list and a direct call is an unknown tool", async () => {
@@ -101,15 +101,15 @@ describe("tools/list wire contract", () => {
   });
 
   const zodFor: Record<string, keyof typeof schemas> = {
-    prepare_withdraw:"prepareWithdrawSchema",submit_withdraw:"submitWithdrawSchema",
-    get_position_performance: "getPositionPerformanceSchema",
-    get_position_range_status: "getPositionRangeStatusSchema", list_rwa_pairs: "listRwaPairsSchema",
-    get_pool_range_apr: "getPoolRangeAprSchema",
-    list_positions: "listPositionsSchema", quote_add_liquidity: "quoteAddLiquiditySchema",
-    prepare_transaction: "prepareTransactionSchema", quote_compound: "quoteCompoundSchema",
-    prepare_compound_transaction: "quoteCompoundSchema", submit_signed_transaction: "submitSignedTransactionSchema",
-    submit_compound_transaction: "submitCompoundTransactionSchema", quote_open_position: "quoteOpenPositionSchema",
-    prepare_open_position: "prepareOpenPositionSchema", submit_open_position: "submitOpenPositionSchema",
+    lp_withdraw_prepare:"prepareWithdrawSchema",lp_withdraw_submit:"submitWithdrawSchema",
+    position_get_performance: "getPositionPerformanceSchema",
+    position_get_range_status: "getPositionRangeStatusSchema", pools_list: "listRwaPairsSchema",
+    pool_get_range_apr: "getPoolRangeAprSchema",
+    positions_list: "listPositionsSchema", lp_add_quote: "quoteAddLiquiditySchema",
+    lp_add_prepare: "prepareTransactionSchema", lp_compound_quote: "quoteCompoundSchema",
+    lp_compound_prepare: "quoteCompoundSchema", lp_add_submit: "submitSignedTransactionSchema",
+    lp_compound_submit: "submitCompoundTransactionSchema", lp_open_quote: "quoteOpenPositionSchema",
+    lp_open_prepare: "prepareOpenPositionSchema", lp_open_submit: "submitOpenPositionSchema",
     tx_status: "txStatusSchema",
   };
   it("the hand-written JSON schemas list the same properties and required fields as the zod schemas that actually validate calls", async () => {
@@ -124,7 +124,7 @@ describe("tools/list wire contract", () => {
       expect(schema.safeParse(valid).success, tool.name).toBe(true);
       const required = Object.keys(valid).filter((key) => {
         // Percent/target are conditionally required through oneOf, not top-level required.
-        if (tool.name === "prepare_withdraw" && ["percent","targetUSDC"].includes(key)) return false;
+        if (tool.name === "lp_withdraw_prepare" && ["percent","targetUSDC"].includes(key)) return false;
         const { [key]: _omitted, ...rest } = valid;
         void _omitted;
         return !schema.safeParse(rest).success;
@@ -148,8 +148,8 @@ describe("JSON-RPC envelope", () => {
 
   it("initialize and ping are public", async () => {
     const init = await send({ jsonrpc: "2.0", id: 1, method: "initialize" });
-    expect(init.json.result).toMatchObject({ protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "sofinance-mcp-server", version: "0.2.0" } });
-    expect(init.json.result.instructions).toContain("list_rwa_pairs and get_pool_range_apr");
+    expect(init.json.result).toMatchObject({ protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "sofinance-mcp-server", version: "0.3.0" } });
+    expect(init.json.result.instructions).toContain("pools_list and pool_get_range_apr");
     expect((await send({ jsonrpc: "2.0", id: 2, method: "ping" })).json).toEqual({ jsonrpc: "2.0", id: 2, result: {} });
   });
 
@@ -214,7 +214,7 @@ describe("JSON-RPC envelope", () => {
 });
 
 describe("authentication", () => {
-  const call = { jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "quote_compound", arguments: { wallet, positionMint: mint } } };
+  const call = { jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "lp_compound_quote", arguments: { wallet, positionMint: mint } } };
 
   it("tools/call without a bearer header => 401 / -32001 with plain next steps and a WWW-Authenticate challenge", async () => {
     const { response, json } = await send(call);
@@ -306,36 +306,36 @@ describe("authentication", () => {
 
 // -------------------------------------------------------------------- wallet binding
 const VALID_ARGS: Record<string, unknown> = {
-  prepare_withdraw:{wallet,positionMint:mint,percent:100},
-  submit_withdraw:{wallet,signedTransaction:"AA",permit:"p",summary:{}},
-  list_positions: { wallet },
-  quote_add_liquidity: { wallet, positionMint: mint, inputMint: mint, inputKind: "token", amount: "1" },
-  prepare_transaction: { wallet, positionMint: mint, inputMint: mint, inputKind: "token", amount: "1" },
-  quote_compound: { wallet, positionMint: mint },
-  prepare_compound_transaction: { wallet, positionMint: mint },
-  submit_signed_transaction: {
+  lp_withdraw_prepare:{wallet,positionMint:mint,percent:100},
+  lp_withdraw_submit:{wallet,signedTransaction:"AA",permit:"p",summary:{}},
+  positions_list: { wallet },
+  lp_add_quote: { wallet, positionMint: mint, inputMint: mint, inputKind: "token", amount: "1" },
+  lp_add_prepare: { wallet, positionMint: mint, inputMint: mint, inputKind: "token", amount: "1" },
+  lp_compound_quote: { wallet, positionMint: mint },
+  lp_compound_prepare: { wallet, positionMint: mint },
+  lp_add_submit: {
     signedTransaction: "AA", permit: "p", wallet, selection: { positionMint: mint, inputMint: mint, inputKind: "token" },
     requested: "1", expectedLiquidity: "1", startingLiquidity: "1", floorBps: 9900, expiresAt: 1, lastValidBlockHeight: 1,
     rangeSide: "inside", startingBalances: { input: "1", a: "1", b: "1" },
   },
-  submit_compound_transaction: { signedTransaction: "AA", permit: "p", wallet, summary: {} },
-  quote_open_position: { wallet, poolId: pool, inputMint: mint, inputKind: "token", amount: "1" },
-  prepare_open_position: { wallet, poolId: pool, inputMint: mint, inputKind: "token", amount: "1" },
-  submit_open_position: { signedTransaction: "AA", permit: "p", wallet, summary: {} },
-  get_position_performance: { positionMint: mint, wallet },
-  get_position_range_status: { positionMint: mint, wallet },
-  list_rwa_pairs: {},
-  get_pool_range_apr: { poolId: pool },
+  lp_compound_submit: { signedTransaction: "AA", permit: "p", wallet, summary: {} },
+  lp_open_quote: { wallet, poolId: pool, inputMint: mint, inputKind: "token", amount: "1" },
+  lp_open_prepare: { wallet, poolId: pool, inputMint: mint, inputKind: "token", amount: "1" },
+  lp_open_submit: { signedTransaction: "AA", permit: "p", wallet, summary: {} },
+  position_get_performance: { positionMint: mint, wallet },
+  position_get_range_status: { positionMint: mint, wallet },
+  pools_list: {},
+  pool_get_range_apr: { poolId: pool },
   tx_status: { signature: "1".repeat(64) },
 };
 const IMPLEMENTATION: Record<string, string> = {
-  prepare_withdraw:"prepareWithdraw",submit_withdraw:"submitWithdrawTransaction",
-  list_positions: "listPositions", quote_add_liquidity: "quoteAddLiquidity", prepare_transaction: "prepareTransaction",
-  quote_compound: "quoteCompound", prepare_compound_transaction: "prepareCompoundTransaction",
-  submit_signed_transaction: "submitSignedTransaction", submit_compound_transaction: "submitCompoundTransaction",
-  quote_open_position: "quoteOpenPosition", prepare_open_position: "prepareOpenPosition", submit_open_position: "submitOpenPosition",
-  get_position_performance: "getPositionPerformance", get_position_range_status: "getPositionRangeStatus",
-  list_rwa_pairs: "listRwaPairs", get_pool_range_apr: "getPoolRangeApr", tx_status: "txStatus",
+  lp_withdraw_prepare:"prepareWithdraw",lp_withdraw_submit:"submitWithdrawTransaction",
+  positions_list: "listPositions", lp_add_quote: "quoteAddLiquidity", lp_add_prepare: "prepareTransaction",
+  lp_compound_quote: "quoteCompound", lp_compound_prepare: "prepareCompoundTransaction",
+  lp_add_submit: "submitSignedTransaction", lp_compound_submit: "submitCompoundTransaction",
+  lp_open_quote: "quoteOpenPosition", lp_open_prepare: "prepareOpenPosition", lp_open_submit: "submitOpenPosition",
+  position_get_performance: "getPositionPerformance", position_get_range_status: "getPositionRangeStatus",
+  pools_list: "listRwaPairs", pool_get_range_apr: "getPoolRangeApr", tx_status: "txStatus",
 };
 const WALLET_REQUIRED = EXPECTED_TOOL_NAMES.filter((name) => !PUBLIC_TOOLS.includes(name));
 
@@ -372,40 +372,40 @@ describe("tools/call dispatch and wallet binding", () => {
     expect(toolFns[IMPLEMENTATION[name]!]).toHaveBeenLastCalledWith(expect.objectContaining({ wallet: otherWallet }));
   });
 
-  it.each(["get_position_performance", "get_position_range_status"])("%s: wallet may be omitted", async (name) => {
+  it.each(["position_get_performance", "position_get_range_status"])("%s: wallet may be omitted", async (name) => {
     const omitted = await send({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: { positionMint: mint } } });
     expect(omitted.json.result.isError).toBeUndefined();
     expect(toolFns[IMPLEMENTATION[name]!]).toHaveBeenCalledOnce();
   });
 
-  it("QUIRK: the passed wallet is whatever the token holds; list_rwa_pairs takes no wallet and is unbound", async () => {
+  it("QUIRK: the passed wallet is whatever the token holds; pools_list takes no wallet and is unbound", async () => {
     const other = generateMcpToken(otherWallet, SIGNING_SECRET);
-    expect((await callTool("list_rwa_pairs", undefined, other)).json.result.isError).toBeUndefined();
+    expect((await callTool("pools_list", undefined, other)).json.result.isError).toBeUndefined();
   });
 
   it("QUIRK: a token for wallet B cannot use wallet A's tools (symmetry check of the binding)", async () => {
     const other = generateMcpToken(otherWallet, SIGNING_SECRET);
-    const { json } = await callTool("quote_compound", { wallet, positionMint: mint }, other);
+    const { json } = await callTool("lp_compound_quote", { wallet, positionMint: mint }, other);
     expect(json.result.isError).toBe(true);
     expect(toolFns.quoteCompound).not.toHaveBeenCalled();
   });
 
   it("QUIRK: binding is a plain string comparison; schemas accept any 32-44 char base58-looking string as a wallet", async () => {
-    const { json } = await callTool("quote_compound", { wallet: "1".repeat(32), positionMint: mint });
+    const { json } = await callTool("lp_compound_quote", { wallet: "1".repeat(32), positionMint: mint });
     expect(JSON.parse(json.result.content[0].text).error).toContain("Token wallet mismatch");
   });
 
   it("zod validation errors come back as isError text (HTTP 200) containing the raw zod message", async () => {
-    const { response, json } = await callTool("quote_add_liquidity", { wallet, positionMint: mint });
+    const { response, json } = await callTool("lp_add_quote", { wallet, positionMint: mint });
     expect(response.status).toBe(200);
     expect(json.result.isError).toBe(true);
     expect(JSON.parse(json.result.content[0].text).error).toContain("inputMint");
     expect(toolFns.quoteAddLiquidity).not.toHaveBeenCalled();
   });
 
-  it("QUIRK: list_positions with no arguments object fails zod (args are not defaulted) while the optional tools default to {}", async () => {
-    expect((await callTool("list_positions", undefined)).json.result.isError).toBe(true);
-    expect((await callTool("list_rwa_pairs", undefined)).json.result.isError).toBeUndefined();
+  it("QUIRK: positions_list with no arguments object fails zod (args are not defaulted) while the optional tools default to {}", async () => {
+    expect((await callTool("positions_list", undefined)).json.result.isError).toBe(true);
+    expect((await callTool("pools_list", undefined)).json.result.isError).toBeUndefined();
     expect(toolFns.listRwaPairs).toHaveBeenCalledWith({ minTvl: 0, maxPages: 3, sortBy: "apr7d" });
   });
 
@@ -418,7 +418,7 @@ describe("tools/call dispatch and wallet binding", () => {
 
   it("STEP 2a: tool errors are sanitized like the web routes: URLs and api keys never reach the agent", async () => {
     toolFns.quoteCompound!.mockRejectedValue(new Error("upstream failed https://api.example/quote?api_key=SECRET123"));
-    const { json } = await callTool("quote_compound", VALID_ARGS.quote_compound);
+    const { json } = await callTool("lp_compound_quote", VALID_ARGS.lp_compound_quote);
     expect(json.result.isError).toBe(true);
     const text = json.result.content[0].text as string;
     expect(text).not.toContain("SECRET123");
@@ -440,7 +440,7 @@ describe("tools/call dispatch and wallet binding", () => {
     ["X-Auth-Token", "X-Auth-Token: R2_KEY_7", "[redacted]"],
   ])("STEP 2a: redacts a %s", async (_label, raw, expected) => {
     toolFns.listRwaPairs!.mockRejectedValue(new Error(raw));
-    const { json } = await callTool("list_rwa_pairs", {});
+    const { json } = await callTool("pools_list", {});
     const error = JSON.parse(json.result.content[0].text).error as string;
     expect(error).toBe(expected);
   });
@@ -450,7 +450,7 @@ describe("tools/call dispatch and wallet binding", () => {
       transactionError: { message: JSON.stringify({ [key]: "R2_KEY_7" }), code: "E_UPSTREAM" },
     });
     toolFns.listRwaPairs!.mockRejectedValue(error);
-    const result = await callTool("list_rwa_pairs", {});
+    const result = await callTool("pools_list", {});
     expect(result.response.status).toBe(200);
     expect(result.json.result.isError).toBe(true);
     const text = result.json.result.content[0].text as string;
@@ -462,27 +462,27 @@ describe("tools/call dispatch and wallet binding", () => {
 
   it("STEP 2a: known chain errors get the same public wording as the web routes; rate limits hide the upstream", async () => {
     toolFns.listRwaPairs!.mockRejectedValue(new Error("Transaction simulation failed: Blockhash not found"));
-    expect(JSON.parse((await callTool("list_rwa_pairs", {})).json.result.content[0].text).error).toContain("expired before Solana included it");
+    expect(JSON.parse((await callTool("pools_list", {})).json.result.content[0].text).error).toContain("expired before Solana included it");
     toolFns.listRwaPairs!.mockRejectedValue(new Error("429 Too Many Requests from https://rpc.example/?api-key=SECRET123"));
-    const text = (await callTool("list_rwa_pairs", {})).json.result.content[0].text as string;
+    const text = (await callTool("pools_list", {})).json.result.content[0].text as string;
     expect(text).not.toContain("SECRET123");
     expect(text).not.toContain("rpc.example");
   });
 
   it("STEP 2a: a long error is truncated to 220 characters", async () => {
     toolFns.listRwaPairs!.mockRejectedValue(new Error("x".repeat(500)));
-    const error = JSON.parse((await callTool("list_rwa_pairs", {})).json.result.content[0].text).error as string;
+    const error = JSON.parse((await callTool("pools_list", {})).json.result.content[0].text).error as string;
     expect(error).toHaveLength(220);
     expect(error.endsWith("...")).toBe(true);
   });
 
   it("STEP 2a: an error with no message falls back to a generic text", async () => {
     toolFns.listRwaPairs!.mockRejectedValue(new Error(""));
-    expect(JSON.parse((await callTool("list_rwa_pairs", {})).json.result.content[0].text)).toEqual({ error: "Tool call failed" });
+    expect(JSON.parse((await callTool("pools_list", {})).json.result.content[0].text)).toEqual({ error: "Tool call failed" });
   });
 
   it("STEP 2a: zod errors stay readable (field paths + messages), not cut to the first 220 chars of JSON", async () => {
-    const { json } = await callTool("prepare_transaction", {});
+    const { json } = await callTool("lp_add_prepare", {});
     const error = JSON.parse(json.result.content[0].text).error as string;
     expect(error.startsWith("Invalid arguments: ")).toBe(true);
     for (const field of ["wallet", "positionMint", "inputMint", "amount"]) expect(error).toContain(field);
@@ -490,7 +490,7 @@ describe("tools/call dispatch and wallet binding", () => {
   });
 
   it("STEP 2a: wallet-binding and unknown-tool messages are unchanged by sanitizing", async () => {
-    const mismatch = await callTool("quote_compound", { wallet: otherWallet, positionMint: mint });
+    const mismatch = await callTool("lp_compound_quote", { wallet: otherWallet, positionMint: mint });
     expect(JSON.parse(mismatch.json.result.content[0].text).error).toBe(
       `Token wallet mismatch: token is for ${wallet}, requested ${otherWallet}`,
     );
@@ -510,7 +510,7 @@ describe("tools/call dispatch and wallet binding", () => {
 
   it("QUIRK: a non-Error throw is stringified", async () => {
     toolFns.listRwaPairs!.mockRejectedValue("plain string failure");
-    const { json } = await callTool("list_rwa_pairs", {});
+    const { json } = await callTool("pools_list", {});
     expect(JSON.parse(json.result.content[0].text)).toEqual({ error: "plain string failure" });
   });
 });
@@ -534,7 +534,7 @@ describe("complete structured credentials at the HTTP tool boundary", () => {
   ])("scrubs real tool catches: %s", async (error) => {
     const info = vi.spyOn(console, "info").mockImplementation(() => {});
     toolFns.listRwaPairs!.mockRejectedValue(error);
-    const result = await callTool("list_rwa_pairs", {});
+    const result = await callTool("pools_list", {});
     expect(result.response.status).toBe(200);
     expect(result.json.result.isError).toBe(true);
     const text = result.json.result.content[0].text as string;
@@ -558,7 +558,7 @@ it.each(["api-key", "%61pi-key", "%2561pi-key", "%252561pi-key", "%FF%61pi-key",
     const before = JSON.stringify(data);
     for (const error of [Object.assign(new Error("provider failed"), { transactionError: data }), new Error(before)]) {
       toolFns.listRwaPairs!.mockRejectedValue(error);
-      const { response, json } = await callTool("list_rwa_pairs", {});
+      const { response, json } = await callTool("pools_list", {});
       expect(response.status).toBe(200);
       expect(json.result.isError).toBe(true);
       const text = json.result.content[0].text as string;

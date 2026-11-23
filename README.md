@@ -33,7 +33,7 @@ Former page paths permanently redirect. MCP `prepare_*` tools now emit `/app/sig
 ### Infrastructure
 
 - **RPC** (`packages/engine/src/rpc/providers.ts`, `packages/engine/src/rpc/urls.ts`): server RPC uses `SOLANA_RPC_URL` when set, else the public mainnet RPC; eligible failures fall back to the next distinct provider. `SOLANA_RPC_PROVIDERS` can override this with an explicit pool. Endpoints on retired vendor hosts (`RETIRED_RPC_HOSTS`, currently `solami.dev`) are skipped like an unset `$VAR`. Position performance discovers history with `getSignaturesForAddress` plus batched `getParsedTransaction` (`src/lib/position-performance-history.ts`, `src/lib/position-performance-math.ts`).
-- **Pool activity:** removed. The live pool-activity feature (MCP `get_pool_activity`, `/api/pool-activity` + `/stream`, the live pool-activity panel / swap ticker) was deleted; `get_position_range_status` uses the on-chain pool price.
+- **Pool activity:** removed. The live pool-activity feature (MCP `get_pool_activity`, `/api/pool-activity` + `/stream`, the live pool-activity panel / swap ticker) was deleted; `position_get_range_status` uses the on-chain pool price.
 - **No transaction tips.** Prepared transactions contain only the flow's own instructions (plus the optional protocol fee); they are sent with `sendRawTransaction` through the RPC layer above.
 
 ### Run locally
@@ -169,10 +169,10 @@ Local stdio against this checkout: see [Quickstart — MCP for AI Agents](#quick
 - **Resale-ratio floor** (default 99%): conservative quote of swapping position outputs back to the same input asset
 - **One-click compound**: harvest fees/rewards, swap to range ratio, reinvest (phase one rejects third reward mints without a verifiable path)
 - Web UI Advanced settings for resale gap and price tolerance; MCP exposes the same knobs
-- **Position performance / realized fee APR**: holding-period return from on-chain open/increase/decrease events + current equity (not Raydium pool 24h feeApr). Same-asset RWA pairs prefer **token-equivalent (TE)** in the plain/base ticker via current tick mid (raw A/B + TE; USD secondary) — MCP `get_position_performance`, `/api/position-performance`, `/app/position-performance` UI
-- **Live range status**: in-range / near-edge status from the on-chain pool price versus the position ticks — MCP `get_position_range_status`
-- **Same-asset RWA pair discovery**: Raydium CLMM pools where both sides are the same underlying (e.g. `MSTRx`/`MSTR`, `NVDAx`/`NVDA`), filtered by Jupiter Tokens API tags (`stocks`|`rwa`) plus Backed xStocks whitelist, with fee tier, TVL, 24h volume/fees, estimated fee APR, Token-2022 / freeze flags — MCP `list_rwa_pairs` and `/app/rwa-pairs` UI
-- **Open CLMM position**: create a new Raydium concentrated position from `/app/rwa-pairs` (Add liquidity) or MCP `quote_open_position` / `prepare_open_position` / `submit_open_position`, with Jupiter swap-to-ratio, range presets (web UI adds a **Micro** band, an estimated fee APR per preset, and an **Best** button that picks the candidate with the highest estimated APR; see `docs/rwa-range-apr.md`), and the same quote → prepare → sign → re-sim gates. No need to open the NFT on raydium.io first. The position NFT mint is an ephemeral **client** Keypair: `/api/open-prepare` takes its public key and returns a fully unsigned v0 tx. The wallet `signTransaction`s first (Phantom recipe); the client then adds the mint signature on the returned tx (extras such as Lighthouse are allowed) and zeroes the secret. Dedicated `submit_open_position` (not `submit_signed_transaction`) because this message has two required signers. MCP agents should pass `nftMint` and mint-sign after the wallet; without it, `/app/sign/<token>` generates the mint in the browser, re-prepares via `/api/sign-open-prepare`, and signs it after the wallet (the server never holds a mint secret).
+- **Position performance / realized fee APR**: holding-period return from on-chain open/increase/decrease events + current equity (not Raydium pool 24h feeApr). Same-asset RWA pairs prefer **token-equivalent (TE)** in the plain/base ticker via current tick mid (raw A/B + TE; USD secondary) — MCP `position_get_performance`, `/api/position-performance`, `/app/position-performance` UI
+- **Live range status**: in-range / near-edge status from the on-chain pool price versus the position ticks — MCP `position_get_range_status`
+- **Same-asset RWA pair discovery**: Raydium CLMM pools where both sides are the same underlying (e.g. `MSTRx`/`MSTR`, `NVDAx`/`NVDA`), filtered by Jupiter Tokens API tags (`stocks`|`rwa`) plus Backed xStocks whitelist, with fee tier, TVL, 24h volume/fees, estimated fee APR, Token-2022 / freeze flags — MCP `pools_list` and `/app/rwa-pairs` UI
+- **Open CLMM position**: create a new Raydium concentrated position from `/app/rwa-pairs` (Add liquidity) or MCP `lp_open_quote` / `lp_open_prepare` / `lp_open_submit`, with Jupiter swap-to-ratio, range presets (web UI adds a **Micro** band, an estimated fee APR per preset, and an **Best** button that picks the candidate with the highest estimated APR; see `docs/rwa-range-apr.md`), and the same quote → prepare → sign → re-sim gates. No need to open the NFT on raydium.io first. The position NFT mint is an ephemeral **client** Keypair: `/api/open-prepare` takes its public key and returns a fully unsigned v0 tx. The wallet `signTransaction`s first (Phantom recipe); the client then adds the mint signature on the returned tx (extras such as Lighthouse are allowed) and zeroes the secret. Dedicated `lp_open_submit` (not `lp_add_submit`) because this message has two required signers. MCP agents should pass `nftMint` and mint-sign after the wallet; without it, `/app/sign/<token>` generates the mint in the browser, re-prepares via `/api/sign-open-prepare`, and signs it after the wallet (the server never holds a mint secret).
 
 ## Safety gates
 
@@ -189,27 +189,29 @@ Kept on both web API and MCP paths:
 | HMAC permit | Binds message, wallet, selection, amounts, floor, starting state |
 | Re-verify | On submit: permit, on-chain state, re-simulate, then broadcast |
 
-## MCP tools (16; 15 in production)
+## MCP tools (17)
 
 | Tool | Purpose | Key params |
 |------|---------|------------|
-| `get_position_performance` | Holding-period / fee APR from chain; TE for same-asset RWA wrap pairs | `positionMint`, `wallet?`, `maxSignatures?`, `skipPricing?` |
-| `get_position_range_status` | In/out of range from the on-chain pool price vs position ticks; near-edge flag | `positionMint`, `wallet?`, `poolId?` |
-| `list_positions` | Positions + eligible assets | `wallet` |
-| `quote_add_liquidity` | Read-only zap quote | `wallet`, `positionMint`, `inputMint`, `inputKind` (`native`\|`token`), `amount`, `resaleFloorBps?` (9500–10000, default 9900), `slippageToleranceBps?` (0–500 step 10, default 100) |
-| `prepare_transaction` | Unsigned zap tx + permit + `submitArgs` + `signUrl` | same as quote |
-| `submit_signed_transaction` | Permit check → re-sim → broadcast | `signedTransaction` + every `submitArgs` field unchanged |
-| `quote_compound` | Compound quote | `wallet`, `positionMint`, `sourceSignatures?` (≤3) |
-| `prepare_compound_transaction` | Unsigned compound tx + permit + `signUrl` | same as quote_compound |
-| `submit_compound_transaction` | Permit check → re-sim → broadcast | `signedTransaction`, `permit`, `wallet`, full `summary` unchanged |
-| `list_rwa_pairs` | Discover same-asset RWA pairs; includes `openPositionUrl` + `recommendedRanges`. Defaults `maxPages=3`; uses the in-memory cache when warm | `minTvl?`, `maxPages?`, `sortBy?` |
-| `quote_open_position` | Quote a **new** CLMM position (no existing NFT) | `wallet`, `poolId`, `inputMint`, `inputKind`, `amount`, `rangePreset?` (`tight`\|`standard`\|`wide`\|`custom`), `minPrice?`/`maxPrice?` (B per 1 A) |
-| `prepare_open_position` | Unsigned open-position tx + permit + `signUrl`. Prefer `nftMint` (agent signs mint after wallet). Without `nftMint`, use `signUrl` (browser-generated mint; returned tx is a preview). | same as quote_open_position, plus optional `nftMint` |
-| `submit_open_position` | Permit check → re-sim → broadcast (two signers: wallet + NFT mint) | `signedTransaction`, `permit`, `wallet`, full `summary` unchanged |
-| `prepare_withdraw` | Simulated withdrawal + permit + sign link; supports two-stage withdrawal | `wallet`, `positionMint`, `percent` or `targetUSDC`, `receive?`, `outputMint?`, `confirmHighImpact?`; second stage: `stage=swap`, `tx1Signature`, complete `previous` result |
-| `submit_withdraw` | Permit/signature/expiry check → re-sim → broadcast | `wallet`, `signedTransaction`, `permit`, full `summary` unchanged, `confirmHighImpact?` |
+| `position_get_performance` | Holding-period / fee APR from chain; TE for same-asset RWA wrap pairs | `positionMint`, `wallet?`, `maxSignatures?`, `skipPricing?` |
+| `position_get_range_status` | In/out of range from the on-chain pool price vs position ticks; near-edge flag | `positionMint`, `wallet?`, `poolId?` |
+| `positions_list` | Positions + eligible assets | `wallet` |
+| `lp_add_quote` | Read-only zap quote | `wallet`, `positionMint`, `inputMint`, `inputKind` (`native`\|`token`), `amount`, `resaleFloorBps?` (9500–10000, default 9900), `slippageToleranceBps?` (0–500 step 10, default 100) |
+| `lp_add_prepare` | Unsigned zap tx + permit + `submitArgs` + `signUrl` | same as quote |
+| `lp_add_submit` | Permit check → re-sim → broadcast | `signedTransaction` + every `submitArgs` field unchanged |
+| `lp_compound_quote` | Compound quote | `wallet`, `positionMint`, `sourceSignatures?` (≤3) |
+| `lp_compound_prepare` | Unsigned compound tx + permit + `signUrl` | same as lp_compound_quote |
+| `lp_compound_submit` | Permit check → re-sim → broadcast | `signedTransaction`, `permit`, `wallet`, full `summary` unchanged |
+| `pools_list` | Discover same-asset RWA pairs; includes `openPositionUrl` + `recommendedRanges`. Defaults `maxPages=3`; uses the in-memory cache when warm | `minTvl?`, `maxPages?`, `sortBy?` |
+| `lp_open_quote` | Quote a **new** CLMM position (no existing NFT) | `wallet`, `poolId`, `inputMint`, `inputKind`, `amount`, `rangePreset?` (`tight`\|`standard`\|`wide`\|`custom`), `minPrice?`/`maxPrice?` (B per 1 A) |
+| `lp_open_prepare` | Unsigned open-position tx + permit + `signUrl`. Prefer `nftMint` (agent signs mint after wallet). Without `nftMint`, use `signUrl` (browser-generated mint; returned tx is a preview). | same as lp_open_quote, plus optional `nftMint` |
+| `lp_open_submit` | Permit check → re-sim → broadcast (two signers: wallet + NFT mint) | `signedTransaction`, `permit`, `wallet`, full `summary` unchanged |
+| `lp_withdraw_prepare` | Simulated withdrawal + permit + sign link; supports two-stage withdrawal | `wallet`, `positionMint`, `percent` or `targetUSDC`, `receive?`, `outputMint?`, `confirmHighImpact?`; second stage: `stage=swap`, `tx1Signature`, complete `previous` result |
+| `lp_withdraw_submit` | Permit/signature/expiry check → re-sim → broadcast | `wallet`, `signedTransaction`, `permit`, full `summary` unchanged, `confirmHighImpact?` |
 
-No token needed for the read-only tools `list_rwa_pairs`, `get_pool_range_apr`, `list_positions`, `get_position_range_status`, `get_position_performance` and `tx_status` (any wallet address; a token sent along is ignored). Every other tool needs a wallet-bound Bearer token. `/api/mcp` is rate limited per IP, per server instance: 120 requests/min, 60 `tools/call`/min, 12 position reads/min; over a limit returns HTTP 429, JSON-RPC error `-32029` and `Retry-After: 60`.
+Renamed in 0.3.0. The pre-0.3 names (`list_rwa_pairs`, `list_positions`, `quote_open_position`, `prepare_transaction`, `submit_withdraw`, …) still work as hidden aliases: they are not in `tools/list`, run the same tool with the same auth and limits, and add `_meta.deprecated` naming the new tool. Full map: `TOOL_ALIASES` in `src/mcp/tool-definitions.ts`.
+
+No token needed for the read-only tools `pools_list`, `pool_get_range_apr`, `positions_list`, `position_get_range_status`, `position_get_performance` and `tx_status` (any wallet address; a token sent along is ignored). Every other tool needs a wallet-bound Bearer token. `/api/mcp` is rate limited per IP, per server instance: 120 requests/min, 60 `tools/call`/min, 12 position reads/min; over a limit returns HTTP 429, JSON-RPC error `-32029` and `Retry-After: 60`.
 
 ## Quickstart — web
 
@@ -331,7 +333,7 @@ If your agent only supports stdio, use this shim that requires ZERO RPC/Jupiter 
 - ✅ Short-lived tokens (24h expiry, regenerate anytime)
 - ✅ Wallet-bound auth (token only works for your wallet)
 
-**Agent flow:** `list_positions` → `quote_add_liquidity` → `prepare_transaction` → wallet signs locally → `submit_signed_transaction`. Open a new RWA position: `list_rwa_pairs` → `quote_open_position` → `prepare_open_position` → sign via `signUrl` → `list_positions`. Server never holds your private keys.
+**Agent flow:** `positions_list` → `lp_add_quote` → `lp_add_prepare` → wallet signs locally → `lp_add_submit`. Open a new RWA position: `pools_list` → `lp_open_quote` → `lp_open_prepare` → sign via `signUrl` → `positions_list`. Server never holds your private keys.
 
 ### Alternative: Local MCP (Power Users)
 
@@ -364,9 +366,9 @@ Cursor / Claude config for local stdio:
 
 Or: `pnpm mcp:start` with env already exported.
 
-**Agent flow:** `list_positions` → `quote_add_liquidity` → `prepare_transaction` → wallet signs `unsignedTransaction` → `submit_signed_transaction` with `{ signedTransaction, ...submitArgs }`. Compound: `quote_compound` / `prepare_compound_transaction` → sign → `submit_compound_transaction` with the complete `summary`. Open position: `list_rwa_pairs` → `quote_open_position` → `prepare_open_position` → sign → `submit_open_position` with the complete `summary`.
+**Agent flow:** `positions_list` → `lp_add_quote` → `lp_add_prepare` → wallet signs `unsignedTransaction` → `lp_add_submit` with `{ signedTransaction, ...submitArgs }`. Compound: `lp_compound_quote` / `lp_compound_prepare` → sign → `lp_compound_submit` with the complete `summary`. Open position: `pools_list` → `lp_open_quote` → `lp_open_prepare` → sign → `lp_open_submit` with the complete `summary`.
 
-**Sign deep-link:** After `prepare_transaction`, `prepare_compound_transaction`, or `prepare_open_position`, the agent receives a `signUrl` (e.g. `https://sofinancelab.xyz/app/sign/<token>`) that can be opened in a browser. Legacy `/sign/<token>` URLs permanently redirect to `/app/sign/<token>`. The token is a self-contained, HMAC-signed, compressed payload containing the unsigned transaction, permit, and submit arguments. With the correct wallet connected via Reown AppKit, the user reviews the transaction summary and signs with one click. The signed transaction is automatically submitted via the existing re-verification and broadcast paths. This bridges the gap for agents that can prepare transactions but delegate signing to the user's wallet UI. Sign tokens expire after 60-120 seconds (matching permit/blockhash lifetime). The web verifier must share the signing configuration of the MCP server that issues the link. Quotes expire quickly; always re-prepare before signing.
+**Sign deep-link:** After `lp_add_prepare`, `lp_compound_prepare`, or `lp_open_prepare`, the agent receives a `signUrl` (e.g. `https://sofinancelab.xyz/app/sign/<token>`) that can be opened in a browser. Legacy `/sign/<token>` URLs permanently redirect to `/app/sign/<token>`. The token is a self-contained, HMAC-signed, compressed payload containing the unsigned transaction, permit, and submit arguments. With the correct wallet connected via Reown AppKit, the user reviews the transaction summary and signs with one click. The signed transaction is automatically submitted via the existing re-verification and broadcast paths. This bridges the gap for agents that can prepare transactions but delegate signing to the user's wallet UI. Sign tokens expire after 60-120 seconds (matching permit/blockhash lifetime). The web verifier must share the signing configuration of the MCP server that issues the link. Quotes expire quickly; always re-prepare before signing.
 
 ## Growth analytics
 
