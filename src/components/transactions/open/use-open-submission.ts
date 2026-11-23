@@ -150,7 +150,7 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
     setError("");
     setRetryError(null);
     setReprepare(false);
-    captureGrowthEvent(GROWTH_EVENTS.openStarted, openEventProperties(pair, { wallet, inputKind }));
+    captureGrowthEvent(GROWTH_EVENTS.openStarted, openEventProperties(pair, { inputKind }));
     let receipt: PendingSolSwapReceipt | null = resume;
     // Two-step SOL open: the step a failure belongs to (reported as open_step on open_position_failed).
     let failedStep: 1 | 2 | null = resume ? 2 : null;
@@ -207,7 +207,7 @@ export function useOpenSubmissionCommand({ pair, wallet, inputMint, inputKind, a
       const cancelled = (failure?.kind === "rejected" && !(failure instanceof TxCancelCheckPendingError)) || caught instanceof TxWalletCancelledError;
       if (!cancelled) {
         captureGrowthEvent(GROWTH_EVENTS.openFailed, {
-          ...openEventProperties(pair, { wallet, inputKind }),
+          ...openEventProperties(pair, { inputKind }),
           ...openFailureProperties(failure?.cause ?? caught),
           ...(failedStep ? { open_step: failedStep, open_resumed: resume !== null } : {}),
         });

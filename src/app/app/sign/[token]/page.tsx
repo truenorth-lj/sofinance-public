@@ -45,7 +45,7 @@ export default function SignPage() {
       poolAddress: summary.poolId,
       symbolA: summary.quote.symbolA ?? "",
       symbolB: summary.quote.symbolB ?? "",
-    }, { wallet: summary.wallet, inputKind: summary.quote.inputKind, mcpSignLink: true });
+    }, { inputKind: summary.quote.inputKind, mcpSignLink: true });
     if (open.status === "confirmed") {
       captureGrowthEventOnce(`open-ok:${attempt.signature}`, GROWTH_EVENTS.openSuccess, properties);
     } else if (open.status === "failed" || open.status === "expired") {
@@ -126,7 +126,7 @@ export default function SignPage() {
         poolAddress: (payload.submitArgs.summary as OpenPositionSummary).poolId,
         symbolA: (payload.submitArgs.summary as OpenPositionSummary).quote.symbolA ?? "",
         symbolB: (payload.submitArgs.summary as OpenPositionSummary).quote.symbolB ?? "",
-      }, { wallet, inputKind: (payload.submitArgs.summary as OpenPositionSummary).quote.inputKind, mcpSignLink: true })
+      }, { inputKind: (payload.submitArgs.summary as OpenPositionSummary).quote.inputKind, mcpSignLink: true })
       : {};
     if (payload.kind === "open-position") captureGrowthEvent(GROWTH_EVENTS.openStarted, openProperties);
     
