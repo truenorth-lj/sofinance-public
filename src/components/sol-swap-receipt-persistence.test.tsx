@@ -225,7 +225,8 @@ describe("step 1/2 receipt persistence", () => {
     swapPrepareFails = true;
     await act(async () => controller.signAndSend()); await advance(1);
     expect(failed()).toHaveLength(1);
-    expect(failed()[0]).toMatchObject({ input_kind: "native", open_step: 1, open_resumed: false, wallet_address: wallet });
+    expect(failed()[0]).toMatchObject({ input_kind: "native", open_step: 1, open_resumed: false });
+    expect(failed()[0]).not.toHaveProperty("wallet_address");
     // Step 1/2 lands, step 2/2 prepare fails.
     swapPrepareFails = false; prepareFails = true;
     await act(async () => controller.signAndSend()); await advance(1);
