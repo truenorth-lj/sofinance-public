@@ -1,7 +1,7 @@
 import Decimal from "decimal.js";
 import { isIncompleteUtcDay, SECONDS_PER_DAY } from "./apr-series";
 import { isDataDay } from "./min-data-days";
-import { averageCompleteDayAprPct, isThinPlanSample, PLAN_YIELD_DAYS_PER_YEAR } from "./lp-plan-yield";
+import { averageCompleteDayAprPct, planAprContenders, PLAN_YIELD_DAYS_PER_YEAR } from "./lp-plan-yield";
 
 const D = Decimal.clone({ precision: 60 });
 
@@ -25,6 +25,8 @@ export type AprWindowAverage = {
   aprPct: string;
   /** Finite days that went into `aprPct` (gaps inside the window are skipped, never filled). */
   sampleDays: number;
+  /** True when the series has no day before the window: the pool's whole history so far is inside it. */
+  coversAllData: boolean;
   /**
    * USD fees the whole pool took per finite day of the window (each day's APR × that day's TVL ÷ 36,500), before any
    * protocol cut. Set only when every finite day has a TVL. This is the real money behind `aprPct`: a launch day of
@@ -34,7 +36,10 @@ export type AprWindowAverage = {
 };
 
 export type BestPlanApr = AprWindowAverage & {
-  /** Every window that had at least one finite day, so the UI can show what was passed over. */
+  /**
+   * Every window that had at least one finite day and adds days a shorter window does not have (a 90-day window holding
+   * the same 13 days as the 30-day one is dropped), so the UI can show what was passed over.
+   */
   windows: AprWindowAverage[];
 };
 
@@ -58,13 +63,22 @@ export function trailingWindowAverage(
   const inWindow = complete.filter((point) => point.time >= oldest && point.time <= newest);
   // Days of data: the same `isDataDay` count the cards use for "New pool" (both volume and TVL; an APR alone is enough
   // for callers that pass no volume).
-  const finite = inWindow.filter((point) => point.aprPct !== null && Number.isFinite(point.aprPct)
-    && (point.volumeUsd === undefined || isDataDay({ volumeUsd: point.volumeUsd, tvlUsd: point.tvlUsd })));
+  const finite = inWindow.filter(hasData);
   const aprPct = averageCompleteDayAprPct(finite);
   if (aprPct === null) return null;
   const sampleDays = finite.length;
+  // Any older day in the series (even one with no APR, e.g. a Raydium day before its TVL line starts) means the pool's
+  // history goes back further than the window.
+  const coversAllData = !complete.some((point) => point.time < oldest);
   const poolFeesPerDayUsd = poolFeesPerDay(finite);
-  return poolFeesPerDayUsd === null ? { windowDays, aprPct, sampleDays } : { windowDays, aprPct, sampleDays, poolFeesPerDayUsd };
+  return poolFeesPerDayUsd === null
+    ? { windowDays, aprPct, sampleDays, coversAllData }
+    : { windowDays, aprPct, sampleDays, coversAllData, poolFeesPerDayUsd };
+}
+
+function hasData(point: DatedAprSample): boolean {
+  return point.aprPct !== null && Number.isFinite(point.aprPct)
+    && (point.volumeUsd === undefined || isDataDay({ volumeUsd: point.volumeUsd, tvlUsd: point.tvlUsd }));
 }
 
 /** Mean USD pool fees per day of `days` (APR × TVL ÷ 36,500 each), or null when any day lacks a usable TVL. */
@@ -82,9 +96,11 @@ function poolFeesPerDay(days: readonly DatedAprSample[]): string | null {
 /**
  * The "best" APR the Plan page projects with: the highest of the 7d / 30d / 90d trailing averages.
  *
- * - Windows with fewer than `PLAN_MIN_RELIABLE_SAMPLE_DAYS` finite days only compete when no window
- *   reaches that sample, so a few lucky days cannot beat a well-sampled average.
- * - Ties go to the longer window (more data behind the same number).
+ * - A window counts only with `planMinSampleDays(windowDays)` days of data: at least 7 and 80% of its length
+ *   (`planAprContenders`), so 13 days never stand in for a 90-day average and a few lucky days cannot beat a
+ *   well-sampled one. Thinner windows compete only when no window qualifies (and then the numbers are hidden under 7).
+ * - A longer window holding exactly as many days as a shorter one adds nothing and is dropped.
+ * - Ties go to the shorter window (the same number, named by the narrowest window that has it).
  * - This is the optimistic end of the pool's own recent history, not a forecast.
  *
  * Returns null when no window has a finite day.
@@ -94,27 +110,31 @@ export function selectBestPlanApr(
   asOfSeconds?: number,
   windowSizes: readonly number[] = PLAN_APR_WINDOWS,
 ): BestPlanApr | null {
-  const windows = windowSizes
+  const windows = [...windowSizes]
+    .sort((a, b) => a - b)
     .map((size) => trailingWindowAverage(points, size, asOfSeconds))
-    .filter((window): window is AprWindowAverage => window !== null);
+    .filter((window): window is AprWindowAverage => window !== null)
+    .filter((window, index, all) => !all.slice(0, index).some((shorter) => shorter.sampleDays === window.sampleDays));
   if (windows.length === 0) return null;
-  const reliable = windows.filter((window) => !isThinPlanSample(window.sampleDays));
-  const contenders = reliable.length > 0 ? reliable : windows;
-  const best = contenders.reduce((top, next) => {
+  const best = planAprContenders(windows).reduce((top, next) => {
     const diff = new D(next.aprPct).cmp(top.aprPct);
-    return diff > 0 || (diff === 0 && next.windowDays > top.windowDays) ? next : top;
+    return diff > 0 || (diff === 0 && next.windowDays < top.windowDays) ? next : top;
   });
   return { ...best, windows };
 }
 
 /**
- * "90-day avg", or "90-day avg (29 days of data)" when the window holds fewer finite days than its length (a young
- * pool, or gaps), so a short history is not presented as a full 90 days.
+ * "30-day avg" when the window is full. Otherwise it is named by its days of data, never by the longer window: "13-day
+ * avg (all data so far)" for a young pool whose whole history is inside it, "29-day avg (gap days skipped)" when days
+ * inside the window had no data (e.g. a Raydium pool whose daily TVL line holds 29 complete days of the last 30).
  */
-export function aprWindowAvgLabel(window: { windowDays: number; sampleDays: number }, avg = "avg"): string {
-  const base = `${aprWindowLabel(window.windowDays)} ${avg}`;
-  if (window.sampleDays >= window.windowDays) return base;
-  return `${base} (${window.sampleDays} ${window.sampleDays === 1 ? "day" : "days"} of data)`;
+export function aprWindowAvgLabel(
+  window: { windowDays: number; sampleDays: number; coversAllData?: boolean },
+  avg = "avg",
+): string {
+  if (window.sampleDays >= window.windowDays) return `${aprWindowLabel(window.windowDays)} ${avg}`;
+  const why = window.coversAllData === false ? "gap days skipped" : "all data so far";
+  return `${aprWindowLabel(window.sampleDays)} ${avg} (${why})`;
 }
 
 /** "7-day" / "30-day" wording used in the UI. */

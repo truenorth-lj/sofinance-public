@@ -184,8 +184,10 @@ export function projectPoolPlan(input: {
   exit: ExitAsset;
   /** Pool TVL in USD today; missing or unknown caps at the pool's whole fee income. */
   poolTvlUsd?: number | null;
+  /** `buildPlanComparison` growth: "compound" (default, the Plan page) or "simple" (no compounding). */
+  growth?: "compound" | "simple";
 }): PlanYieldComparison {
-  const { capital, days, window, terms, exit, poolTvlUsd } = input;
+  const { capital, days, window, terms, exit, poolTvlUsd, growth } = input;
   const tvl = poolTvlUsd !== undefined && poolTvlUsd !== null && Number.isFinite(poolTvlUsd) && poolTvlUsd > 0 ? poolTvlUsd : 0;
   return buildPlanComparison({
     capital,
@@ -199,6 +201,7 @@ export function projectPoolPlan(input: {
       poolLpFeesPerDayUsd: new Decimal(window.poolFeesPerDayUsd).mul(terms.lpFeeShare).toFixed(),
       poolTvlUsd: new Decimal(tvl).toFixed(),
     },
+    ...(growth ? { growth } : {}),
   });
 }
 
@@ -218,6 +221,7 @@ export function projectPoolPlanInAsset(input: {
   terms: PlanPoolTerms;
   exit: ExitAsset;
   poolTvlUsd?: number | null;
+  growth?: "compound" | "simple";
 }): { comparison: PlanYieldComparison; capped: boolean } {
   const { amount, usdPerUnit, window, poolTvlUsd } = input;
   const price = usdPerUnit !== null && Number.isFinite(usdPerUnit) && usdPerUnit > 0 ? new Decimal(usdPerUnit) : null;
@@ -229,6 +233,7 @@ export function projectPoolPlanInAsset(input: {
     window: capped ? { ...rest, poolFeesPerDayUsd: new Decimal(poolFeesPerDayUsd).div(price).toFixed() } : rest,
     terms: input.terms,
     exit: input.exit,
+    ...(input.growth ? { growth: input.growth } : {}),
     poolTvlUsd: price !== null && poolTvlUsd !== undefined && poolTvlUsd !== null && Number.isFinite(poolTvlUsd) && poolTvlUsd > 0
       ? new Decimal(poolTvlUsd).div(price).toNumber() : null,
   });

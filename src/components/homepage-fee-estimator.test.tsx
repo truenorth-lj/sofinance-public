@@ -1,3 +1,4 @@
+import Decimal from "decimal.js";
 // @vitest-environment happy-dom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -94,7 +95,10 @@ describe("HomepageFeeEstimator", () => {
     const fees = el.querySelector('[data-testid="estimator-fees"]')!.textContent!;
     expect(fees).toContain(`Per day${formatInUnit(dialogDay.feesEarned, basis.unit)}`);
     expect(fees).toContain(`Per week${formatInUnit(dialogWeek.feesEarned, basis.unit)}`);
-    expect(el.querySelector('[data-testid="estimator-basis"]')!.textContent).toBe(`${planAprLabel(basis.best!)} ${formatPct(dialogDay.apyPct)}`);
+    expect(el.querySelector('[data-testid="estimator-basis"]')!.textContent).toBe(`${planAprLabel(basis.best!)} ${formatPct(dialogDay.cappedAprPct)}`);
+    // Not compounded: a week is exactly seven days, and the caption is a day × 365 ÷ the amount.
+    expect(new Decimal(dialogWeek.feesEarned).toFixed(15)).toBe(new Decimal(dialogDay.feesEarned).mul(7).toFixed(15));
+    expect(new Decimal(dialogDay.cappedAprPct).toFixed(10)).toBe(new Decimal(dialogDay.feesEarned).mul(365).div(10).mul(100).toFixed(10));
     expect(el.querySelectorAll('[data-testid="estimator-usd"]').length).toBe(2);
     expect(el.textContent).toContain("Assumes price stays in range. Not a prediction. Fees not guaranteed.");
   });

@@ -35,20 +35,25 @@ describe("share view math", () => {
 });
 
 describe("lowPlanApr", () => {
-  const best = { windowDays: 90, aprPct: "11.2", sampleDays: 90 };
+  const best = { windowDays: 90, aprPct: "11.2", sampleDays: 90, coversAllData: true };
 
   it("returns the lowest well-sampled window below the best", () => {
     const windows = [
-      { windowDays: 7, aprPct: "7.7", sampleDays: 7 },
-      { windowDays: 30, aprPct: "11.2", sampleDays: 30 },
+      { windowDays: 7, aprPct: "7.7", sampleDays: 7, coversAllData: true },
+      { windowDays: 30, aprPct: "11.2", sampleDays: 30, coversAllData: true },
       best,
     ];
-    expect(lowPlanApr(best, windows)).toEqual({ windowDays: 7, aprPct: "7.7", sampleDays: 7 });
+    expect(lowPlanApr(best, windows)).toEqual({ windowDays: 7, aprPct: "7.7", sampleDays: 7, coversAllData: true });
   });
 
   it("ignores a thin window while a well-sampled one exists", () => {
-    const windows = [{ windowDays: 7, aprPct: "1", sampleDays: 3 }, best];
+    const windows = [{ windowDays: 7, aprPct: "1", sampleDays: 3, coversAllData: true }, best];
     expect(lowPlanApr(best, windows)).toBeNull();
+  });
+
+  it("skips a window with too few days for its length (13 days in a 30-day window)", () => {
+    const week = { windowDays: 7, aprPct: "80", sampleDays: 7, coversAllData: false };
+    expect(lowPlanApr(week, [week, { windowDays: 30, aprPct: "50", sampleDays: 13, coversAllData: true }])).toBeNull();
   });
 
   it("has no range when every window matches the best", () => {

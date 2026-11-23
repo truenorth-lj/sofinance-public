@@ -13,8 +13,8 @@ const money = (value: string) => new Decimal(value).toFixed(2);
 describe("AMZNx/AMZN launch spike (prod bug, 2026-11-04)", () => {
   const best = selectBestPlanApr(AMZN_LAUNCH_POINTS)!;
 
-  it("averages four days to 801% and picks the 90-day window, but only ~$25 of fees stand behind it", () => {
-    expect(best.windowDays).toBe(90);
+  it("averages four days to 801% in the 7-day window (no longer window adds a day), but only ~$25 of fees stand behind it", () => {
+    expect(best.windowDays).toBe(7);
     expect(best.sampleDays).toBe(4);
     expect(Number(best.aprPct)).toBeCloseTo(801.0573, 4);
     // $8,397 + $1,615 + $58 + $9 of volume × 0.25% ≈ $25.20 over four days.
@@ -69,7 +69,7 @@ describe("cappedGrowthPath", () => {
 describe("trailingWindowAverage pool fees", () => {
   it("is left out when a finite day has no TVL, so nothing is capped on made-up numbers", () => {
     const points = [{ time: OCT_29, aprPct: 100 }, { time: OCT_29 + DAY, aprPct: 50, tvlUsd: 1000 }];
-    expect(trailingWindowAverage(points, 7)).toEqual({ windowDays: 7, aprPct: "75", sampleDays: 2 });
+    expect(trailingWindowAverage(points, 7)).toEqual({ windowDays: 7, aprPct: "75", sampleDays: 2, coversAllData: true });
   });
 });
 

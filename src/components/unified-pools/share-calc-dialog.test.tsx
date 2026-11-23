@@ -73,9 +73,10 @@ describe("ShareCalcDialog (counted in the pool's asset, SP-2)", () => {
     expect(cards.textContent).toContain("Collect more SPCX while you hold SPCX · 10 SPCX for 365 days");
     expect(cards.querySelector('[aria-label="HODL"]')!.textContent).toContain("10 SPCX");
     // 36.5% pool APR × 84% to LPs, capped at the pool's real fees ($10 a day × 84%, so 0.084 SPCX at $100) split with the
-    // $10,000 (100 SPCX) already in the pool, one year, minus 1% to open; keeping the tokens costs nothing to close.
-    expect(cards.querySelector('[aria-label="Difference"]')!.textContent).toContain("+3.0635 SPCX");
-    expect(cards.querySelector('[aria-label="HODL + more shares"]')!.textContent).toContain("≈ $1,306.35");
+    // $10,000 (100 SPCX) already in the pool: 0.084 × 10 ÷ 110 = 0.0076364 SPCX the same every day (not compounded),
+    // × 365 = 2.7873, minus 1% (0.1 SPCX) to open; keeping the tokens costs nothing to close.
+    expect(cards.querySelector('[aria-label="Difference"]')!.textContent).toContain("+2.6873 SPCX");
+    expect(cards.querySelector('[aria-label="HODL + more shares"]')!.textContent).toContain("≈ $1,268.73");
     expect(node.querySelector("[data-testid=share-calc-footnote]")!.textContent)
       .toContain("counted in SPCX: fees after Raydium's 16% cut, about 1% to open, no swap when you take the pool tokens.");
     expect(text()).not.toMatch(/read-only|per 100 held vs hold|Est\. best APY|Est\. best fee APR|Counted per 100/);
@@ -85,7 +86,7 @@ describe("ShareCalcDialog (counted in the pool's asset, SP-2)", () => {
   it("re-projects over the chosen horizon", async () => {
     await render(SPCX, { kind: "open", onOpen: vi.fn() });
     await act(async () => button("90D").click());
-    expect(node.querySelector('[aria-label="Difference"]')!.textContent).toContain("+0.60885 SPCX");
+    expect(node.querySelector('[aria-label="Difference"]')!.textContent).toContain("+0.587273 SPCX"); // 0.0076364 × 90 − 0.1
     expect(text()).toContain("10 SPCX for 90 days");
     expect([...node.querySelectorAll("a")].some((link) => link.textContent?.includes("Full plan"))).toBe(false);
   });
@@ -94,6 +95,9 @@ describe("ShareCalcDialog (counted in the pool's asset, SP-2)", () => {
     await render(SPCX, { kind: "open", onOpen: vi.fn() });
     const rows = node.querySelector("[data-testid=share-calc-assumptions]")!.textContent!;
     expect(rows).toContain("Est. fee APR ·");
+    // After the 16% cut and the fee cap, not compounded: 0.0076364 SPCX a day × 365 ÷ 10 SPCX = 27.87% (compounded daily it
+    // showed 31.6%: the old +3.0635 SPCX gross of the 0.1 opening cost, ÷ 10).
+    expect(rows).toContain("Est. fee APR · 7-day avg27.9%");
     expect(rows).not.toContain("Est. LP APY");
     expect(rows).toContain("Protocol cut of fees16%");
     expect(rows).toContain("Opening cost (USDC deposit)−0.1 SPCX");
@@ -101,12 +105,12 @@ describe("ShareCalcDialog (counted in the pool's asset, SP-2)", () => {
     expect(rows).toMatch(/Fees collected\d\.\d{1,4} SPCX/);
     const horizons = node.querySelector('[aria-label="Difference vs HODL by horizon"]')!;
     expect([...horizons.querySelectorAll("dt")].map((dt) => dt.textContent)).toEqual(["30D", "90D", "180D", "1Y"]);
-    expect(node.querySelector('svg[role="img"]')!.getAttribute("aria-label")).toBe("Projected value over 365 days, from 10 SPCX to 13.0635 SPCX");
+    expect(node.querySelector('svg[role="img"]')!.getAttribute("aria-label")).toBe("Projected value over 365 days, from 10 SPCX to 12.6873 SPCX");
     // Quick amounts are share counts. 100 SPCX ($10K) into a $10K pool takes half the pool's fees.
     expect(["1", "10", "100"].every((label) => button(label))).toBe(true);
     await act(async () => button("100").click());
     expect(node.querySelector<HTMLInputElement>('input[aria-label="Amount in SPCX"]')!.value).toBe("100");
-    expect(node.querySelector('[aria-label="Difference"]')!.textContent).toContain("+14.9007 SPCX");
+    expect(node.querySelector('[aria-label="Difference"]')!.textContent).toContain("+14.33 SPCX"); // 0.084 × 100 ÷ 200 = 0.042 a day × 365 − 1
   });
 
   it("shows a free closing step as 0, not −0 (Meteora, keeping the pool tokens)", async () => {
@@ -122,8 +126,8 @@ describe("ShareCalcDialog (counted in the pool's asset, SP-2)", () => {
     expect(node.querySelector("[data-testid=share-calc-input-usd]")).toBeNull();
     expect(node.querySelector("[data-testid=approx-usd]")).toBeNull();
     expect(text()).not.toMatch(/≈ \$/);
-    // The APR alone (no split with the pool): 36.5% × 84%, compounded daily, minus 1% to open.
-    expect(node.querySelector('[aria-label="Difference"]')!.textContent).toContain("+3.4862 SPCX");
+    // The APR alone (no split with the pool): 36.5% × 84% = 0.0084 SPCX a day, not compounded, minus 1% to open.
+    expect(node.querySelector('[aria-label="Difference"]')!.textContent).toContain("+2.966 SPCX");
     expect(node.querySelector("[data-testid=share-calc-footnote]")!.textContent)
       .toContain("This pool's SPCX price is unknown right now, so fees are not capped at what the pool paid and no dollar value is shown.");
   });
@@ -191,6 +195,6 @@ describe("ShareCalcDialog (counted in the pool's asset, SP-2)", () => {
     expect(node.querySelector("[data-testid=share-calc-warning]")!.textContent).toBe(
       "Small pool: about $1,238 in it. These numbers are capped at the fees this pool actually paid, shared with your deposit. With so little in the pool, a few trades can swing them a lot.");
     expect(node.querySelector("[data-testid=share-calc-footnote]")!.textContent).toContain("Fees are capped at what the pool actually paid, shared with your deposit.");
-    expect(node.querySelector('[aria-label="Difference"]')!.textContent).toContain("+1.6739 SPCX");
+    expect(node.querySelector('[aria-label="Difference"]')!.textContent).toContain("+1.5962 SPCX");
   });
 });

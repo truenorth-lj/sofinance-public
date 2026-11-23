@@ -1,6 +1,6 @@
 import Decimal from "decimal.js";
 import type { AprWindowAverage } from "./lp-plan-best-apr";
-import { isThinPlanSample, type PlanYieldComparison } from "./lp-plan-yield";
+import { planAprContenders, type PlanYieldComparison } from "./lp-plan-yield";
 
 const D = Decimal.clone({ precision: 60 });
 
@@ -75,15 +75,14 @@ export function profitToShareDelta(profit: string, capital: string): string {
 }
 
 /**
- * The lowest trailing-window average that competes with the best one (same rule as `selectBestPlanApr`: thin
- * windows only count when no window is well sampled). Returns null when it equals the best, so there is no range.
+ * The lowest trailing-window average that competes with the best one (same rule as `selectBestPlanApr`,
+ * `planAprContenders`: a window counts only with enough days for its own length). Returns null when it equals the best, so there is no range.
  */
 export function lowPlanApr(
   best: AprWindowAverage,
   windows: readonly AprWindowAverage[],
 ): AprWindowAverage | null {
-  const reliable = windows.filter((window) => !isThinPlanSample(window.sampleDays));
-  const contenders = reliable.length > 0 ? reliable : windows;
+  const contenders = planAprContenders(windows);
   if (contenders.length === 0) return null;
   const low = contenders.reduce((min, next) => (new D(next.aprPct).lt(min.aprPct) ? next : min));
   return new D(low.aprPct).lt(best.aprPct) ? low : null;
