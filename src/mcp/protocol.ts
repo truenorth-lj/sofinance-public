@@ -42,7 +42,7 @@ export function authSteps(): string[] {
 
 export function serverInstructions(): string {
   return [
-    "SoFinance: same-stock liquidity pools of tokenized stocks on Solana (Raydium CLMM).",
+    "SoFinance: same-stock liquidity pools of tokenized stocks on Solana (Raydium CLMM and Meteora DLMM).",
     `No token needed for ${formatToolNames(SNAPSHOT_TOOL_NAMES)}: the listed pools and their 7-day range APR estimates from the site's saved snapshot.`,
     `No token needed for ${formatToolNames(POSITION_READ_TOOL_NAMES)} either: Raydium CLMM positions and wallet assets read on-chain by wallet address or position mint.`,
     "No token needed for tx_status either: the finality of a Solana transaction signature, for wallets that broadcast a prepared transaction themselves.",

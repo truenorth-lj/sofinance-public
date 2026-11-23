@@ -57,7 +57,7 @@ const TOOL_DEFINITIONS = {
     },
     pools_list: {
         name: "pools_list",
-        description: "List the same-stock Solana pools on the SoFinance pools page (https://sofinancelab.xyz/pools): Raydium CLMM pools where both sides are the same stock from two issuers (e.g. TSLA/TSLAx, SPCX/SPCXx), plus the USDC/USDT pool. Served from the site's saved pools snapshot, the same list the page shows. Each pool has protocol, symbols, fee tier, TVL, 24h volume, apr7d (the highest 7-day range fee APR estimate and which of the 4 range presets it comes from: Micro, Tight, Standard, Wide), and an openPositionUrl. Filter with symbol (e.g. \"TSLA\"). Default order: 7-day APR, high to low. estimatedFeeAprPct / estimatedFeeAprLabel are the older pool-level 24-hour figure (last 24h fees / TVL, annualized), not a 7-day estimate; small pools can show very large values, and a pool without a 7-day estimate carries a warning. Estimates from past trading, not a promise of future fees. Fees not guaranteed. For the 4 presets of one pool call pool_get_range_apr. No wallet or token needed. Opening a position through MCP (lp_open_quote / lp_open_prepare) is Raydium CLMM and needs a wallet token.",
+        description: "List the same-stock Solana pools on the SoFinance pools page (https://sofinancelab.xyz/pools): Raydium CLMM and Meteora DLMM pools, told apart by each pool's protocol field, where both sides are the same stock from two issuers (e.g. TSLA/TSLAx, SPCX/SPCXx), plus the USDC/USDT pool. Served from the site's saved pools snapshot, the same list the page shows. Each pool has protocol, symbols, fee tier, TVL, 24h volume, apr7d (the highest 7-day range fee APR estimate and which of the 4 range presets it comes from: Micro, Tight, Standard, Wide), and an openPositionUrl. Filter with symbol (e.g. \"TSLA\"). Default order: 7-day APR, high to low. estimatedFeeAprPct / estimatedFeeAprLabel are the older pool-level 24-hour figure (last 24h fees / TVL, annualized), not a 7-day estimate; small pools can show very large values, and a pool without a 7-day estimate carries a warning. Estimates from past trading, not a promise of future fees. Fees not guaranteed. For the 4 presets of one pool call pool_get_range_apr. No wallet or token needed. Opening a position through MCP (lp_open_quote / lp_open_prepare) supports Raydium CLMM only and requires a wallet token; open Meteora pools on the website.",
         inputSchema: {
             type: "object",
             properties: {
@@ -86,7 +86,7 @@ const TOOL_DEFINITIONS = {
     },
     pool_get_range_apr: {
         name: "pool_get_range_apr",
-        description: "Estimated 7-day fee APR of one listed pool (poolAddress from pools_list) for each of the 4 range presets the site prices: Micro (±2 price steps), Tight (±0.05%), Standard (±0.3%), Wide (±1%). Per preset: price bounds (B per 1 A), APR %, share of the last 7 days' volume that traded inside the range, and fees per day at the site's $1,000 card basis. Also the highest-APR preset, the 7-day window, data freshness and confidence. Same saved snapshot as the pool cards on https://sofinancelab.xyz/pools. New pools (too few days of data) and missing snapshots return a status with a reason and no APR. Estimates from past trading, not a promise of future fees. Fees not guaranteed. No wallet or token needed.",
+        description: "Estimated 7-day fee APR of one listed pool (poolAddress from pools_list, Raydium or Meteora) for each of the 4 range presets the site prices: Micro (±2 price steps), Tight (±0.05%), Standard (±0.3%), Wide (±1%). Per preset: price bounds (B per 1 A), APR %, share of the last 7 days' volume that traded inside the range, and fees per day at the site's $1,000 card basis. Also the highest-APR preset, the 7-day window, data freshness and confidence. Same saved snapshot as the pool cards on https://sofinancelab.xyz/pools. New pools (too few days of data) and missing snapshots return a status with a reason and no APR. Estimates from past trading, not a promise of future fees. Fees not guaranteed. No wallet or token needed.",
         inputSchema: {
             type: "object",
             properties: {
@@ -510,7 +510,8 @@ const TOOL_TITLES = {
 } as const satisfies Record<ToolName, string>;
 /**
  * Pre-0.3 names (PR-5 rename). Still callable as hidden aliases: not in tools/list, resolved to the new tool by
- * dispatch, logged as `alias_used: true` in `mcp_tool_called`. Remove once alias_used stays at zero.
+ * dispatch, logged as `alias_used: true` in `mcp_tool_called`. Kept until after ETHGlobal (12/7); removed only after
+ * 14 consecutive days of alias_used = 0 (PM raises it).
  */
 export const TOOL_ALIASES = {
     list_rwa_pairs: "pools_list",
