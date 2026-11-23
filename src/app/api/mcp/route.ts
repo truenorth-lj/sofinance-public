@@ -1,12 +1,15 @@
 import "@/lib/engine-host";
 import { listToolDefinitions } from "@/mcp/tool-definitions";
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { verifyMcpToken } from "@/lib/mcp-auth";
 import { publicToolError } from "@/mcp/public-tool-error";
 import { sanitizePublicError } from "@/lib/public-error";
 import { captureApiRouteError } from "@/lib/sentry/capture";
 import { dispatchTool, isPublicTool, toolRateClass, type McpDispatchContext } from "@/mcp/dispatch";
 import { MCP_RATE_LIMIT_RETRY_AFTER_SECONDS, mcpRateLimited, type McpRateLimitHit } from "@/lib/mcp-rate-limit";
+import { classifyToolError, mcpOpenToConfirm, mcpToolCallEvents, type McpToolCallRecord } from "@/mcp/analytics";
+import { captureMcpOpenWhenConfirmed } from "@/mcp/open-confirmation";
+import { sendServerEvents, serverAnalyticsEnabled } from "@/lib/analytics/server-capture";
 import { getSigningSecrets } from "@sofinance/engine/config/server-env";
 import { formatToolNames, PUBLIC_TOOL_NAMES } from "@/mcp/tool-definitions";
 import {
@@ -23,6 +26,8 @@ import {
  * Authentication: none for the public read-only tools (PUBLIC_TOOL_NAMES: snapshot reads, position reads by wallet
  * address and tx_status); every other tools/call needs the wallet-bound Bearer token from /app/ai.
  * Rate limits: per IP (`mcpRateLimited`); over a limit is HTTP 429 with JSON-RPC error -32029 and Retry-After.
+ * Analytics: one PostHog `mcp_tool_called` per parsed tools/call (src/mcp/analytics.ts), production only, after the
+ * response; never arguments, tokens, IP or raw wallet.
  * 
  * Supported methods:
  * - tools/list - List available tools
@@ -109,6 +114,49 @@ function rateLimited(id: string | number | null, hit: McpRateLimitHit) {
   );
 }
 
+type ToolCallTrack = (record: Pick<McpToolCallRecord, "outcome" | "errorCode" | "httpStatus" | "result">) => void;
+
+/**
+ * One `mcp_tool_called` per parsed tools/call (plus `open_position_submitted` for an MCP open), sent after the
+ * response; an MCP open then gets `open_position_success` once confirmed (bounded ~30 s poll, production only).
+ */
+function toolCallTracker(request: NextRequest, params: unknown, startedAt: number): {
+  track: ToolCallTrack; setAuth: (auth: McpToolCallRecord["auth"], tokenWallet?: string) => void;
+} {
+  let auth: McpToolCallRecord["auth"] = "none";
+  let tokenWallet: string | undefined;
+  let sent = false;
+  const headerVersion = request.headers.get("mcp-protocol-version");
+  return {
+    setAuth(nextAuth, wallet) { auth = nextAuth; tokenWallet = wallet; },
+    track(record) {
+      if (sent) return;
+      sent = true;
+      const full: McpToolCallRecord = {
+        ...record,
+        calledName: params && typeof params === "object" ? (params as { name?: unknown }).name : undefined,
+        args: params && typeof params === "object" ? (params as { arguments?: unknown }).arguments : undefined,
+        auth, tokenWallet,
+        protocol: headerVersion && isSupportedProtocolVersion(headerVersion) ? headerVersion : "unspecified",
+        durationMs: Date.now() - startedAt,
+        host: request.headers.get("host") ?? request.nextUrl.host,
+      };
+      const events = mcpToolCallEvents(full);
+      const open = serverAnalyticsEnabled() ? mcpOpenToConfirm(full) : null;
+      const work = async () => {
+        await sendServerEvents(events);
+        if (open) await captureMcpOpenWhenConfirmed(open);
+      };
+      try {
+        // Next.js after() runs on Vercel's waitUntil, so the work outlives the response (within maxDuration).
+        after(work);
+      } catch {
+        void work(); // outside a request scope (tests); sending is a no-op unless production
+      }
+    },
+  };
+}
+
 function createJsonRpcSuccess(
   id: string | number | null,
   result: unknown
@@ -121,6 +169,8 @@ function createJsonRpcSuccess(
 }
 
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
+  let tracker: ReturnType<typeof toolCallTracker> | null = null;
   try {
     // Parse JSON-RPC request
     let rpcRequest: JsonRpcRequest;
@@ -148,6 +198,7 @@ export async function POST(request: NextRequest) {
     const overLimit = mcpRateLimited(request, method === "tools/call"
       ? { positionRead: typeof calledName === "string" && toolRateClass(calledName) === "position-read" } : null);
     if (overLimit) return rateLimited(id ?? null, overLimit);
+    if (method === "tools/call") tracker = toolCallTracker(request, params, startedAt);
 
     // Streamable HTTP: after initialize the client sends the negotiated version; reject one this server does not speak.
     const headerVersion = request.headers.get("mcp-protocol-version");
@@ -201,11 +252,15 @@ export async function POST(request: NextRequest) {
     if (!publicCall) {
       // Authenticate for protected methods
       const authHeader = request.headers.get("Authorization");
-      if (!authHeader || !authHeader.startsWith("Bearer ")) return unauthorized(id ?? null, "missing");
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        tracker?.track({ outcome: "rejected", errorCode: "auth_missing", httpStatus: 401 });
+        return unauthorized(id ?? null, "missing");
+      }
 
       const token = authHeader.slice(7);
       const [secret, previousSecret] = getSigningSecrets();
       if (!secret) {
+        tracker?.track({ outcome: "error", errorCode: "server_config", httpStatus: 500 });
         return NextResponse.json(
           createJsonRpcError(id ?? null, -32002, "Server configuration error"),
           { status: 500 }
@@ -213,13 +268,19 @@ export async function POST(request: NextRequest) {
       }
 
       const wallet = verifyMcpToken(token, secret, previousSecret)?.wallet;
-      if (!wallet) return unauthorized(id ?? null, "invalid");
+      if (!wallet) {
+        tracker?.setAuth("invalid");
+        tracker?.track({ outcome: "rejected", errorCode: "auth_invalid", httpStatus: 401 });
+        return unauthorized(id ?? null, "invalid");
+      }
+      tracker?.setAuth("bearer", wallet);
       context = { surface: "mcp-http", tokenWallet: wallet };
     }
 
     // Handle tool calls
     if (method === "tools/call") {
       if (!params || typeof params !== "object" || !("name" in params)) {
+        tracker?.track({ outcome: "rejected", errorCode: "invalid_params", httpStatus: 400 });
         return NextResponse.json(
           createJsonRpcError(id ?? null, -32602, "Invalid params: tool name required"),
           { status: 400 }
@@ -228,6 +289,7 @@ export async function POST(request: NextRequest) {
 
       const toolParams = params as { name: unknown; arguments?: unknown };
       if (typeof toolParams.name !== "string") {
+        tracker?.track({ outcome: "rejected", errorCode: "invalid_params", httpStatus: 400 });
         return NextResponse.json(
           createJsonRpcError(id ?? null, -32602, "Invalid params: tool name must be a string"),
           { status: 400 }
@@ -236,6 +298,7 @@ export async function POST(request: NextRequest) {
 
       try {
         const result = await dispatchTool(toolParams.name, toolParams.arguments, context);
+        tracker?.track({ outcome: "success", httpStatus: 200, result });
         return NextResponse.json(
           createJsonRpcSuccess(id ?? null, {
             content: [
@@ -249,6 +312,7 @@ export async function POST(request: NextRequest) {
       } catch (error) {
         captureApiRouteError(error, { request, route: "/api/mcp", fallback: "MCP tool call failed", status: 400 });
         const message = publicToolError(error);
+        tracker?.track({ ...classifyToolError(message), httpStatus: 200 });
         return NextResponse.json(
           createJsonRpcSuccess(id ?? null, {
             content: [
@@ -269,6 +333,7 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     captureApiRouteError(error, { request, route: "/api/mcp", fallback: "unexpected failure", status: 500 });
+    tracker?.track({ outcome: "error", errorCode: "internal", httpStatus: 500 });
     const message = sanitizePublicError(error, "unexpected failure");
     return NextResponse.json(
       createJsonRpcError(null, -32603, `Internal error: ${message}`),

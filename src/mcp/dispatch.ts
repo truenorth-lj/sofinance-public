@@ -166,6 +166,14 @@ export function toolRateClass(name: string): ToolRateClass {
   return isToolName(name) ? TOOL_DISPATCH[name].rateClass : "standard";
 }
 
+/**
+ * Canonical tool for a called name. No aliases exist yet, so a known name maps to itself with `aliasUsed: false`;
+ * the alias table (PR-5) fills this in without changing callers. Unknown names are null.
+ */
+export function resolveToolName(name: string): { tool: string; aliasUsed: boolean } | null {
+  return isToolName(name) ? { tool: name, aliasUsed: false } : null;
+}
+
 /** True only for a known tool whose dispatch entry is `access: "public"`. */
 export function isPublicTool(name: string): boolean {
   return isToolName(name) && TOOL_DISPATCH[name].access === "public";
