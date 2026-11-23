@@ -7,6 +7,7 @@ import { NextRequest } from "next/server";
 import { createHmac } from "node:crypto";
 import { deflateSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetMcpRateLimit } from "@/lib/mcp-rate-limit";
 const backend = vi.hoisted(() => ({ discover: vi.fn(), selectedQuote: vi.fn(), selectedBuild: vi.fn(), compound: vi.fn(),
   openQuote: vi.fn(), openBuild: vi.fn(), withdraw: vi.fn(), pairs: vi.fn(), performance: vi.fn(), range: vi.fn(), rpc: vi.fn(), latest: vi.fn() }));
 vi.mock("server-only", () => ({}));
@@ -243,3 +244,6 @@ it("selected 8 second deadline aborts backend work, keeps retriesLeft1 and retur
   await vi.advanceTimersByTimeAsync(8000);
   expect(await pending).toMatchSnapshot(); expect(stopped).toBe(true); expect(vi.getTimerCount()).toBe(0);
 });
+
+// /api/mcp keeps per-IP rate-limit counts in module memory; every test starts with fresh budgets.
+beforeEach(() => resetMcpRateLimit());

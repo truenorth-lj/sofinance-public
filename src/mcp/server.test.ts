@@ -5,7 +5,8 @@
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeEach, afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { resetMcpRateLimit } from "@/lib/mcp-rate-limit";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/mcp/tools", () => Object.fromEntries([
@@ -113,3 +114,6 @@ describe("stdio MCP server", () => {
     expect(JSON.parse((result.content as { text: string }[])[0]!.text)).toEqual({ error: "Invalid arguments: wallet: Invalid Solana public key" });
   }, 30_000);
 });
+
+// /api/mcp keeps per-IP rate-limit counts in module memory; every test starts with fresh budgets.
+beforeEach(() => resetMcpRateLimit());

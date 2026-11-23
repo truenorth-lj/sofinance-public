@@ -6,6 +6,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { CallToolResultSchema, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetMcpRateLimit } from "@/lib/mcp-rate-limit";
 import { generateMcpToken } from "@/lib/mcp-auth";
 import { SIGNING_SECRET } from "@/lib/test-support/send-fixtures";
 import { IMPLEMENTATION, VALID_ARGS, wallet, otherWallet } from "./test-support/dispatch-fixtures";
@@ -24,8 +25,9 @@ import { createMcpServer } from "./create-server";
 
 const names = Object.keys(VALID_ARGS) as (keyof typeof VALID_ARGS)[];
 const optional = ["get_position_performance", "get_position_range_status"];
-const none = ["list_rwa_pairs", "get_pool_range_apr", "tx_status"];
-const publicTools = ["list_rwa_pairs", "get_pool_range_apr", "tx_status"];
+const positionReads = ["list_positions", "get_position_range_status", "get_position_performance"];
+const none = ["list_rwa_pairs", "get_pool_range_apr", "tx_status", ...positionReads];
+const publicTools = ["list_rwa_pairs", "get_pool_range_apr", "tx_status", ...positionReads];
 const resultValue = { ok: true, nested: { values: [1, null, "繁體"], omitted: undefined }, signature: "original-signature" };
 let client: Client;
 let server: ReturnType<typeof createMcpServer>;
@@ -134,9 +136,12 @@ it.each(names.filter(name => !publicTools.includes(name)))("HTTP %s requires a t
   expect(await call("http", name, VALID_ARGS[name], false)).toMatchObject({ status: 401 });
   expect(calls()).toEqual({});
 });
-it.each(publicTools)("HTTP %s (public, read-only snapshot) runs without a token", async name => {
+it.each(publicTools)("HTTP %s (public, read-only) runs without a token", async name => {
   const response = await call("http", name, VALID_ARGS[name as keyof typeof VALID_ARGS], false);
   expect(response).toMatchObject({ status: 200 });
   expect(JSON.stringify(response)).toContain("original-signature");
   expect(Object.keys(calls())).toEqual([IMPLEMENTATION[name as keyof typeof IMPLEMENTATION]]);
 });
+
+// /api/mcp keeps per-IP rate-limit counts in module memory; every test starts with fresh budgets.
+beforeEach(() => resetMcpRateLimit());

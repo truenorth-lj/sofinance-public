@@ -1,5 +1,6 @@
 // tx_status end to end through the real /api/mcp route (no token), dispatch and Zod; only the RPC is faked.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetMcpRateLimit } from "@/lib/mcp-rate-limit";
 import bs58 from "bs58";
 import { NextRequest } from "next/server";
 vi.mock("server-only", () => ({}));
@@ -89,3 +90,6 @@ describe("tx_status over /api/mcp", () => {
     }
   });
 });
+
+// /api/mcp keeps per-IP rate-limit counts in module memory; every test starts with fresh budgets.
+beforeEach(() => resetMcpRateLimit());

@@ -2,6 +2,7 @@
 // real permits/structure/nacl/simulator/retry wrapper; only backend I/O is synthetic.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetMcpRateLimit } from "@/lib/mcp-rate-limit";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -238,3 +239,6 @@ it("HTTP MCP schema still precedes token binding, which precedes handler", async
   const mismatch = await call("http-mcp", f.body, tokenWallet);
   expect({ invalid, mismatch, trace }).toMatchSnapshot(); expect(backend.rpc).not.toHaveBeenCalled();
 });
+
+// /api/mcp keeps per-IP rate-limit counts in module memory; every test starts with fresh budgets.
+beforeEach(() => resetMcpRateLimit());

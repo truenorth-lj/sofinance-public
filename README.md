@@ -209,6 +209,8 @@ Kept on both web API and MCP paths:
 | `prepare_withdraw` | Simulated withdrawal + permit + sign link; supports two-stage withdrawal | `wallet`, `positionMint`, `percent` or `targetUSDC`, `receive?`, `outputMint?`, `confirmHighImpact?`; second stage: `stage=swap`, `tx1Signature`, complete `previous` result |
 | `submit_withdraw` | Permit/signature/expiry check → re-sim → broadcast | `wallet`, `signedTransaction`, `permit`, full `summary` unchanged, `confirmHighImpact?` |
 
+No token needed for the read-only tools `list_rwa_pairs`, `get_pool_range_apr`, `list_positions`, `get_position_range_status`, `get_position_performance` and `tx_status` (any wallet address; a token sent along is ignored). Every other tool needs a wallet-bound Bearer token. `/api/mcp` is rate limited per IP, per server instance: 120 requests/min, 60 `tools/call`/min, 12 position reads/min; over a limit returns HTTP 429, JSON-RPC error `-32029` and `Retry-After: 60`.
+
 ## Quickstart — web
 
 ```bash

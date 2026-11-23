@@ -1,7 +1,7 @@
 // MCP server identity, protocol-version negotiation and auth guidance shared by the remote route, the stdio server
 // and the server card. No runtime imports beyond plain data helpers.
 import { APP_ROUTES, CANONICAL_SITE_URL, getPublicBaseUrl } from "@/lib/public-urls";
-import { formatToolNames, SNAPSHOT_TOOL_NAMES } from "./tool-definitions";
+import { formatToolNames, POSITION_READ_TOOL_NAMES, SNAPSHOT_TOOL_NAMES } from "./tool-definitions";
 
 export const SERVER_INFO = {
   name: "sofinance-mcp-server",
@@ -44,7 +44,9 @@ export function serverInstructions(): string {
   return [
     "SoFinance: same-stock liquidity pools of tokenized stocks on Solana (Raydium CLMM and Meteora DLMM).",
     `No token needed for ${formatToolNames(SNAPSHOT_TOOL_NAMES)}: the listed pools and their 7-day range APR estimates from the site's saved snapshot.`,
+    `No token needed for ${formatToolNames(POSITION_READ_TOOL_NAMES)} either: Raydium CLMM positions and wallet assets read on-chain by wallet address or position mint.`,
     "No token needed for tx_status either: the finality of a Solana transaction signature, for wallets that broadcast a prepared transaction themselves.",
+    "Requests are rate limited per IP (position reads 12 per minute); over a limit answers HTTP 429 with Retry-After.",
     `Every other tool is bound to one wallet and needs Authorization: Bearer <token> from ${mcpSetupUrl()} (connect wallet, Sign to get MCP config; valid 24h).`,
     "Prepare tools return unsigned, simulated transactions and a sign link; nothing moves until the user's wallet signs.",
     "APR figures are estimates from past trading, not a promise of future fees.",

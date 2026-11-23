@@ -2,6 +2,7 @@
 // reachable on the remote route without a token, while every wallet-bound tool keeps its 401.
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetMcpRateLimit } from "@/lib/mcp-rate-limit";
 import { cardPayloadWithAprs } from "@/lib/range-apr/payload.fixture";
 import type { PoolRangeAprPayload } from "@/lib/range-apr/types";
 
@@ -215,10 +216,11 @@ describe("fee disclaimer and the 24h figure", () => {
 describe("protected tools keep their auth", () => {
   const protectedTools = (Object.keys(TOOL_DISPATCH) as ToolName[]).filter((name) => !isPublicTool(name));
 
-  it("exactly list_rwa_pairs, get_pool_range_apr and tx_status are public, and metadata agrees with dispatch", () => {
+  it("exactly the snapshot reads, the three position reads and tx_status are public, and metadata agrees with dispatch", () => {
     expect((Object.keys(TOOL_DISPATCH) as ToolName[]).filter(isPublicTool).sort()).toEqual([...PUBLIC_TOOL_NAMES].sort());
-    expect([...PUBLIC_TOOL_NAMES].sort()).toEqual(["get_pool_range_apr", "list_rwa_pairs", "tx_status"]);
-    expect(protectedTools).toHaveLength(14);
+    expect([...PUBLIC_TOOL_NAMES].sort()).toEqual(["get_pool_range_apr", "get_position_performance", "get_position_range_status",
+      "list_positions", "list_rwa_pairs", "tx_status"]);
+    expect(protectedTools).toHaveLength(11);
   });
 
   it.each(protectedTools)("%s without a token => 401 with sign-in guidance", async (name) => {
@@ -271,3 +273,6 @@ describe("ttlMemo", () => {
     expect(await memo("b", async () => 2)).toBe(2);
   });
 });
+
+// /api/mcp keeps per-IP rate-limit counts in module memory; every test starts with fresh budgets.
+beforeEach(() => resetMcpRateLimit());

@@ -7,6 +7,7 @@ import { NextRequest } from "next/server";
 import { createHmac } from "node:crypto";
 import { deflateSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetMcpRateLimit } from "@/lib/mcp-rate-limit";
 const backend = vi.hoisted(() => ({ discover: vi.fn(), selectedQuote: vi.fn(), selectedBuild: vi.fn(), compound: vi.fn(),
   openQuote: vi.fn(), openBuild: vi.fn(), withdraw: vi.fn(), pairs: vi.fn(), performance: vi.fn(), range: vi.fn(), rpc: vi.fn() }));
 vi.mock("server-only", () => ({}));
@@ -126,9 +127,13 @@ for (const surface of ["http", "stdio"] as const) describe(`${surface} real read
       }
     }
   });
-  if (surface === "http") it.each(names.filter(name => name !== "list_rwa_pairs"))("%s rejects HTTP wallet mismatch before backend", async name => {
+  if (surface === "http") it.each(names.filter(name => !["list_rwa_pairs", "list_positions", "get_position_performance", "get_position_range_status"].includes(name)))("%s rejects HTTP wallet mismatch before backend", async name => {
     expect((await call(surface, name, { ...VALID_ARGS[name], wallet: otherWallet })).isError).toBe(true);
     expect(io()).toEqual([]);
+  });
+  if (surface === "http") it.each(["list_positions", "get_position_performance", "get_position_range_status"] as const)("%s (public position read) reaches the backend for any wallet", async name => {
+    expect((await call(surface, name, { ...VALID_ARGS[name], wallet: otherWallet })).isError).toBeUndefined();
+    expect(io().map(item => item.name)).toEqual(expectedIO[name]);
   });
   if (surface === "stdio") it("stdio quote remains usable without a signing secret", async () => {
     vi.stubEnv("JUPITER_API_KEY", undefined);
@@ -137,3 +142,6 @@ for (const surface of ["http", "stdio"] as const) describe(`${surface} real read
     expect(io().map(item => item.name)).toEqual(["compound"]);
   });
 });
+
+// /api/mcp keeps per-IP rate-limit counts in module memory; every test starts with fresh budgets.
+beforeEach(() => resetMcpRateLimit());

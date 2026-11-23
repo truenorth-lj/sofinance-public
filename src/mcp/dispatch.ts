@@ -49,16 +49,18 @@ export type McpDispatchContext =
  * `token` (default): everything else keeps the wallet-bound bearer token.
  */
 export type ToolAccess = "public" | "token";
+/** `position-read`: costly chain reads (account scans, signature history) with their own tighter per-IP limit. */
+type ToolRateClass = "standard" | "position-read";
 
 export const TOKEN_REQUIRED_MESSAGE = "Unauthorized: this tool needs a wallet-bound MCP token";
 
 type WalletBinding<Input> =
   | { mode: "none" }
-  | { mode: "required-match"; wallet: (input: Input) => string }
-  | { mode: "optional-match"; wallet: (input: Input) => string | undefined };
+  | { mode: "required-match"; wallet: (input: Input) => string };
 
 type ToolDefinition<Input, Output> = {
   access?: ToolAccess;
+  rateClass?: ToolRateClass;
   parser: { parse(args: unknown): Input };
   missingArgs: "raw" | "empty-object";
   binding: WalletBinding<NoInfer<Input>>;
@@ -68,6 +70,7 @@ type ToolDefinition<Input, Output> = {
 /** Keep the parser's concrete output inside the closure, including transforms/defaults. */
 export function defineTool<Input, Output>(definition: ToolDefinition<Input, Output>) {
   const access: ToolAccess = definition.access ?? "token";
+  const rateClass: ToolRateClass = definition.rateClass ?? "standard";
   const run = async (args: unknown, context: McpDispatchContext): Promise<Awaited<Output>> => {
     // Defence in depth: the route already answers 401 before reaching here for token tools.
     if (context.surface === "mcp-http-public" && access !== "public") throw new Error(TOKEN_REQUIRED_MESSAGE);
@@ -75,24 +78,25 @@ export function defineTool<Input, Output>(definition: ToolDefinition<Input, Outp
     const binding = definition.binding;
     if (context.surface === "mcp-http" && binding.mode !== "none") {
       const wallet = binding.wallet(input);
-      if ((binding.mode === "required-match" || wallet !== undefined) && wallet !== context.tokenWallet) {
+      if (wallet !== context.tokenWallet) {
         throw new Error(`Token wallet mismatch: token is for ${context.tokenWallet}, requested ${wallet}`);
       }
     }
     return await definition.handler(input);
   };
-  return Object.assign(run, { access });
+  return Object.assign(run, { access, rateClass });
 }
 
 const requiredWallet = { mode: "required-match", wallet: (input: { wallet: string }) => input.wallet } as const;
-const optionalWallet = { mode: "optional-match", wallet: (input: { wallet?: string }) => input.wallet } as const;
 const noWallet = { mode: "none" } as const;
-type ToolDispatch = ((args: unknown, context: McpDispatchContext) => Promise<unknown>) & { access: ToolAccess };
+type ToolDispatch = ((args: unknown, context: McpDispatchContext) => Promise<unknown>) & { access: ToolAccess; rateClass: ToolRateClass };
 
 // Each concrete schema/handler pair is checked before the closures share an execution signature.
 export const TOOL_DISPATCH = {
+  // Position reads are public (on-chain data, like the site's /api/portfolio): the wallet is a query parameter, not
+  // an identity, so there is no binding; a token sent along is ignored (see the route).
   list_positions: defineTool({
-    parser: listPositionsSchema, missingArgs: "raw", binding: requiredWallet, handler: listPositions,
+    access: "public", rateClass: "position-read", parser: listPositionsSchema, missingArgs: "raw", binding: noWallet, handler: listPositions,
   }),
   quote_add_liquidity: defineTool({
     parser: quoteAddLiquiditySchema, missingArgs: "raw", binding: requiredWallet, handler: quoteAddLiquidity,
@@ -125,10 +129,12 @@ export const TOOL_DISPATCH = {
     parser: prepareWithdrawSchema, missingArgs: "raw", binding: requiredWallet, handler: prepareWithdraw,
   }),
   get_position_performance: defineTool({
-    parser: getPositionPerformanceSchema, missingArgs: "empty-object", binding: optionalWallet, handler: getPositionPerformance,
+    access: "public", rateClass: "position-read", parser: getPositionPerformanceSchema, missingArgs: "empty-object", binding: noWallet,
+    handler: getPositionPerformance,
   }),
   get_position_range_status: defineTool({
-    parser: getPositionRangeStatusSchema, missingArgs: "empty-object", binding: optionalWallet, handler: getPositionRangeStatus,
+    access: "public", rateClass: "position-read", parser: getPositionRangeStatusSchema, missingArgs: "empty-object", binding: noWallet,
+    handler: getPositionRangeStatus,
   }),
   list_rwa_pairs: defineTool({
     access: "public", parser: listRwaPairsSchema, missingArgs: "empty-object", binding: noWallet, handler: listRwaPairs,
@@ -153,6 +159,11 @@ export const TOOL_DISPATCH = {
 
 function isToolName(name: string): name is ToolName {
   return Object.hasOwn(TOOL_DISPATCH, name);
+}
+
+/** Rate class of a known tool; unknown names are `standard` (they fail fast in dispatch). */
+export function toolRateClass(name: string): ToolRateClass {
+  return isToolName(name) ? TOOL_DISPATCH[name].rateClass : "standard";
 }
 
 /** True only for a known tool whose dispatch entry is `access: "public"`. */
