@@ -5,7 +5,7 @@ import { verifyMcpToken } from "@/lib/mcp-auth";
 import { publicToolError } from "@/mcp/public-tool-error";
 import { sanitizePublicError } from "@/lib/public-error";
 import { captureApiRouteError } from "@/lib/sentry/capture";
-import { dispatchTool, isPublicTool, toolRateClass, type McpDispatchContext } from "@/mcp/dispatch";
+import { dispatchTool, isPublicTool, resolveToolName, toolRateClass, type McpDispatchContext } from "@/mcp/dispatch";
 import { MCP_RATE_LIMIT_RETRY_AFTER_SECONDS, mcpRateLimited, type McpRateLimitHit } from "@/lib/mcp-rate-limit";
 import { classifyToolError, mcpOpenToConfirm, mcpToolCallEvents, type McpToolCallRecord } from "@/mcp/analytics";
 import { captureMcpOpenWhenConfirmed } from "@/mcp/open-confirmation";
@@ -299,6 +299,11 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // A hidden pre-0.3 alias still runs; the result says which name to use instead.
+      const resolved = resolveToolName(toolParams.name);
+      const aliasMeta = resolved?.aliasUsed
+        ? { _meta: { deprecated: `${toolParams.name} was renamed to ${resolved.tool}; call ${resolved.tool} instead (the old name still works for now).` } }
+        : {};
       try {
         const result = await dispatchTool(toolParams.name, toolParams.arguments, context);
         tracker?.track({ outcome: "success", httpStatus: 200, result });
@@ -310,6 +315,7 @@ export async function POST(request: NextRequest) {
                 text: JSON.stringify(result, null, 2),
               },
             ],
+            ...aliasMeta,
           })
         );
       } catch (error) {
@@ -325,6 +331,7 @@ export async function POST(request: NextRequest) {
               },
             ],
             isError: true,
+            ...aliasMeta,
           })
         );
       }

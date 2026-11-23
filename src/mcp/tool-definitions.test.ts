@@ -9,7 +9,7 @@ describe("MCP discovery metadata", () => {
       const tools = listToolDefinitions(surface);
       expect(tools).toHaveLength(17);
       expect(new Set(tools.map(tool => tool.name)).size).toBe(17);
-      expect(tools.slice(0, 2).map(tool => tool.name)).toEqual(["prepare_withdraw", "submit_withdraw"]);
+      expect(tools.slice(0, 2).map(tool => tool.name)).toEqual(["lp_withdraw_prepare", "lp_withdraw_submit"]);
       expect(tools.every(tool => tool.inputSchema.type === "object")).toBe(true);
     }
   });

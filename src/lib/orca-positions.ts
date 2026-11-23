@@ -228,7 +228,7 @@ function onChainPriceBPerA(sqrtPriceX64: bigint, decimalsA: number, decimalsB: n
   return ratio * ratio * 10 ** (decimalsA - decimalsB);
 }
 
-/** Range facts for `get_position_range_status`, or null when the mint is not an Orca position. */
+/** Range facts for `position_get_range_status`, or null when the mint is not an Orca position. */
 export async function readOrcaPositionRangeFacts(positionMint: string, options: OrcaReadOptions = {}): Promise<PositionRangeFacts | null> {
   const read = await readOrcaPosition(positionMint, options);
   if (!read) return null;

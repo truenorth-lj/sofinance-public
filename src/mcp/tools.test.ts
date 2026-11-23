@@ -364,7 +364,7 @@ describe("MCP Tools", () => {
       expect(vi.mocked(issueSelectedPermit).mock.calls[0]?.[0]).toBe("tools-secret");
       expect(result.summary.simulated).toBe(true);
       expect(result.instructions).toBeDefined();
-      // submitArgs must carry every permit-bound field submit_signed_transaction needs
+      // submitArgs must carry every permit-bound field lp_add_submit needs
       expect(result.submitArgs).toEqual({
         permit: "mock-permit",
         wallet: "7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3",

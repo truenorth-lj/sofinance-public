@@ -48,10 +48,10 @@ afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); vi.clearAllMocks(); 
 
 describe("POST /api/mcp analytics", () => {
   it("public call: one mcp_tool_called with hashed wallet, auth none, protocol and host", async () => {
-    expect((await call("list_positions", { wallet })).response.status).toBe(200);
+    expect((await call("positions_list", { wallet })).response.status).toBe(200);
     expect(sendServerEvents).toHaveBeenCalledTimes(1);
     expect(sent()).toEqual([{ event: "mcp_tool_called", distinctId: walletDistinctId(wallet), properties: expect.objectContaining({
-      tool: "list_positions", alias_used: false, outcome: "success", auth: "none", read_only: true, destructive: false,
+      tool: "positions_list", alias_used: false, outcome: "success", auth: "none", read_only: true, destructive: false,
       protocol: "2025-06-18", http_status: 200, wallet_known: true, source: "mcp", $host: "sofinancelab.xyz",
     }) }]);
   });
@@ -64,15 +64,15 @@ describe("POST /api/mcp analytics", () => {
   });
 
   it("token tools: missing, invalid and valid tokens are rejected/rejected/bearer", async () => {
-    await call("quote_compound", { wallet, positionMint: mint });
-    await call("quote_compound", { wallet, positionMint: mint }, bearer("garbage"));
-    await call("quote_compound", { wallet, positionMint: mint }, bearer(generateMcpToken(wallet, SIGNING_SECRET)));
+    await call("lp_compound_quote", { wallet, positionMint: mint });
+    await call("lp_compound_quote", { wallet, positionMint: mint }, bearer("garbage"));
+    await call("lp_compound_quote", { wallet, positionMint: mint }, bearer(generateMcpToken(wallet, SIGNING_SECRET)));
     expect(sent().map((event) => [event.properties.outcome, event.properties.auth, event.properties.error_code ?? null, event.properties.http_status]))
       .toEqual([["rejected", "none", "auth_missing", 401], ["rejected", "invalid", "auth_invalid", 401], ["success", "bearer", null, 200]]);
   });
 
   it("tool errors carry a stable code, not the message", async () => {
-    await call("list_positions", { wallet: "nope" });
+    await call("positions_list", { wallet: "nope" });
     expect(sent()[0]!.properties).toMatchObject({ outcome: "rejected", error_code: "invalid_arguments", http_status: 200 });
     vi.mocked(tools.txStatus).mockRejectedValueOnce(new Error("RPC unavailable at https://rpc.example/?api-key=abc"));
     await call("tx_status", { signature: "1".repeat(64) });
@@ -83,7 +83,7 @@ describe("POST /api/mcp analytics", () => {
   const signature = "4".repeat(88);
   const submitOpen = async () => {
     vi.mocked(tools.submitOpenPosition).mockResolvedValueOnce({ signature, positionMint: mint } as never);
-    await call("submit_open_position", { wallet, signedTransaction: "AQID", permit: "p", summary: { poolId: pool, nftMint: mint, lastValidBlockHeight: 99 } },
+    await call("lp_open_submit", { wallet, signedTransaction: "AQID", permit: "p", summary: { poolId: pool, nftMint: mint, lastValidBlockHeight: 99 } },
       bearer(generateMcpToken(wallet, SIGNING_SECRET)));
     await vi.waitFor(() => expect(sendServerEvents).toHaveBeenCalledTimes(1));
   };
@@ -109,7 +109,7 @@ describe("POST /api/mcp analytics", () => {
   it("production: a non-open call never starts a confirmation poll", async () => {
     vi.stubEnv("VERCEL_ENV", "production");
     vi.stubEnv("NEXT_PUBLIC_POSTHOG_KEY", "phc_test_key");
-    await call("list_positions", { wallet });
+    await call("positions_list", { wallet });
     expect(captureMcpOpenWhenConfirmed).not.toHaveBeenCalled();
   });
 

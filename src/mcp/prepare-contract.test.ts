@@ -56,8 +56,8 @@ beforeEach(async () => {
   backend.rpc.mockReturnValue({ getLatestBlockhash: backend.latest });
   backend.latest.mockResolvedValue({ blockhash: testKeypair(90).publicKey.toBase58(), lastValidBlockHeight: 180 });
   backend.pairs.mockResolvedValue({ pairs: [], source: "synthetic", scannedPools: 0, pagesFetched: 1 });
-  backend.performance.mockResolvedValue({ positionMint: VALID_ARGS.get_position_performance.positionMint, metrics: { holdingDays: 1 }, history: [] });
-  backend.range.mockResolvedValue({ poolId: VALID_ARGS.quote_open_position.poolId, mintA: wallet, mintB: otherWallet,
+  backend.performance.mockResolvedValue({ positionMint: VALID_ARGS.position_get_performance.positionMint, metrics: { holdingDays: 1 }, history: [] });
+  backend.range.mockResolvedValue({ poolId: VALID_ARGS.lp_open_quote.poolId, mintA: wallet, mintB: otherWallet,
     tickLower: -60, tickUpper: 60, decimalsA: 9, decimalsB: 9, onChainPriceBPerA: 1 });
   server = createMcpServer(); client = new Client({ name: "real-handlers", version: "1" });
   const [a, b] = InMemoryTransport.createLinkedPair(); await server.connect(a); await client.connect(b);
@@ -112,10 +112,10 @@ import { jsonRequest } from "@/lib/test-support/send-fixtures";
 import * as selectedPermit from "@/lib/selected-permit";
 
 const cases = [
-  { kind: "compound", route: compound, name: "prepare_compound_transaction", build: backend.compound },
-  { kind: "selected", route: selected, name: "prepare_transaction", build: backend.selectedBuild },
-  { kind: "open", route: open, name: "prepare_open_position", build: backend.openBuild },
-  { kind: "withdraw", route: withdraw, name: "prepare_withdraw", build: backend.withdraw },
+  { kind: "compound", route: compound, name: "lp_compound_prepare", build: backend.compound },
+  { kind: "selected", route: selected, name: "lp_add_prepare", build: backend.selectedBuild },
+  { kind: "open", route: open, name: "lp_open_prepare", build: backend.openBuild },
+  { kind: "withdraw", route: withdraw, name: "lp_withdraw_prepare", build: backend.withdraw },
 ] as const;
 async function app(route: typeof compound, body: unknown, signal?: AbortSignal) {
   const response = await route(jsonRequest("http://localhost/api/prepare", body, { signal }));
@@ -159,43 +159,43 @@ for (const c of cases) describe(`${c.kind} prepare baseline`, () => {
 });
 
 it("compound HTTP deduplicates sources by rejection while MCP preserves duplicates", async () => {
-  const body = { ...VALID_ARGS.prepare_compound_transaction, sourceSignatures: ["1".repeat(88), "1".repeat(88)] };
+  const body = { ...VALID_ARGS.lp_compound_prepare, sourceSignatures: ["1".repeat(88), "1".repeat(88)] };
   expect({ result: await app(compound, body), io: io() }).toMatchSnapshot("http");
   expect(backend.compound).not.toHaveBeenCalled();
-  expect({ result: await snapshotResult(await call("stdio", "prepare_compound_transaction", body)), io: io() }).toMatchSnapshot("stdio");
+  expect({ result: await snapshotResult(await call("stdio", "lp_compound_prepare", body)), io: io() }).toMatchSnapshot("stdio");
 });
 it("open HTTP accepts micro while MCP rejects it before building", async () => {
-  const body = { ...VALID_ARGS.prepare_open_position, rangePreset: "micro" };
+  const body = { ...VALID_ARGS.lp_open_prepare, rangePreset: "micro" };
   expect({ result: await app(open, body), io: io() }).toMatchSnapshot("http");
   backend.openBuild.mockClear();
-  expect({ result: await call("stdio", "prepare_open_position", body), io: io() }).toMatchSnapshot("stdio");
+  expect({ result: await call("stdio", "lp_open_prepare", body), io: io() }).toMatchSnapshot("stdio");
   expect(backend.openBuild).not.toHaveBeenCalled();
 });
 it("withdraw passes the entire raw previous object without parsing at HTTP boundary", async () => {
-  const body = { ...VALID_ARGS.prepare_withdraw, stage: "swap", tx1Signature: "prior", previous: { summary, unsignedTransaction: toBase64(transaction), permit: "bound-first-stage", extra: { receipt: "full" } }, confirmHighImpact: true, ignored: 42 };
+  const body = { ...VALID_ARGS.lp_withdraw_prepare, stage: "swap", tx1Signature: "prior", previous: { summary, unsignedTransaction: toBase64(transaction), permit: "bound-first-stage", extra: { receipt: "full" } }, confirmHighImpact: true, ignored: 42 };
   expect({ result: await app(withdraw, body), io: io() }).toMatchSnapshot("http");
   expect(backend.withdraw).toHaveBeenCalledWith(body);
   backend.withdraw.mockClear(); backend.latest.mockClear(); backend.rpc.mockClear();
-  expect({ result: await snapshotResult(await call("stdio", "prepare_withdraw", body)), io: io() }).toMatchSnapshot("stdio");
+  expect({ result: await snapshotResult(await call("stdio", "lp_withdraw_prepare", body)), io: io() }).toMatchSnapshot("stdio");
 });
 for (const message of TRANSIENT_BUILD_ERRORS) it(`HTTP withdraw retries exactly three: ${message}`, async () => {
   backend.withdraw.mockRejectedValue(new Error(message));
-  expect({ result: await app(withdraw, VALID_ARGS.prepare_withdraw), io: io() }).toMatchSnapshot();
+  expect({ result: await app(withdraw, VALID_ARGS.lp_withdraw_prepare), io: io() }).toMatchSnapshot();
   expect(backend.withdraw).toHaveBeenCalledTimes(3); expect(backend.latest).not.toHaveBeenCalled();
 });
 it.each(["permanent failure", `${OPEN_FEE_ESTIMATE_MESSAGE}!`])("HTTP retry allowlists reject %s", async message => {
   backend.openBuild.mockRejectedValue(new Error(message)); backend.withdraw.mockRejectedValue(new Error(message));
-  expect({ open: await app(open, VALID_ARGS.prepare_open_position), withdraw: await app(withdraw, VALID_ARGS.prepare_withdraw), io: io() }).toMatchSnapshot();
+  expect({ open: await app(open, VALID_ARGS.lp_open_prepare), withdraw: await app(withdraw, VALID_ARGS.lp_withdraw_prepare), io: io() }).toMatchSnapshot();
   expect(backend.openBuild).toHaveBeenCalledOnce(); expect(backend.withdraw).toHaveBeenCalledOnce();
 });
 it("HTTP open retries at most three and never issues a permit on failure", async () => {
   backend.openBuild.mockRejectedValue(new Error(OPEN_FEE_ESTIMATE_MESSAGE));
-  expect({ result: await app(open, VALID_ARGS.prepare_open_position), io: io() }).toMatchSnapshot();
+  expect({ result: await app(open, VALID_ARGS.lp_open_prepare), io: io() }).toMatchSnapshot();
   expect(backend.openBuild).toHaveBeenCalledTimes(3);
 });
 it("HTTP withdraw refresh happens only after the successful retry", async () => {
   backend.withdraw.mockRejectedValueOnce(new Error(TRANSIENT_BUILD_ERRORS[0]));
-  expect({ result: await app(withdraw, VALID_ARGS.prepare_withdraw), io: io() }).toMatchSnapshot();
+  expect({ result: await app(withdraw, VALID_ARGS.lp_withdraw_prepare), io: io() }).toMatchSnapshot();
   expect(backend.withdraw).toHaveBeenCalledTimes(2); expect(backend.latest).toHaveBeenCalledOnce();
 });
 for (const c of cases.filter(c => c.kind !== "compound")) {
@@ -221,14 +221,14 @@ it("selected abort after build skips permit and drains sibling work", async () =
     signal.addEventListener("abort", () => { stopped = true; }, { once: true });
     controller.abort(); return { summary, transaction };
   });
-  expect(await app(selected, VALID_ARGS.prepare_transaction, controller.signal)).toMatchSnapshot();
+  expect(await app(selected, VALID_ARGS.lp_add_prepare, controller.signal)).toMatchSnapshot();
   await Promise.resolve(); expect(stopped).toBe(true); expect(permit).not.toHaveBeenCalled();
 });
 it("selected abort after permit never serializes a transaction", async () => {
   const controller = new AbortController(); const original = selectedPermit.issueSelectedPermit;
   vi.spyOn(selectedPermit, "issueSelectedPermit").mockImplementation((...args) => { const p = original(...args); controller.abort(); return p; });
   const serialize = vi.spyOn(transaction, "serialize");
-  expect(await app(selected, VALID_ARGS.prepare_transaction, controller.signal)).toMatchSnapshot();
+  expect(await app(selected, VALID_ARGS.lp_add_prepare, controller.signal)).toMatchSnapshot();
   await Promise.resolve(); expect(serialize).not.toHaveBeenCalled();
 });
 it("selected 8 second deadline aborts backend work, keeps retriesLeft1 and returns 504", async () => {
@@ -238,7 +238,7 @@ it("selected 8 second deadline aborts backend work, keeps retriesLeft1 and retur
     expect(args[5].budget.deadlineAt - Date.now()).toBeLessThanOrEqual(8000);
     args[5].signal.addEventListener("abort", () => { stopped = true; reject(args[5].signal.reason); }, { once: true });
   }));
-  const pending = app(selected, VALID_ARGS.prepare_transaction);
+  const pending = app(selected, VALID_ARGS.lp_add_prepare);
   // Request.clone().json() drains native streams, so allow that before advancing the timer.
   await vi.waitFor(() => expect(backend.selectedBuild).toHaveBeenCalledOnce());
   await vi.advanceTimersByTimeAsync(8000);

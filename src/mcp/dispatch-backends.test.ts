@@ -35,13 +35,13 @@ import { buildTransaction, SIGNING_SECRET, testKeypair, toBase64 } from "@/lib/t
 import { VALID_ARGS, wallet, otherWallet } from "./test-support/dispatch-fixtures";
 import { resetPoolSnapshotCache } from "./tools/pool-snapshot";
 
-const names = ["list_positions", "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction",
-  "quote_open_position", "prepare_open_position", "prepare_withdraw", "get_position_performance", "get_position_range_status", "list_rwa_pairs"] as const;
+const names = ["positions_list", "lp_add_quote", "lp_add_prepare", "lp_compound_quote", "lp_compound_prepare",
+  "lp_open_quote", "lp_open_prepare", "lp_withdraw_prepare", "position_get_performance", "position_get_range_status", "pools_list"] as const;
 const expectedIO = {
-  list_positions: ["discover"], quote_add_liquidity: ["selectedQuote"], prepare_transaction: ["selectedBuild"],
-  quote_compound: ["compound"], prepare_compound_transaction: ["compound"], quote_open_position: ["openQuote"],
-  prepare_open_position: ["openBuild"], prepare_withdraw: ["withdraw"], get_position_performance: ["performance"],
-  get_position_range_status: ["range"], list_rwa_pairs: ["pairs"],
+  positions_list: ["discover"], lp_add_quote: ["selectedQuote"], lp_add_prepare: ["selectedBuild"],
+  lp_compound_quote: ["compound"], lp_compound_prepare: ["compound"], lp_open_quote: ["openQuote"],
+  lp_open_prepare: ["openBuild"], lp_withdraw_prepare: ["withdraw"], position_get_performance: ["performance"],
+  position_get_range_status: ["range"], pools_list: ["pairs"],
 };
 const transaction = buildTransaction({ payer: testKeypair(1), signWith: [] });
 const summary = {
@@ -64,8 +64,8 @@ beforeEach(async () => {
   backend.openQuote.mockResolvedValue({ quote: summary.quote });
   backend.withdraw.mockResolvedValue({ summary, unsignedTransaction: toBase64(transaction), permit: "fixture-permit" });
   backend.pairs.mockResolvedValue({ pairs: [], source: "synthetic", scannedPools: 0, pagesFetched: 1 });
-  backend.performance.mockResolvedValue({ positionMint: VALID_ARGS.get_position_performance.positionMint, metrics: { holdingDays: 1 }, history: [] });
-  backend.range.mockResolvedValue({ poolId: VALID_ARGS.quote_open_position.poolId, mintA: wallet, mintB: otherWallet,
+  backend.performance.mockResolvedValue({ positionMint: VALID_ARGS.position_get_performance.positionMint, metrics: { holdingDays: 1 }, history: [] });
+  backend.range.mockResolvedValue({ poolId: VALID_ARGS.lp_open_quote.poolId, mintA: wallet, mintB: otherWallet,
     tickLower: -60, tickUpper: 60, decimalsA: 9, decimalsB: 9, onChainPriceBPerA: 1 });
   server = createMcpServer(); client = new Client({ name: "real-handlers", version: "1" });
   const [a, b] = InMemoryTransport.createLinkedPair(); await server.connect(a); await client.connect(b);
@@ -117,7 +117,7 @@ for (const surface of ["http", "stdio"] as const) describe(`${surface} real read
         const payload = await verifySignToken(value.signToken, SIGNING_SECRET);
         expect(payload?.unsignedTransaction).toBe(toBase64(transaction));
         expect(payload?.wallet).toBe(wallet);
-        if (name !== "prepare_transaction") expect(payload?.submitArgs.summary).toEqual(summary);
+        if (name !== "lp_add_prepare") expect(payload?.submitArgs.summary).toEqual(summary);
         // A different valid compression stream must preserve the same contract.
         const data = deflateSync(Buffer.from(JSON.stringify(payload)), { level: 0 }).toString("base64url");
         const alternate = `${createHmac("sha256", SIGNING_SECRET).update(data).digest("base64url")}.${data}`;
@@ -127,18 +127,18 @@ for (const surface of ["http", "stdio"] as const) describe(`${surface} real read
       }
     }
   });
-  if (surface === "http") it.each(names.filter(name => !["list_rwa_pairs", "list_positions", "get_position_performance", "get_position_range_status"].includes(name)))("%s rejects HTTP wallet mismatch before backend", async name => {
+  if (surface === "http") it.each(names.filter(name => !["pools_list", "positions_list", "position_get_performance", "position_get_range_status"].includes(name)))("%s rejects HTTP wallet mismatch before backend", async name => {
     expect((await call(surface, name, { ...VALID_ARGS[name], wallet: otherWallet })).isError).toBe(true);
     expect(io()).toEqual([]);
   });
-  if (surface === "http") it.each(["list_positions", "get_position_performance", "get_position_range_status"] as const)("%s (public position read) reaches the backend for any wallet", async name => {
+  if (surface === "http") it.each(["positions_list", "position_get_performance", "position_get_range_status"] as const)("%s (public position read) reaches the backend for any wallet", async name => {
     expect((await call(surface, name, { ...VALID_ARGS[name], wallet: otherWallet })).isError).toBeUndefined();
     expect(io().map(item => item.name)).toEqual(expectedIO[name]);
   });
   if (surface === "stdio") it("stdio quote remains usable without a signing secret", async () => {
     vi.stubEnv("JUPITER_API_KEY", undefined);
     vi.stubEnv("SOFINANCE_SIGNING_SECRET", undefined);
-    expect((await call(surface, "quote_compound", VALID_ARGS.quote_compound)).isError).toBeUndefined();
+    expect((await call(surface, "lp_compound_quote", VALID_ARGS.lp_compound_quote)).isError).toBeUndefined();
     expect(io().map(item => item.name)).toEqual(["compound"]);
   });
 });

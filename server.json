@@ -3,7 +3,7 @@
   "name": "xyz.sofinancelab/sofinance",
   "title": "SoFinance",
   "description": "List same-stock LP pools on Raydium and Meteora, with 7-day fee APR estimates. Fees not guaranteed.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "websiteUrl": "https://sofinancelab.xyz/app/ai",
   "remotes": [
     {
@@ -12,7 +12,7 @@
       "headers": [
         {
           "name": "Authorization",
-          "description": "Optional. \"Bearer <token>\" from https://sofinancelab.xyz/app/ai (connect wallet, Sign to get MCP config; valid 24h). Not needed for the read-only tools: list_rwa_pairs, get_pool_range_apr, list_positions, get_position_range_status, get_position_performance and tx_status.",
+          "description": "Optional. \"Bearer <token>\" from https://sofinancelab.xyz/app/ai (connect wallet, Sign to get MCP config; valid 24h). Not needed for the read-only tools: pools_list, pool_get_range_apr, positions_list, position_get_range_status, position_get_performance and tx_status.",
           "isRequired": false,
           "isSecret": true
         }

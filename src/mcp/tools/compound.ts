@@ -91,7 +91,7 @@ export async function prepareCompoundTransaction(input: QuoteCompoundInput) {
   const signUrl = buildSignUrl(signToken);
 
   // The permit is an HMAC over the complete summary, so the complete object
-  // must be returned and passed back unchanged to submit_compound_transaction.
+  // must be returned and passed back unchanged to lp_compound_submit.
   return {
     unsignedTransaction: unsignedTransactionBase64,
     permit,
@@ -99,7 +99,7 @@ export async function prepareCompoundTransaction(input: QuoteCompoundInput) {
     signToken,
     signUrl,
     instructions: {
-      message: "Sign unsignedTransaction with the wallet, then call submit_compound_transaction with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned; it is bound by the permit. Or open signUrl in a browser with the wallet connected to sign via UI.",
+      message: "Sign unsignedTransaction with the wallet, then call lp_compound_submit with { signedTransaction, permit, wallet, summary }. Pass summary back exactly as returned; it is bound by the permit. Or open signUrl in a browser with the wallet connected to sign via UI.",
     },
   };
 }

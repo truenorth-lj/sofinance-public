@@ -16,9 +16,9 @@ import { prepareTransaction, prepareCompoundTransaction, prepareOpenPosition } f
 import { prepareTransactionSchema, quoteCompoundSchema, prepareOpenPositionSchema } from "./schemas";
 import { VALID_ARGS } from "./test-support/dispatch-fixtures";
 const operations = [
-  () => prepareTransaction(prepareTransactionSchema.parse(VALID_ARGS.prepare_transaction)),
-  () => prepareCompoundTransaction(quoteCompoundSchema.parse(VALID_ARGS.prepare_compound_transaction)),
-  () => prepareOpenPosition(prepareOpenPositionSchema.parse(VALID_ARGS.prepare_open_position)),
+  () => prepareTransaction(prepareTransactionSchema.parse(VALID_ARGS.lp_add_prepare)),
+  () => prepareCompoundTransaction(quoteCompoundSchema.parse(VALID_ARGS.lp_compound_prepare)),
+  () => prepareOpenPosition(prepareOpenPositionSchema.parse(VALID_ARGS.lp_open_prepare)),
 ];
 beforeEach(() => {
   vi.resetAllMocks(); backend.secret.mockReturnValueOnce(SIGNING_SECRET).mockReturnValue("rotated-after-prepare");
@@ -47,7 +47,7 @@ it("keeps compound sign-token identity and source receipts bound before the buil
   let release!: () => void;
   const built = await backend.build(); backend.build.mockClear();
   backend.build.mockImplementationOnce(() => new Promise(resolve => { release = () => resolve(built); }));
-  const input = quoteCompoundSchema.parse(VALID_ARGS.prepare_compound_transaction);
+  const input = quoteCompoundSchema.parse(VALID_ARGS.lp_compound_prepare);
   input.sourceSignatures = ["original-source"];
   const originalWallet = input.wallet;
   const pending = prepareCompoundTransaction(input);
@@ -65,7 +65,7 @@ it("keeps browser-mint openRequest and sign-token wallet bound before the build 
   let release!: () => void;
   const built = await backend.build(); backend.build.mockClear();
   backend.build.mockImplementationOnce(() => new Promise(resolve => { release = () => resolve(built); }));
-  const input = prepareOpenPositionSchema.parse(VALID_ARGS.prepare_open_position);
+  const input = prepareOpenPositionSchema.parse(VALID_ARGS.lp_open_prepare);
   delete input.nftMint;
   const original = structuredClone(input);
   const pending = prepareOpenPosition(input);

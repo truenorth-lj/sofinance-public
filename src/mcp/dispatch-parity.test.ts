@@ -24,10 +24,10 @@ import { POST } from "@/app/api/mcp/route";
 import { createMcpServer } from "./create-server";
 
 const names = Object.keys(VALID_ARGS) as (keyof typeof VALID_ARGS)[];
-const optional = ["get_position_performance", "get_position_range_status"];
-const positionReads = ["list_positions", "get_position_range_status", "get_position_performance"];
-const none = ["list_rwa_pairs", "get_pool_range_apr", "tx_status", ...positionReads];
-const publicTools = ["list_rwa_pairs", "get_pool_range_apr", "tx_status", ...positionReads];
+const optional = ["position_get_performance", "position_get_range_status"];
+const positionReads = ["positions_list", "position_get_range_status", "position_get_performance"];
+const none = ["pools_list", "pool_get_range_apr", "tx_status", ...positionReads];
+const publicTools = ["pools_list", "pool_get_range_apr", "tx_status", ...positionReads];
 const resultValue = { ok: true, nested: { values: [1, null, "繁體"], omitted: undefined }, signature: "original-signature" };
 let client: Client;
 let server: ReturnType<typeof createMcpServer>;
@@ -98,7 +98,7 @@ for (const surface of ["http", "stdio"] as const) describe(surface, () => {
     expect(observations).toMatchSnapshot();
   });
 
-  it.each(["unknown", "__proto__", "constructor", "toString", "hasOwnProperty", "", null, 42, {}, ["list_positions"]])("unknown name %j keeps the protocol contract", async name => {
+  it.each(["unknown", "__proto__", "constructor", "toString", "hasOwnProperty", "", null, 42, {}, ["positions_list"]])("unknown name %j keeps the protocol contract", async name => {
     expect(await call(surface, name, {})).toMatchSnapshot();
     expect(calls()).toEqual({});
   });
@@ -122,10 +122,10 @@ for (const surface of ["http", "stdio"] as const) describe(surface, () => {
   it("preserves withdraw transform/refine and compound source signatures", async () => {
     const observations = [];
     for (const [name, args] of [
-      ["prepare_withdraw", { ...VALID_ARGS.prepare_withdraw, wallet: ` ${wallet} ` }],
-      ["prepare_withdraw", { ...VALID_ARGS.prepare_withdraw, targetUSDC: 1 }],
-      ["prepare_withdraw", { ...VALID_ARGS.prepare_withdraw, stage: "swap", tx1Signature: "tx1", previous: { preserved: true } }],
-      ["prepare_compound_transaction", { ...VALID_ARGS.prepare_compound_transaction, sourceSignatures: ["1".repeat(88), "1".repeat(88)] }],
+      ["lp_withdraw_prepare", { ...VALID_ARGS.lp_withdraw_prepare, wallet: ` ${wallet} ` }],
+      ["lp_withdraw_prepare", { ...VALID_ARGS.lp_withdraw_prepare, targetUSDC: 1 }],
+      ["lp_withdraw_prepare", { ...VALID_ARGS.lp_withdraw_prepare, stage: "swap", tx1Signature: "tx1", previous: { preserved: true } }],
+      ["lp_compound_prepare", { ...VALID_ARGS.lp_compound_prepare, sourceSignatures: ["1".repeat(88), "1".repeat(88)] }],
     ] as const) {
       resetCalls(); observations.push({ response: await call(surface, name, args), calls: calls() });
     }

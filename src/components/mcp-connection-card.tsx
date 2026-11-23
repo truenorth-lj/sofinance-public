@@ -4,6 +4,7 @@ import { useState, useCallback, useMemo } from "react";
 import { Copy, Check, Code, ShieldCheck } from "lucide-react";
 import { useWalletConnection } from "./wallet-connection";
 import bs58 from "bs58";
+import { HTTP_TOOL_NAMES, MCP_TOOL_COUNT } from "@/mcp/tool-names";
 
 interface McpConnectionCardProps {
   wallet: string;
@@ -318,11 +319,7 @@ export function McpConnectionCard({ wallet }: McpConnectionCardProps) {
               <strong className="text-smoke">Claude Desktop:</strong> Add to <code className="rounded bg-white/10 px-1">claude_desktop_config.json</code>
             </li>
             <li className="text-smoke">
-              <strong>Tools:</strong> list_positions, quote_add_liquidity,
-              prepare_transaction, submit_signed_transaction, quote_compound,
-              prepare_compound_transaction, submit_compound_transaction,
-              list_rwa_pairs, get_position_performance, quote_open_position,
-              prepare_open_position, submit_open_position
+              <strong>Tools ({MCP_TOOL_COUNT}):</strong> {HTTP_TOOL_NAMES.join(", ")}
             </li>
           </ol>
         </div>

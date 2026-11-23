@@ -26,14 +26,14 @@ beforeEach(() => {
 });
 
 describe("MCP open tools with native SOL input", () => {
-  it("quote_open_position rejects before quoting", async () => {
-    await expect(quoteOpenPosition(quoteOpenPositionSchema.parse({ ...VALID_ARGS.quote_open_position, inputKind: "native" })))
+  it("lp_open_quote rejects before quoting", async () => {
+    await expect(quoteOpenPosition(quoteOpenPositionSchema.parse({ ...VALID_ARGS.lp_open_quote, inputKind: "native" })))
       .rejects.toThrow(NOTE);
     expect(backend.openQuote).not.toHaveBeenCalled();
   });
 
-  it("prepare_open_position rejects before building a transaction or sign link", async () => {
-    await expect(prepareOpenPosition(prepareOpenPositionSchema.parse({ ...VALID_ARGS.prepare_open_position, inputKind: "native" })))
+  it("lp_open_prepare rejects before building a transaction or sign link", async () => {
+    await expect(prepareOpenPosition(prepareOpenPositionSchema.parse({ ...VALID_ARGS.lp_open_prepare, inputKind: "native" })))
       .rejects.toThrow(NOTE);
     expect(backend.openBuild).not.toHaveBeenCalled();
   });

@@ -152,7 +152,7 @@ export async function prepareTransaction(input: PrepareTransactionInput) {
       expiresAt: summary.expiresAt,
     },
     instructions: {
-      message: "Sign unsignedTransaction with the wallet, then call submit_signed_transaction with { signedTransaction, ...submitArgs }. Do not modify submitArgs; they are bound by the permit. Or open signUrl in a browser with the wallet connected to sign via UI.",
+      message: "Sign unsignedTransaction with the wallet, then call lp_add_submit with { signedTransaction, ...submitArgs }. Do not modify submitArgs; they are bound by the permit. Or open signUrl in a browser with the wallet connected to sign via UI.",
     },
   };
 }

@@ -35,8 +35,8 @@ success only after finalization, matching the queried receipt signature and a co
 message match. A mismatched history-provider signature stays in manual review and does
 not release the pending operation. UI checkpoints
 persist before submission so an interrupted broadcast is reconciled before
-another operation. MCP prepare_withdraw returns the existing compressed sign
-link and submit_withdraw handles signed submissions; a two-stage sign link needs
+another operation. MCP lp_withdraw_prepare returns the existing compressed sign
+link and lp_withdraw_submit handles signed submissions; a two-stage sign link needs
 a second prepare after tx1 finalizes.
 
 Run `tsx scripts/live-fee-test.ts withdraw --position NFT --percent 100 --receive

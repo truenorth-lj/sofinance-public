@@ -47,7 +47,7 @@ describe("daily APR chart wiring", () => {
     expect(planRoute).toContain("redirect(APP_ROUTES.rwaPairs)");
   });
 
-  it("exposes the sparse realized series on get_position_performance MCP output", () => {
+  it("exposes the sparse realized series on position_get_performance MCP output", () => {
     const src = readFileSync(resolve("src/mcp/tools/positions.ts"), "utf8");
     expect(src).toContain("realizedFeeAprSeries: result.realizedFeeAprSeries");
   });

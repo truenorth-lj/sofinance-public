@@ -19,7 +19,7 @@ const payer = testKeypair(1);
 let secrets: Array<() => Uint8Array>;
 let preparedBytes: string;
 const cleared = () => secrets.every(read => read().every(byte => byte === 0));
-const input = () => ({ ...prepareOpenPositionSchema.parse(VALID_ARGS.prepare_open_position), wallet: payer.publicKey.toBase58(), nftMint: undefined });
+const input = () => ({ ...prepareOpenPositionSchema.parse(VALID_ARGS.lp_open_prepare), wallet: payer.publicKey.toBase58(), nftMint: undefined });
 beforeEach(() => {
   secrets = []; vi.resetAllMocks();
   const generate = Keypair.generate;

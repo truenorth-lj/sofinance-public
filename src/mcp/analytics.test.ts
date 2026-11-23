@@ -8,7 +8,7 @@ const pool = "8sLbNZoA1cfnvMJLPfp98ZLAnFSYCFApfJKMbiXNLwxj";
 const mint = "7Np41oeYqPefeNQEHSv1UDhYrehxin3NStELsSKCT4K2";
 const signature = "5".repeat(88);
 const base: McpToolCallRecord = {
-  calledName: "list_rwa_pairs", outcome: "success", auth: "none", protocol: "2025-06-18", httpStatus: 200, durationMs: 41.6,
+  calledName: "pools_list", outcome: "success", auth: "none", protocol: "2025-06-18", httpStatus: 200, durationMs: 41.6,
   host: "sofinancelab.xyz",
 };
 
@@ -17,30 +17,30 @@ describe("mcp_tool_called", () => {
     expect(mcpToolCallEvents(base)).toEqual([{
       event: MCP_TOOL_CALLED, distinctId: MCP_ANONYMOUS_DISTINCT_ID,
       properties: {
-        tool: "list_rwa_pairs", alias_used: false, outcome: "success", auth: "none", read_only: true, destructive: false,
+        tool: "pools_list", alias_used: false, outcome: "success", auth: "none", read_only: true, destructive: false,
         protocol: "2025-06-18", duration_ms: 42, http_status: 200, wallet_known: false, source: "mcp", $host: "sofinancelab.xyz",
       },
     }]);
   });
 
   it("wallet comes from the token, else the wallet argument, and only as a sha256 distinct id", () => {
-    const [fromArg] = mcpToolCallEvents({ ...base, calledName: "list_positions", args: { wallet } });
+    const [fromArg] = mcpToolCallEvents({ ...base, calledName: "positions_list", args: { wallet } });
     expect(fromArg!.distinctId).toBe(walletDistinctId(wallet));
     expect(fromArg!.properties.wallet_known).toBe(true);
     const tokenWallet = "Vote111111111111111111111111111111111111111";
-    const [fromToken] = mcpToolCallEvents({ ...base, calledName: "quote_compound", auth: "bearer", tokenWallet, args: { wallet, positionMint: mint } });
+    const [fromToken] = mcpToolCallEvents({ ...base, calledName: "lp_compound_quote", auth: "bearer", tokenWallet, args: { wallet, positionMint: mint } });
     expect(fromToken!.distinctId).toBe(walletDistinctId(tokenWallet));
     expect(fromToken!.properties).toMatchObject({ auth: "bearer", position_mint: mint, read_only: true });
   });
 
   it("never carries arguments, raw wallet, permits, transactions or sign links", () => {
     const args = { wallet, signedTransaction: "AQID".repeat(40), permit: "permit-secret", summary: { poolId: pool, nftMint: mint, signUrl: "https://x/app/sign/abc" } };
-    const events = mcpToolCallEvents({ ...base, calledName: "submit_open_position", auth: "bearer", tokenWallet: wallet, args,
+    const events = mcpToolCallEvents({ ...base, calledName: "lp_open_submit", auth: "bearer", tokenWallet: wallet, args,
       outcome: "rejected", errorCode: "permit_invalid" });
     const text = JSON.stringify(events);
     for (const secret of [wallet, "AQIDAQID", "permit-secret", "/app/sign/"]) expect(text).not.toContain(secret);
     expect(events).toHaveLength(1);
-    expect(events[0]!.properties).toMatchObject({ tool: "submit_open_position", destructive: true, read_only: false,
+    expect(events[0]!.properties).toMatchObject({ tool: "lp_open_submit", destructive: true, read_only: false,
       pool_id: pool, position_mint: mint, outcome: "rejected", error_code: "permit_invalid" });
   });
 
@@ -54,11 +54,11 @@ describe("mcp_tool_called", () => {
 });
 
 describe("MCP open tagging", () => {
-  const open: McpToolCallRecord = { ...base, calledName: "submit_open_position", auth: "bearer", tokenWallet: wallet,
+  const open: McpToolCallRecord = { ...base, calledName: "lp_open_submit", auth: "bearer", tokenWallet: wallet,
     args: { wallet, summary: { poolId: pool, nftMint: mint, lastValidBlockHeight: 350_000_123 } }, result: { signature, positionMint: mint } };
   const properties = { source: "mcp", position_mint: mint, signature, pool, $host: "sofinancelab.xyz" };
 
-  it("a successful submit_open_position sends open_position_submitted (not success: broadcast is not confirmation)", () => {
+  it("a successful lp_open_submit sends open_position_submitted (not success: broadcast is not confirmation)", () => {
     const events = mcpToolCallEvents(open);
     expect(events.map((item) => item.event)).toEqual([MCP_TOOL_CALLED, "open_position_submitted"]);
     expect(events[1]).toEqual({ event: "open_position_submitted", distinctId: walletDistinctId(wallet), properties });
@@ -72,7 +72,7 @@ describe("MCP open tagging", () => {
   });
 
   it("nothing to submit or confirm for errors, other write tools, or a result without signature", () => {
-    for (const record of [{ ...open, outcome: "error" as const, errorCode: "tool_failed" }, { ...open, calledName: "submit_withdraw" },
+    for (const record of [{ ...open, outcome: "error" as const, errorCode: "tool_failed" }, { ...open, calledName: "lp_withdraw_submit" },
       { ...open, result: { positionMint: mint } }, { ...open, tokenWallet: undefined, args: { summary: { poolId: pool } } }]) {
       expect(mcpToolCallEvents(record)).toHaveLength(1);
       expect(mcpOpenToConfirm(record)).toBeNull();

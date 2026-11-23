@@ -39,13 +39,13 @@ describe("POST /api/mcp per-IP rate limits", () => {
   });
 
   it("position reads share a 12/min budget; the 13th is 429 / -32029 with Retry-After, no handler and no Sentry", async () => {
-    const reads = [["list_positions", { wallet }], ["get_position_range_status", { positionMint: wallet }],
-      ["get_position_performance", { positionMint: wallet }]] as const;
+    const reads = [["positions_list", { wallet }], ["position_get_range_status", { positionMint: wallet }],
+      ["position_get_performance", { positionMint: wallet }]] as const;
     for (let i = 0; i < MCP_POSITION_READS_PER_IP_PER_MINUTE; i++) {
       const [name, args] = reads[i % reads.length]!;
       expect((await tool(name, args)).response.status).toBe(200);
     }
-    const { response, json } = await tool("list_positions", { wallet });
+    const { response, json } = await tool("positions_list", { wallet });
     expect(response.status).toBe(429);
     expect(response.headers.get("Retry-After")).toBe("60");
     expect(json).toMatchObject({ jsonrpc: "2.0", id: 3, error: { code: -32029,
@@ -56,10 +56,10 @@ describe("POST /api/mcp per-IP rate limits", () => {
   });
 
   it("cheap tools such as tx_status are not held back by the position-read budget", async () => {
-    for (let i = 0; i < MCP_POSITION_READS_PER_IP_PER_MINUTE; i++) await tool("list_positions", { wallet });
-    expect((await tool("list_positions", { wallet })).response.status).toBe(429);
+    for (let i = 0; i < MCP_POSITION_READS_PER_IP_PER_MINUTE; i++) await tool("positions_list", { wallet });
+    expect((await tool("positions_list", { wallet })).response.status).toBe(429);
     expect((await tool("tx_status", { signature })).response.status).toBe(200);
-    expect((await tool("list_rwa_pairs", {})).response.status).toBe(200);
+    expect((await tool("pools_list", {})).response.status).toBe(200);
   });
 
   it("tool calls share a 60/min budget (tx_status polled every 2 s fits)", async () => {
@@ -80,24 +80,24 @@ describe("POST /api/mcp per-IP rate limits", () => {
   });
 
   it("limits are per IP", async () => {
-    for (let i = 0; i < MCP_POSITION_READS_PER_IP_PER_MINUTE; i++) await tool("list_positions", { wallet }, "198.51.100.1");
-    expect((await tool("list_positions", { wallet }, "198.51.100.1")).response.status).toBe(429);
-    expect((await tool("list_positions", { wallet }, "198.51.100.2")).response.status).toBe(200);
+    for (let i = 0; i < MCP_POSITION_READS_PER_IP_PER_MINUTE; i++) await tool("positions_list", { wallet }, "198.51.100.1");
+    expect((await tool("positions_list", { wallet }, "198.51.100.1")).response.status).toBe(429);
+    expect((await tool("positions_list", { wallet }, "198.51.100.2")).response.status).toBe(200);
   });
 
   it("the budget refills after a minute", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
-      for (let i = 0; i < MCP_POSITION_READS_PER_IP_PER_MINUTE; i++) await tool("list_positions", { wallet });
-      expect((await tool("list_positions", { wallet })).response.status).toBe(429);
+      for (let i = 0; i < MCP_POSITION_READS_PER_IP_PER_MINUTE; i++) await tool("positions_list", { wallet });
+      expect((await tool("positions_list", { wallet })).response.status).toBe(429);
       vi.setSystemTime(Date.now() + 60_001);
-      expect((await tool("list_positions", { wallet })).response.status).toBe(200);
+      expect((await tool("positions_list", { wallet })).response.status).toBe(200);
     } finally { vi.useRealTimers(); }
   });
 
   it("a limited token tool answers 429 before auth (no token check, no 401)", async () => {
     for (let i = 0; i < MCP_TOOL_CALLS_PER_IP_PER_MINUTE; i++) await tool("tx_status", { signature });
-    const { response } = await tool("quote_compound", { wallet, positionMint: wallet });
+    const { response } = await tool("lp_compound_quote", { wallet, positionMint: wallet });
     expect(response.status).toBe(429);
   });
 });
