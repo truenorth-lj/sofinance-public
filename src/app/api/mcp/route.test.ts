@@ -10,7 +10,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/mcp/tools", () => Object.fromEntries([
   "listPositions", "quoteAddLiquidity", "prepareTransaction", "quoteCompound", "prepareCompoundTransaction",
   "submitSignedTransaction", "submitCompoundTransaction", "listRwaPairs", "getPositionPerformance",
-  "getPositionRangeStatus", "quoteOpenPosition", "prepareOpenPosition", "submitOpenPosition", "prepareWithdraw", "submitWithdrawTransaction", "getPoolRangeApr",
+  "getPositionRangeStatus", "quoteOpenPosition", "prepareOpenPosition", "submitOpenPosition", "prepareWithdraw", "submitWithdrawTransaction", "getPoolRangeApr", "txStatus",
 ].map((name) => [name, vi.fn()])));
 
 import { NextRequest } from "next/server";
@@ -61,16 +61,16 @@ const EXPECTED_TOOL_NAMES = [
   "prepare_withdraw", "submit_withdraw",
   "get_position_performance", "get_position_range_status", "list_rwa_pairs", "get_pool_range_apr", "list_positions",
   "quote_add_liquidity", "prepare_transaction", "quote_compound", "prepare_compound_transaction",
-  "submit_signed_transaction", "submit_compound_transaction", "quote_open_position", "prepare_open_position", "submit_open_position",
+  "submit_signed_transaction", "submit_compound_transaction", "quote_open_position", "prepare_open_position", "submit_open_position", "tx_status",
 ];
-const PUBLIC_TOOLS = ["list_rwa_pairs", "get_pool_range_apr"];
+const PUBLIC_TOOLS = ["list_rwa_pairs", "get_pool_range_apr", "tx_status"];
 
 describe("removed tools", () => {
   it("get_pool_activity is gone from tools/list and a direct call is an unknown tool", async () => {
     const { json } = await send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
     const names = json.result.tools.map((tool: { name: string }) => tool.name);
     expect(names).not.toContain("get_pool_activity");
-    expect(names).toHaveLength(16);
+    expect(names).toHaveLength(17);
     const call = await callTool("get_pool_activity", { poolId: pool });
     expect(call.json.result.isError).toBe(true);
     expect(call.json.result.content[0].text).toContain("Unknown tool: get_pool_activity");
@@ -78,7 +78,7 @@ describe("removed tools", () => {
 });
 
 describe("tools/list wire contract", () => {
-  it("lists exactly the 16 tools in the current order, without authentication", async () => {
+  it("lists exactly the 17 tools in the current order, without authentication", async () => {
     const { response, json } = await send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
     expect(response.status).toBe(200);
     expect(json).toMatchObject({ jsonrpc: "2.0", id: 1 });
@@ -108,6 +108,7 @@ describe("tools/list wire contract", () => {
     prepare_compound_transaction: "quoteCompoundSchema", submit_signed_transaction: "submitSignedTransactionSchema",
     submit_compound_transaction: "submitCompoundTransactionSchema", quote_open_position: "quoteOpenPositionSchema",
     prepare_open_position: "prepareOpenPositionSchema", submit_open_position: "submitOpenPositionSchema",
+    tx_status: "txStatusSchema",
   };
   it("the hand-written JSON schemas list the same properties and required fields as the zod schemas that actually validate calls", async () => {
     const { json } = await send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
@@ -323,6 +324,7 @@ const VALID_ARGS: Record<string, unknown> = {
   get_position_range_status: { positionMint: mint, wallet },
   list_rwa_pairs: {},
   get_pool_range_apr: { poolId: pool },
+  tx_status: { signature: "1".repeat(64) },
 };
 const IMPLEMENTATION: Record<string, string> = {
   prepare_withdraw:"prepareWithdraw",submit_withdraw:"submitWithdrawTransaction",
@@ -331,12 +333,12 @@ const IMPLEMENTATION: Record<string, string> = {
   submit_signed_transaction: "submitSignedTransaction", submit_compound_transaction: "submitCompoundTransaction",
   quote_open_position: "quoteOpenPosition", prepare_open_position: "prepareOpenPosition", submit_open_position: "submitOpenPosition",
   get_position_performance: "getPositionPerformance", get_position_range_status: "getPositionRangeStatus",
-  list_rwa_pairs: "listRwaPairs", get_pool_range_apr: "getPoolRangeApr",
+  list_rwa_pairs: "listRwaPairs", get_pool_range_apr: "getPoolRangeApr", tx_status: "txStatus",
 };
 const WALLET_REQUIRED = EXPECTED_TOOL_NAMES.filter((name) => !["get_position_performance", "get_position_range_status", ...PUBLIC_TOOLS].includes(name));
 
 describe("tools/call dispatch and wallet binding", () => {
-  it("covers all 16 tools", () => {
+  it("covers all 17 tools", () => {
     expect(Object.keys(VALID_ARGS).sort()).toEqual([...EXPECTED_TOOL_NAMES].sort());
     expect(Object.keys(IMPLEMENTATION).sort()).toEqual([...EXPECTED_TOOL_NAMES].sort());
   });

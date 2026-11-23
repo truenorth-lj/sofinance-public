@@ -12,7 +12,7 @@
       "headers": [
         {
           "name": "Authorization",
-          "description": "Optional. \"Bearer <token>\" from https://sofinancelab.xyz/app/ai (connect wallet, Sign to get MCP config; valid 24h). Not needed for list_rwa_pairs and get_pool_range_apr.",
+          "description": "Optional. \"Bearer <token>\" from https://sofinancelab.xyz/app/ai (connect wallet, Sign to get MCP config; valid 24h). Not needed for list_rwa_pairs, get_pool_range_apr and tx_status.",
           "isRequired": false,
           "isSecret": true
         }

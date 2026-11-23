@@ -15,7 +15,7 @@ const handlers = vi.hoisted(() => ({
   getPositionPerformance: vi.fn(), getPositionRangeStatus: vi.fn(), listRwaPairs: vi.fn(), getPoolRangeApr: vi.fn(),
   listPositions: vi.fn(), quoteAddLiquidity: vi.fn(), prepareTransaction: vi.fn(), quoteCompound: vi.fn(),
   prepareCompoundTransaction: vi.fn(), submitSignedTransaction: vi.fn(), submitCompoundTransaction: vi.fn(),
-  quoteOpenPosition: vi.fn(), prepareOpenPosition: vi.fn(), submitOpenPosition: vi.fn(),
+  quoteOpenPosition: vi.fn(), prepareOpenPosition: vi.fn(), submitOpenPosition: vi.fn(), txStatus: vi.fn(),
 }));
 vi.mock("server-only", () => ({}));
 vi.mock("./tools", () => handlers);
@@ -24,8 +24,8 @@ import { createMcpServer } from "./create-server";
 
 const names = Object.keys(VALID_ARGS) as (keyof typeof VALID_ARGS)[];
 const optional = ["get_position_performance", "get_position_range_status"];
-const none = ["list_rwa_pairs", "get_pool_range_apr"];
-const publicTools = ["list_rwa_pairs", "get_pool_range_apr"];
+const none = ["list_rwa_pairs", "get_pool_range_apr", "tx_status"];
+const publicTools = ["list_rwa_pairs", "get_pool_range_apr", "tx_status"];
 const resultValue = { ok: true, nested: { values: [1, null, "繁體"], omitted: undefined }, signature: "original-signature" };
 let client: Client;
 let server: ReturnType<typeof createMcpServer>;

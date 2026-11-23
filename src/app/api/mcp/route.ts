@@ -7,7 +7,7 @@ import { sanitizePublicError } from "@/lib/public-error";
 import { captureApiRouteError } from "@/lib/sentry/capture";
 import { dispatchTool, isPublicTool, type McpDispatchContext } from "@/mcp/dispatch";
 import { getSigningSecrets } from "@sofinance/engine/config/server-env";
-import { PUBLIC_TOOL_NAMES } from "@/mcp/tool-definitions";
+import { formatToolNames, PUBLIC_TOOL_NAMES } from "@/mcp/tool-definitions";
 import {
   SERVER_INFO, authSteps, isSupportedProtocolVersion, mcpSetupUrl, negotiateProtocolVersion, serverInstructions,
   SUPPORTED_PROTOCOL_VERSIONS,
@@ -19,7 +19,7 @@ import {
  * Remote MCP-over-HTTP endpoint for AI agents (Cursor, Claude Desktop).
  * 
  * Protocol: JSON-RPC 2.0 over HTTP (Streamable HTTP, JSON responses only; versions in SUPPORTED_PROTOCOL_VERSIONS)
- * Authentication: none for the public read-only snapshot tools (PUBLIC_TOOL_NAMES); every other tools/call needs the
+ * Authentication: none for the public read-only tools (PUBLIC_TOOL_NAMES: snapshot reads and tx_status); every other tools/call needs the
  * wallet-bound Bearer token from /app/ai.
  * 
  * Supported methods:
@@ -82,7 +82,7 @@ function unauthorized(id: string | number | null, reason: "missing" | "invalid")
   const message = reason === "missing"
     ? "Unauthorized: Bearer token required"
     : "Unauthorized: Invalid or expired token";
-  const guidance = `This tool is bound to one wallet. To get a token, open ${mcpSetupUrl()}, connect the wallet, click "Sign to get MCP config" and add the Authorization header it shows (valid 24h). ${PUBLIC_TOOL_NAMES.join(" and ")} work without a token.`;
+  const guidance = `This tool is bound to one wallet. To get a token, open ${mcpSetupUrl()}, connect the wallet, click "Sign to get MCP config" and add the Authorization header it shows (valid 24h). ${formatToolNames(PUBLIC_TOOL_NAMES)} work without a token.`;
   const challenge = reason === "invalid"
     ? `${WWW_AUTHENTICATE_REALM}, error="invalid_token", error_description="The token is invalid or expired"`
     : WWW_AUTHENTICATE_REALM;

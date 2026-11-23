@@ -1,6 +1,7 @@
 import "@/lib/engine-host";
 import { z } from "zod";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
+import { isSolanaSignature } from "@/lib/solana-signature";
 
 // Solana public key validation (base58, 32-44 chars typically)
 const publicKeySchema = z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/, "Invalid Solana public key");
@@ -157,3 +158,11 @@ export const getPositionRangeStatusSchema = z.object({
 export type GetPositionRangeStatusInput = z.infer<typeof getPositionRangeStatusSchema>;
 
 export { withdrawPrepareSchema as prepareWithdrawSchema, withdrawSubmitSchema as submitWithdrawSchema } from "@sofinance/engine/withdraw/input";
+
+// Finality of one Solana transaction signature (read-only, no token)
+export const txStatusSchema = z.object({
+  signature: z.string().trim().refine(isSolanaSignature, "Invalid Solana transaction signature"),
+  lastValidBlockHeight: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+  commitment: z.enum(["confirmed", "finalized"]).default("confirmed"),
+});
+export type TxStatusInput = z.infer<typeof txStatusSchema>;
