@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-import { classifyToolError, MCP_ANONYMOUS_DISTINCT_ID, MCP_TOOL_CALLED, mcpToolCallEvents, type McpToolCallRecord } from "./analytics";
+import { classifyToolError, MCP_ANONYMOUS_DISTINCT_ID, MCP_TOOL_CALLED, mcpOpenToConfirm, mcpToolCallEvents, type McpToolCallRecord } from "./analytics";
 import { walletDistinctId } from "../lib/analytics/server-capture";
 
 const wallet = "So11111111111111111111111111111111111111112";
@@ -55,19 +55,28 @@ describe("mcp_tool_called", () => {
 
 describe("MCP open tagging", () => {
   const open: McpToolCallRecord = { ...base, calledName: "submit_open_position", auth: "bearer", tokenWallet: wallet,
-    args: { wallet, summary: { poolId: pool, nftMint: mint } }, result: { signature, positionMint: mint } };
+    args: { wallet, summary: { poolId: pool, nftMint: mint, lastValidBlockHeight: 350_000_123 } }, result: { signature, positionMint: mint } };
+  const properties = { source: "mcp", position_mint: mint, signature, pool, $host: "sofinancelab.xyz" };
 
-  it("a successful submit_open_position also sends open_position_success with source mcp (north-star counts it)", () => {
+  it("a successful submit_open_position sends open_position_submitted (not success: broadcast is not confirmation)", () => {
     const events = mcpToolCallEvents(open);
-    expect(events.map((item) => item.event)).toEqual([MCP_TOOL_CALLED, "open_position_success"]);
-    expect(events[1]).toEqual({ event: "open_position_success", distinctId: walletDistinctId(wallet),
-      properties: { source: "mcp", position_mint: mint, signature, pool, $host: "sofinancelab.xyz" } });
+    expect(events.map((item) => item.event)).toEqual([MCP_TOOL_CALLED, "open_position_submitted"]);
+    expect(events[1]).toEqual({ event: "open_position_submitted", distinctId: walletDistinctId(wallet), properties });
   });
 
-  it("no open event for errors, other write tools, or a result without signature", () => {
-    expect(mcpToolCallEvents({ ...open, outcome: "error", errorCode: "tool_failed" })).toHaveLength(1);
-    expect(mcpToolCallEvents({ ...open, calledName: "submit_withdraw" })).toHaveLength(1);
-    expect(mcpToolCallEvents({ ...open, result: { positionMint: mint } })).toHaveLength(1);
+  it("mcpOpenToConfirm: the signature, lastValidBlockHeight and the open_position_success to send once confirmed", () => {
+    expect(mcpOpenToConfirm(open)).toEqual({ signature, lastValidBlockHeight: 350_000_123,
+      event: { event: "open_position_success", distinctId: walletDistinctId(wallet), properties } });
+    const noHeight = mcpOpenToConfirm({ ...open, args: { wallet, summary: { poolId: pool, lastValidBlockHeight: "1" } } });
+    expect(noHeight).not.toHaveProperty("lastValidBlockHeight");
+  });
+
+  it("nothing to submit or confirm for errors, other write tools, or a result without signature", () => {
+    for (const record of [{ ...open, outcome: "error" as const, errorCode: "tool_failed" }, { ...open, calledName: "submit_withdraw" },
+      { ...open, result: { positionMint: mint } }, { ...open, tokenWallet: undefined, args: { summary: { poolId: pool } } }]) {
+      expect(mcpToolCallEvents(record)).toHaveLength(1);
+      expect(mcpOpenToConfirm(record)).toBeNull();
+    }
   });
 });
 

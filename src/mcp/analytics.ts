@@ -7,8 +7,11 @@ import { toolAnnotations } from "./tool-definitions";
  * MCP usage events (GTM metrics spec, mcp-gtm/06-metrics-spec.md):
  * - `mcp_tool_called`: one per parsed `tools/call` (success, error or rejected). Rate-limited (429) calls are not
  *   events, so abuse cannot inflate billed volume.
- * - `open_position_success` with `source: "mcp"`: only when `submit_open_position` succeeds on /api/mcp. Same
- *   event as the web open, so north-star still counts it; `source` splits it out.
+ * - `open_position_submitted` with `source: "mcp"`: `submit_open_position` returned (broadcast accepted, not proof
+ *   it landed), in the same batch.
+ * - `open_position_success` with `source: "mcp"`: only after the open is `confirmed` on-chain, polled after the
+ *   response (`mcpOpenToConfirm` + src/mcp/open-confirmation.ts). Same event and same bar as the web open, so
+ *   north-star counts it; `source` splits it out.
  * Write-tool success (agent-managed wallets) is `mcp_tool_called` with `outcome: "success"` on a destructive tool,
  * not a separate event.
  *
@@ -21,6 +24,8 @@ export const MCP_ANONYMOUS_DISTINCT_ID = "mcp:anonymous";
 
 export type McpCallOutcome = "success" | "error" | "rejected";
 export type McpCallAuth = "none" | "bearer" | "invalid";
+
+const MCP_OPEN_SUBMITTED = "open_position_submitted";
 
 export type McpToolCallRecord = {
   calledName: unknown;
@@ -95,14 +100,34 @@ export function mcpToolCallEvents(record: McpToolCallRecord): ServerEvent[] {
 
   const events: ServerEvent[] = [{ event: MCP_TOOL_CALLED, distinctId, properties }];
 
+  const opened = mcpOpenToConfirm(record);
+  if (opened) events.push({ ...opened.event, event: MCP_OPEN_SUBMITTED });
+  return events;
+}
+
+export type McpOpenToConfirm = { signature: string; lastValidBlockHeight?: number; event: ServerEvent };
+
+/**
+ * A successful MCP `submit_open_position`: the signature to watch and the `open_position_success` event to send
+ * once it is confirmed. Null for anything else.
+ */
+export function mcpOpenToConfirm(record: McpToolCallRecord): McpOpenToConfirm | null {
+  const resolved = typeof record.calledName === "string" ? resolveToolName(record.calledName) : null;
+  if (resolved?.tool !== "submit_open_position" || record.outcome !== "success") return null;
+  const wallet = publicId(record.tokenWallet) ?? publicId(field(record.args, "wallet"));
   const signature = field(record.result, "signature");
   const openedMint = publicId(field(record.result, "positionMint"));
-  if (tool === "submit_open_position" && record.outcome === "success" && wallet && openedMint
-    && typeof signature === "string" && SIGNATURE.test(signature)) {
-    const opened: ServerEventProperties = { source: "mcp", position_mint: openedMint, signature };
-    if (poolId) opened.pool = poolId;
-    if (host) opened.$host = host;
-    events.push({ event: GROWTH_EVENTS.openSuccess, distinctId, properties: opened });
-  }
-  return events;
+  if (!wallet || !openedMint || typeof signature !== "string" || !SIGNATURE.test(signature)) return null;
+  const summary = field(record.args, "summary");
+  const poolId = publicId(field(record.args, "poolId")) ?? publicId(field(summary, "poolId"));
+  const host = typeof record.host === "string" && HOST.test(record.host.toLowerCase()) ? record.host.toLowerCase() : undefined;
+  const properties: ServerEventProperties = { source: "mcp", position_mint: openedMint, signature };
+  if (poolId) properties.pool = poolId;
+  if (host) properties.$host = host;
+  const height = field(summary, "lastValidBlockHeight");
+  return {
+    signature,
+    ...(typeof height === "number" && Number.isSafeInteger(height) && height > 0 ? { lastValidBlockHeight: height } : {}),
+    event: { event: GROWTH_EVENTS.openSuccess, distinctId: walletDistinctId(wallet), properties },
+  };
 }

@@ -6,6 +6,7 @@ vi.mock("@/lib/analytics/server-capture", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/analytics/server-capture")>()),
   sendServerEvents: vi.fn(async () => {}),
 }));
+vi.mock("@/mcp/open-confirmation", () => ({ captureMcpOpenWhenConfirmed: vi.fn(async () => "confirmed") }));
 vi.mock("@/mcp/tools", () => Object.fromEntries([
   "listPositions", "quoteAddLiquidity", "prepareTransaction", "quoteCompound", "prepareCompoundTransaction",
   "submitSignedTransaction", "submitCompoundTransaction", "listRwaPairs", "getPositionPerformance", "getPositionRangeStatus",
@@ -14,6 +15,7 @@ vi.mock("@/mcp/tools", () => Object.fromEntries([
 ].map((name) => [name, vi.fn(async () => ({ ok: true }))])));
 import { NextRequest } from "next/server";
 import * as tools from "@/mcp/tools";
+import { captureMcpOpenWhenConfirmed } from "@/mcp/open-confirmation";
 import { sendServerEvents, walletDistinctId, type ServerEvent } from "@/lib/analytics/server-capture";
 import { generateMcpToken } from "@/lib/mcp-auth";
 import { SIGNING_SECRET, testKeypair } from "@/lib/test-support/send-fixtures";
@@ -78,15 +80,37 @@ describe("POST /api/mcp analytics", () => {
     expect(JSON.stringify(sent())).not.toContain("api-key");
   });
 
-  it("MCP open success also sends open_position_success source mcp in the same batch", async () => {
-    const signature = "4".repeat(88);
+  const signature = "4".repeat(88);
+  const submitOpen = async () => {
     vi.mocked(tools.submitOpenPosition).mockResolvedValueOnce({ signature, positionMint: mint } as never);
-    await call("submit_open_position", { wallet, signedTransaction: "AQID", permit: "p", summary: { poolId: pool, nftMint: mint } },
+    await call("submit_open_position", { wallet, signedTransaction: "AQID", permit: "p", summary: { poolId: pool, nftMint: mint, lastValidBlockHeight: 99 } },
       bearer(generateMcpToken(wallet, SIGNING_SECRET)));
-    expect(sendServerEvents).toHaveBeenCalledTimes(1);
-    expect(sent().map((event) => event.event)).toEqual(["mcp_tool_called", "open_position_success"]);
-    expect(sent()[1]).toEqual({ event: "open_position_success", distinctId: walletDistinctId(wallet),
+    await vi.waitFor(() => expect(sendServerEvents).toHaveBeenCalledTimes(1));
+  };
+
+  it("MCP open: open_position_submitted in the same batch; no confirmation poll outside production", async () => {
+    await submitOpen();
+    expect(sent().map((event) => event.event)).toEqual(["mcp_tool_called", "open_position_submitted"]);
+    expect(sent()[1]).toEqual({ event: "open_position_submitted", distinctId: walletDistinctId(wallet),
       properties: { source: "mcp", position_mint: mint, signature, pool, $host: "sofinancelab.xyz" } });
+    expect(captureMcpOpenWhenConfirmed).not.toHaveBeenCalled();
+  });
+
+  it("production: after the batch, the open is handed to the confirmation poll with its success event", async () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_POSTHOG_KEY", "phc_test_key");
+    await submitOpen();
+    await vi.waitFor(() => expect(captureMcpOpenWhenConfirmed).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(captureMcpOpenWhenConfirmed).mock.calls[0]![0]).toEqual({ signature, lastValidBlockHeight: 99,
+      event: { event: "open_position_success", distinctId: walletDistinctId(wallet),
+        properties: { source: "mcp", position_mint: mint, signature, pool, $host: "sofinancelab.xyz" } } });
+  });
+
+  it("production: a non-open call never starts a confirmation poll", async () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_POSTHOG_KEY", "phc_test_key");
+    await call("list_positions", { wallet });
+    expect(captureMcpOpenWhenConfirmed).not.toHaveBeenCalled();
   });
 
   it("no event for discovery, initialize, ping, or a rate-limited call", async () => {

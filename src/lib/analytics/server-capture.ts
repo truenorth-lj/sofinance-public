@@ -37,6 +37,11 @@ function captureKey(env: Env): string | null {
   return env.NEXT_PUBLIC_POSTHOG_KEY?.trim() || null;
 }
 
+/** True only where events are actually sent (production with the project key). Gates extra work such as RPC polls. */
+export function serverAnalyticsEnabled(env: Env = runtimeEnv()): boolean {
+  return captureKey(env) !== null;
+}
+
 export async function sendServerEvents(
   events: readonly ServerEvent[],
   { env = runtimeEnv(), fetchImpl = fetch, now = () => new Date() }: { env?: Env; fetchImpl?: typeof fetch; now?: () => Date } = {},

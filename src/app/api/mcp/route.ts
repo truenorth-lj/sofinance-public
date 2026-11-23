@@ -7,8 +7,9 @@ import { sanitizePublicError } from "@/lib/public-error";
 import { captureApiRouteError } from "@/lib/sentry/capture";
 import { dispatchTool, isPublicTool, toolRateClass, type McpDispatchContext } from "@/mcp/dispatch";
 import { MCP_RATE_LIMIT_RETRY_AFTER_SECONDS, mcpRateLimited, type McpRateLimitHit } from "@/lib/mcp-rate-limit";
-import { classifyToolError, mcpToolCallEvents, type McpToolCallRecord } from "@/mcp/analytics";
-import { sendServerEvents } from "@/lib/analytics/server-capture";
+import { classifyToolError, mcpOpenToConfirm, mcpToolCallEvents, type McpToolCallRecord } from "@/mcp/analytics";
+import { captureMcpOpenWhenConfirmed } from "@/mcp/open-confirmation";
+import { sendServerEvents, serverAnalyticsEnabled } from "@/lib/analytics/server-capture";
 import { getSigningSecrets } from "@sofinance/engine/config/server-env";
 import { formatToolNames, PUBLIC_TOOL_NAMES } from "@/mcp/tool-definitions";
 import {
@@ -115,7 +116,10 @@ function rateLimited(id: string | number | null, hit: McpRateLimitHit) {
 
 type ToolCallTrack = (record: Pick<McpToolCallRecord, "outcome" | "errorCode" | "httpStatus" | "result">) => void;
 
-/** One `mcp_tool_called` (plus `open_position_success` for an MCP open) per parsed tools/call, sent after the response. */
+/**
+ * One `mcp_tool_called` per parsed tools/call (plus `open_position_submitted` for an MCP open), sent after the
+ * response; an MCP open then gets `open_position_success` once confirmed (bounded ~30 s poll, production only).
+ */
 function toolCallTracker(request: NextRequest, params: unknown, startedAt: number): {
   track: ToolCallTrack; setAuth: (auth: McpToolCallRecord["auth"], tokenWallet?: string) => void;
 } {
@@ -128,7 +132,7 @@ function toolCallTracker(request: NextRequest, params: unknown, startedAt: numbe
     track(record) {
       if (sent) return;
       sent = true;
-      const events = mcpToolCallEvents({
+      const full: McpToolCallRecord = {
         ...record,
         calledName: params && typeof params === "object" ? (params as { name?: unknown }).name : undefined,
         args: params && typeof params === "object" ? (params as { arguments?: unknown }).arguments : undefined,
@@ -136,11 +140,18 @@ function toolCallTracker(request: NextRequest, params: unknown, startedAt: numbe
         protocol: headerVersion && isSupportedProtocolVersion(headerVersion) ? headerVersion : "unspecified",
         durationMs: Date.now() - startedAt,
         host: request.headers.get("host") ?? request.nextUrl.host,
-      });
+      };
+      const events = mcpToolCallEvents(full);
+      const open = serverAnalyticsEnabled() ? mcpOpenToConfirm(full) : null;
+      const work = async () => {
+        await sendServerEvents(events);
+        if (open) await captureMcpOpenWhenConfirmed(open);
+      };
       try {
-        after(() => sendServerEvents(events));
+        // Next.js after() runs on Vercel's waitUntil, so the work outlives the response (within maxDuration).
+        after(work);
       } catch {
-        void sendServerEvents(events); // outside a request scope (tests); a no-op unless production
+        void work(); // outside a request scope (tests); sending is a no-op unless production
       }
     },
   };
