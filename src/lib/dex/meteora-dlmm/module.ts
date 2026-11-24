@@ -39,6 +39,8 @@ export const meteoraDlmmModule: DexModule = Object.freeze({
     range: async (positionMint: string) => (await import("./position-reads.server")).readMeteoraRange(positionMint),
   }),
   adapter: async () => (await import("./adapter.server")).createMeteoraDlmmAdapter(),
+  // A DLMM position id is its account address.
+  portfolioAccountKeys: async (ids) => [...ids],
   prefetchPortfolioAccounts: async (ids, accounts) => (await import("@/lib/meteora-positions")).prefetchMeteoraPositionAccounts(ids, accounts),
   poolDailyApr: async (poolId) => (await import("./daily-apr.server")).meteoraPoolDailyApr(poolId),
   recordDailyTvl: async (input) => (await import("./daily-tvl.server")).recordMeteoraDailyTvl(input),

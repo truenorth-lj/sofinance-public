@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { PublicKey, type Connection } from "@solana/web3.js";
 vi.mock("server-only", () => ({}));
-import { ACCOUNT_BATCH_LIMIT, batchAccountReads, withSharedAccountReads } from "./account-batch";
+import { RpcHttpError, RpcUnavailableError } from "@sofinance/engine/rpc/errors";
+import { ACCOUNT_BATCH_LIMIT, batchAccountReads, isRateLimited, withSharedAccountReads } from "./account-batch";
 const key = (n: number) => new PublicKey(Buffer.alloc(32, n));
 
 describe("request-local account batches", () => {
@@ -39,7 +40,7 @@ describe("request-local account batches", () => {
   });
   it("falls back to one read per key when a batch fails or comes back partial", async () => {
     const single = vi.fn<(address: PublicKey, config?: unknown) => Promise<{ data: Buffer }>>(async (address) => ({ data: Buffer.from(address.toBytes()) }));
-    for (const response of [() => Promise.reject(new Error("429")), async () => [null]]) {
+    for (const response of [() => Promise.reject(new RpcHttpError(503, "HTTP 503")), () => Promise.reject(new Error("socket hang up")), async () => [null]]) {
       single.mockClear();
       const rpc = vi.fn(response);
       const connection = batchAccountReads({ getMultipleAccountsInfo: rpc, getAccountInfo: single } as unknown as Connection);
@@ -48,6 +49,23 @@ describe("request-local account batches", () => {
       expect(single.mock.calls.map(([address, config]) => [address.toBase58(), config])).toEqual([[key(1).toBase58(), "confirmed"], [key(2).toBase58(), "confirmed"]]);
       expect([a!.data[0], b!.data[0]]).toEqual([1, 2]);
     }
+  });
+  it("rejects a rate-limited batch without a per-key fan-out, and does not cache the rejection", async () => {
+    const limited = [new RpcHttpError(429, "HTTP 429"), new RpcUnavailableError(new RpcHttpError(429, "HTTP 429")), new Error("RPC -32005: node is behind")];
+    for (const error of limited) {
+      const single = vi.fn(async () => null);
+      const rpc = vi.fn<(keys: PublicKey[]) => Promise<null[]>>(async () => { throw error; });
+      const connection = batchAccountReads({ getMultipleAccountsInfo: rpc, getAccountInfo: single } as unknown as Connection);
+      const rows = await Promise.allSettled([connection.getAccountInfo(key(1)), connection.getAccountInfo(key(2))]);
+      expect(rows.map((row) => row.status)).toEqual(["rejected", "rejected"]);
+      expect(rows.map((row) => (row as PromiseRejectedResult).reason)).toEqual([error, error]);
+      expect(single).not.toHaveBeenCalled(); expect(rpc).toHaveBeenCalledTimes(1);
+      rpc.mockImplementation(async (keys) => keys.map(() => null));
+      await expect(connection.getAccountInfo(key(1))).resolves.toBeNull();
+      expect(rpc).toHaveBeenCalledTimes(2);
+    }
+    expect(isRateLimited(new RpcUnavailableError(new RpcHttpError(503, "HTTP 503")))).toBe(false);
+    expect(isRateLimited(new Error("socket hang up"))).toBe(false);
   });
   it("isolates a key whose fallback read fails and retries it on the next wave", async () => {
     let failing = true;
