@@ -1,4 +1,5 @@
 import "server-only";
+import { PublicKey } from "@solana/web3.js";
 import { rpcConnection } from "@sofinance/engine/rpc";
 import { dexRegistry } from "./index";
 import { batchAccountReads } from "@/lib/portfolio/account-batch";
@@ -16,6 +17,12 @@ export async function readPortfolio(input: PortfolioInput, signal: AbortSignal):
   }
   // One account batch per request: every DEX's position, pool and tick/bin reads share getMultipleAccounts waves.
   const accounts = batchAccountReads(rpcConnection(undefined, { signal }), signal);
+  // Every DEX's first round (position accounts) in one getMultipleAccounts, issued before any reader's lazy import;
+  // readers then get these from the batch cache. Best effort: a failure is not cached and each reader retries.
+  const firstRound = (await Promise.all([...groups].map(([source, items]) => dexRegistry.portfolioAccountKeys(source,
+    items.map((item) => item.key.slice(item.key.indexOf(":") + 1))).catch(() => [] as string[])))).flat();
+  const firstKeys = firstRound.flatMap((address) => { try { return [new PublicKey(address)]; } catch { return []; } });
+  if (firstKeys.length && !signal.aborted) void accounts.getMultipleAccountsInfo(firstKeys, "confirmed").catch(() => {});
   const readers = new Map(await mapPortfolioPositions([...groups], async ([source, items]) => {
     try {
       signal.throwIfAborted();
