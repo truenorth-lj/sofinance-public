@@ -3,6 +3,7 @@ import bs58 from "bs58";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import accounts from "../../packages/engine/src/fixtures/meteora-positions-cbbtc-wbtc.json";
 import fixtures from "./fixtures/meteora-position-history-cbbtc-wbtc.json";
+import claimFee2Fixtures from "./fixtures/meteora-position-history-nvda-claimfee2.json";
 
 vi.mock("server-only", () => ({}));
 // `hideAllowlist`: read the pool as a feed-listed one (absent from the static allowlist).
@@ -101,6 +102,65 @@ describe("parseMeteoraPositionCashflowEvents (mainnet receipts)", () => {
     const failed = clone(claim);
     failed.meta!.err = { InstructionError: [1, "Custom"] } as never;
     expect(parseMeteoraPositionCashflowEvents(failed, contextFor(EMPTY))).toEqual([]);
+  });
+});
+
+describe("parseMeteoraPositionCashflowEvents (claim_fee2 emits ClaimFee and ClaimFee2)", () => {
+  // Compound receipt from 2026-11-23: claim_fee2 (group 1: two transfers + ClaimFee + ClaimFee2, same amounts),
+  // then add_liquidity_by_strategy2 (group 2).
+  const [compound] = (claimFee2Fixtures as unknown[]).map(hydrate) as [Tx];
+  const context = {
+    positionMint: compound.position, positionAccount: compound.position, poolId: "Aq7nhS8pDPRvPA2uWotwyk79aG8Hfegf5CdA3iXABxAR",
+    mintA: "NVDAVuiB7hwd3m5Wa1JuHNovPaPG6BH1QNztbKFxNjv", mintB: "Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh",
+    vaultA: "6iFRjSA6194oAEUfZzdEJFqBcDsGkAviNc1yLWngT8NV", vaultB: "3fcqcgxVwQddGoh2FX4d9Wn7bxfuwFUnUFh6MS7erZNw",
+    lowerBinId: 46032, upperBinId: 46041,
+  };
+  const claim = { kind: "decrease", positionNftMint: compound.position, liquidity: "0", principalA: "0", principalB: "0", feeA: "10871", feeB: "1118162" };
+  const add = { kind: "increase", positionNftMint: compound.position, liquidity: "0", amountA: "10867", amountB: "1113486" };
+  const claimGroup = (tx: Tx) => tx.meta!.innerInstructions!.find((group) => group.index === 1)!;
+  const discOf = (instruction: unknown) => {
+    const data = (instruction as { data?: string }).data;
+    return data ? Buffer.from(bs58.decode(data)).subarray(8, 16).toString("hex") : null;
+  };
+
+  it("the fixture carries both claim events with identical amounts", () => {
+    const events = claimGroup(compound).instructions.map(discOf).filter((disc) => disc === METEORA_EVENT.claimFee || disc === METEORA_EVENT.claimFee2);
+    expect(events).toEqual([METEORA_EVENT.claimFee, METEORA_EVENT.claimFee2]);
+  });
+
+  it("counts one claim_fee2 once, then the add", () => {
+    expect(parseMeteoraPositionCashflowEvents(compound, context)).toEqual([claim, add]);
+    expect(aggregateCashflowsForPosition(parseMeteoraPositionCashflowEvents(compound, context), compound.position, context.poolId))
+      .toMatchObject({ feesCollectedA: 10871n, feesCollectedB: 1118162n, depositedA: 10867n, depositedB: 1113486n, decreaseCount: 1, increaseCount: 1 });
+  });
+
+  it("still parses a claim that emits only ClaimFee2", () => {
+    const only = clone(compound);
+    const group = claimGroup(only);
+    group.instructions = group.instructions.filter((instruction) => discOf(instruction) !== METEORA_EVENT.claimFee);
+    expect(parseMeteoraPositionCashflowEvents(only, context)).toEqual([claim, add]);
+  });
+
+  it("counts two separate claim_fee2 instructions twice", () => {
+    const twice = clone(compound);
+    twice.meta!.innerInstructions!.push({ ...clone(compound).meta!.innerInstructions!.find((group) => group.index === 1)!, index: 3 });
+    expect(parseMeteoraPositionCashflowEvents(twice, context)).toEqual([claim, add, claim]);
+  });
+
+  it("rejects two claims inside one instruction group", () => {
+    const doubled = clone(compound);
+    const group = claimGroup(doubled);
+    group.instructions = [...group.instructions, ...clone(compound).meta!.innerInstructions!.find((item) => item.index === 1)!.instructions];
+    expect(() => parseMeteoraPositionCashflowEvents(doubled, context)).toThrow(/several liquidity operations/);
+  });
+
+  it("does not pair ClaimFee and ClaimFee2 whose amounts differ", () => {
+    const differ = clone(compound);
+    const event = claimGroup(differ).instructions.find((instruction) => discOf(instruction) === METEORA_EVENT.claimFee2) as { data: string };
+    const data = Buffer.from(bs58.decode(event.data));
+    data.writeBigUInt64LE(10870n, 16 + 96);
+    event.data = bs58.encode(data);
+    expect(() => parseMeteoraPositionCashflowEvents(differ, context)).toThrow(/several liquidity operations/);
   });
 });
 

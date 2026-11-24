@@ -40,7 +40,7 @@ export type MeteoraEventContext = PositionEventContext & { lowerBinId: number; u
 
 type DecodedEvent =
   | { kind: "add" | "remove"; lbPair: string; position: string; amountX: bigint; amountY: bigint }
-  | { kind: "claim"; lbPair: string; position: string; amountX: bigint; amountY: bigint }
+  | { kind: "claim"; version: 1 | 2; lbPair: string; position: string; amountX: bigint; amountY: bigint }
   | { kind: "create"; lbPair: string; position: string; owner: string }
   | { kind: "rebalance"; lbPair: string; position: string };
 
@@ -75,7 +75,7 @@ function decodeEvent(instruction: HistoryInstruction): DecodedEvent | null {
     case METEORA_EVENT.claimFee2:
       // lb_pair | position | owner | fee_x | fee_y [| active_bin_id]
       need(112);
-      return { kind: "claim", lbPair: key(body, 0), position: key(body, 32), amountX: body.readBigUInt64LE(96), amountY: body.readBigUInt64LE(104) };
+      return { kind: "claim", version: data.subarray(8, 16).toString("hex") === METEORA_EVENT.claimFee2 ? 2 : 1, lbPair: key(body, 0), position: key(body, 32), amountX: body.readBigUInt64LE(96), amountY: body.readBigUInt64LE(104) };
     case METEORA_EVENT.positionCreate:
       need(96);
       return { kind: "create", lbPair: key(body, 0), position: key(body, 32), owner: key(body, 64) };
@@ -87,6 +87,23 @@ function decodeEvent(instruction: HistoryInstruction): DecodedEvent | null {
   }
 }
 
+
+/**
+ * `claim_fee2` emits the legacy ClaimFee event and a ClaimFee2 event for the same claim (mainnet receipt of
+ * 2026-11-23). Drop each legacy event that has a ClaimFee2 twin with the same pool, position and amounts, one for one,
+ * so a single claim is counted once. Two claims stay two events, so a group holding them is still rejected.
+ */
+function withoutLegacyClaimTwins(events: readonly DecodedEvent[]): DecodedEvent[] {
+  const twins = new Set<DecodedEvent>();
+  for (const event of events) {
+    if (event.kind !== "claim" || event.version !== 2) continue;
+    const legacy = events.find((other) => other.kind === "claim" && other.version === 1 && !twins.has(other)
+      && other.lbPair === event.lbPair && other.position === event.position
+      && other.amountX === event.amountX && other.amountY === event.amountY);
+    if (legacy) twins.add(legacy);
+  }
+  return events.filter((event) => !twins.has(event));
+}
 
 /**
  * Parse one landed transaction for a Meteora position. Failed transactions
@@ -110,7 +127,7 @@ export function parseMeteoraPositionCashflowEvents(
   const events: PositionCashflowEvent[] = [];
   let openIndex = -1;
   for (const group of [...groups].sort((a, b) => a.index - b.index)) {
-    const decoded = group.instructions.map(decodeEvent).filter((event): event is DecodedEvent => event !== null);
+    const decoded = withoutLegacyClaimTwins(group.instructions.map(decodeEvent).filter((event): event is DecodedEvent => event !== null));
     const ours = decoded.filter((event) => event.position === context.positionAccount);
     if (!ours.length) continue;
     if (ours.some((event) => event.lbPair !== context.poolId)) unsupported("an event names this position in another pool");
