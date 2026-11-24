@@ -81,7 +81,8 @@ describe("Portfolio aggregation", () => {
       await vi.advanceTimersByTimeAsync(12_001);
       const result = await pending;
       expect(mocks.snapshot).toHaveBeenCalledTimes(2);
-      expect(mocks.rpc.mock.calls[0]![1].signal.aborted).toBe(true);
+      // calls[0] is the request's shared account batch (bounded by the request); calls[1] is the snapshot stage.
+      expect(mocks.rpc.mock.calls[1]![1].signal.aborted).toBe(true);
       expect(result.positions.every((row) => row.status === "failed")).toBe(true);
     } finally { vi.restoreAllMocks(); vi.useRealTimers(); }
   });

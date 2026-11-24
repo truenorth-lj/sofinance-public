@@ -1,5 +1,7 @@
 import "server-only";
+import { rpcConnection } from "@sofinance/engine/rpc";
 import { dexRegistry } from "./index";
+import { batchAccountReads } from "@/lib/portfolio/account-batch";
 import { positionFigures, portfolioTotals } from "@/lib/portfolio/figures";
 import type { PortfolioPosition, PortfolioReader, PortfolioInput, PortfolioResponse } from "@/lib/portfolio/model";
 import { mapPortfolioPositions, portfolioAbortable, PORTFOLIO_POSITION_DEADLINE_MS } from "./portfolio-workers";
@@ -12,10 +14,12 @@ export async function readPortfolio(input: PortfolioInput, signal: AbortSignal):
     const source = item.key.split(":")[0]!;
     groups.set(source, [...(groups.get(source) ?? []), item]);
   }
+  // One account batch per request: every DEX's position, pool and tick/bin reads share getMultipleAccounts waves.
+  const accounts = batchAccountReads(rpcConnection(undefined, { signal }), signal);
   const readers = new Map(await mapPortfolioPositions([...groups], async ([source, items]) => {
     try {
       signal.throwIfAborted();
-      return [source, await portfolioAbortable(dexRegistry.preparePortfolio(source, { ...input, positions: items }, signal), signal)] as const;
+      return [source, await portfolioAbortable(dexRegistry.preparePortfolio(source, { ...input, positions: items }, signal, accounts), signal)] as const;
     } catch { return [source, null] as const; }
   }));
   const timings: Record<string, unknown> = {};
