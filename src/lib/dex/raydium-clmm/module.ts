@@ -40,5 +40,5 @@ export const raydiumClmmModule: DexModule = Object.freeze({
   importCompoundReceipt: async (command, connection) => (await import("./import-compound.server")).importRaydiumCompoundReceipt(command, connection),
   readWithdrawalStatus: async command => (await import("./withdraw-status.server")).readRaydiumWithdrawalStatus(command),
   enabled: () => false,
-  preparePortfolio: async (input, signal) => (await import("./portfolio.server")).prepareRaydiumPortfolio(input, signal),
+  preparePortfolio: async (input, signal, accounts) => (await import("./portfolio.server")).prepareRaydiumPortfolio(input, signal, accounts),
 });

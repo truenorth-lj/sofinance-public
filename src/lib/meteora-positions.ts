@@ -144,6 +144,25 @@ async function snapshotFromData(positionAccount: string, data: Uint8Array, conne
   };
 }
 
+/**
+ * Warms a request-local account batch with every account `readMeteoraPositionSnapshot` reads for these positions:
+ * the positions, then their pools and bin arrays, then the pool mints, one batched wave each. Account reads only;
+ * the listing check and decoding stay in the snapshot read. Errors are left to that read.
+ */
+export async function prefetchMeteoraPositionAccounts(positionAccounts: readonly string[], connection: Pick<Connection, "getMultipleAccountsInfo">): Promise<void> {
+  const infos = await connection.getMultipleAccountsInfo(positionAccounts.map((address) => new PublicKey(address)), "confirmed");
+  const positions = infos.flatMap((info) => info && info.owner.toBase58() === METEORA_DLMM_PROGRAM_ID && isMeteoraPositionAccount(info.data)
+    ? [decodeMeteoraPosition(info.data)] : []);
+  if (!positions.length) return;
+  const pools = [...new Set(positions.map((position) => position.lbPair))];
+  const arrays = positions.flatMap((position) => meteoraBinArrayIndexesForRange(position.lowerBinId, position.upperBinId)
+    .map((index) => meteoraBinArrayAddress(position.lbPair, index)));
+  const poolInfos = await connection.getMultipleAccountsInfo([...pools, ...arrays].map((key) => new PublicKey(key)), "confirmed");
+  const mints = [...new Set(poolInfos.slice(0, pools.length).flatMap((info) => info && info.owner.toBase58() === METEORA_DLMM_PROGRAM_ID
+    ? (({ tokenXMint, tokenYMint }) => [tokenXMint, tokenYMint])(decodeLbPair(info.data)) : []))];
+  if (mints.length) await connection.getMultipleAccountsInfo(mints.map((mint) => new PublicKey(mint)), "confirmed");
+}
+
 /** Live snapshot for a position account: null when it is not a Meteora position, throws for a pool SoFinance does not support. */
 export async function readMeteoraPosition(positionAccount: string, options: MeteoraReadOptions = {}) {
   const connection = options.connection ?? rpcConnection();
