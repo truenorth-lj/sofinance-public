@@ -374,7 +374,7 @@ Or: `pnpm mcp:start` with env already exported.
 
 Optional. Local dev, forks, and tests stay a no-op until the PostHog key is set.
 
-**PostHog (browser, `posthog-js`)** — init only when `NEXT_PUBLIC_POSTHOG_KEY` is set. Autocapture, heatmaps, web vitals, surveys, and session recording off; Do Not Track respected. Requests go to `/lumen/*` on our own domain, which `next.config.ts` rewrites to PostHog (`us.i.posthog.com` for events, `us-assets.i.posthog.com` for `/static` and `/array`), so ad blockers that block `*.posthog.com` don't drop events. `/lumen` is excluded from the Proxy matcher and disallowed in `robots.txt`. First-touch `ref` (`?ref=x-<slug>`) and `utm_*` are stored in localStorage and registered as PostHog super/person properties so later events keep attribution. Person profiles stay on: sofi-metrics' funnel counts distinct `person_id`, which needs the anonymous visitor merged into the wallet on identify.
+**PostHog (browser, `posthog-js`)** — init only when `NEXT_PUBLIC_POSTHOG_KEY` is set. Autocapture, heatmaps, web vitals, surveys, and session recording off; Do Not Track respected. Requests go to `/lumen/*` on our own domain, which `next.config.ts` rewrites to PostHog (`us.i.posthog.com` for events, `us-assets.i.posthog.com` for `/static` and `/array`), so ad blockers that block `*.posthog.com` don't drop events. `/lumen` is excluded from the Proxy matcher and disallowed in `robots.txt`. First-touch `ref` (`?ref=x-<slug>`) and `utm_*` are stored in localStorage and registered as PostHog super/person properties so later events keep attribution.
 
 | Event | When | Properties |
 |-------|------|------------|
@@ -382,7 +382,7 @@ Optional. Local dev, forks, and tests stay a no-op until the PostHog key is set.
 | `rwa_pairs_view` | Landing on `/app/rwa-pairs` | `ref` if present on that URL |
 | `wallet_connect_clicked` | User opens the Solana wallet picker or the mobile no-wallet sheet (after terms) | none |
 | `wallet_connect_started` | User selects a specific wallet, or taps a Phantom/Solflare deeplink | `wallet_name`, `chain` (`solana` or `rhc`), `device` (`mobile` or `desktop`), `wallet_extension_detected` |
-| `wallet_connected` | Wallet connects (also on auto-reconnect after a hard load). Solana wallets are identified by `wallet:<sha256 of the address>` (`src/lib/analytics/wallet-id.ts`, the same id the MCP server sends); the raw address is never sent, registered or set as a person property. Connect context is event-only. Robinhood Chain wallets are not identified. | `wallet_name`, `chain`, `device`, `wallet_extension_detected` |
+| `wallet_connected` | Wallet connects (also on auto-reconnect after a hard load). Solana identify/register uses the public address as `wallet_address` only; connect context is event-only. Robinhood Chain events include context but not an address. | `wallet_address` (Solana only), `wallet_name`, `chain`, `device`, `wallet_extension_detected` |
 | `wallet_connect_failed` | Connect attempt failed or was rejected | same context, plus `error_type` (`user_rejected` \| `not_installed` \| `timeout` \| `other`) and `error_message` (redacted, truncated to ~120 characters) |
 | `wallet_connect_abandoned` | User closed the picker or sheet without connecting. Does not fire after success or failure, and does not fire twice. | `wallet_name` if a wallet was already selected, plus `chain`, `device`, `wallet_extension_detected` |
 | `wallet_deeplink_clicked` | User tapped Open in Phantom or Open in Solflare on the mobile no-wallet sheet | `wallet_name`, plus the same connect context |

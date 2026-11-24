@@ -21,6 +21,7 @@ export type OpenEventProperties = {
   mcp_sign_link?: boolean;
   pool?: string;
   pair?: string;
+  wallet_address?: string;
   input_kind?: "native" | "token";
   /** Two-step SOL open only: which step failed (1 = SOL -> pool-token swap, 2 = token-input open). */
   open_step?: 1 | 2;
@@ -28,8 +29,9 @@ export type OpenEventProperties = {
   open_resumed?: boolean;
 };
 
-/** No wallet field: the wallet link is the hashed PostHog distinct id set on connect (client.ts). */
 export type OpenEventContext = {
+  /** Connected wallet's public address (internal/test wallets are filtered in PostHog, not here). */
+  wallet?: string | null;
   inputKind?: "native" | "token" | null;
   /** True on `/app/sign/<token>` (an MCP agent's sign link). */
   mcpSignLink?: boolean;
@@ -41,6 +43,7 @@ export function openEventProperties(pair: {
   symbolB: string;
 } | null | undefined, context: OpenEventContext = {}): OpenEventProperties {
   const properties: OpenEventProperties = { source: "web" };
+  if (context.wallet) properties.wallet_address = context.wallet;
   if (context.mcpSignLink) properties.mcp_sign_link = true;
   if (context.inputKind) properties.input_kind = context.inputKind;
   if (!pair) return properties;

@@ -26,7 +26,6 @@ import {
   resetGrowthAnalyticsForTests,
 } from "./client";
 import { GROWTH_EVENTS } from "./events";
-import { walletDistinctId } from "./server-capture";
 const WALLETS = ["7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU", "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM", "Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr"];
 
 beforeEach(() => {
@@ -87,8 +86,6 @@ describe("event firing when the key is set", () => {
       disable_session_recording: true,
       respect_dnt: true,
     }));
-    // Older builds persisted the raw address as a super property; init drops it.
-    expect(posthog.unregister).toHaveBeenCalledWith("wallet_address");
     expect(posthog.register).toHaveBeenCalledWith(expect.objectContaining({ ref: "x-launch", utm_source: "twitter" }));
     capturePageview("/pools", "https://sofinancelab.xyz/pools?ref=x-launch");
     captureGrowthEvent(GROWTH_EVENTS.rwaPairsView, { ref: "x-launch" });
@@ -99,50 +96,44 @@ describe("event firing when the key is set", () => {
     expect(JSON.parse(window.localStorage.getItem(FIRST_TOUCH_KEY)!)).toMatchObject({ ref: "x-launch" });
   });
 
-  it("identifies by the hashed wallet id, the same id as the MCP server, and never sends the raw address", async () => {
+  it("identifies by the public address and tags wallet_connected with the address", async () => {
     const wallet = "So11111111111111111111111111111111111111112";
     await initGrowthAnalytics();
     await captureWalletConnected(wallet);
     expect(posthog.reset).not.toHaveBeenCalled();
-    expect(posthog.identify).toHaveBeenCalledWith(walletDistinctId(wallet));
-    expect(posthog.capture).toHaveBeenCalledWith(GROWTH_EVENTS.walletConnected, undefined);
-    // Wallet keys are stripped from any event, including the old `wallet_address`.
-    captureGrowthEvent(GROWTH_EVENTS.openSuccess, { wallet, wallet_address: wallet, address: wallet, pool: "pool" });
+    expect(posthog.identify).toHaveBeenCalledWith(wallet);
+    const properties = { wallet_address: wallet };
+    expect(posthog.register).toHaveBeenCalledWith(properties);
+    expect(posthog.setPersonProperties).toHaveBeenCalledWith(properties);
+    expect(posthog.capture).toHaveBeenCalledWith(GROWTH_EVENTS.walletConnected, properties);
+    // Raw `wallet`/`address` keys are still stripped; only `wallet_address` is sent.
+    captureGrowthEvent(GROWTH_EVENTS.openSuccess, { wallet, pool: "pool" });
     expect(posthog.capture).toHaveBeenLastCalledWith(GROWTH_EVENTS.openSuccess, { pool: "pool" });
-    const sent = JSON.stringify([posthog.identify.mock.calls, posthog.register.mock.calls,
-      posthog.setPersonProperties.mock.calls, posthog.capture.mock.calls]);
-    expect(sent).not.toContain(wallet);
   });
 
-  it("attaches connect context to wallet_connected only", async () => {
+  it("attaches connect context to wallet_connected without putting it on identify or register", async () => {
     const wallet = "So11111111111111111111111111111111111111112";
     await initGrowthAnalytics();
-    posthog.register.mockClear();
-    posthog.setPersonProperties.mockClear();
     await captureWalletConnected(wallet, { wallet_name: "Phantom", chain: "solana", device: "desktop", wallet_extension_detected: true });
-    expect(posthog.identify).toHaveBeenCalledWith(walletDistinctId(wallet));
-    expect(posthog.register).not.toHaveBeenCalled();
-    expect(posthog.setPersonProperties).not.toHaveBeenCalled();
+    expect(posthog.identify).toHaveBeenCalledWith(wallet);
+    expect(posthog.register).toHaveBeenCalledWith({ wallet_address: wallet });
+    expect(posthog.setPersonProperties).toHaveBeenCalledWith({ wallet_address: wallet });
     expect(posthog.capture).toHaveBeenCalledWith(GROWTH_EVENTS.walletConnected, {
-      wallet_name: "Phantom", chain: "solana", device: "desktop", wallet_extension_detected: true,
+      wallet_address: wallet, wallet_name: "Phantom", chain: "solana", device: "desktop", wallet_extension_detected: true,
     });
   });
 
-  it("resets an earlier wallet identity (raw address from older builds, or another hashed id) before identifying", async () => {
+  it("resets a previous wallet identity (legacy hashed id or another address) before identifying", async () => {
     await initGrowthAnalytics();
-    // Same wallet, raw id from an older build: reset, so the raw-address person is not merged into the hashed id.
-    posthog.get_distinct_id.mockReturnValueOnce(WALLETS[1]!);
+    posthog.get_distinct_id.mockReturnValueOnce(`wallet:${"a".repeat(64)}`);
     await captureWalletConnected(WALLETS[1]!);
     expect(posthog.reset).toHaveBeenCalledTimes(1);
-    posthog.get_distinct_id.mockReturnValueOnce(walletDistinctId(WALLETS[1]!));
+    posthog.get_distinct_id.mockReturnValueOnce(WALLETS[1]!);
     await captureWalletConnected(WALLETS[2]!);
     expect(posthog.reset).toHaveBeenCalledTimes(2);
-    posthog.get_distinct_id.mockReturnValueOnce(walletDistinctId(WALLETS[2]!));
+    posthog.get_distinct_id.mockReturnValueOnce(WALLETS[2]!);
     await captureWalletConnected(WALLETS[2]!);
     expect(posthog.reset).toHaveBeenCalledTimes(2);
-    expect(posthog.identify.mock.calls.map(([id]) => id)).toEqual([
-      walletDistinctId(WALLETS[1]!), walletDistinctId(WALLETS[2]!), walletDistinctId(WALLETS[2]!),
-    ]);
   });
 
   it("drops the wallet tags and resets on disconnect, keeping first-touch attribution", async () => {
