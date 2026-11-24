@@ -18,7 +18,7 @@
   },
   "devDependencies": {
     "@playwright/test": "1.65.1",
-    "@solana/web3.js": "1.99.0",
+    "@solana/web3.js": "3.2.1",
     "@types/node": "24.19.2",
     "bs58": "6.0.0",
     "tweetnacl": "1.0.3",
