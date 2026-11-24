@@ -182,4 +182,77 @@ describe("AppKit session restoration time limit", () => {
     expect(sdk.open).toHaveBeenCalledExactlyOnceWith({ view: "Connect", namespace: "solana" });
     expect(reload).not.toHaveBeenCalled();
   });
+
+  // AppKit 1.8.24 with a remembered WalletConnect wallet whose session is gone: ready() resolves, status stays "connecting".
+  const rememberWalletConnect = () => {
+    localStorage.setItem(REMEMBERED, "walletConnect");
+    localStorage.setItem("@appkit/connections", JSON.stringify({ solana: [{ connectorId: "walletConnect", accounts: [{ address: "remembered" }] }] }));
+  };
+
+  it("ready resolves but the status stays connecting: released at the time limit, and a retry forgets the remembered wallet", async () => {
+    rememberWalletConnect();
+    sdk.account.status = "connecting";
+    await act(async () => { render(); resolveReady(); });
+    expect(connection.restoring).toBe(true);
+    await act(async () => { vi.advanceTimersByTime(WALLET_RESTORE_TIMEOUT_MS - 1); });
+    expect(connection.restoring).toBe(true);
+    await act(async () => { vi.advanceTimersByTime(1); });
+    expect(connection.restoring).toBe(false); // AppKit still says connecting; the button no longer listens
+    expect(connection.restoreStalled).toBe(true);
+    expect(connection.connectionError).toBe(RESTORE_FAILED);
+
+    await act(async () => connection.connect());
+    expect(localStorage.getItem(REMEMBERED)).toBeNull();
+    expect(JSON.parse(localStorage.getItem("@appkit/connections")!).solana).toEqual([]);
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(sdk.open).not.toHaveBeenCalled();
+
+    await reloadPage();
+    await act(async () => resolveReady());
+    expect(sdk.open).toHaveBeenCalledExactlyOnceWith({ view: "Connect", namespace: "solana" });
+    expect(connection.restoring).toBe(false);
+  });
+
+  it("a restore that reaches connected within the time limit is unaffected", async () => {
+    rememberWallet();
+    sdk.account.status = "connecting";
+    await act(async () => { render(); resolveReady(); });
+    expect(connection.restoring).toBe(true);
+    await act(async () => { vi.advanceTimersByTime(3_000); });
+    sdk.account = { address: "restored-wallet", isConnected: true, status: "connected" };
+    await act(async () => render());
+    expect(connection.connected).toBe(true);
+    expect(connection.restoring).toBe(false);
+    await pastTimeLimit();
+    expect(connection.connected).toBe(true);
+    expect(connection.restoreStalled).toBe(false);
+    expect(connection.connectionError).toBe("");
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("a successful WalletConnect restore is unaffected", async () => {
+    rememberWalletConnect();
+    sdk.account = { address: "wc-wallet", isConnected: true, status: "connected" };
+    await act(async () => { render(); resolveReady(); });
+    expect(connection.connected).toBe(true);
+    expect(connection.restoring).toBe(false);
+    await pastTimeLimit();
+    expect(connection.connected).toBe(true);
+    expect(connection.address).toBe("wc-wallet");
+    expect(connection.restoreStalled).toBe(false);
+    expect(connection.connectionError).toBe("");
+    expect(localStorage.getItem(REMEMBERED)).toBe("walletConnect");
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("a connect the visitor starts after a finished restore is not cut off by the time limit", async () => {
+    await act(async () => { render(); resolveReady(); });
+    expect(connection.restoring).toBe(false);
+    sdk.account.status = "connecting"; // the visitor picked a wallet in the picker; it is still asking them
+    await act(async () => render());
+    await pastTimeLimit();
+    expect(connection.restoreStalled).toBe(false);
+    expect(connection.connectionError).toBe("");
+    expect(reload).not.toHaveBeenCalled();
+  });
 });

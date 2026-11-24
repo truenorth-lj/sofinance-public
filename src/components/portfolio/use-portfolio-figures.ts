@@ -1,20 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MAX_PORTFOLIO_POSITIONS, PORTFOLIO_POLL_MS, portfolioPositionSchema, type PortfolioPosition, type PortfolioResponse } from "@/lib/portfolio/model";
+import { MAX_PORTFOLIO_POSITIONS, PORTFOLIO_POLL_DELAYS_MS, portfolioPositionSchema, type PortfolioPosition, type PortfolioResponse } from "@/lib/portfolio/model";
 import { clearPositionHistoryRefresh, POSITION_HISTORY_REFRESH_EVENT, POSITION_HISTORY_REFRESH_STORAGE_KEY, readPositionHistoryRefresh } from "@/lib/position-history-refresh";
 import { positionFigures } from "@/lib/portfolio/figures";
 import { retainCumulativeFees } from "@/lib/portfolio/retain-cumulative-fees";
 
 type Loaded = { wallet: string; rows: Record<string, PortfolioPosition> };
 const failed = (key: string): PortfolioPosition => ({ key, status: "failed", figures: positionFigures(null), evaluatedAt: null, historyComplete: false, historyRefreshResolved: false });
-const MAX_POLL_ROUNDS = 3;
+const MAX_POLL_ROUNDS = PORTFOLIO_POLL_DELAYS_MS.length;
 const MAX_REQUESTS = 8;
-function waitForPoll(signal: AbortSignal): Promise<boolean> {
+function waitForPoll(signal: AbortSignal, delayMs: number): Promise<boolean> {
   return new Promise((resolve) => {
     const finish = (ready: boolean) => { clearTimeout(timer); signal.removeEventListener("abort", abort); resolve(ready); };
     const abort = () => finish(false);
-    const timer = setTimeout(() => finish(true), PORTFOLIO_POLL_MS);
+    const timer = setTimeout(() => finish(true), delayMs);
     signal.addEventListener("abort", abort, { once: true });
     if (signal.aborted) abort();
   });
@@ -45,7 +45,7 @@ export function usePortfolioFigures(wallet: string | null, keys: readonly string
       const rows: Record<string, PortfolioPosition> = {};
       let pending = wanted, requests = 0;
       for (let round = 0; round <= MAX_POLL_ROUNDS && pending.length; round++) {
-        if (round && !await waitForPoll(controller.signal)) return;
+        if (round && !await waitForPoll(controller.signal, PORTFOLIO_POLL_DELAYS_MS[round - 1]!)) return;
         const next: string[] = [];
         for (let offset = 0; offset < pending.length; offset += MAX_PORTFOLIO_POSITIONS) {
           if (controller.signal.aborted) return;

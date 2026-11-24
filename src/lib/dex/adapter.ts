@@ -6,6 +6,7 @@
  * (`src/lib/tx-pipeline/run.ts`: wallet send, the on-chain check after a wallet error such as 4001/5000, confirmation,
  * status) and the EVM wallet flow stay outside this interface and consume `PreparedStep`s.
  */
+import type { Connection } from "@solana/web3.js";
 import type { OpenSolQuote } from "./sol-need";
 import type { PositionKey, UnifiedPosition, WithdrawOutput } from "@/lib/unified-positions/model";
 import type { PositionPerformanceReport } from "@/lib/position-performance-report";
@@ -184,13 +185,16 @@ export interface DexFeeStrategy {
   feeFor(op: FeeOp, baseRaw: bigint): bigint;
 }
 
+/** Options for one performance read. `accountReads` is a request-local account batch shared across rows and DEXes. */
+export type PerformanceReadOptions = { signal?: AbortSignal; accountReads?: Connection };
+
 export interface DexAdapter<N = unknown> {
   readonly descriptor: DexDescriptor<N>;
   readonly fees: DexFeeStrategy;
   // reads
   listPositions(owner: string): Promise<UnifiedPosition<N>[]>;
   readPosition(key: PositionKey): Promise<UnifiedPosition<N> | null>;
-  performance(key: PositionKey, options?: { signal?: AbortSignal }): Promise<PositionPerformance>;
+  performance(key: PositionKey, options?: PerformanceReadOptions): Promise<PositionPerformance>;
   // quotes and previews (no transaction)
   quoteOpen(request: OpenRequest): Promise<OpenQuote>;
   /** The preset ranges `quoteOpen` / `prepareOpen` resolve a `preset` range to, from on-chain state only (no volume or APR). */
