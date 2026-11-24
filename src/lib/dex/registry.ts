@@ -72,6 +72,11 @@ export type DexModule = {
    * position reads will need, so all positions share a few getMultipleAccounts waves. Best effort; lazy like the adapter.
    */
   prefetchPortfolioAccounts?: (nativeIds: readonly string[], accounts: Connection) => Promise<void>;
+  /**
+   * The first account each position read fetches (derived addresses only, no RPC). The Portfolio reads every DEX's
+   * first round in one shared getMultipleAccounts before any reader's lazy import, so later reads hit the batch cache.
+   */
+  portfolioAccountKeys?: (nativeIds: readonly string[]) => Promise<string[]>;
   /** Independent of generic HTTP enablement; load only when the cron requests a source. */
   poolSource?: { order: number; load: () => Promise<PoolSource> };
   /**
@@ -160,6 +165,8 @@ export type DexRegistry = DexDescriptorRegistry & {
   buildSolSwapStep(id: string, ...args: Parameters<BuildSolSwapStep>): ReturnType<BuildSolSwapStep>;
   readSolSwapDelivery(id: string, ...args: Parameters<ReadSolSwapDelivery>): ReturnType<ReadSolSwapDelivery>;
   preparePortfolio(id: string, input: PortfolioInput, signal: AbortSignal, accounts?: Connection): Promise<PortfolioReader | null>;
+  /** First-round account addresses for these positions of one DEX ([] when it has none to share). */
+  portfolioAccountKeys(id: string, nativeIds: readonly string[]): Promise<string[]>;
   /**
    * True only when this id is a registered module whose `enabled(op)` hook returned false.
    * Unknown ids and modules with no hook are not disabled, so the route can still resolve a
@@ -505,6 +512,11 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
       // Receipt reconciliation is readback, independent of whether new opens are available.
       if (!entry?.readSolSwapDelivery) throw new DexUnsupportedError();
       return entry.readSolSwapDelivery({ ...command });
+    },
+    async portfolioAccountKeys(id: string, nativeIds: readonly string[]) {
+      const canonical = normalizeDexId(id);
+      const entry = canonical ? byId.get(canonical) : undefined;
+      return entry?.portfolioAccountKeys ? entry.portfolioAccountKeys(nativeIds) : [];
     },
     async preparePortfolio(id: string, input: PortfolioInput, signal: AbortSignal, accounts?: Connection): Promise<PortfolioReader | null> {
       const canonical = normalizeDexId(id);
