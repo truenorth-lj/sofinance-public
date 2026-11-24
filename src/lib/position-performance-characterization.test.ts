@@ -305,7 +305,8 @@ describe("Raydium position performance characterization", () => {
     expect(actual.historyComplete).toBe(true);
     const snapshot = { lease: null, state: { headSignature: saved.history.at(-1)?.signature ?? null,
       backfillBefore: null, complete: true, revision: 1, parserVersion: 1 }, syncing: false,
-      readAt: "2026-11-15T00:02:00Z", updatedAt: "2026-11-15T00:00:00Z",
+      // Older than PORTFOLIO_HISTORY_TTL_MS (5 min), so the unforced read is stale too.
+      readAt: "2026-11-15T00:06:00Z", updatedAt: "2026-11-15T00:00:00Z",
       transactions: saved.history.map((item) => ({ ...item, status: "parsed", receipt: null, parserVersion: 1 })) };
     // Use the production snapshot adapter: stale/forced does not mean an
     // incomplete ledger, and must keep the stored cumulative fees visible.

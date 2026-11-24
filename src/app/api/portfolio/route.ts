@@ -1,7 +1,7 @@
 import { readPortfolio } from "@/lib/dex";
 import { portfolioRequestSchema } from "@/lib/portfolio/model";
 import { NO_STORE_HEADERS } from "@/lib/http/no-store";
-import { dexRouteRateLimited } from "@/lib/dex-route-rate-limit";
+import { portfolioRateLimited, PORTFOLIO_RETRY_AFTER_SECONDS } from "@/lib/portfolio/rate-limit";
 import { after } from "next/server";
 import { createPortfolioHistoryBackground } from "@/lib/portfolio/history-background";
 
@@ -29,8 +29,8 @@ async function readBody(request: Request): Promise<string | null> {
 export async function POST(request: Request) {
   const background = createPortfolioHistoryBackground(Date.now() + 55_000);
   const json = (body: unknown, status = 200) => Response.json(body, { status, headers: NO_STORE_HEADERS });
-  if (dexRouteRateLimited(request, "performance")) return Response.json({ error: "Too many requests. Please wait a minute." }, {
-    status: 429, headers: { ...NO_STORE_HEADERS, "Retry-After": "60" },
+  if (portfolioRateLimited(request)) return Response.json({ error: "Too many requests. Please wait a minute." }, {
+    status: 429, headers: { ...NO_STORE_HEADERS, "Retry-After": String(PORTFOLIO_RETRY_AFTER_SECONDS) },
   });
   // Bound the body before decoding; keys and signature arrays also have their own strict limits.
   let input;
