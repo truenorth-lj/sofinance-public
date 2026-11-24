@@ -9,7 +9,13 @@ const signature = z.string().max(88).refine((value) => {
   try { return bs58.decode(value).length === 64; } catch { return false; }
 });
 export const MAX_PORTFOLIO_POSITIONS = 50;
-export const PORTFOLIO_POLL_MS = 8_000;
+/**
+ * Follow-up delays (ms) while fee history is "updating", measured from the previous response. A background sync after the
+ * first read usually lands in about 3 s, so the first follow-up comes at 4 s; slower syncs (cold instance, paced history
+ * RPC, a 12 s job deadline) are caught by the backed-off later rounds. Total 45 s, inside the 55 s background deadline of
+ * `/api/portfolio`. One page load is at most 1 + PORTFOLIO_POLL_DELAYS_MS.length requests per batch of positions.
+ */
+export const PORTFOLIO_POLL_DELAYS_MS = [4_000, 6_000, 9_000, 12_000, 14_000] as const;
 export const portfolioRequestSchema = z.object({
   wallet: pubkey,
   positions: z.array(z.object({

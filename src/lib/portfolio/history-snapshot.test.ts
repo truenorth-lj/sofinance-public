@@ -51,6 +51,21 @@ describe("Portfolio persisted history read", () => {
     expect(result.history.history).toHaveLength(1);
   });
 
+  it("keeps a complete ledger checked 4 minutes ago fresh without a sync (5-minute window)", async () => {
+    expect(PORTFOLIO_HISTORY_TTL_MS).toBe(5 * 60_000);
+    const value = snapshot(); value.updatedAt = iso(-4 * 60_000);
+    const result = await readPortfolioHistory({ store: reader(value).store, context });
+    expect(result).toMatchObject({ historyStatus: "fresh", needsSync: false, historyRefreshResolved: true, historyUpdatedAt: value.updatedAt });
+  });
+
+  it("still syncs inside the window after Refresh or an own transaction", async () => {
+    const value = snapshot(); value.updatedAt = iso(-60_000);
+    const refreshed = await readPortfolioHistory({ store: reader(value).store, context, fresh: true });
+    expect(refreshed).toMatchObject({ historyStatus: "updating", needsSync: true, historyRefreshResolved: false });
+    const traded = await readPortfolioHistory({ store: reader(value).store, context, afterSignatures: [signature("c")] });
+    expect(traded).toMatchObject({ historyStatus: "updating", needsSync: true, historyRefreshResolved: false });
+  });
+
   it("returns explicit incomplete history for a cold position rather than inventing a complete zero ledger", async () => {
     const result = await readPortfolioHistory({ store: reader(null).store, context, fresh: true });
     expect(result).toMatchObject({ historyStatus: "updating", needsSync: true, historyUpdatedAt: null,
