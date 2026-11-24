@@ -66,7 +66,7 @@ export function useOpenPositionController(pair: OpenPositionPair | null) {
   useEffect(() => {
     const attempt = open.attempt;
     if (!attempt) return;
-    const properties = openEventProperties(pair);
+    const properties = openEventProperties(pair, { wallet });
     if (open.status === "confirmed") {
       captureGrowthEventOnce(`open-ok:${attempt.signature}`, GROWTH_EVENTS.openSuccess, properties);
     } else if (open.status === "failed" || open.status === "expired") {
