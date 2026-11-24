@@ -62,27 +62,46 @@ function useReownWalletConnection(): { value: WalletConnection; walletName: stri
   const account = useAppKitAccount({ namespace: "solana" });
   const { walletProvider } = useAppKitProvider<AppKitSolanaWalletProvider>("solana");
   const [connectionError, setConnectionError] = useState("");
-  // "stalled": restoration failed or ran past WALLET_RESTORE_TIMEOUT_MS. The visitor can connect by hand from then on.
+  // "stalled": restoration failed, or was still running when WALLET_RESTORE_TIMEOUT_MS passed. From then on the button
+  // ignores AppKit's status and the visitor can connect by hand.
   const [restore, setRestore] = useState<"pending" | "ready" | "stalled">(appKit ? "pending" : "ready");
-  // The time limit passed and AppKit's restore is still running. Read by openModal.
+  // The time limit passed with AppKit's restore still running (ready() pending, or its status never left connecting).
+  // Read by openModal: a retry then forgets the remembered wallet and reloads.
   const restoreStuck = useRef(false);
+  // ready() resolving is not enough: for a remembered WalletConnect wallet whose session is gone, AppKit 1.8.24
+  // resolves ready() but never moves the account status off "connecting". The time limit covers both.
+  const statusBusy = account.status === "connecting" || account.status === "reconnecting";
+  const statusLeftConnecting = useRef(false);
+  useEffect(() => {
+    if (restore === "ready" && !statusBusy) statusLeftConnecting.current = true;
+  }, [restore, statusBusy]);
   useEffect(() => {
     if (!appKit) return;
     let active = true;
-    let decided = false;
-    // ready() includes reconnection. AppKit's UI `initialized` flag does not guarantee it has finished.
-    // The first of ready / failure / timeout decides; a restore result after that changes nothing here. A late
-    // success still shows the wallet, because the address and connected state come straight from AppKit's account.
-    const decide = (outcome: "ready" | "stalled") => {
-      if (!active || decided) return;
-      decided = true;
-      setRestore(outcome);
-      if (outcome === "stalled") setConnectionError(WALLET_RESTORE_FAILED);
-    };
     let settled = false;
-    const timer = setTimeout(() => { if (!settled) restoreStuck.current = true; decide("stalled"); }, WALLET_RESTORE_TIMEOUT_MS);
-    const settle = (outcome: "ready" | "stalled") => { settled = true; restoreStuck.current = false; decide(outcome); };
-    void appKit.ready().then(() => settle("ready"), () => settle("stalled"));
+    let stalled = false;
+    // ready() includes reconnection. AppKit's UI `initialized` flag does not guarantee it has finished.
+    // A restore result after a stall changes nothing here. A late success still shows the wallet, because the address
+    // and connected state come straight from AppKit's account.
+    const stall = () => {
+      if (!active || stalled) return;
+      stalled = true;
+      setRestore("stalled");
+      setConnectionError(WALLET_RESTORE_FAILED);
+    };
+    const timer = setTimeout(() => {
+      if (settled && statusLeftConnecting.current) return; // restored in time
+      restoreStuck.current = true;
+      stall();
+    }, WALLET_RESTORE_TIMEOUT_MS);
+    void appKit.ready().then(() => {
+      settled = true;
+      if (!stalled) { if (active) setRestore("ready"); } else restoreStuck.current = false;
+    }, () => {
+      settled = true;
+      restoreStuck.current = false;
+      stall();
+    });
     return () => { active = false; clearTimeout(timer); };
   }, []);
   // Sentry: which wallet a transaction report came from, when the AppKit provider names it.
@@ -117,7 +136,7 @@ function useReownWalletConnection(): { value: WalletConnection; walletName: stri
 
   const connected = account.isConnected && !!account.address;
   // Once stalled, AppKit may keep reporting "connecting" for the abandoned restore: that no longer blocks the button.
-  const restoring = restore === "pending" || (restore === "ready" && (account.status === "connecting" || account.status === "reconnecting"));
+  const restoring = restore === "pending" || (restore === "ready" && statusBusy);
   const restoreStalled = restore === "stalled" && !connected && connectionError === WALLET_RESTORE_FAILED;
   const shownError = connected && connectionError === WALLET_RESTORE_FAILED ? "" : connectionError;
   const value = useMemo<WalletConnection>(() => ({
