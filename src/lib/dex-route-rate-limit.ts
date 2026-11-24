@@ -9,6 +9,7 @@ import { clientIp, slidingWindowLimiter } from "@/lib/tx-send/rate-limit";
  * - `positions` also: DEX_POSITIONS_REQUESTS_PER_IP_PER_MINUTE. It is the costly read (one getProgramAccounts per pool
  *   list plus bin arrays), and the page asks once per load or rescan. `performance` (PR9) shares this budget: it reads the
  *   position's signature history and parsed transactions, the other costly read, once per Performance tab open.
+ *   `/api/portfolio` has its own budget (`lib/portfolio/rate-limit.ts`) and does not count here.
  *
  * Limits of this design (documented on purpose):
  * - Per server instance, not global: each warm instance keeps its own counts, so with N instances an IP can make up to

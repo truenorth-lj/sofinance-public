@@ -3,8 +3,10 @@ import type { NativePoolCron, PoolCronPolicy, PoolCronDiscoveryInput, PoolCronLa
 import type { PoolDailyAprResult } from "@/lib/pool-daily-apr";
 import type { PoolSource } from "@/lib/pool-sources/types";
 import type { Lease, RwaStore } from "@/lib/rwa-store-types";
+import type { Connection } from "@solana/web3.js";
 import type { PortfolioInput, PortfolioReader } from "@/lib/portfolio/model";
 import { positionFigures } from "@/lib/portfolio/figures";
+import { portfolioAbortable, PORTFOLIO_POSITION_DEADLINE_MS } from "./portfolio-workers";
 import type { PositionKey, UnifiedPosition } from "@/lib/unified-positions/model";
 import type { PublicPoolReads, PublicPoolReadPolicy } from "./public-pool-read";
 import type { LpPlanReads } from "./lp-plan-read";
@@ -64,7 +66,12 @@ export type DexModule = {
   buildSolSwapStep?: BuildSolSwapStep;
   readSolSwapDelivery?: ReadSolSwapDelivery;
   /** Compact Portfolio reader; a dedicated binding does not enable generic trading routes. */
-  preparePortfolio?: (input: PortfolioInput, signal: AbortSignal) => Promise<PortfolioReader>;
+  preparePortfolio?: (input: PortfolioInput, signal: AbortSignal, accounts?: Connection) => Promise<PortfolioReader>;
+  /**
+   * Generic Portfolio reader only: warms the request's shared account batch (`accounts`) with every account its
+   * position reads will need, so all positions share a few getMultipleAccounts waves. Best effort; lazy like the adapter.
+   */
+  prefetchPortfolioAccounts?: (nativeIds: readonly string[], accounts: Connection) => Promise<void>;
   /** Independent of generic HTTP enablement; load only when the cron requests a source. */
   poolSource?: { order: number; load: () => Promise<PoolSource> };
   /**
@@ -152,7 +159,7 @@ export type DexRegistry = DexDescriptorRegistry & {
   quoteOpen(id: string, ...args: Parameters<QuoteOpen>): ReturnType<QuoteOpen>;
   buildSolSwapStep(id: string, ...args: Parameters<BuildSolSwapStep>): ReturnType<BuildSolSwapStep>;
   readSolSwapDelivery(id: string, ...args: Parameters<ReadSolSwapDelivery>): ReturnType<ReadSolSwapDelivery>;
-  preparePortfolio(id: string, input: PortfolioInput, signal: AbortSignal): Promise<PortfolioReader | null>;
+  preparePortfolio(id: string, input: PortfolioInput, signal: AbortSignal, accounts?: Connection): Promise<PortfolioReader | null>;
   /**
    * True only when this id is a registered module whose `enabled(op)` hook returned false.
    * Unknown ids and modules with no hook are not disabled, so the route can still resolve a
@@ -499,18 +506,24 @@ export function createDexRegistry(modules: readonly DexModule[]): DexRegistry {
       if (!entry?.readSolSwapDelivery) throw new DexUnsupportedError();
       return entry.readSolSwapDelivery({ ...command });
     },
-    async preparePortfolio(id: string, input: PortfolioInput, signal: AbortSignal): Promise<PortfolioReader | null> {
+    async preparePortfolio(id: string, input: PortfolioInput, signal: AbortSignal, accounts?: Connection): Promise<PortfolioReader | null> {
       const canonical = normalizeDexId(id);
       const entry = canonical ? byId.get(canonical) : undefined;
       if (!entry) return null;
-      if (entry.preparePortfolio) return entry.preparePortfolio(input, signal);
+      if (entry.preparePortfolio) return entry.preparePortfolio(input, signal, accounts);
       const { capabilities, ui } = entry.descriptor;
       if (capabilities.signer !== "solana-wallet" || ui?.listPositions === false || !capabilities.performance.supported
         || (entry.enabled && !entry.enabled("performance"))) return null;
       const adapter = await entry.adapter?.();
       if (!adapter) return null;
+      if (accounts && entry.prefetchPortfolioAccounts) {
+        // Best effort: a failed or slow warm-up leaves each row to read (and retry) its own accounts.
+        const ids = input.positions.map((position) => position.key.slice(position.key.indexOf(":") + 1));
+        await portfolioAbortable(entry.prefetchPortfolioAccounts(ids, accounts),
+          AbortSignal.any([signal, AbortSignal.timeout(PORTFOLIO_POSITION_DEADLINE_MS)])).catch(() => {});
+      }
       return async (position, readSignal) => {
-        const result = await adapter.performance(position.key as PositionKey, { signal: readSignal });
+        const result = await adapter.performance(position.key as PositionKey, { signal: readSignal, ...(accounts ? { accountReads: accounts } : {}) });
         const figures = positionFigures(result.report);
         if (result.partial) figures.cumulativeFeesUsd = null;
         return { figures, evaluatedAt: result.report?.evaluatedAtIso ?? null, historyComplete: !result.partial,

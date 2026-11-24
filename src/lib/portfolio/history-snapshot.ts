@@ -3,7 +3,13 @@ import { POSITION_HISTORY_PARSER_VERSION, type PositionContext, type PositionHis
 import type { SyncedPositionHistory } from "@/lib/position-history-sync";
 import type { PortfolioPosition } from "./model";
 
-export const PORTFOLIO_HISTORY_TTL_MS = 30_000;
+/**
+ * How long a complete stored ledger counts as fresh without a new sync. Cumulative fees = stored collects + live on-chain
+ * uncollected fees, so only a collect made outside this app can make the stored part lag, and only until this window
+ * ends. Transactions made in this app send their signatures (`afterSignatures`) and Refresh sends a barrier
+ * (`refreshAfter`); both still force a sync inside the window. Was 30 s, which made nearly every page load "updating".
+ */
+export const PORTFOLIO_HISTORY_TTL_MS = 5 * 60_000;
 type SnapshotResult = Pick<PortfolioPosition, "historyUpdatedAt" | "historyStatus" | "historyRefreshAfter" | "historyRefreshResolved"> & {
   history: SyncedPositionHistory;
   needsSync: boolean;

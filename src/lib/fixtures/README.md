@@ -62,3 +62,13 @@ are v1 transactions), trimmed to block time, version, account keys, error and
 token balances. Pool, vault and mint keys are real; every other account key is
 a deterministic hash and token-balance owners are dropped. Signatures are real
 public transaction ids. Fetched from mainnet on 2026-11-10.
+
+`meteora-position-history-nvda-claimfee2.json` is one minimized successful
+mainnet receipt (read-only `getTransaction`, jsonParsed, public RPC, captured
+2026-11-23) of a Meteora DLMM compound on the NVDA/NVDAx pool: `claim_fee2`
+then `add_liquidity_by_strategy2`. Its `claim_fee2` group carries both the
+legacy ClaimFee event and a ClaimFee2 event with identical amounts. Program,
+event authority, pool, reserve, mint and token-program keys are real; the
+position, wallet, wallet token accounts and bin arrays are replaced with a
+deterministic hash, including inside the self-CPI event data. Signature, logs,
+account keys and non-DLMM outer instructions are dropped.

@@ -11,7 +11,8 @@ import { getPositionHistoryStore } from "@/lib/position-history-store";
 import { readPortfolioHistory } from "@/lib/portfolio/history-snapshot";
 import { syncPositionHistory } from "@/lib/position-history-sync";
 import { createHistoryRpcConnections } from "@/lib/position-history-rpc";
-import { batchAccountReads } from "@/lib/portfolio/account-batch";
+import type { Connection } from "@solana/web3.js";
+import { batchAccountReads, withSharedAccountReads } from "@/lib/portfolio/account-batch";
 import type { PortfolioInput, PortfolioRequest, PortfolioReader } from "@/lib/portfolio/model";
 import { mapPortfolioPositions, portfolioAbortable as abortable, PORTFOLIO_POSITION_DEADLINE_MS } from "../portfolio-workers";
 
@@ -33,10 +34,10 @@ async function readSymbols(snapshots: ReadonlyMap<string, Snapshot | null>): Pro
 }
 
 /** Stage accounts first, then share one price/metadata lookup for every distinct token. */
-async function readInputs(positions: PortfolioRequest["positions"], signal: AbortSignal) {
+async function readInputs(positions: PortfolioRequest["positions"], signal: AbortSignal, accounts?: Connection) {
   const snapshotsController = new AbortController();
   const snapshotsSignal = AbortSignal.any([signal, snapshotsController.signal, AbortSignal.timeout(PORTFOLIO_POSITION_DEADLINE_MS)]);
-  const snapshotConnection = batchAccountReads(rpcConnection(undefined, { signal: snapshotsSignal }), snapshotsSignal);
+  const snapshotConnection = accountReader(snapshotsSignal, accounts);
   const snapshots = new Map(await mapPortfolioPositions(positions, async (item) => {
     try {
       snapshotsSignal.throwIfAborted();
@@ -53,10 +54,15 @@ async function readInputs(positions: PortfolioRequest["positions"], signal: Abor
   return { snapshots, prices, labels };
 }
 
+/** Account reads for one stage or row: the request's shared batch when given (other DEXes join its waves), else a local one. */
+function accountReader(signal: AbortSignal, accounts?: Connection): Connection {
+  const connection = rpcConnection(undefined, { signal });
+  return accounts ? withSharedAccountReads(accounts, connection, signal) : batchAccountReads(connection, signal);
+}
 
-export async function prepareRaydiumPortfolio(input: PortfolioInput, signal: AbortSignal): Promise<PortfolioReader> {
+export async function prepareRaydiumPortfolio(input: PortfolioInput, signal: AbortSignal, accounts?: Connection): Promise<PortfolioReader> {
   if (input.fresh || input.positions.some((item) => item.afterSignatures?.length)) resetRpcCache();
-  const { snapshots, prices, labels } = await readInputs(input.positions, signal);
+  const { snapshots, prices, labels } = await readInputs(input.positions, signal, accounts);
   return async (item, readSignal) => {
     const snapshot = snapshots.get(item.key);
     if (!snapshot) throw new Error("Position accounts unavailable");
@@ -75,7 +81,7 @@ export async function prepareRaydiumPortfolio(input: PortfolioInput, signal: Abo
       });
     });
     // A row deadline cancels its fee transport before the scheduler reuses the slot.
-    const connection = batchAccountReads(rpcConnection(undefined, { signal: readSignal }), readSignal);
+    const connection = accountReader(readSignal, accounts);
     const read = await getPositionFigures(item.key.split(":")[1]!, {
       wallet: input.wallet, snapshot, prices, accountConnection: connection, signal: readSignal,
       symbols: labels.get(snapshot.poolId) ?? { symbolA: null, symbolB: null },

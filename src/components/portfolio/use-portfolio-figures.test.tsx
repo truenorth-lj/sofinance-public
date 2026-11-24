@@ -6,7 +6,7 @@ import { usePortfolioFigures } from "./use-portfolio-figures";
 import { resetRetainedCumulativeFees } from "@/lib/portfolio/retain-cumulative-fees";
 import { notifyPositionHistoryChange, readPositionHistoryRefresh } from "@/lib/position-history-refresh";
 import { PublicKey } from "@solana/web3.js";
-import type { PortfolioPosition } from "@/lib/portfolio/model";
+import { PORTFOLIO_POLL_DELAYS_MS, type PortfolioPosition } from "@/lib/portfolio/model";
 const mint = "11111111111111111111111111111111";
 const key = `raydium-clmm:${mint}`;
 const row = (valueUsd = 10): PortfolioPosition => ({ key, status: "ready", figures: { stock: "TSLA", shares: 1, valueUsd, unclaimedFeesUsd: 1, cumulativeFeesUsd: 2 },
@@ -38,19 +38,35 @@ describe("Portfolio client request lifecycle", () => {
     await render("A");
     expect(container.textContent).toBe("10"); expect(readPositionHistoryRefresh(mint)).not.toBeNull();
     expect(JSON.parse(fetchMock.mock.calls[0]![1].body).fresh).toBe(true);
-    await act(async () => { await vi.advanceTimersByTimeAsync(8_000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_999); });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     expect(JSON.parse(fetchMock.mock.calls[1]![1].body)).toMatchObject({ fresh: false, positions: [{ key, refreshAfter: barrier }] });
     expect(container.textContent).toBe("20"); expect(readPositionHistoryRefresh(mint)).toBeNull();
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
-  it("stops after three follow-ups and retains explicit stale data and unresolved markers", async () => {
+  it("backs off follow-ups at 4, 10, 19, 31 and 45 s, then stops", async () => {
+    vi.useFakeTimers();
+    const started = Date.now();
+    const at: number[] = [];
+    fetchMock.mockImplementation(async () => {
+      at.push(Date.now() - started);
+      return Response.json({ wallet: "A", positions: [{ ...row(), historyStatus: "updating", historyUpdatedAt: "2026-11-15T00:00:00Z" }] });
+    });
+    await render("A");
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    expect(at).toEqual([0, 4_000, 10_000, 19_000, 31_000, 45_000]);
+    expect(at).toHaveLength(1 + PORTFOLIO_POLL_DELAYS_MS.length);
+    expect(latest[key]?.historyStatus).toBe("stale");
+  });
+  it("stops after five follow-ups and retains explicit stale data and unresolved markers", async () => {
     vi.useFakeTimers(); notifyPositionHistoryChange(mint);
     const pending = { ...row(), historyStatus: "updating", historyUpdatedAt: "2026-11-15T00:00:00Z", historyRefreshResolved: false };
     fetchMock.mockImplementation(async () => Response.json({ wallet: "A", positions: [pending] }));
     await render("A");
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
-    expect(fetchMock).toHaveBeenCalledTimes(4); expect(latest[key]?.historyStatus).toBe("stale");
+    expect(fetchMock).toHaveBeenCalledTimes(6); expect(latest[key]?.historyStatus).toBe("stale");
     expect(container.textContent).toBe("10"); expect(readPositionHistoryRefresh(mint)).not.toBeNull();
   });
   it("cancels a pending poll when switching wallet or pausing", async () => {

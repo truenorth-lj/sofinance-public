@@ -10,7 +10,7 @@ import { isJupiterUpstreamError, asJupiterUserError } from "@sofinance/engine/ju
 import { readSwapFeeConfig, type SwapFeeConfig } from "@sofinance/engine/swap/fee";
 import { getMeteoraPositionPerformance, listMeteoraPositions, METEORA_POOL_NOT_SUPPORTED, type MeteoraListedPosition, type MeteoraPerformanceOptions, type MeteoraReadOptions } from "@/lib/meteora-positions";
 import { positionKey, type PositionKey, type PositionHoldings, type RangeStatus, type UnifiedPosition } from "@/lib/unified-positions/model";
-import type { AddQuote, DexAdapter, DexDepositInput, OpenQuote, OpenRanges, OpenRequest, PositionPerformance, StepContext, StepResult, WithdrawRequest } from "../adapter";
+import type { AddQuote, DexAdapter, PerformanceReadOptions, DexDepositInput, OpenQuote, OpenRanges, OpenRequest, PositionPerformance, StepContext, StepResult, WithdrawRequest } from "../adapter";
 import type { FeePolicy } from "../types";
 import { DexError, DexUnsupportedError } from "../errors";
 import { bpsFeeStrategy } from "../fees";
@@ -23,6 +23,7 @@ import {
 import { buildMeteoraAdd, buildMeteoraClaim, buildMeteoraCompound, buildMeteoraWithdraw, quoteMeteoraAdd } from "./manage.server";
 import { meteoraDepositMinimum, type MeteoraLegQuote, type MeteoraUsdPrices } from "./minimum.server";
 import { listedMeteoraPool, type MeteoraPoolList } from "./pools.server";
+import { withSharedAccountReads } from "@/lib/portfolio/account-batch";
 import { openRangeCenterPrice } from "@/lib/open-range-center";
 
 function meteoraQuotedRange(pool: MeteoraPoolState, lowerBinId: number, upperBinId: number) {
@@ -293,11 +294,14 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
     }),
     // PR9: the same report as /api/position-performance (cashflows from the position's own history, current prices),
     // for a position in a listed pool; the summary fields are lifted from its metrics.
-    performance: (key: PositionKey, readOptions?: { signal?: AbortSignal }) => guarded(async (): Promise<PositionPerformance> => {
+    performance: (key: PositionKey, readOptions?: PerformanceReadOptions) => guarded(async (): Promise<PositionPerformance> => {
       if (!descriptor.capabilities.performance.supported) throw notYet(descriptor.capabilities.performance);
       const id = nativeIdOf(key);
       const { connection, listedPool } = deps();
-      const readConnection = readOptions?.signal && !options.connection ? rpcConnection(undefined, { signal: readOptions.signal }) : connection;
+      const rowConnection = readOptions?.signal && !options.connection ? rpcConnection(undefined, { signal: readOptions.signal }) : connection;
+      // Portfolio rows share one account batch; history and prices stay on the row's own connection.
+      const readConnection = readOptions?.accountReads && !options.connection
+        ? withSharedAccountReads(readOptions.accountReads, rowConnection, readOptions.signal) : rowConnection;
       const report = await (options.readPerformance ?? getMeteoraPositionPerformance)(id, {
         connection: readConnection as unknown as NonNullable<MeteoraPerformanceOptions["connection"]>, listedPool,
         ...(readOptions?.signal ? { signal: readOptions.signal } : {}),
