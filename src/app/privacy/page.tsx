@@ -63,7 +63,7 @@ export default function PrivacyPage() {
         <p>We use PostHog to understand how the website and app are used. It runs only if your browser does not send a Do Not Track signal.</p>
         <ul>
           <li><strong>What is sent:</strong> page views and a fixed list of product events, such as viewing the pools list, starting and finishing a wallet connection, viewing performance, and starting, completing or failing to open a position, with the pool and pair involved.</li>
-          <li><strong>Wallet address:</strong> when you connect a wallet, analytics events are linked to a SHA-256 hash of its public address, the same identifier the MCP server uses. The address itself is not sent to PostHog. PostHog keeps a profile for that identifier.</li>
+          <li><strong>Wallet address:</strong> when you connect a wallet, analytics events are linked to its public address, and the address is sent with wallet connection and position events. PostHog keeps a profile for that address.</li>
           <li><strong>Campaign source:</strong> UTM parameters from the first link you arrived by are kept in your browser and sent with events.</li>
           <li><strong>Network data:</strong> PostHog receives your IP address with each event and derives an approximate location (country and city) from it. <ToConfirm>whether to turn off person profiles, IP capture and GeoIP for website events</ToConfirm></li>
           <li><strong>Turned off:</strong> automatic click capture, session recording, heatmaps and surveys.</li>
@@ -99,7 +99,7 @@ export default function PrivacyPage() {
 
       <Section id="storage" title="9. Cookies and browser storage">
         <ul>
-          <li><strong>Analytics:</strong> PostHog stores an identifier in a cookie and in local storage: a random one, or after you connect a wallet, the hashed wallet identifier. We also keep your first campaign source in local storage.</li>
+          <li><strong>Analytics:</strong> PostHog stores an identifier in a cookie and in local storage: a random one, or after you connect a wallet, your public wallet address. We also keep your first campaign source in local storage.</li>
           <li><strong>Regional notice:</strong> a one-day cookie records whether to show the notice, and local storage records that you dismissed it.</li>
           <li><strong>App state:</strong> local storage keeps in-progress transaction steps (such as a two-step withdrawal) so that you can resume them, along with the wallet connection state.</li>
         </ul>
