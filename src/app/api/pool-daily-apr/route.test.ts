@@ -334,7 +334,7 @@ describe("GET /api/pool-daily-apr (pool not on Raydium)", () => {
 describe("tooLittleData (CDN five-minute cache)", () => {
   const fetchedAt = new Date(NOW_MS).toISOString();
   it("is true only when there is no complete day to project from", async () => {
-    const { tooLittleData } = await import("./route");
+    const { tooLittleData } = await import("@/lib/pool-daily-apr-cache");
     expect(tooLittleData({ points: [], fetchedAt })).toBe(true);
     expect(tooLittleData({
       points: [{ time: D1, date: "2026-10-07", aprPct: null, volumeUsd: null, tvlUsd: 1 }],
