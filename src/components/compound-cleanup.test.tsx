@@ -12,6 +12,8 @@ import { compoundAttemptKey, compoundReceiptsKey, persistCompoundAttempt, persis
 import { persistCleanupBatch } from "@/lib/compound-cleanup-batch-attempt";
 import { compoundHistoryFixture } from "@/lib/test-support/compound-history-fixture";
 import { testKeypair } from "@/lib/test-support/send-fixtures";
+import { findTxNotice, noticeIdFor, resetTxNotices, settleTxNotice } from "@/lib/tx-pipeline/notices";
+import { readPositionHistoryRefresh } from "@/lib/position-history-refresh";
 
 const mocks = vi.hoisted(() => ({ sign: vi.fn(), confirmed: vi.fn() }));
 vi.mock("./wallet-connection", () => ({ useWalletConnection: () => ({ address: wallet, connected: !!wallet, signTransaction: mocks.sign }) }));
@@ -408,6 +410,20 @@ describe("automatic cleanup after a new compound", () => {
     expect(mocks.sign).toHaveBeenCalledTimes(2); expect(broadcastCount).toBe(1);
     expect(controller.receipts).toHaveLength(0); expect(controller.cleanup?.compoundSignature).toBeTruthy();
     expect(container.textContent).toContain("Compound confirmed.");
+  });
+  it("a confirmed cleanup send never registers its signature as the position's history refresh marker", async () => {
+    resetTxNotices(); enableCompound(); await render();
+    await act(async () => { controller.compound(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(broadcastSignatures).toHaveLength(1);
+    const [cleanupSignature] = broadcastSignatures;
+    const notice = findTxNotice(noticeIdFor(cleanupSignature!));
+    expect(notice?.title).toBe("Confirming on Solana…");
+    expect(notice?.watch?.positionMint).toBeUndefined();
+    // Cleanup never touches the position account, so the history sync could never acknowledge this signature.
+    settleTxNotice(noticeIdFor(cleanupSignature!), "confirmed");
+    expect(findTxNotice(noticeIdFor(cleanupSignature!))?.title).toBe("Cleanup confirmed");
+    expect(readPositionHistoryRefresh(fixture.state.positionMint)?.signatures ?? []).not.toContain(cleanupSignature);
   });
   it.each([true, false])("keeps the fresh fees state while cleanup awaits signing (confirmation includes state: %s)", async includesState => {
     enableCompound();

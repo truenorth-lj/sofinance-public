@@ -2,7 +2,7 @@
 import bs58 from "bs58";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { clearPositionHistoryRefresh, notifyPositionHistoryChange, POSITION_HISTORY_REFRESH_STORAGE_KEY,
-  readPositionHistoryRefresh, subscribePositionHistoryRefresh } from "./position-history-refresh";
+  POSITION_HISTORY_SIGNATURE_TTL_MS, readPositionHistoryRefresh, subscribePositionHistoryRefresh } from "./position-history-refresh";
 const mint = "11111111111111111111111111111111";
 const otherMint = "22222222222222222222222222222222";
 const signature = (id: number) => bs58.encode(Buffer.alloc(64, id));
@@ -59,7 +59,7 @@ describe("position history browser refresh markers", () => {
     const dispose = subscribePositionHistoryRefresh(mint, listener);
     notifyPositionHistoryChange(otherMint);
     expect(listener).not.toHaveBeenCalled();
-    const value = JSON.stringify([{ positionMint: mint, signatures: [signature(1)], version: "other-tab" }]);
+    const value = JSON.stringify([{ positionMint: mint, signatures: [signature(1)], addedAt: [Date.now()], version: "other-tab" }]);
     window.localStorage.setItem(POSITION_HISTORY_REFRESH_STORAGE_KEY, value);
     window.dispatchEvent(new StorageEvent("storage", { key: POSITION_HISTORY_REFRESH_STORAGE_KEY, oldValue: "[]", newValue: value }));
     expect(listener).toHaveBeenCalledTimes(1);
@@ -100,5 +100,46 @@ describe("position history browser refresh markers", () => {
       writes.mockRestore();
       readPositionHistoryRefresh(mint);
     }
+  });
+
+  it("drops a signature the history never acknowledged after ~10 minutes, keeping newer ones and the marker", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-11-25T14:00:00Z"));
+      notifyPositionHistoryChange(mint, signature(1));
+      const marker = readPositionHistoryRefresh(mint)!;
+      vi.advanceTimersByTime(6 * 60_000);
+      notifyPositionHistoryChange(mint, signature(2));
+      vi.advanceTimersByTime(POSITION_HISTORY_SIGNATURE_TTL_MS - 6 * 60_000 - 1);
+      expect(readPositionHistoryRefresh(mint)?.signatures).toEqual([signature(1), signature(2)]);
+      vi.advanceTimersByTime(1);
+      expect(readPositionHistoryRefresh(mint)?.signatures).toEqual([signature(2)]);
+      vi.advanceTimersByTime(6 * 60_000);
+      // No required signature is left; the marker still forces one fresh read, which then clears it.
+      const forceOnly = readPositionHistoryRefresh(mint)!;
+      expect(forceOnly.signatures).toEqual([]);
+      expect(forceOnly.version).not.toBe(marker.version);
+      expect(clearPositionHistoryRefresh(mint, forceOnly.version)).toBe(true);
+      expect(readPositionHistoryRefresh(mint)).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("expires signatures written by another tab too", () => {
+    const value = JSON.stringify([{ positionMint: mint, signatures: [signature(1), signature(2)],
+      addedAt: [Date.now() - POSITION_HISTORY_SIGNATURE_TTL_MS - 1, Date.now()], version: "other-tab" }]);
+    window.localStorage.setItem(POSITION_HISTORY_REFRESH_STORAGE_KEY, value);
+    expect(readPositionHistoryRefresh(mint)?.signatures).toEqual([signature(2)]);
+    window.localStorage.setItem(POSITION_HISTORY_REFRESH_STORAGE_KEY,
+      JSON.stringify([{ positionMint: mint, signatures: [signature(1)], version: "no-timestamps" }]));
+    expect(readPositionHistoryRefresh(mint)).toBeNull();
+  });
+
+  it("ignores markers stored under the old v1 key", () => {
+    expect(POSITION_HISTORY_REFRESH_STORAGE_KEY).toBe("sofinance:position-history-refresh:v2");
+    window.localStorage.setItem("sofinance:position-history-refresh:v1",
+      JSON.stringify([{ positionMint: mint, signatures: [signature(1)], version: "stuck-cleanup" }]));
+    expect(readPositionHistoryRefresh(mint)).toBeNull();
+    notifyPositionHistoryChange(mint, signature(2));
+    expect(readPositionHistoryRefresh(mint)?.signatures).toEqual([signature(2)]);
   });
 });

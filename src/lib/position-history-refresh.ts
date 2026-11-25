@@ -1,14 +1,30 @@
-/** Browser dirty markers carry cache bypass across server instances and page remounts. */
-export const POSITION_HISTORY_REFRESH_STORAGE_KEY = "sofinance:position-history-refresh:v1";
+/**
+ * Browser dirty markers carry cache bypass across server instances and page remounts.
+ * v2: signatures carry the time they were added and expire after `POSITION_HISTORY_SIGNATURE_TTL_MS`. v1 markers are
+ * ignored: they could hold a signature the history sync can never see (a compound's cleanup tx, which never touches the
+ * position account), which kept the row's cumulative fees on "Updating" forever.
+ */
+export const POSITION_HISTORY_REFRESH_STORAGE_KEY = "sofinance:position-history-refresh:v2";
+/** A required signature the history has not acknowledged within this window stops blocking the row. */
+export const POSITION_HISTORY_SIGNATURE_TTL_MS = 10 * 60_000;
 export const POSITION_HISTORY_REFRESH_EVENT = "sofinance:position-history-refresh";
 const MAX_POSITIONS = 64;
 const MAX_SIGNATURES = 8;
 const pubkey = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const signaturePattern = /^[1-9A-HJ-NP-Za-km-z]{64,88}$/;
 export type PositionHistoryRefresh = { signatures: string[]; version: string };
-type Entry = PositionHistoryRefresh & { positionMint: string };
+/** `addedAt[i]` is when `signatures[i]` was added (ms since epoch). */
+type Entry = PositionHistoryRefresh & { positionMint: string; addedAt: number[] };
 let fallback: Entry[] = [];
 let persistencePending = false;
+
+/** Drops expired signatures; the marker itself stays, so the next read still bypasses the cache once. */
+function withoutExpired(entry: Entry): Entry {
+  const now = Date.now();
+  const live = entry.addedAt.map((at, index) => now - at < POSITION_HISTORY_SIGNATURE_TTL_MS ? index : -1).filter((index) => index >= 0);
+  if (live.length === entry.signatures.length) return entry;
+  return { ...entry, signatures: live.map((index) => entry.signatures[index]!), addedAt: live.map((index) => entry.addedAt[index]!) };
+}
 
 function parseEntries(value: string | null): Entry[] {
   if (!value) return [];
@@ -18,7 +34,10 @@ function parseEntries(value: string | null): Entry[] {
     return parsed.filter((item): item is Entry => item && typeof item.positionMint === "string" &&
       pubkey.test(item.positionMint) && typeof item.version === "string" && item.version.length <= 100 &&
       Array.isArray(item.signatures) && item.signatures.length <= MAX_SIGNATURES &&
-      item.signatures.every((signature: unknown) => typeof signature === "string" && signaturePattern.test(signature)))
+      item.signatures.every((signature: unknown) => typeof signature === "string" && signaturePattern.test(signature)) &&
+      Array.isArray(item.addedAt) && item.addedAt.length === item.signatures.length &&
+      item.addedAt.every((at: unknown) => typeof at === "number" && Number.isFinite(at)))
+      .map(withoutExpired)
       .slice(-MAX_POSITIONS);
   } catch { return []; }
 }
@@ -32,10 +51,10 @@ function readEntries(): Entry[] {
       window.localStorage.setItem(POSITION_HISTORY_REFRESH_STORAGE_KEY, JSON.stringify(fallback));
       persistencePending = false;
     } catch { /* Preserve pending markers and their compare-and-clear versions. */ }
-    return fallback;
+    return fallback.map(withoutExpired);
   }
   try { return parseEntries(window.localStorage.getItem(POSITION_HISTORY_REFRESH_STORAGE_KEY)); }
-  catch { return fallback; }
+  catch { return fallback.map(withoutExpired); }
 }
 
 function saveEntries(entries: Entry[]) {
@@ -62,8 +81,9 @@ export function notifyPositionHistoryChange(positionMint: string, signature?: st
   if (!signature && previous && !previous.signatures.length) return;
   const signatures = signature ? [...(previous?.signatures ?? []), signature].slice(-MAX_SIGNATURES)
     : previous?.signatures ?? [];
+  const addedAt = signature ? [...(previous?.addedAt ?? []), Date.now()].slice(-MAX_SIGNATURES) : previous?.addedAt ?? [];
   const version = globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-  saveEntries([...entries.filter(item => item.positionMint !== positionMint), { positionMint, signatures, version }]);
+  saveEntries([...entries.filter(item => item.positionMint !== positionMint), { positionMint, signatures, addedAt, version }]);
   window.dispatchEvent(new CustomEvent(POSITION_HISTORY_REFRESH_EVENT, { detail: { positionMint } }));
 }
 
