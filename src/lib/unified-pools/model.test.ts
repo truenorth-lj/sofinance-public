@@ -165,8 +165,8 @@ describe("TVL filter (minTvl)", () => {
   });
 });
 
-describe("APR rank groups: normal, Low TVL, New pool, Not supported yet (PM 2026-11-04)", () => {
-  // Real figures: NVDAx FjUo…KKS $10.5k (balance multiplier), INTCx 9Ur3 $1,884 (new by the strict count), GOOGLx $1,932, SKHYx $126.
+describe("APR rank groups: normal, Low TVL, Not supported yet (PM 2026-11-04; New pool group dropped 2026-11-25)", () => {
+  // Real figures: NVDAx FjUo…KKS $10.5k (balance multiplier), INTCx 9Ur3 $1,884 (Low TVL), GOOGLx $1,932, SKHYx $126.
   const big = pool({ poolAddress: "big", pairLabel: "SPCXx/SPCX", tvlUsd: 262_029 });
   const bigNoApr = pool({ poolAddress: "bigNoApr", pairLabel: "USDC/USDT", mintA: "u1", mintB: "u2", tvlUsd: 1_800_000 });
   const googl = pool({ poolAddress: "googl", pairLabel: "GOOGLx/GOOGL", mintA: "g1", mintB: "g2", tvlUsd: 1_932 });
@@ -176,7 +176,7 @@ describe("APR rank groups: normal, Low TVL, New pool, Not supported yet (PM 2026
     unsupportedIssues: ["ScaledUiAmount multiplier not 1"] });
   const all = [nvda, intc, skhy, googl, bigNoApr, big];
   const apr7d = aprs({ big: 12, googl: 40, skhy: 90, nvda: 500 });
-  const group = (p: UnifiedPool) => poolRankGroup(p, p.poolAddress === "intc");
+  const group = (p: UnifiedPool) => poolRankGroup(p);
 
   it("Low TVL is under $5k; a pool with unknown TVL is not tagged", () => {
     expect(LOW_TVL_USD).toBe(5_000);
@@ -194,9 +194,9 @@ describe("APR rank groups: normal, Low TVL, New pool, Not supported yet (PM 2026
     expect(sortPools(all, "tvl", "desc", apr7d, group).map((p) => p.poolAddress)).toEqual(["bigNoApr", "big", "nvda", "googl", "intc", "skhy"]);
   });
   it("without APR states, Not supported yet and Low TVL still apply (poolRankGroupOf)", () => {
-    expect(all.map(poolRankGroupOf)).toEqual([3, 1, 1, 1, 0, 0]);
-    expect(poolRankGroup(skhy, true)).toBe(2);
-    expect(poolRankGroup(nvda, true)).toBe(3);
+    expect(all.map(poolRankGroupOf)).toEqual([2, 1, 1, 1, 0, 0]);
+    expect(poolRankGroup(skhy)).toBe(1);
+    expect(poolRankGroup(nvda)).toBe(2);
   });
   it("names the reason in plain words", () => {
     expect(unsupportedTokenReason(nvda)).toBe("This token uses a balance multiplier, which we don't support yet.");

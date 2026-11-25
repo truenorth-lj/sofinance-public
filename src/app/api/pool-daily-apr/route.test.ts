@@ -179,7 +179,7 @@ describe("GET /api/pool-daily-apr (listed Meteora pools, recorded datapi)", () =
     expect(await anonymous.text()).toBe(await response.text());
   });
 
-  it("too little data on the Raydium in-memory fast path keeps the same five-minute headers (SP-2)", async () => {
+  it("a short window on the Raydium in-memory fast path keeps the same one-hour CDN headers", async () => {
     store.enabled = false;
     vi.stubGlobal("fetch", vi.fn(raydiumFixtures));
     const { GET } = await import("./route");
@@ -190,21 +190,20 @@ describe("GET /api/pool-daily-apr (listed Meteora pools, recorded datapi)", () =
     for (const response of [fresh, cached]) {
       expect(response.status).toBe(200);
       expect(response.headers.get("cache-control")).toBe("public, max-age=0, must-revalidate");
-      expect(response.headers.get("cdn-cache-control")).toBe("public, s-maxage=300");
-      expect(response.headers.get("vercel-cdn-cache-control")).toBe("public, s-maxage=300");
+      expect(response.headers.get("cdn-cache-control")).toBe("public, s-maxage=3600, stale-while-revalidate=86400");
+      expect(response.headers.get("vercel-cdn-cache-control")).toBe("public, s-maxage=3600, stale-while-revalidate=86400");
     }
   });
 
-  it("too little data (3 days, below the calculator's minimum) is a 200 kept only five minutes at the CDN (SP-2)", async () => {
+  it("a short window (3 complete days) is a 200 kept for an hour at the CDN, like a full week", async () => {
     const { GET } = await import("./route");
     const response = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${METEORA_TSLA}`));
     expect(response.status).toBe(200);
     expect((await response.json()).points).toHaveLength(3);
-    const thin = (r: Response) => [r.headers.get("cache-control"), r.headers.get("cdn-cache-control"), r.headers.get("vercel-cdn-cache-control")];
-    expect(thin(response)).toEqual(["public, max-age=0, must-revalidate", "public, s-maxage=300", "public, s-maxage=300"]);
-    // The in-memory answer served next is held to the same rule.
+    const headers = (r: Response) => [r.headers.get("cache-control"), r.headers.get("cdn-cache-control"), r.headers.get("vercel-cdn-cache-control")];
+    expect(headers(response)).toEqual(["public, max-age=0, must-revalidate", "public, s-maxage=3600, stale-while-revalidate=86400", "public, s-maxage=3600, stale-while-revalidate=86400"]);
     const again = await GET(new Request(`http://localhost/api/pool-daily-apr?poolId=${METEORA_TSLA}`));
-    expect(thin(again)).toEqual(["public, max-age=0, must-revalidate", "public, s-maxage=300", "public, s-maxage=300"]);
+    expect(headers(again)).toEqual(["public, max-age=0, must-revalidate", "public, s-maxage=3600, stale-while-revalidate=86400", "public, s-maxage=3600, stale-while-revalidate=86400"]);
   });
 
   it("an upstream 429 is an error no CDN keeps (SP-2)", async () => {
@@ -329,5 +328,21 @@ describe("GET /api/pool-daily-apr (pool not on Raydium)", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect((await response.json()).error).toBe("No supported pool has that address.");
     expect(getCachedPoolDailyApr(unknown)).toBeNull();
+  });
+});
+
+describe("tooLittleData (CDN five-minute cache)", () => {
+  const fetchedAt = new Date(NOW_MS).toISOString();
+  it("is true only when there is no complete day to project from", async () => {
+    const { tooLittleData } = await import("./route");
+    expect(tooLittleData({ points: [], fetchedAt })).toBe(true);
+    expect(tooLittleData({
+      points: [{ time: D1, date: "2026-10-07", aprPct: null, volumeUsd: null, tvlUsd: 1 }],
+      fetchedAt,
+    })).toBe(true);
+    expect(tooLittleData({
+      points: [{ time: D1, date: "2026-10-07", aprPct: 3.1, volumeUsd: 1, tvlUsd: 1 }],
+      fetchedAt,
+    })).toBe(false);
   });
 });

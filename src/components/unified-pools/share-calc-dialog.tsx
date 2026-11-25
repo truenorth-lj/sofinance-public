@@ -82,7 +82,7 @@ export function shareCalcProjection(basis: PoolPlanBasis, amount: string, days: 
  * button and the assumptions on the right (stacked on phones, amount first). The only planning surface while
  * `/app/plan` is off (it redirects here): best of the 7 / 30 / 90-day averages, the LP's share of fees capped at what
  * the pool really paid and split with the deposit, the same fees every day with no compounding, the DEX's opening and closing costs
- * (`projectPoolPlan`); read-only. Too few days of data hides the numbers; a small pool gets a warning (`planDataNotice`).
+ * (`projectPoolPlan`); read-only. No complete day of data hides the numbers; a short window or a small pool gets a note (`planDataNotice`).
  */
 export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; open: OpenAction; onClose: () => void }) {
   const poolYield = usePoolYield(pool.poolAddress);
@@ -163,7 +163,7 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
 
           <OpenCta action={openFromHere} label={pool.pairLabel} />
 
-          {plan && notice?.kind === "warn" ? <p role="note" data-testid="share-calc-warning"
+          {plan && (notice?.kind === "warn" || notice?.kind === "info") ? <p role="note" data-testid={notice.kind === "warn" ? "share-calc-warning" : "share-calc-info"}
             className="rounded-xl border border-lemon/30 bg-lemon/10 px-4 py-3 text-[12px] leading-relaxed text-cream">{notice.message}</p> : null}
 
           {plan && projection && best ? <dl className={cn(panel, "px-4 py-2.5")} data-testid="share-calc-assumptions">

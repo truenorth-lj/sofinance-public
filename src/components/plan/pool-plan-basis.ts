@@ -19,8 +19,8 @@ export type PlanBasisPool = {
 /**
  * Everything the projection of one pool rests on, shared by the Calculate dialog and the homepage estimator (SP-2) so
  * both read the same numbers: the asset it is counted in, the DEX's plan terms, the exit (keep the pool tokens), the TVL
- * the pool's fees are split by, and the best 7 / 30 / 90-day average from `usePoolYield` (`selectBestPlanApr`). Too few
- * days of data (`planDataNotice` "hide") leave `best` null, so no numbers are shown.
+ * the pool's fees are split by, and the best 7 / 30 / 90-day average from `usePoolYield` (`selectBestPlanApr`). No complete
+ * day of data (`planDataNotice` "hide") leaves `best` null, so no numbers are shown.
  */
 export function poolPlanBasis(pool: PlanBasisPool, poolYield: PoolYieldState) {
   const symbols = pairLabelSymbols(pool.pairLabel);

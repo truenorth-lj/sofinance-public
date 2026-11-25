@@ -9,6 +9,14 @@ export const HIGHEST_RANGE_APR_7D_HELP =
 export const CARD_RANGE_APR_7D_HELP =
   "Estimated from the past 7 days' average volume and LP net fees, for a $1,000 deposit in this range. Not a prediction. Fees not guaranteed.";
 
+/** Same help, with "based on N days of data" when the volume window is shorter than 7 days. */
+export function cardRangeAprHelp(days: number): string {
+  if (days >= 1 && days < 7) {
+    return `Estimated from average volume and LP net fees, based on ${days} ${days === 1 ? "day" : "days"} of data, for a $1,000 deposit in this range. Not a prediction. Fees not guaranteed.`;
+  }
+  return CARD_RANGE_APR_7D_HELP;
+}
+
 /** Today's volume vs the 7-day daily average: a ratio above this (or below its inverse) gets a note. */
 export const VOLUME_DIVERGENCE_THRESHOLD = 2;
 

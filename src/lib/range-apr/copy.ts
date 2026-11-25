@@ -17,5 +17,5 @@ export const BEST_HELP =
   "A higher APR usually means a narrower range and a higher risk of leaving range.";
 
 export const HIGHEST_RANGE_HELP =
-  "The candidate range (Micro, Tight, Standard or Wide) with the highest estimated fee APR for this pool, from the last 7 days of data; " +
+  "The candidate range (Micro, Tight, Standard or Wide) with the highest estimated fee APR for this pool, from the days of data in this estimate; " +
   "ties go to the wider range. A higher APR usually means a higher risk of leaving range.";

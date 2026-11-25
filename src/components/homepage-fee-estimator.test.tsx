@@ -26,7 +26,7 @@ const spcx = pool("SpcxPool111", "SPCXx", "SPCX", { usdPerShare: 200 });
 const CARD_APR: Record<string, number> = { [usdc.key]: 118.7, [sndk.key]: 64.2, [spcx.key]: 22.5 };
 const apr7d = (p: UnifiedPool) => CARD_APR[p.key] ?? null;
 const APR_STATES = Object.fromEntries(Object.entries(CARD_APR).map(([key, aprPct]) =>
-  [key, { status: "ready" as const, aprPct, rangeLabel: "Standard (±0.3%)", lowConfidence: false, avgDailyVolumeUsd: null }]));
+  [key, { status: "ready" as const, aprPct, rangeLabel: "Standard (±0.3%)", lowConfidence: false, avgDailyVolumeUsd: null, days: 7 }]));
 const ALL = [spcx, usdc, sndk];
 
 const DAY = 86_400;
@@ -144,7 +144,6 @@ describe("HomepageFeeEstimator", () => {
   it.each([
     ["a 429", () => new Response(JSON.stringify({ error: "Too many requests" }), { status: 429 })],
     ["an error", () => new Response(JSON.stringify({ error: "Upstream request failed (502)" }), { status: 502 })],
-    ["too little data", (poolId: string) => new Response(JSON.stringify({ poolId, points: series(3, 31), fetchedAt: FETCHED_AT }), { status: 200 })],
     ["no data days", (poolId: string) => new Response(JSON.stringify({ poolId, points: [], fetchedAt: FETCHED_AT }), { status: 200 })],
   ])("on %s says the estimate is unavailable, with no number and never the card's APR", async (_name, respond) => {
     answer = respond;
@@ -153,5 +152,13 @@ describe("HomepageFeeEstimator", () => {
     expect(el.querySelector('[data-testid="estimator-fees"]')).toBeNull();
     expect(el.querySelector('[data-testid="estimator-basis"]')).toBeNull();
     expect(el.textContent).not.toMatch(/64\.2|APR/);
+  });
+
+  it("shows the estimate from a short window of complete days, never the card's APR as a stand-in", async () => {
+    answer = (poolId: string) => new Response(JSON.stringify({ poolId, points: series(3, 31), fetchedAt: FETCHED_AT }), { status: 200 });
+    const el = await render();
+    expect(el.querySelector('[data-testid="estimator-unavailable"]')).toBeNull();
+    expect(el.querySelector('[data-testid="estimator-fees"]')).not.toBeNull();
+    expect(el.textContent).not.toMatch(/64\.2/);
   });
 });

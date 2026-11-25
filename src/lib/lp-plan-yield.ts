@@ -1,7 +1,7 @@
 import Decimal from "decimal.js";
 import { validNumber } from "./lp-accounting";
 import { MAX_PLAN_DAYS } from "./lp-intent";
-import { MIN_DATA_DAYS } from "./min-data-days";
+import { MIN_APR_DATA_DAYS } from "./min-data-days";
 
 const D = Decimal.clone({ precision: 60 });
 
@@ -27,8 +27,8 @@ export function planOpenCostPctLabel(bps: number = PLAN_OPEN_COST_BPS): string {
   return new D(bps).div(100).toFixed();
 }
 
-/** Complete UTC days needed before the average is shown as a normal headline. */
-export const PLAN_MIN_RELIABLE_SAMPLE_DAYS = MIN_DATA_DAYS;
+/** Complete UTC days needed before any projection is shown (same bar as the cards). */
+export const PLAN_MIN_RELIABLE_SAMPLE_DAYS = MIN_APR_DATA_DAYS;
 
 /** Share of a trailing window's days that must hold data before that window can be picked as the best average. */
 export const PLAN_WINDOW_MIN_COVERAGE = 0.8;
@@ -36,21 +36,21 @@ export const PLAN_WINDOW_MIN_COVERAGE = 0.8;
 /**
  * Days of data a trailing window needs to count: `PLAN_MIN_RELIABLE_SAMPLE_DAYS`, and for a window of `windowDays` also
  * 80% of its length (a 30-day window needs 24 days, a 90-day window 72), so a short history never stands in for a long
- * window. Without `windowDays` it is the plain 7-day bar below which nothing is shown.
+ * window. Without `windowDays` it is the 1-day bar below which nothing is shown.
  */
 export function planMinSampleDays(windowDays?: number): number {
   if (windowDays === undefined) return PLAN_MIN_RELIABLE_SAMPLE_DAYS;
   return Math.max(PLAN_MIN_RELIABLE_SAMPLE_DAYS, Math.ceil(PLAN_WINDOW_MIN_COVERAGE * windowDays));
 }
 
-/** Too few days of data: under 7 overall, or, given the window's length, under `planMinSampleDays(windowDays)`. */
+/** Too few days of data: under 1 overall, or, given the window's length, under `planMinSampleDays(windowDays)`. */
 export function isThinPlanSample(sampleDays: number, windowDays?: number): boolean {
   return sampleDays < planMinSampleDays(windowDays);
 }
 
 /**
  * The windows that may be picked (best or low): the ones that pass `isThinPlanSample` for their own length; when none
- * does, the ones with at least 7 days; when none has that either, all of them (the caller then hides the numbers).
+ * does, the ones with at least one complete day; when none has that either, all of them (the caller then hides the numbers).
  */
 export function planAprContenders<W extends { windowDays: number; sampleDays: number }>(windows: readonly W[]): readonly W[] {
   const covered = windows.filter((window) => !isThinPlanSample(window.sampleDays, window.windowDays));

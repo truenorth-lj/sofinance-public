@@ -103,17 +103,19 @@ describe("aprToApyPct", () => {
 });
 
 describe("isThinPlanSample", () => {
-  it("treats fewer than 7 complete days as too little history", () => {
-    expect(PLAN_MIN_RELIABLE_SAMPLE_DAYS).toBe(7);
-    expect(isThinPlanSample(3)).toBe(true);
-    expect(isThinPlanSample(6)).toBe(true);
+  it("treats a window with no complete day as too little history", () => {
+    expect(PLAN_MIN_RELIABLE_SAMPLE_DAYS).toBe(1);
+    expect(isThinPlanSample(0)).toBe(true);
+    expect(isThinPlanSample(1)).toBe(false);
+    expect(isThinPlanSample(3)).toBe(false);
+    expect(isThinPlanSample(6)).toBe(false);
     expect(isThinPlanSample(7)).toBe(false);
     expect(isThinPlanSample(29)).toBe(false);
   });
 
-  it("given the window, also needs 80% of its days: 7 for 7d, 24 for 30d, 72 for 90d", () => {
-    expect([7, 30, 90].map((windowDays) => planMinSampleDays(windowDays))).toEqual([7, 24, 72]);
-    expect(planMinSampleDays()).toBe(7);
+  it("given the window, also needs 80% of its days: 6 for 7d, 24 for 30d, 72 for 90d", () => {
+    expect([7, 30, 90].map((windowDays) => planMinSampleDays(windowDays))).toEqual([6, 24, 72]);
+    expect(planMinSampleDays()).toBe(1);
     expect(isThinPlanSample(13, 90)).toBe(true); // NVDAx/NVDA Meteora: 13 days never stand in for 90
     expect(isThinPlanSample(13, 30)).toBe(true);
     expect(isThinPlanSample(13, 7)).toBe(false);
@@ -121,7 +123,8 @@ describe("isThinPlanSample", () => {
     expect(isThinPlanSample(24, 30)).toBe(false);
     expect(isThinPlanSample(71, 90)).toBe(true);
     expect(isThinPlanSample(72, 90)).toBe(false);
-    expect(isThinPlanSample(6, 7)).toBe(true);
+    expect(isThinPlanSample(6, 7)).toBe(false);
+    expect(isThinPlanSample(5, 7)).toBe(true);
   });
 });
 
@@ -129,7 +132,7 @@ describe("planAprContenders", () => {
   const w = (windowDays: number, sampleDays: number) => ({ windowDays, sampleDays });
   it("keeps only covered windows, else those with a week of data, else all", () => {
     expect(planAprContenders([w(7, 7), w(30, 13), w(90, 13)])).toEqual([w(7, 7)]);
-    expect(planAprContenders([w(7, 6), w(30, 13)])).toEqual([w(30, 13)]);
+    expect(planAprContenders([w(7, 6), w(30, 13)])).toEqual([w(7, 6)]);
     expect(planAprContenders([w(7, 4)])).toEqual([w(7, 4)]);
     expect(planAprContenders([w(7, 7), w(30, 30), w(90, 72)])).toHaveLength(3);
   });

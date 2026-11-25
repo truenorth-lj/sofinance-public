@@ -58,14 +58,18 @@ describe("shared Best policy", () => {
       if (result.status === "ready" && result.estimate.status === "ok") expect(result.estimate.aprPct).toBeCloseTo(cap, 12);
     }
   });
-  it("keeps degraded and new-pool card states without inventing a Best", () => {
+  it("keeps degraded and too-new card states without inventing a Best", () => {
     const data = degradedPayloadFixture();
     expect(rangeAprPayload(data, 500)).toBe(data);
     expect(highestRangeSummary(ui, rangeAprPayload(data))).toBeNull();
     expect(summarizeApr7d(data, "raydium-clmm", Date.parse(data.fetchedAt))).toMatchObject({ status: "missing", degraded: true });
     const young = payloadFixture();
+    young.sample.days = 3;
     young.sample.dataDays = 3;
-    expect(summarizeApr7d(young, "raydium-clmm", Date.parse(young.fetchedAt))).toMatchObject({ status: "new", days: 3 });
+    expect(summarizeApr7d(young, "raydium-clmm", Date.parse(young.fetchedAt))).toMatchObject({ status: "ready", days: 3, aprPct: expect.any(Number) });
+    const empty = payloadFixture();
+    empty.sample.days = 0;
+    expect(summarizeApr7d(empty, "raydium-clmm", Date.parse(empty.fetchedAt))).toMatchObject({ status: "new", days: 0 });
   });
   it("does not resurrect unavailable server estimates when switching preview capital", () => {
     const payload = payloadFixture();

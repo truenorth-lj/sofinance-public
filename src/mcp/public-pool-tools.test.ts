@@ -57,7 +57,7 @@ const APR: Record<string, PoolRangeAprPayload> = {
   [POOLS.raydiumTsla]: aprPayload({ micro: 10, tight: 8, standard: 6, wide: 4 }),
   [POOLS.meteoraTsla]: aprPayload({ micro: 40, tight: 30, standard: 20, wide: 10 }),
   [POOLS.raydiumSpy]: aprPayload({ micro: 20, tight: 15, standard: 12, wide: 5 }),
-  [POOLS.newPool]: aprPayload({ micro: 90, tight: 80, standard: 70, wide: 60 }, 7, 3),
+  [POOLS.newPool]: aprPayload({ micro: 90, tight: 80, standard: 70, wide: 60 }, 0, 0),
 };
 
 async function rpc(name: string, args: unknown, headers: Record<string, string> = {}) {
@@ -99,11 +99,11 @@ describe("pools_list over the remote route, no token", () => {
     const meteora = value.pairs.find((row: { poolAddress: string }) => row.poolAddress === POOLS.meteoraTsla);
     expect(meteora).toMatchObject({ protocol: "meteora-dlmm", protocolName: "Meteora", chain: "solana", binStep: 1 });
     expect(meteora.apr7d).toMatchObject({ status: "ready", highestRangeAprPct: expect.any(Number), dataDelayed: false, snapshotAt: SNAPSHOT });
-    // Ready pools by 7-day APR, then the new pool (no APR shown, like the site).
+    // Ready pools by APR, then the too-new pool (no complete day, no APR shown, like the site).
     const order = value.pairs.map((row: { poolAddress: string }) => row.poolAddress);
     expect(order).toEqual([POOLS.meteoraTsla, POOLS.raydiumSpy, POOLS.raydiumTsla, POOLS.newPool]);
     const newPool = value.pairs[3];
-    expect(newPool.apr7d).toMatchObject({ status: "new", daysOfData: 3 });
+    expect(newPool.apr7d).toMatchObject({ status: "new", daysOfData: 0, reason: "Too new: no complete day of trading data yet." });
     expect(newPool.apr7d).not.toHaveProperty("highestRangeAprPct");
     expect(withoutAllowed(JSON.stringify(value))).not.toMatch(/\byield|\bearn|guarantee|backtest/i);
   });

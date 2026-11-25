@@ -221,12 +221,13 @@ describe("PlanApp", () => {
     expect(text()).toContain("Est. best fee APR (compounded daily) 52.2% (not a prediction)");
   });
 
-  it("warns instead of headlining a number when the sample is under 7 days", async () => {
+  it("shows the estimate from the days of data when the sample is under 7 days", async () => {
     mockApr(aprPayload(141.8, 3));
     await render(`pool=${POOL}`);
-    await waitForText("Only 3 complete days of data");
-    expect(text()).toContain("this estimate is unreliable");
-    expect(text()).toContain("too short to treat as a forecast");
+    await waitForText("Est. best fee APR used (compounded daily) · not a prediction");
+    expect(text()).toMatch(/3-day avg|3 complete UTC days|Based on 3 days of data/);
+    expect(text()).not.toContain("this estimate is unreliable");
+    expect(text()).not.toContain("too short to treat as a forecast");
   });
 
   it("resolves a pair-only link from the cached RWA list", async () => {

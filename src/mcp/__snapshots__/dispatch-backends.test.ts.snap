@@ -406,7 +406,7 @@ exports[`http real read/prepare handlers > pools_list preserves backend argument
         "text": "{
   "source": "SoFinance saved pools snapshot (same list as the pools page)",
   "stale": false,
-  "aprWindow": "7-day estimate: the last 7 full UTC days of pool volume against the pool's current liquidity",
+  "aprWindow": "Fee estimate: complete UTC days of pool volume (up to the last 7) against the pool's current liquidity",
   "note": "Estimates from past trading, not a promise of future fees. Fees not guaranteed. Fees accrue only while the pool price is inside your range.",
   "poolsPage": "https://sofinancelab.xyz/pools",
   "rangePresets": [
@@ -951,7 +951,7 @@ exports[`stdio real read/prepare handlers > pools_list preserves backend argumen
         "text": "{
   "source": "SoFinance saved pools snapshot (same list as the pools page)",
   "stale": false,
-  "aprWindow": "7-day estimate: the last 7 full UTC days of pool volume against the pool's current liquidity",
+  "aprWindow": "Fee estimate: complete UTC days of pool volume (up to the last 7) against the pool's current liquidity",
   "note": "Estimates from past trading, not a promise of future fees. Fees not guaranteed. Fees accrue only while the pool price is inside your range.",
   "poolsPage": "https://sofinancelab.xyz/pools",
   "rangePresets": [

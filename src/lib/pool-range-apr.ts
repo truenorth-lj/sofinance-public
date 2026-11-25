@@ -362,7 +362,7 @@ export function assemblePoolRangeApr(
     model: { bins, currentSqrt, usdPerRawB, avgDailyVolumeUsd: volume.avgDailyVolumeUsd },
     sample: {
       days: volume.days,
-      // Days the pool traded and had TVL (`countDataDays`, the calculator's count): the cards' "New pool" test.
+      // Days the pool traded and had TVL (`countDataDays`, the calculator's count): kept for the day count.
       ...(volume.dayVolumes ? { dataDays: countDataDays(volume.dayVolumes.map((day) => ({ volumeUsd: day.volumeUsd, tvlUsd: economics.tvlUsd }))) } : {}),
       volumeSource: volume.source, ...(volume.protocol ? { volumeProtocol: volume.protocol } : {}), occupancySource,
       candleCount: windowCandles.length,

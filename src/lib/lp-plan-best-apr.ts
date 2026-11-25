@@ -61,7 +61,7 @@ export function trailingWindowAverage(
   const newest = Math.max(...complete.map((point) => point.time));
   const oldest = newest - (windowDays - 1) * SECONDS_PER_DAY;
   const inWindow = complete.filter((point) => point.time >= oldest && point.time <= newest);
-  // Days of data: the same `isDataDay` count the cards use for "New pool" (both volume and TVL; an APR alone is enough
+  // Days of data: the same `isDataDay` count the cards and the calculator share (both volume and TVL; an APR alone is enough
   // for callers that pass no volume).
   const finite = inWindow.filter(hasData);
   const aprPct = averageCompleteDayAprPct(finite);

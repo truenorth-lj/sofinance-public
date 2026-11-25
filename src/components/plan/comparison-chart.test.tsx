@@ -58,10 +58,11 @@ describe("ComparisonChart", () => {
     expect(markup).not.toContain("after 1 days");
   });
 
-  it("warns when the sample is too short and does not treat it as normal", () => {
+  it("treats a short window as a normal estimate and names the days of data", () => {
     const markup = render(plan({ capital: "10000", days: 30, aprPct: "141.8", sampleDays: 3 }));
-    expect(markup).toContain("Only 3 complete UTC days of data");
-    expect(markup).toContain("this estimate is unreliable");
+    expect(markup).toContain("3 complete UTC days");
+    expect(markup).not.toContain("this estimate is unreliable");
+    expect(markup).not.toContain("Only 3 complete UTC days of data");
   });
 
   it("says break-even is not within the period when the curve stays negative", () => {

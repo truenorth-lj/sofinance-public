@@ -39,7 +39,7 @@ vi.mock("@/lib/dex/client", async (importOriginal) => {
 });
 vi.mock("./use-pools-apr7d", () => ({
   usePoolsApr7d: (pools: UnifiedPool[]) => Object.fromEntries(pools.map((pool): [string, Apr7dState] => [pool.key,
-    mocks.state[pool.poolAddress] ?? (pool.poolAddress in mocks.apr ? { status: "ready", aprPct: mocks.apr[pool.poolAddress]!, rangeLabel: "Standard", lowConfidence: false, avgDailyVolumeUsd: null } : { status: "missing", reason: "No 7-day estimate" })])),
+    mocks.state[pool.poolAddress] ?? (pool.poolAddress in mocks.apr ? { status: "ready", aprPct: mocks.apr[pool.poolAddress]!, rangeLabel: "Standard", lowConfidence: false, avgDailyVolumeUsd: null, days: 7 } : { status: "missing", reason: "No 7-day estimate" })])),
 }));
 vi.mock("../wallet-connection", () => ({ useWalletConnection: () => ({ connected: mocks.connected, connect: mocks.connect }) }));
 vi.mock("./registry-open-modal", () => ({ RegistryOpenModal: (props: { pool: { poolAddress: string }; descriptor: { id: string } }) => {
@@ -386,23 +386,41 @@ describe("UnifiedPoolsPanel TVL filter", () => {
 describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {
   const card = (key: string) => container.querySelector<HTMLLIElement>(`[data-pool='${key}']`)!;
 
-  it("a new pool (under 7 days of data) shows 'New pool · N days of data', no APR figure, and ranks after every pool with an APR", async () => {
+  it("a short-window pool shows its APR, labelled based on N days of data, and ranks by the number", async () => {
     mocks.apr = { spcxA: 40, tsla: 20 };
-    mocks.state = { spcxA: { status: "new", days: 6 } };
+    mocks.state = {
+      spcxA: { status: "ready", aprPct: 40, rangeLabel: "Tight (±0.05%)", lowConfidence: false, avgDailyVolumeUsd: null, days: 6 },
+    };
+    await render();
+    expect(shown()[0]).toBe("solana:spcxA");
+    const amzn = card("solana:spcxA");
+    expect(amzn.querySelector("[data-testid=apr7d]")!.textContent).toBe("40.00%");
+    expect(amzn.querySelector("[data-testid=apr7d-short-note]")!.textContent).toBe("based on 6 days of data.");
+    expect(amzn.querySelector("[data-testid=highest-range]")!.textContent).toBe("Tight (±0.05%)");
+    act(() => { amzn.querySelector<HTMLButtonElement>("button[aria-label='About Est. highest range APR']")!.focus(); });
+    expect(amzn.querySelector("[role=tooltip] [data-testid=apr7d-label]")!.textContent).toBe("Tight-range APR · based on 6 days of data");
+    expect(amzn.querySelector("[role=tooltip]")!.textContent).toContain("based on 6 days of data");
+    await act(async () => { button("List").click(); });
+    const row = container.querySelector("[data-testid=pools-table] tr[data-pool='solana:spcxA']")!;
+    expect(row.querySelector("[data-testid=apr7d]")!.textContent).toBe("40.00%");
+    expect(row.querySelector("[data-testid=apr7d-short-days]")!.textContent).toBe("based on 6 days of data");
+  });
+
+  it("a pool with no complete day shows Too new, no APR figure, and ranks after every pool with an APR", async () => {
+    mocks.apr = { spcxA: 40, tsla: 20 };
+    mocks.state = { spcxA: { status: "new", days: 0 } };
     await render();
     expect(shown()[0]).toBe("solana:tsla");
     expect(shown().indexOf("solana:spcxA")).toBeGreaterThan(shown().indexOf("solana:tsla"));
     const amzn = card("solana:spcxA");
-    expect(amzn.querySelector("[data-testid=apr7d]")!.textContent).toBe("New pool");
-    // The day count is in the ⓘ next to the pill now, not in a line under it.
+    expect(amzn.querySelector("[data-testid=apr7d]")!.textContent).toBe("Too new");
     act(() => { amzn.querySelector<HTMLButtonElement>("button[aria-label='About Est. highest range APR']")!.focus(); });
-    expect(amzn.querySelector("[role=tooltip] [data-testid=apr7d-label]")!.textContent).toBe("6 days of data");
-    expect(amzn.querySelector("[role=tooltip]")!.textContent).toContain("An APR shows once it has 7 days.");
-    expect(amzn.querySelector("[data-testid=apr7d-new-note]")!.textContent).toContain("7 days of data");
+    expect(amzn.querySelector("[role=tooltip] [data-testid=apr7d-label]")!.textContent).toBe("Too new");
+    expect(amzn.querySelector("[role=tooltip]")!.textContent).toContain("An APR shows once it has 1 complete day of data.");
+    expect(amzn.querySelector("[data-testid=apr7d-new-note]")!.textContent).toContain("1 complete day of data");
     expect(amzn.querySelector("[data-testid=highest-range]")!.textContent).toBe("—");
     expect(amzn.querySelector("[data-testid=pool-fee-apr]")).toBeNull();
     expect(amzn.textContent).not.toMatch(/\d%/);
-    // The list view, sorted by the 7d APR column in either direction, keeps it last too.
     await act(async () => { button("List").click(); });
     const rows = () => [...container.querySelectorAll("[data-testid=pools-table] tbody tr")].map((row) => row.getAttribute("data-pool"));
     const header = (text: string) => [...container.querySelectorAll<HTMLButtonElement>("[data-testid=pools-table] th button")].find((el) => el.textContent?.includes(text))!;
@@ -412,14 +430,13 @@ describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {
       expect(rows().at(-1)).toBe("solana:spcxA");
     }
     const row = container.querySelector("[data-testid=pools-table] tr[data-pool='solana:spcxA']")!;
-    expect(row.querySelector("[data-testid=apr7d]")!.textContent).toBe("New pool");
-    expect(row.querySelector("[data-testid=apr7d-new-days]")!.textContent).toBe("6 days of data");
+    expect(row.querySelector("[data-testid=apr7d]")!.textContent).toBe("Too new");
     expect(row.querySelector("[data-testid=apr24h]")).toBeNull();
   });
 
   it("shows the highest range next to its 7d APR, and a delayed note with no Updated time", async () => {
     mocks.state = {
-      spcxA: { status: "ready", aprPct: 38, rangeLabel: "Tight (±0.05%)", lowConfidence: true, avgDailyVolumeUsd: 100,
+      spcxA: { status: "ready", aprPct: 38, rangeLabel: "Tight (±0.05%)", lowConfidence: true, avgDailyVolumeUsd: 100, days: 7,
         freshness: { snapshotAt: "2026-10-30T00:15:00.000Z", delayed: true } },
       tsla: { status: "missing", reason: "Not enough recent trading data for a 7-day estimate.", degraded: true },
     };
@@ -443,8 +460,8 @@ describe("UnifiedPoolsPanel cards (the RWA pairs card fields)", () => {
 
   it("names the best range and its $1,000 basis in the label, and shows Highest range on every ready card", async () => {
     mocks.state = {
-      tsla: { status: "ready", aprPct: 11.4, rangeLabel: "Tight (±0.05%)", lowConfidence: false, avgDailyVolumeUsd: null },
-      spcxA: { status: "ready", aprPct: 51.75, rangeLabel: "Micro", lowConfidence: false, avgDailyVolumeUsd: null },
+      tsla: { status: "ready", aprPct: 11.4, rangeLabel: "Tight (±0.05%)", lowConfidence: false, avgDailyVolumeUsd: null, days: 7 },
+      spcxA: { status: "ready", aprPct: 51.75, rangeLabel: "Micro", lowConfidence: false, avgDailyVolumeUsd: null, days: 7 },
     };
     await render();
     const tsla = card("solana:tsla");
@@ -542,7 +559,7 @@ describe("UnifiedPoolsPanel: Low TVL and Not supported yet (PM 2026-11-04)", () 
   const NVDA_REASON = "This token uses a balance multiplier, which we don't support yet.";
   beforeEach(() => {
     mocks.apr = { big: 5, googl: 177, skhy: 13, nvda: 300 };
-    mocks.state = { intc: { status: "new", days: 5 } };
+    mocks.state = { intc: { status: "ready", aprPct: 10, rangeLabel: "Standard", lowConfidence: false, avgDailyVolumeUsd: null, days: 5 } };
     vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, json: async () => (url.startsWith("/api/rwa-pairs") ? { pairs: [
       row("nvda", "NVDAx", "NVDA", "n1", "n2", { tvlUsd: 10_500, unsupported: { issues: ["ScaledUiAmount multiplier not 1"], mints: ["n1"] } }),
       row("intc", "INTCx", "INTC", "i1", "i2", { tvlUsd: 1_884 }),
@@ -554,13 +571,15 @@ describe("UnifiedPoolsPanel: Low TVL and Not supported yet (PM 2026-11-04)", () 
   const flags = { ...PROD, rhc: false };
   const card = (key: string) => container.querySelector(`[data-testid=pools-cards] [data-pool='${key}']`)!;
 
-  it("orders normal, Low TVL, New pool, Not supported yet; tags Low TVL cards; NVDAx shows a disabled Not supported yet", async () => {
+  it("orders normal, Low TVL, Not supported yet; tags Low TVL cards; NVDAx shows a disabled Not supported yet", async () => {
     await render(flags);
     expect(shown()).toEqual(["solana:big", "solana:googl", "solana:skhy", "solana:intc", "solana:nvda"]);
     expect(card("solana:googl").querySelector("[data-testid=low-tvl-tag]")!.textContent).toContain("Low TVL");
     expect(card("solana:googl").querySelector("[data-testid=apr7d]")!.textContent).toBe("177.00%");
     expect(card("solana:big").querySelector("[data-testid=low-tvl-tag]")).toBeNull();
-    expect(card("solana:intc").querySelector("[data-testid=low-tvl-tag]")).toBeNull(); // a new pool says New pool instead
+    expect(card("solana:intc").querySelector("[data-testid=low-tvl-tag]")!.textContent).toContain("Low TVL");
+    expect(card("solana:intc").querySelector("[data-testid=apr7d]")!.textContent).toBe("10.00%");
+    expect(card("solana:intc").querySelector("[data-testid=apr7d-short-note]")!.textContent).toBe("based on 5 days of data.");
     const nvda = card("solana:nvda");
     const unsupported = nvda.querySelector("[data-testid=open-unsupported]")!;
     expect(unsupported.textContent).toContain("Not supported yet");
@@ -577,7 +596,7 @@ describe("UnifiedPoolsPanel: Low TVL and Not supported yet (PM 2026-11-04)", () 
     const header = () => [...container.querySelectorAll<HTMLButtonElement>("[data-testid=pools-table] th button")].find((el) => el.textContent?.includes("APR 7d"))!;
     expect(rows()).toEqual(["solana:big", "solana:googl", "solana:skhy", "solana:intc", "solana:nvda"]);
     await act(async () => { header().click(); });
-    expect(rows()).toEqual(["solana:big", "solana:skhy", "solana:googl", "solana:intc", "solana:nvda"]);
+    expect(rows()).toEqual(["solana:big", "solana:intc", "solana:skhy", "solana:googl", "solana:nvda"]);
     await act(async () => { header().click(); });
     expect(rows()).toEqual(["solana:big", "solana:googl", "solana:skhy", "solana:intc", "solana:nvda"]);
     const tr = (key: string) => container.querySelector(`[data-testid=pools-table] tr[data-pool='${key}']`)!;

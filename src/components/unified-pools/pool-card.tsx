@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { CARD_RANGE_APR_7D_HELP } from "@/lib/apr-labels/copy";
+import { cardRangeAprHelp } from "@/lib/apr-labels/copy";
 import { cn } from "@/lib/cn";
 import { uiFor } from "@/lib/dex/client";
 import { volumeDivergenceNote } from "@/lib/apr-labels/volume-divergence";
@@ -16,9 +16,9 @@ import { CALCULATE_LABEL } from "@/lib/unified-pools/calculate-label";
 import { poolPlanCapability } from "@/lib/unified-pools/plan-support";
 import { InfoTip } from "../info-tip";
 import { PairTokenIcons } from "../pair-token-icons";
-import { dataDaysLabel, MIN_DATA_DAYS } from "@/lib/min-data-days";
+import { basedOnDataDaysLabel, isShortAprWindow, MIN_APR_DATA_DAYS } from "@/lib/min-data-days";
 import { shortAddress } from "@/lib/format/address";
-import { APR7D_SHORT, Apr7dValue, newPoolTitle, rangeApr7dLabel, ChainBadge, chip, iconPair, LowTvlTag, money, OpenButton, type OpenAction } from "./pool-list";
+import { APR7D_SHORT, Apr7dValue, NEW_POOL_LABEL, newPoolTitle, rangeApr7dLabel, ChainBadge, chip, iconPair, LowTvlTag, money, OpenButton, type OpenAction } from "./pool-list";
 import type { Apr7dState } from "./use-pools-apr7d";
 import { chainMeta } from "./use-pool-sources";
 
@@ -82,17 +82,19 @@ export function PoolCard({ pool, apr, action, icons, onCalculate, calculateHref,
       {/* The APR pill with its ⓘ beside it on one row; what the number is lives in the ⓘ, not in a label line. */}
       <div className="flex shrink-0 items-center gap-1.5" data-testid="apr7d-row">
         <Apr7dValue state={apr} />
-        {ready ? <AprTip label={rangeApr7dLabel(ready.rangeLabel)}>
-          {withVolumeNote(CARD_RANGE_APR_7D_HELP)}{ready.lowConfidence ? " Low confidence for this pool: thin or patchy recent trading." : ""}
+        {ready ? <AprTip label={rangeApr7dLabel(ready.rangeLabel, ready.days)}>
+          {withVolumeNote(cardRangeAprHelp(ready.days))}{ready.lowConfidence ? " Low confidence for this pool: thin or patchy recent trading." : ""}
         </AprTip>
-          : apr?.status === "new" ? <AprTip label={dataDaysLabel(apr.days)}>{newPoolTitle(apr.days)}</AprTip>
+          : apr?.status === "new" ? <AprTip label={NEW_POOL_LABEL}>{newPoolTitle()}</AprTip>
           : apr?.status === "missing" ? <AprTip label={APR7D_SHORT}>{apr.degraded ? `${unavailableReasonText("degraded-data")}.` : apr.reason}</AprTip>
           : <AprTip label={APR7D_SHORT} />}
       </div>
     </div>
     {apr?.status === "missing" && <p className="mt-2 text-xs text-ink/60">{apr.reason}</p>}
     {apr?.status === "new" && <p className="mt-2 text-xs text-ink/60" data-testid="apr7d-new-note">
-      Too new for an APR: it shows once the pool has {MIN_DATA_DAYS} days of data.</p>}
+      Too new for an APR: it shows once the pool has {MIN_APR_DATA_DAYS} complete day of data.</p>}
+    {ready && isShortAprWindow(ready.days) && <p className="mt-2 text-xs text-ink/60" data-testid="apr7d-short-note">
+      {basedOnDataDaysLabel(ready.days)}.</p>}
     {/* No "Updated …" time on the card; only a late snapshot says so (its time in the title, like the table). */}
     {freshness?.delayed && <p className="mt-2 text-xs text-ink/60" data-testid="apr-delayed"
       title={`Snapshot from ${new Date(freshness.snapshotAt).toLocaleString()}`}>Data delayed</p>}

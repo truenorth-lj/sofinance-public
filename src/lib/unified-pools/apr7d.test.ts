@@ -5,7 +5,7 @@ import { highestRangeSummary } from "@/lib/range-apr/preset-list";
 import { payloadForCapital } from "@/lib/range-apr/size-aware";
 import { OPEN_RANGE_UI_PRESETS } from "@sofinance/engine/open-range-presets";
 import { capAprAtPoolFees, CARD_APR_DEPOSIT_USD } from "@/lib/lp-plan-pool-terms";
-import { cardDataDays, poolLpFeesPerDayUsd, rankGroupLookup, summarizeApr7d, type Apr7dState } from "./apr7d";
+import { cardDataDays, cardWindowDays, poolLpFeesPerDayUsd, rankGroupLookup, summarizeApr7d } from "./apr7d";
 import type { UnifiedPool, UnifiedProtocol } from "./model";
 import { resolveRhcPresetRanges } from "@/lib/rhc-range-apr-presets";
 import { estimateRangeApr } from "@/lib/range-apr/range-apr";
@@ -21,15 +21,19 @@ const amzn = (days: number) => {
   return payload;
 };
 
-describe("summarizeApr7d: 7-day minimum", () => {
-  it("under 7 days of data is a new pool with its day count and no APR", () => {
-    const state = summarizeApr7d(amzn(6), "raydium-clmm", NOW);
-    expect(state).toMatchObject({ status: "new", days: 6 });
+describe("summarizeApr7d: show an estimate from 1 complete UTC day", () => {
+  it("1–6 days shows the APR and the window length", () => {
+    const six = summarizeApr7d(amzn(6), "raydium-clmm", NOW);
+    expect(six).toMatchObject({ status: "ready", days: 6, aprPct: expect.any(Number) });
+    expect(summarizeApr7d(amzn(1), "raydium-clmm", NOW)).toMatchObject({ status: "ready", days: 1, aprPct: expect.any(Number) });
+  });
+  it("0 complete days is too new, with no APR", () => {
+    const state = summarizeApr7d(amzn(0), "raydium-clmm", NOW);
+    expect(state).toMatchObject({ status: "new", days: 0 });
     expect(state).not.toHaveProperty("aprPct");
-    expect(summarizeApr7d(amzn(1), "raydium-clmm", NOW)).toMatchObject({ status: "new", days: 1 });
   });
   it("7 days shows an APR", () => {
-    expect(summarizeApr7d(amzn(7), "raydium-clmm", NOW)).toMatchObject({ status: "ready", aprPct: expect.any(Number) });
+    expect(summarizeApr7d(amzn(7), "raydium-clmm", NOW)).toMatchObject({ status: "ready", days: 7, aprPct: expect.any(Number) });
   });
   it("an expired snapshot stays '—' (missing), whatever its day count", () => {
     expect(summarizeApr7d(amzn(6), "raydium-clmm", Date.parse(SNAPSHOT) + 49 * 3_600_000).status).toBe("missing");
@@ -116,9 +120,13 @@ describe("summarizeApr7d: every protocol shows the best 7-day range", () => {
     payload.sample.degraded = true;
     expect(summarizeApr7d(payload, protocol, NOW)).toMatchObject({ status: "missing", degraded: true });
     const young = fresh(payloadFixture());
+    young.sample.days = 3;
     young.sample.dataDays = 3;
-    expect(summarizeApr7d(young, protocol, NOW)).toMatchObject({ status: "new", days: 3 });
-    expect(summarizeApr7d(young, protocol, Date.parse(SNAPSHOT) + 49 * 3_600_000).status).toBe("missing");
+    expect(summarizeApr7d(young, protocol, NOW)).toMatchObject({ status: "ready", days: 3, aprPct: expect.any(Number) });
+    const empty = fresh(payloadFixture());
+    empty.sample.days = 0;
+    expect(summarizeApr7d(empty, protocol, NOW)).toMatchObject({ status: "new", days: 0 });
+    expect(summarizeApr7d(empty, protocol, Date.parse(SNAPSHOT) + 49 * 3_600_000).status).toBe("missing");
   });
 
   it("keeps the real RHC Min candidate (and the same number on Raydium)", () => {
@@ -141,27 +149,27 @@ describe("summarizeApr7d: every protocol shows the best 7-day range", () => {
   });
 });
 
-describe("cardDataDays: the calculator's strict count (days with volume and TVL)", () => {
-  it("uses the payload's dataDays, falling back to the sample's days on older snapshots", () => {
+describe("cardWindowDays / cardDataDays", () => {
+  it("cardDataDays uses the payload's dataDays, falling back to the sample's days on older snapshots", () => {
     const payload = payloadFixture();
     expect(cardDataDays({ ...payload, sample: { ...payload.sample, days: 7 } })).toBe(7);
     expect(cardDataDays({ ...payload, sample: { ...payload.sample, days: 7, dataDays: 5 } })).toBe(5);
   });
-  it("a pool 7 calendar days old with 5 traded days is a new pool (INTCx 9Ur3…C41K)", () => {
+  it("the card uses the volume-window length, so a 7-day window with 5 traded days still shows a 7-day APR", () => {
     const payload = fresh(payloadFixture());
     payload.sample = { ...payload.sample, days: 7, dataDays: 5 };
-    expect(summarizeApr7d(payload, "raydium-clmm", NOW)).toMatchObject({ status: "new", days: 5 });
+    expect(cardWindowDays(payload)).toBe(7);
+    expect(summarizeApr7d(payload, "raydium-clmm", NOW)).toMatchObject({ status: "ready", days: 7, aprPct: expect.any(Number) });
   });
 });
 
 describe("rankGroupLookup", () => {
-  it("puts a pool whose APR state is new in the New pool group; Not supported yet still wins", () => {
+  it("has no New pool group: short-window and too-new pools rank like anyone else; Not supported yet still wins", () => {
     const pool = (key: string, over: Partial<UnifiedPool> = {}) => ({ key, tvlUsd: 20_000, ...over }) as UnifiedPool;
-    const apr: Record<string, Apr7dState> = { a: { status: "new", days: 3 }, b: { status: "ready", aprPct: 1, rangeLabel: "Tight", lowConfidence: false, avgDailyVolumeUsd: 1 } };
-    const group = rankGroupLookup(apr);
-    expect(group(pool("a"))).toBe(2);
+    const group = rankGroupLookup();
+    expect(group(pool("a"))).toBe(0);
     expect(group(pool("b"))).toBe(0);
     expect(group(pool("b", { tvlUsd: 4_999 }))).toBe(1);
-    expect(group(pool("a", { unsupportedIssues: ["ScaledUiAmount multiplier not 1"] }))).toBe(3);
+    expect(group(pool("a", { unsupportedIssues: ["ScaledUiAmount multiplier not 1"] }))).toBe(2);
   });
 });

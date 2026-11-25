@@ -44,11 +44,11 @@ describe("AMZNx/AMZN launch spike (prod bug, 2026-11-04)", () => {
     expect(new Decimal(plan.feesEarned).lt(poolLpFeesPerYear)).toBe(true);
   });
 
-  it("the calculator hides these numbers: four days is too few to project from", () => {
-    expect(planDataNotice({ sampleDays: best.sampleDays, poolTvlUsd: AMZN_TVL_USD })).toEqual({
-      kind: "hide",
-      message: "Only 4 days of trading data for this pool, too few to project fees from, so no numbers are shown. Check back once it has 7 days.",
-    });
+  it("the calculator shows the capped numbers, with a short-window and small-pool warning", () => {
+    const notice = planDataNotice({ sampleDays: best.sampleDays, poolTvlUsd: AMZN_TVL_USD });
+    expect(notice?.kind).toBe("warn");
+    expect(notice?.message).toContain("Based on 4 days of data.");
+    expect(notice?.message).toContain("Small pool");
   });
 });
 
@@ -81,6 +81,7 @@ describe("planDataNotice", () => {
     });
     expect(planDataNotice({ sampleDays: 12, poolTvlUsd: 5_000 })).toBeNull();
     expect(planDataNotice({ sampleDays: 7, poolTvlUsd: null })).toBeNull();
-    expect(planDataNotice({ sampleDays: 1, poolTvlUsd: 1e9 })?.message).toMatch(/^Only 1 day of trading data/);
+    expect(planDataNotice({ sampleDays: 1, poolTvlUsd: 1e9 })).toEqual({ kind: "info", message: "Based on 1 day of data." });
+    expect(planDataNotice({ sampleDays: 0, poolTvlUsd: 1e9 })?.kind).toBe("hide");
   });
 });

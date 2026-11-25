@@ -125,8 +125,8 @@ export function UnifiedPoolsPanel({ flags, onOpenRhc, deepLinkPool = "", deepLin
   const rwaListKeys = useMemo(() => new Set(loaded.rwaList ?? []), [loaded.rwaList]);
   const apr = usePoolsApr7d(pools, refreshKey, rwaListKeys);
   const apr7d = useCallback((pool: UnifiedPool) => { const state = apr[pool.key]; return state?.status === "ready" ? state.aprPct : null; }, [apr]);
-  // By APR (either direction): normal pools, then Low TVL, then new pools (no APR yet), then pools not supported yet.
-  const group = useMemo(() => rankGroupLookup(apr), [apr]);
+  // By APR (either direction): normal pools, then Low TVL, then pools not supported yet.
+  const group = useMemo(() => rankGroupLookup(), []);
   const selected = useMemo(() => selectPools(pools, { filters, hideDuplicates: !showAll, sort, apr7d, group }), [pools, filters, showAll, sort, apr7d, group]);
 
   /** `connectWallet: false` for deep links: the Create position dialog opens with its own Connect wallet button. */
