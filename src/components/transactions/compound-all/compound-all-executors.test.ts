@@ -309,4 +309,19 @@ describe("rowFailureOf", () => {
     expect(rowFailureOf(new TxRunError("expired", "m", false, null), false)).toMatchObject({ status: "expired", retryable: false });
     expect(rowFailureOf(new TxRunError("failed", "m", false, null), false)).toMatchObject({ status: "failed", retryable: false });
   });
+  it("a non-explicit wallet cancel (walletRejected === false) is Skip only and is not labelled a rejection: the send may still land", async () => {
+    const { rowFailureOf } = await import("./compound-all-executors");
+    const { TxRunError, TxWalletCancelledError, COULDNT_SEND_TITLE } = await import("@/lib/tx-pipeline");
+    const cancelled = new TxWalletCancelledError(new Error("Wallet disconnected"), new Promise(() => {}));
+    expect(cancelled.walletRejected).toBe(false);
+    expect(cancelled.message.startsWith(COULDNT_SEND_TITLE)).toBe(true);
+    const wrapped = new TxRunError("rejected", cancelled.message, false, cancelled);
+    expect(rowFailureOf(wrapped, false)).toEqual({ status: "failed", error: cancelled.message, retryable: false });
+    expect(rowFailureOf(cancelled, false)).toEqual({ status: "failed", error: cancelled.message, retryable: false });
+    // An explicit "no" is still a retryable rejected row (PM review of #536, (a)).
+    const rejected = new TxWalletCancelledError(Object.assign(new Error("User rejected the request."), { code: 4001 }), new Promise(() => {}));
+    expect(rejected.walletRejected).toBe(true);
+    expect(rowFailureOf(new TxRunError("rejected", rejected.message, false, rejected), false))
+      .toMatchObject({ status: "rejected", retryable: true });
+  });
 });

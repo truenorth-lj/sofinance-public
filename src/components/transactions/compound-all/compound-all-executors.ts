@@ -6,7 +6,7 @@ import { dexTxAdapter, type DexDescriptor } from "@/lib/dex/client";
 import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { loadCleanupBatch } from "@/lib/compound-cleanup-batch-attempt";
 import { ApiRequestError, resolveCompoundBroadcastFailure } from "@/lib/public-error";
-import { pollSignature, runTx, TX_PREFLIGHT_POLICY, TxCancelCheckPendingError, TxNotLandedError, TxRunError, type RunTxOptions, type TxChainStatus, type TxStage, type TxWallet, type WaitVoided } from "@/lib/tx-pipeline";
+import { pollSignature, runTx, TX_PREFLIGHT_POLICY, TxCancelCheckPendingError, TxNotLandedError, TxRunError, TxWalletCancelledError, type RunTxOptions, type TxChainStatus, type TxStage, type TxWallet, type WaitVoided } from "@/lib/tx-pipeline";
 import { compoundAllFlowFor, type CompoundAllRow, type RowStage } from "@/lib/compound-all/state";
 import type { CleanupOutcome, CompoundAllDeps, RowContext, RowOutcome } from "@/lib/compound-all/runner";
 import type { PositionKey } from "@/lib/unified-positions/model";
@@ -33,13 +33,22 @@ export const ROW_STILL_CONFIRMING = "This compound is still confirming. Check it
 export const ROW_LOCKED = "Another transaction on this position is still in progress. Try again when it finishes.";
 const CLEANUP_PENDING = "A cleanup of earlier harvest accounts is still being checked. Try again once it settles.";
 
+const walletCancelled = (error: unknown) => error instanceof TxWalletCancelledError ? error
+  : error instanceof TxRunError && error.cause instanceof TxWalletCancelledError ? error.cause : null;
+
 /** A pipeline failure as a row outcome: only a send that cannot have landed may be retried (a retry prepares anew). */
 export function rowFailureOf(error: unknown, notSignedYet: boolean): RowOutcome {
   // runTx refused before preparing (a cancelled send of this position is still being checked): nothing was sent, and
   // a Retry now would only be refused again, so the row offers Skip only (PM review of #535).
   if (error instanceof TxCancelCheckPendingError) return { status: "failed", error: error.message, retryable: false, notSigned: true };
+  // The wallet threw after we asked it to send, but it was not an explicit "no": the transaction may still land (the
+  // pipeline keeps checking Solana). Skip only; the row says "Couldn't send", not "Rejected in wallet" (PM review of #536).
+  const cancelled = walletCancelled(error);
+  if (cancelled && !cancelled.walletRejected) {
+    return { status: "failed", error: error instanceof Error ? error.message : cancelled.message, retryable: false };
+  }
   if (error instanceof TxRunError) {
-    // The pipeline marks every wallet "no" non-retryable for its toast; in the checklist the user's no is answered with Retry.
+    // The pipeline marks every wallet "no" non-retryable for its toast; in the checklist the user's explicit no is answered with Retry.
     if (error.kind === "rejected") return { status: "rejected", error: error.message, retryable: true };
     // Said no in the wallet and Solana confirmed nothing landed: still the user's no, so Retry asks again.
     if (error.kind === "not-sent" && error.cause instanceof TxNotLandedError && error.cause.walletRejected) {

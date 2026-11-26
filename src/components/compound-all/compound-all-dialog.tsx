@@ -6,7 +6,7 @@ import { Check, CircleAlert, LoaderCircle, Pause } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { COMPOUND_ALL_RECOVERY_PATH, compoundAllApprovals, summarizeCompoundAll, type CompoundAllRow, type CompoundAllState } from "@/lib/compound-all/state";
 import { ActionDialog } from "../portfolio/action-dialog";
-import { approvalsLine, cleanupStatusLabel, COMPOUND_ALL_COPY as COPY, rowStatusLabel } from "./compound-all-copy";
+import { approvalsLine, cleanupStatusLabel, COMPOUND_ALL_COPY as COPY, rowResultUnconfirmed, rowStatusLabel, summaryHeading } from "./compound-all-copy";
 
 type CompoundAllRowLabel = { title: string; subtitle?: string };
 export type CompoundAllActions = {
@@ -126,7 +126,7 @@ function Summary({ state }: { state: CompoundAllState }) {
   const summary = summarizeCompoundAll(state);
   const items: [string, number][] = [["Compounded", summary.done], ["Skipped", summary.skipped], ["Not signed", summary.notSigned], ["Did not complete", summary.failed]];
   return <div data-testid="compound-all-summary" className="mt-3">
-    <p role="status" className="text-sm font-semibold text-cream">{state.phase === "cancelled" ? "Stopped." : "All done."}</p>
+    <p role="status" className="text-sm font-semibold text-cream">{summaryHeading(state)}</p>
     <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
       {items.map(([label, value]) => <div key={label} className="rounded-2xl border border-white/10 p-3">
         <dt className="text-xs text-smoke">{label}</dt><dd className="mt-0.5 text-lg font-semibold tabular-nums text-cream">{value}</dd></div>)}
@@ -161,7 +161,8 @@ function Controls({ state, actions, onClose, approvalsTotal }: { state: Compound
     }
     case "paused-failure":
       return <div data-testid="compound-all-failure" className="mt-5 rounded-2xl border border-white/20 bg-white/[0.04] p-4">
-        <p className="text-sm font-semibold text-cream">This position did not compound.{failedRow?.retryable ? " Try it again, or skip it." : " Skip it to go on."}</p>
+        <p className="text-sm font-semibold text-cream">{failedRow && rowResultUnconfirmed(failedRow) ? COPY.unconfirmed
+          : `${COPY.didNotCompound}${failedRow?.retryable ? COPY.retryOrSkip : COPY.skipOnly}`}</p>
         {bar(<>
           <button type="button" className={secondary} onClick={actions.cancel}>Stop</button>
           <button type="button" data-testid="compound-all-skip" className={secondary} onClick={actions.skip}>Skip</button>

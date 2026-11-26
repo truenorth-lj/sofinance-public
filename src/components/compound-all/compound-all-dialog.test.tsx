@@ -96,16 +96,45 @@ describe("Compound all popup", () => {
     await click("compound-all-start");
     await settle();
     expect(q("compound-all-body")!.dataset.phase).toBe("paused-failure");
-    expect(q("compound-all-failure")!.textContent).toContain("Try it again, or skip it.");
+    expect(q("compound-all-failure")!.querySelector("p")!.textContent).toBe("This position did not compound. Try it again, or skip it.");
     expect(q("compound-all-retry")).not.toBeNull();
     expect(container.textContent).toContain("You rejected the request.");
     await click("compound-all-retry");
     await settle();
+    expect(q("compound-all-failure")!.querySelector("p")!.textContent).toContain("isn't confirmed yet");
     expect(q("compound-all-retry")).toBeNull();
     expect(q("compound-all-skip")).not.toBeNull();
     await click("compound-all-skip");
     await settle();
     expect(q("compound-all-summary")!.textContent).toContain("Skipped1");
+    expect(q("compound-all-summary")!.textContent).toContain("Finished.");
+    expect(q("compound-all-summary")!.textContent).not.toContain("All done.");
+  });
+
+  it("a still-confirming or unknown result (Skip only) does not say the position did not compound", async () => {
+    const { render } = harness([met(1)], {
+      "meteora-dlmm:m1": [{ status: "failed", error: "This compound is still confirming. Check it in Activity before trying again.", retryable: false }],
+    });
+    await render();
+    await click("compound-all-start");
+    await settle();
+    expect(q("compound-all-failure")!.querySelector("p")!.textContent).toBe("This position's result isn't confirmed yet. Skip it to go on; check Portfolio later.");
+    expect(q("compound-all-retry")).toBeNull();
+    expect(q("compound-all-skip")).not.toBeNull();
+    // The row status stays Failed (the "Couldn't send" label is reserved for a non-explicit wallet cancel).
+    expect(qa("compound-all-row")[0]!.textContent).toContain("Failed");
+  });
+
+  it("a non-explicit wallet cancel is labelled Couldn't send, not Rejected in wallet, and the pause is the unconfirmed copy", async () => {
+    const error = "Couldn't send the transaction: the wallet disconnected. It has not shown up on Solana; we keep checking in case it went through, and you can retry in about a minute.";
+    const { render } = harness([met(1)], { "meteora-dlmm:m1": [{ status: "failed", error, retryable: false }] });
+    await render();
+    await click("compound-all-start");
+    await settle();
+    expect(qa("compound-all-row")[0]!.textContent).toContain("Couldn't send");
+    expect(container.textContent).not.toMatch(/Rejected in wallet/);
+    expect(q("compound-all-failure")!.querySelector("p")!.textContent).toContain("isn't confirmed yet");
+    expect(q("compound-all-retry")).toBeNull();
   });
 
   it("the final cleanup row runs after the Raydium rows, and the summary follows", async () => {
