@@ -275,7 +275,9 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
         flow: "compound", successTitle: receipt ? "Cleanup confirmed" : "Compound confirmed", storage: window.localStorage,
         wallet: { address: submittedWallet, signTransaction: connectionRef.current.signTransaction,
           signAndSendTransaction: connectionRef.current.signAndSendTransaction },
-        prepared: { transaction: unsigned, lastValidBlockHeight: summary.lastValidBlockHeight, positionMint: receipt?.positionMint || submittedMint,
+        // Only the compound itself goes into the position's history refresh marker (via the confirmation toast). A cleanup
+        // tx never touches the position account, so the history sync can never acknowledge its signature.
+        prepared: { transaction: unsigned, lastValidBlockHeight: summary.lastValidBlockHeight, ...(receipt ? {} : { positionMint: submittedMint }),
           sendPermit: (loaded.prepared as { sendPermit?: string }).sendPermit,
           landedPermit: (loaded.prepared as { landedPermit?: string }).landedPermit },
         scope: receipt?.positionMint || submittedMint,
