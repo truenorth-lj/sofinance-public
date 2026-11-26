@@ -10,7 +10,8 @@ import { publicDexLabel } from "@/lib/dex/ui";
 import { assignPublicPoolSlugs, seoPublicPools } from "@/lib/public-pool-pages";
 import { CHAIN_LABELS, type UnifiedPool } from "@/lib/unified-pools/model";
 
-export const PUBLIC_POOLS_H1 = "Same-stock liquidity pools";
+/** Breadcrumb, JSON-LD list name, and related /pools chrome. Neutral because the list includes LST pools such as SOL/hSOL. */
+export const PUBLIC_POOLS_H1 = "Liquidity pools";
 
 /**
  * On-page heading for the /pools crawler table (and the visible subline under the "Pools" h1).

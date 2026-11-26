@@ -1,7 +1,7 @@
 import "@/lib/engine-host";
 
 import { JUPITER_NO_ROUTE_CODE } from "@sofinance/engine/jupiter/errors";
-import { tokenSymbol } from "./position-label";
+import { balanceSymbolInSentence, tokenSymbol } from "./position-label";
 
 export { JUPITER_NO_ROUTE_CODE };
 
@@ -35,6 +35,6 @@ export function selectedNoRouteOutputMint(state: SelectedNoRouteState) {
 
 export function selectedNoRouteError(state: SelectedNoRouteState) {
   const outputMint = selectedNoRouteOutputMint(state);
-  const inputLabel = state.inputKind === "native" ? "SOL" : tokenSymbol(state.inputMint);
+  const inputLabel = balanceSymbolInSentence(state.inputMint, state.inputKind);
   return new SelectedNoRouteError(inputLabel, tokenSymbol(outputMint), state.inputMint, outputMint);
 }

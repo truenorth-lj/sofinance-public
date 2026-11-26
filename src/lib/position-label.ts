@@ -29,7 +29,7 @@ export function tokenSymbol(
   metadata?: PositionLabelMetadata,
   explicit?: string | null,
 ): string {
-  // Portfolio and pool labels show SOL, not WSOL, for the native mint (including wrapped accounts).
+  // Pair and position labels show SOL, not WSOL, for the native mint.
   if (mint === NATIVE_SOL_MINT) return "SOL";
   const fromPosition = explicit?.trim();
   if (fromPosition) return fromPosition;
@@ -37,6 +37,36 @@ export function tokenSymbol(
   if (symbol) return symbol;
   if (mint === USDC_MINT) return "USDC";
   return shortMint(mint);
+}
+
+/** Standalone label for a WSOL token-account balance (token picker, amount rows). */
+export const WRAPPED_SOL_BALANCE_LABEL = "SOL (wrapped)";
+/** Sentence form, so copy like "swap back to wrapped SOL" does not nest parentheses. */
+export const WRAPPED_SOL_SENTENCE_LABEL = "wrapped SOL";
+
+export function balanceSymbol(
+  mint: string,
+  kind: "native" | "token",
+  fallback?: string,
+): string {
+  if (kind === "native") return "SOL";
+  if (mint === NATIVE_SOL_MINT) return WRAPPED_SOL_BALANCE_LABEL;
+  return fallback ?? tokenSymbol(mint);
+}
+
+/** Same as `balanceSymbol`, but a WSOL token-account balance is "wrapped SOL" inside a sentence. */
+export function balanceSymbolInSentence(
+  mint: string,
+  kind: "native" | "token",
+  fallback?: string,
+): string {
+  if (kind === "native") return "SOL";
+  if (mint === NATIVE_SOL_MINT) return WRAPPED_SOL_SENTENCE_LABEL;
+  return fallback ?? tokenSymbol(mint);
+}
+
+export function sentenceBalanceLabel(standalone: string): string {
+  return standalone === WRAPPED_SOL_BALANCE_LABEL ? WRAPPED_SOL_SENTENCE_LABEL : standalone;
 }
 
 export function formatRangeStatus(rangeSide: string | null | undefined): string | null {

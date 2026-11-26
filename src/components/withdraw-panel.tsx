@@ -5,6 +5,7 @@ import { LoaderCircle } from "lucide-react";
 import { VersionedTransaction } from "@solana/web3.js";
 import { useWalletConnection } from "./wallet-connection";
 import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
+import { WRAPPED_SOL_BALANCE_LABEL } from "@/lib/position-label";
 import { formatAmount } from "@sofinance/engine/amount";
 import { notifyPositionHistoryChange } from "@/lib/position-history-refresh";
 import { createJupiterRelayStore, postWithJupiterRelay } from "@/lib/jupiter/browser-relay";
@@ -294,7 +295,7 @@ export function WithdrawPanel({wallet,positionMint,mintA,mintB,label,onClose,onB
   </select></label>
   <p className="mt-3 text-sm">Withdrawing 100% closes your position and returns its account deposit in SOL.</p>
   {preview && <div className="mt-4 text-sm">
-   {preview.outputs.map(o=><p key={o.mint}>Minimum received: {formatAmount(o.minimum,o.decimals)} {o.mint===NATIVE_SOL_MINT && preview.receive==="token"?"SOL":label(o.mint)}</p>)}
+   {preview.outputs.map(o=><p key={o.mint}>Minimum received: {formatAmount(o.minimum,o.decimals)} {o.mint===NATIVE_SOL_MINT && preview.receive==="token"?WRAPPED_SOL_BALANCE_LABEL:label(o.mint)}</p>)}
    <p>Price impact: {(preview.priceImpactBps/100).toFixed(2)}% · Slippage: {(preview.slippageBps/100).toFixed(2)}%</p>
    <p>Conversion fee: {(preview.protocolFee.bps/100).toFixed(2)}% on converted tokens only</p>
    {preview.protocolFee.legs.map((fee,i)=>{

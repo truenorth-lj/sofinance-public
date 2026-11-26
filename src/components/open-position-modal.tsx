@@ -5,7 +5,7 @@ import { useId, useState } from "react";
 import { formatSolCost } from "@/lib/sol-cost";
 import { useSolUsdcPrice } from "./use-sol-usdc-price";
 import { formatAmount } from "@sofinance/engine/amount";
-import { formatPositionPriceRange, formatRangeStatus, tokenSymbol } from "@/lib/position-label";
+import { formatPositionPriceRange, formatRangeStatus, balanceSymbol, sentenceBalanceLabel, tokenSymbol } from "@/lib/position-label";
 import { ChevronDown, Info, RefreshCw } from "lucide-react";
 import { useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
 import { smallAmountNarrowRangeHint } from "@/lib/open-range-hint";
@@ -95,10 +95,14 @@ export function OpenPositionModal({
   const totalCostPercent = quote && BigInt(quote.requested) > 0n
     ? (Number(quote.roundtripCostInput) / Number(quote.requested) * 100).toFixed(2)
     : null;
-  const inputSymbol = quote?.inputKind === "native" ? "SOL" : quote
-    ? tokenSymbol(quote.inputMint, undefined, quote.inputMint === pair.mintA ? pair.symbolA : quote.inputMint === pair.mintB ? pair.symbolB : undefined)
+  const inputSymbol = quote
+    ? balanceSymbol(
+        quote.inputMint,
+        quote.inputKind,
+        tokenSymbol(quote.inputMint, undefined, quote.inputMint === pair.mintA ? pair.symbolA : quote.inputMint === pair.mintB ? pair.symbolB : undefined),
+      )
     : "SOL";
-  const totalCostHelp = `Estimated round-trip cost: about ${totalCostPercent ?? "—"}% (assuming you open the position, immediately withdraw, and swap back to ${inputSymbol}). This conservative estimate includes swap fees, price impact, and slippage tolerance. It does not block signing.`;
+  const totalCostHelp = `Estimated round-trip cost: about ${totalCostPercent ?? "—"}% (assuming you open the position, immediately withdraw, and swap back to ${sentenceBalanceLabel(inputSymbol)}). This conservative estimate includes swap fees, price impact, and slippage tolerance. It does not block signing.`;
   const detailWarnings = quote?.warnings.filter(isDetailWarning) ?? [];
   const upfrontCost = quote ? BigInt(quote.rent.refundableLamports) + BigInt(quote.rent.nonRefundableLamports)
     + BigInt(quote.rent.walletTokenAccountLamports ?? "0") + BigInt(quote.networkFeeLamportsEstimate) : 0n;
@@ -113,13 +117,12 @@ export function OpenPositionModal({
 
   const pairLabel = poolPairLabel({ pairLabel: `${pair.wrappedSymbol}/${pair.plainSymbol}` });
   const assets = c.inputAssets.map((asset) => {
-    const symbol = asset.kind === "native"
-      ? "SOL"
-      : asset.mint === pair.mintA
-        ? tokenSymbol(asset.mint, undefined, pair.symbolA)
-        : asset.mint === pair.mintB
-          ? tokenSymbol(asset.mint, undefined, pair.symbolB)
-          : tokenSymbol(asset.mint);
+    const fallback = asset.mint === pair.mintA
+      ? tokenSymbol(asset.mint, undefined, pair.symbolA)
+      : asset.mint === pair.mintB
+        ? tokenSymbol(asset.mint, undefined, pair.symbolB)
+        : tokenSymbol(asset.mint);
+    const symbol = balanceSymbol(asset.mint, asset.kind, fallback);
     return {
       id: `${asset.kind}:${asset.mint}`,
       label: `${symbol} · ${formatAmount(asset.balance, asset.decimals)}${asset.eligible ? "" : ` (${asset.reason || "ineligible"})`}`,
