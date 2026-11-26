@@ -46,7 +46,7 @@ import { PortfolioSummary, PortfolioHistoryStatus } from "./portfolio/portfolio-
 import { CompoundAllDialog } from "./compound-all/compound-all-dialog";
 import { cleanupThroughHost, useCompoundAll } from "./compound-all/use-compound-all";
 import { createCompoundAllExecutors } from "./transactions/compound-all/compound-all-executors";
-import { compoundAllRows } from "@/lib/compound-all/eligible-rows";
+import { compoundAllRows, unclaimedFeesRawFor } from "@/lib/compound-all/eligible-rows";
 import { dexDescriptors } from "@/lib/dex/client";
 import { PortfolioPositionList, rowActions, type PortfolioRow, type RowTool } from "./portfolio/portfolio-rows";
 import { usePortfolioFigures } from "./portfolio/use-portfolio-figures";
@@ -341,7 +341,7 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
   })));
   // Compound all lists the positions that still have fees, as of when it opens (PM review of #535).
   const compoundAllInputs = compoundAllRows(allPositions.map((item) => ({ position: item, compoundSupported: capabilitiesOf(item).compound.supported,
-    unclaimedFeesUsd: figuresOf(item)?.unclaimedFeesUsd ?? null, unclaimedFeesRaw: item.holdings?.unclaimedFeesRaw ?? null })),
+    unclaimedFeesUsd: figuresOf(item)?.unclaimedFeesUsd ?? null, unclaimedFeesRaw: unclaimedFeesRawFor(item.holdings, figures[item.key]?.unclaimedFeesRaw) })),
   (dex) => dexDescriptors.descriptorFor(dex));
   const compoundAllLabel = (key: string) => { const row = portfolioRows.get(key); return row ? { title: row.title, subtitle: row.subtitle } : { title: key }; };
   const openTool = (key: string, view: RowTool) => {

@@ -101,7 +101,7 @@ export async function prepareRaydiumPortfolio(input: PortfolioInput, signal: Abo
       // Store outage: valuation must not read the store again either.
       ...(history?.historyError ? { historyStore: null } : {}),
     });
-    return { figures: read.figures, evaluatedAt: read.evaluatedAt, historyComplete: read.historyComplete,
+    return { figures: read.figures, unclaimedFeesRaw: read.unclaimedFeesRaw, evaluatedAt: read.evaluatedAt, historyComplete: read.historyComplete,
       historyRefreshResolved: history?.historyRefreshResolved ?? read.historyRefreshResolved,
       historyUpdatedAt: history?.historyUpdatedAt, historyStatus: history?.historyStatus,
       historyRefreshAfter: history?.historyRefreshAfter,

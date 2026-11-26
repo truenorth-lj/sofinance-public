@@ -38,10 +38,10 @@ export async function readPortfolio(input: PortfolioInput, signal: AbortSignal):
       rowSignal.throwIfAborted();
       if (!reader) throw new Error("Position source unavailable");
       const result = await portfolioAbortable(reader(item, rowSignal), rowSignal);
-      const { figures, evaluatedAt, historyComplete, historyRefreshResolved, historyUpdatedAt, historyStatus, historyRefreshAfter, historyError } = result;
+      const { figures, unclaimedFeesRaw, evaluatedAt, historyComplete, historyRefreshResolved, historyUpdatedAt, historyStatus, historyRefreshAfter, historyError } = result;
       if (result.timings) timings[item.key] = result.timings;
       const complete = historyComplete && [figures.valueUsd, figures.unclaimedFeesUsd, figures.cumulativeFeesUsd].every((value) => value !== null);
-      return { key: item.key, status: complete ? "ready" : "partial", figures, evaluatedAt, historyComplete, historyRefreshResolved, historyUpdatedAt, historyStatus, historyRefreshAfter,
+      return { key: item.key, status: complete ? "ready" : "partial", figures, ...(unclaimedFeesRaw ? { unclaimedFeesRaw } : {}), evaluatedAt, historyComplete, historyRefreshResolved, historyUpdatedAt, historyStatus, historyRefreshAfter,
         ...(historyError ? { historyError } : {}) };
     } catch {
       return { key: item.key, status: "failed", figures: positionFigures(null), evaluatedAt: null, historyComplete: false, historyRefreshResolved: false };

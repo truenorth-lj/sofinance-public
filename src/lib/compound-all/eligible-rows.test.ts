@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { dexDescriptors } from "@/lib/dex/client";
-import { compoundAllRows, hasUnclaimedFees, type CompoundAllCandidate } from "./eligible-rows";
+import { compoundAllRows, hasUnclaimedFees, unclaimedFeesRawFor, type CompoundAllCandidate } from "./eligible-rows";
 
 const MINT = "So11111111111111111111111111111111111111112";
 const candidate = (over: Partial<CompoundAllCandidate["position"]> & { source: string }, fees: Partial<CompoundAllCandidate> = {}): CompoundAllCandidate => ({
@@ -37,5 +37,24 @@ describe("compoundAllRows: only positions that still have fees", () => {
     expect(hasUnclaimedFees({ unclaimedFeesUsd: null, unclaimedFeesRaw: { a: "0", b: "0" } })).toBe(false);
     expect(hasUnclaimedFees({ unclaimedFeesUsd: 0.01, unclaimedFeesRaw: null })).toBe(true);
     expect(hasUnclaimedFees({ unclaimedFeesUsd: null, unclaimedFeesRaw: { a: "x", b: "" } })).toBe(false);
+  });
+});
+
+describe("Raydium raw unclaimed fees from the Portfolio read", () => {
+  const row = (portfolioRaw: { a: string; b: string } | undefined, usd: number | null) => compoundAllRows([
+    candidate({ source: "raydium-clmm", nativeId: "r1" }, { unclaimedFeesUsd: usd, unclaimedFeesRaw: unclaimedFeesRawFor(undefined, portfolioRaw) }),
+  ], descriptorFor);
+  it("lists a Raydium position whose USD fees could not be priced when the raw fees are above zero", () => {
+    expect(row({ a: "0", b: "590" }, null)).toEqual([{ key: "raydium-clmm:r1", dex: "raydium-clmm", flow: "native-harvest", positionId: "r1", outOfRange: false }]);
+  });
+  it("still leaves it out when the raw fees are zero or were never read", () => {
+    expect(row({ a: "0", b: "0" }, null)).toEqual([]);
+    expect(row(undefined, null)).toEqual([]);
+  });
+  it("prefers the source's own holdings over the Portfolio read", () => {
+    const own = { liquidityRaw: null, unclaimedFeesRaw: { a: "1", b: "2" } };
+    expect(unclaimedFeesRawFor(own, { a: "9", b: "9" })).toEqual({ a: "1", b: "2" });
+    expect(unclaimedFeesRawFor({ liquidityRaw: null, unclaimedFeesRaw: null }, { a: "9", b: "9" })).toEqual({ a: "9", b: "9" });
+    expect(unclaimedFeesRawFor(undefined, undefined)).toBeNull();
   });
 });

@@ -204,7 +204,10 @@ export async function getPositionFigures(positionMint: string, options: Position
     // collect events would understate cumulative fees, so keep the dash until history is complete.
     cumulativeFeesUsd: !historyComplete ? null : finite(data.metrics.feesEarnedUsd),
   };
-  return { figures, evaluatedAt: new Date(data.identity.evaluatedAt * 1000).toISOString(),
+  // The raw uncollected fees come from the same fee read the USD figure uses: no extra RPC. They stay available when a
+  // price is missing (the USD figure is null), so callers can still tell "has fees" from "unknown".
+  return { figures, unclaimedFeesRaw: { a: data.metrics.uncollectedFeesRaw.a, b: data.metrics.uncollectedFeesRaw.b },
+    evaluatedAt: new Date(data.identity.evaluatedAt * 1000).toISOString(),
     historyComplete, historyRefreshResolved: options.historyAfterSignatures?.length
       ? data.historyFetch.refreshSignaturesResolved === true : historyComplete,
     timings: { totalMs: Date.now() - data.started, accountsMs: data.accountsMs, historyMs: data.historyFetch.elapsedMs,

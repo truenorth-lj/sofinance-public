@@ -28,9 +28,12 @@ export const portfolioRequestSchema = z.object({
 }).strict();
 export type PortfolioRequest = z.infer<typeof portfolioRequestSchema>;
 const usd = z.number().finite().nullable();
+const rawAmount = z.string().regex(/^\d{1,40}$/);
 export const portfolioPositionSchema = z.object({
   key: z.string(), status: z.enum(["ready", "partial", "failed"]),
   figures: z.object({ stock: z.string().nullable(), shares: usd, valueUsd: usd, unclaimedFeesUsd: usd, cumulativeFeesUsd: usd }),
+  /** Raw unclaimed fees (token units) from the same on-chain read as `unclaimedFeesUsd`; kept when a price is missing. */
+  unclaimedFeesRaw: z.object({ a: rawAmount, b: rawAmount }).strict().optional(),
   evaluatedAt: z.string().nullable(), historyComplete: z.boolean(), historyRefreshResolved: z.boolean(),
   historyUpdatedAt: z.iso.datetime().nullable().optional(),
   historyStatus: z.enum(["fresh", "updating", "stale", "unavailable"]).optional(),
