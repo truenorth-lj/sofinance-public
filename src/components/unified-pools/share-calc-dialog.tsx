@@ -174,7 +174,7 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
             <InfoRow label={planAprLabel(best)}>{formatPct(plan.cappedAprPct)}</InfoRow>
             <InfoRow label="Fees collected">{formatInUnit(plan.feesEarned, unit)}</InfoRow>
             <InfoRow label="Protocol cut of fees">{`${Math.round((1 - terms.lpFeeShare) * 100)}%`}</InfoRow>
-            <InfoRow label="Opening cost (USDC deposit)">{formatCostInUnit(plan.entryCost, unit)}</InfoRow>
+            <InfoRow label={`Opening cost (${assetSymbol} deposit)`}>{formatCostInUnit(plan.entryCost, unit)}</InfoRow>
             <InfoRow label={exit === "usdc" ? "Closing cost (to USDC)" : "Closing cost (keep tokens)"}>{formatCostInUnit(plan.exitCost, unit)}</InfoRow>
             {projection.low && projection.lowWindow ? (
               <InfoRow label={`At the ${aprWindowAvgLabel(projection.lowWindow, "pool avg")}`}>{`${formatSignedInUnit(projection.low.vsHold, unit)} vs HODL`}</InfoRow>

@@ -1,10 +1,13 @@
-import { isCuratedCryptoPool } from "@/lib/pool-metrics/same-stock-pair";
+import { isBtcPool, isCuratedCryptoPool, isLstPool } from "@/lib/pool-metrics/same-stock-pair";
 
 /** Same-stock pools: the open-range checkbox still recenters on the ScaledUi fair price. */
 export const CENTER_ON_FAIR_LABEL = "Center range on the fair price";
 
-/** BTC same-asset and LST pools: same control, wording that does not say "fair price". */
+/** BTC same-asset pools: same control, wording that does not say "fair price". */
 export const CENTER_ON_CURRENT_PRICE_LABEL = "Center range on the current pool price";
+
+/** SOL/hSOL: same control, wording that matches the official stake-rate center. */
+export const CENTER_ON_STAKE_RATE_LABEL = "Center range on the official stake rate";
 
 /** Calculator footnote clause for a same-stock pair. */
 export const STOCK_PRICE_MOVE_NOTE = "The stock's own price moves both sides alike and is left out.";
@@ -14,16 +17,22 @@ export const SAME_ASSET_PRICE_MOVE_NOTE = "Both tokens track the same asset, and
 
 type MintPair = { mintA?: string | null; mintB?: string | null };
 
+function hasMints(pool: MintPair): pool is { mintA: string; mintB: string } {
+  return Boolean(pool.mintA && pool.mintB);
+}
+
 /**
  * Wording for BTC wraps and SOL/hSOL is neutral; everything else (same-stock, stables, unknown mints)
  * keeps the existing stock phrasing. Derived from the curated-crypto mint predicates, not a new flag.
  */
 export function isNeutralAssetCopyPool(pool: MintPair): boolean {
-  return Boolean(pool.mintA && pool.mintB && isCuratedCryptoPool({ mintA: pool.mintA, mintB: pool.mintB }));
+  return hasMints(pool) && isCuratedCryptoPool({ mintA: pool.mintA, mintB: pool.mintB });
 }
 
 export function centerRangeLabel(pool: MintPair): string {
-  return isNeutralAssetCopyPool(pool) ? CENTER_ON_CURRENT_PRICE_LABEL : CENTER_ON_FAIR_LABEL;
+  if (hasMints(pool) && isLstPool(pool)) return CENTER_ON_STAKE_RATE_LABEL;
+  if (hasMints(pool) && isBtcPool(pool)) return CENTER_ON_CURRENT_PRICE_LABEL;
+  return CENTER_ON_FAIR_LABEL;
 }
 
 export function shareCalcPriceMoveNote(pool: MintPair): string {

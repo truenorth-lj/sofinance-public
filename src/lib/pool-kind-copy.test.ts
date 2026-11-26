@@ -3,6 +3,7 @@ import { CBBTC_MINT, HSOL_MINT, NATIVE_SOL_MINT, USDC_MINT, USDT_MINT, WBTC_PORT
 import {
   CENTER_ON_CURRENT_PRICE_LABEL,
   CENTER_ON_FAIR_LABEL,
+  CENTER_ON_STAKE_RATE_LABEL,
   SAME_ASSET_PRICE_MOVE_NOTE,
   STOCK_PRICE_MOVE_NOTE,
   centerRangeLabel,
@@ -21,8 +22,17 @@ describe("pool-kind display copy", () => {
   const stable = { mintA: USDC_MINT, mintB: USDT_MINT };
   const nativeWbtc = { mintA: CBBTC_MINT, mintB: "5XZw2LKTyrfvfiskJ78AMpackRjPcyCif1WhUsPDuVqQ" };
 
-  it("uses current-pool-price / same-asset wording for cbBTC/WBTC and SOL/hSOL in either mint order", () => {
-    for (const pool of [btc, btcFlipped, lst, lstFlipped]) {
+  it("uses official-stake-rate wording for SOL/hSOL in either mint order", () => {
+    for (const pool of [lst, lstFlipped]) {
+      expect(isNeutralAssetCopyPool(pool)).toBe(true);
+      expect(centerRangeLabel(pool)).toBe(CENTER_ON_STAKE_RATE_LABEL);
+      expect(shareCalcPriceMoveNote(pool)).toBe(SAME_ASSET_PRICE_MOVE_NOTE);
+    }
+    expect(CENTER_ON_STAKE_RATE_LABEL).toBe("Center range on the official stake rate");
+  });
+
+  it("uses current-pool-price wording for cbBTC/WBTC in either mint order", () => {
+    for (const pool of [btc, btcFlipped]) {
       expect(isNeutralAssetCopyPool(pool)).toBe(true);
       expect(centerRangeLabel(pool)).toBe(CENTER_ON_CURRENT_PRICE_LABEL);
       expect(shareCalcPriceMoveNote(pool)).toBe(SAME_ASSET_PRICE_MOVE_NOTE);
@@ -41,10 +51,11 @@ describe("pool-kind display copy", () => {
     expect(STOCK_PRICE_MOVE_NOTE).toBe("The stock's own price moves both sides alike and is left out.");
   });
 
-  it("avoids banned words in both wordings", () => {
+  it("avoids banned words in all wordings", () => {
     for (const text of [
       CENTER_ON_FAIR_LABEL,
       CENTER_ON_CURRENT_PRICE_LABEL,
+      CENTER_ON_STAKE_RATE_LABEL,
       STOCK_PRICE_MOVE_NOTE,
       SAME_ASSET_PRICE_MOVE_NOTE,
     ]) {
