@@ -12,7 +12,7 @@ import { CHAIN_LABELS, isLowTvl, LOW_TVL_LABEL, LOW_TVL_USD, NOT_SUPPORTED_LABEL
 import type { OpenAction } from "@/lib/unified-pools/open-action";
 import { InfoTip } from "../info-tip";
 import { PairTokenIcons } from "../pair-token-icons";
-import { dataDaysLabel, MIN_DATA_DAYS } from "@/lib/min-data-days";
+import { basedOnDataDaysLabel, isShortAprWindow } from "@/lib/min-data-days";
 
 /* Pool list pieces shared by `/pools` and the homepage, so both render pools with the same component. */
 
@@ -25,8 +25,10 @@ export const APR7D_SHORT = "Est. APR · 7d";
  * Card headline label once the highest range is known: "Tight-range APR · 7d" for "Tight (±0.05%)", so the number reads
  * as that range's APR, not the whole pool's fee yield. Falls back to `APR7D_SHORT` without a range name.
  */
-export function rangeApr7dLabel(rangeLabel: string | null | undefined): string {
+export function rangeApr7dLabel(rangeLabel: string | null | undefined, days?: number): string {
   const name = rangeLabel?.replace(/\s*\(.*\)\s*$/, "").trim();
+  const base = name ? `${name}-range APR` : "Est. APR";
+  if (days !== undefined && isShortAprWindow(days)) return `${base} · ${basedOnDataDaysLabel(days)}`;
   return name ? `${name}-range APR · 7d` : APR7D_SHORT;
 }
 export const chip = "inline-flex h-6 items-center whitespace-nowrap rounded-full px-2.5 font-data text-[10px] uppercase tracking-[0.12em]";
@@ -41,12 +43,12 @@ export function ChainBadge({ chain, tone = "light", wrapBelowMd }: { chain: Pool
  * The 7d APR value. In the table (`sm`) a delayed snapshot that still shows its number (under 48h old) gets a small
  * "Data delayed" line under it; the cards (`lg`) already say it in their own "Data delayed" line.
  */
-/** Shown instead of an APR for a pool with fewer than `MIN_DATA_DAYS` days of data. */
-export const NEW_POOL_LABEL = "New pool";
+/** Shown instead of an APR when the pool has no complete UTC day of data yet. */
+export const NEW_POOL_LABEL = "Too new";
 
-/** "New pool · 6 days of data. An APR shows once it has 7 days." */
-export function newPoolTitle(days: number): string {
-  return `${NEW_POOL_LABEL} · ${dataDaysLabel(days)}. An APR shows once it has ${MIN_DATA_DAYS} days.`;
+/** "Too new. An APR shows once it has 1 complete day of data." */
+export function newPoolTitle(): string {
+  return `${NEW_POOL_LABEL}. An APR shows once it has 1 complete day of data.`;
 }
 
 /** Tooltip of the "Low TVL" tag. */
@@ -71,7 +73,8 @@ export function Apr7dValue({ state, size = "lg", lowTvl = false }: {
   const line = "whitespace-nowrap font-data text-[10px] uppercase tracking-[0.08em] text-cream/60 max-md:whitespace-normal max-md:text-right max-md:text-[9px] max-md:leading-tight";
   // Table rows have no label line under the value, so a new pool's day count, "Data delayed" and "Low TVL" go here.
   const notes = [
-    state?.status === "new" && <span key="new" data-testid="apr7d-new-days" className={line}>{dataDaysLabel(state.days)}</span>,
+    state?.status === "new" && <span key="new" data-testid="apr7d-new-days" className={line}>{NEW_POOL_LABEL}</span>,
+    state?.status === "ready" && isShortAprWindow(state.days) && <span key="short" data-testid="apr7d-short-days" className={line}>{basedOnDataDaysLabel(state.days)}</span>,
     state?.status === "ready" && state.freshness?.delayed && <span key="delayed" data-testid="apr7d-delayed" className={line}
       title={`Snapshot from ${new Date(state.freshness.snapshotAt).toLocaleString()}`}>Data delayed</span>,
     lowTvl && state?.status !== "new" && <LowTvlTag key="low" tone="dark" />,
@@ -81,7 +84,7 @@ export function Apr7dValue({ state, size = "lg", lowTvl = false }: {
 }
 
 function Apr7dPill({ state, size, text }: { state: Apr7dState | undefined; size: "lg" | "sm"; text: string }) {
-  return <span data-testid="apr7d" data-apr-status={state?.status ?? "loading"} title={state?.status === "missing" ? state.reason : state?.status === "new" ? newPoolTitle(state.days) : undefined}
+  return <span data-testid="apr7d" data-apr-status={state?.status ?? "loading"} title={state?.status === "missing" ? state.reason : state?.status === "new" ? newPoolTitle() : undefined}
     className={cn("inline-flex items-center justify-center whitespace-nowrap rounded-full font-semibold tabular-nums",
       size === "lg" ? "h-10 px-4 text-xl max-sm:h-8 max-sm:px-3 max-sm:text-base" : "h-7 min-w-[3.5rem] px-2.5 text-sm max-md:min-w-0 max-md:px-2 max-md:text-[13px]",
       state?.status === "ready" ? "bg-lemon text-ink" : size === "lg" ? "bg-ink/10 text-ink/70" : "bg-white/[0.06] text-cream/70")}>{text}</span>;

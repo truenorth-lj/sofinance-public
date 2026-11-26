@@ -72,14 +72,14 @@ function FullPoolResults({ view, pools, apr, actionFor, sort, onSort, icons, onC
 }
 
 /**
- * APR state the homepage cards print: the live estimate once it is ready (or a known miss / new pool),
+ * APR state the homepage cards print: the live estimate once it is ready (or a known miss / too-new pool),
  * otherwise a ready state from the server snapshot so crawlers already see the number in the HTML.
  * Snapshot values have no range label until the client estimate loads.
  */
 export function cardAprState(state: Apr7dState | undefined, saved: number | null): Apr7dState | undefined {
   if (state?.status === "ready" || state?.status === "new" || state?.status === "missing") return state;
   if (typeof saved === "number" && Number.isFinite(saved)) {
-    return { status: "ready", aprPct: saved, rangeLabel: "", lowConfidence: false, avgDailyVolumeUsd: null };
+    return { status: "ready", aprPct: saved, rangeLabel: "", lowConfidence: false, avgDailyVolumeUsd: null, days: 7 };
   }
   return state;
 }

@@ -536,7 +536,7 @@ describe("homepage pools: single top-5 block", () => {
     expect(container.querySelector("[data-testid=homepage-view-all]")!.textContent).toBe("See all 4 pools →");
   });
 
-  it("a new pool (under 7 days of data) is excluded from the top 5 even with a high server APR", async () => {
+  it("a short-window pool with a high APR is included in the top 5 and labelled based on N days of data", async () => {
     const young = cardPayloadWithAprs({ micro: 122.84 });
     young.sample = { ...young.sample, days: 6 };
     mocks.aprFor.mockImplementation((poolId) => (poolId === "amzn-pool" ? { status: "ready", data: young }
@@ -557,8 +557,34 @@ describe("homepage pools: single top-5 block", () => {
     for (let round = 0; round < 4; round += 1) {
       await act(async () => { await new Promise((resolve) => setTimeout(resolve, 5)); });
     }
+    expect(keysOf()).toEqual([sol("amzn-pool"), sol("b-pool"), sol("c-pool")]);
+    expect(container.textContent).toMatch(/122\.84/);
+    expect(container.querySelector("[data-testid=homepage-view-all]")!.textContent).toBe("See all 3 pools →");
+  });
+
+  it("a pool with no complete day of data is excluded from the top 5 even with a high server APR", async () => {
+    const empty = cardPayloadWithAprs({ micro: 122.84 });
+    empty.sample = { ...empty.sample, days: 0 };
+    mocks.aprFor.mockImplementation((poolId) => (poolId === "amzn-pool" ? { status: "ready", data: empty }
+      : ready({ micro: poolId === "b-pool" ? 31.85 : 15.27 })));
+    const pairs = [
+      pair({ poolAddress: "amzn-pool", symbolA: "AMZNx", symbolB: "AMZN", tvlUsd: 900_000 }),
+      pair({ poolAddress: "b-pool", symbolA: "Bx", symbolB: "B", tvlUsd: 800_000 }),
+      pair({ poolAddress: "c-pool", symbolA: "Cx", symbolB: "C", tvlUsd: 700_000 }),
+    ];
+    jsonOk({ pairs });
+    const initial = toHomepagePoolsSnapshot({
+      solana: { pairs: pairs as HomepageSolanaRow[], fetchedAt: "2026-10-30T11:02:00.000Z", stale: false },
+      apr7d: { "solana:b-pool": 31.85, "solana:c-pool": 15.27 },
+    });
+    await act(async () => {
+      root.render(createElement(HomepageMarketView, { initialPools: initial }));
+    });
+    for (let round = 0; round < 4; round += 1) {
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 5)); });
+    }
     expect(keysOf()).toEqual([sol("b-pool"), sol("c-pool")]);
-    expect(container.textContent).not.toMatch(/122\.84|500/);
+    expect(container.textContent).not.toMatch(/122\.84/);
     expect(container.querySelector("[data-testid=homepage-view-all]")!.textContent).toBe("See all 3 pools →");
   });
 

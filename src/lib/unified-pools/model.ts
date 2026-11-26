@@ -101,20 +101,19 @@ export function unsupportedTokenReason(pool: Pick<UnifiedPool, "unsupportedIssue
 }
 
 /**
- * Where a pool ranks by APR, before its APR: 0 normal, 1 Low TVL (under `LOW_TVL_USD`), 2 New pool (too few days of
- * data), 3 Not supported yet. Higher groups always come after lower ones, in either APR direction.
+ * Where a pool ranks by APR, before its APR: 0 normal, 1 Low TVL (under `LOW_TVL_USD`), 2 Not supported yet.
+ * Higher groups always come after lower ones, in either APR direction. Short-window estimates rank by their number.
  */
-export type RankGroup = 0 | 1 | 2 | 3;
+export type RankGroup = 0 | 1 | 2;
 export type RankGroupLookup = (pool: UnifiedPool) => RankGroup;
 
-export function poolRankGroup(pool: UnifiedPool, isNewPool: boolean): RankGroup {
-  if (unsupportedTokenReason(pool)) return 3;
-  if (isNewPool) return 2;
+export function poolRankGroup(pool: UnifiedPool): RankGroup {
+  if (unsupportedTokenReason(pool)) return 2;
   return isLowTvl(pool) ? 1 : 0;
 }
 
-/** Rank groups without APR states (new pools unknown): Not supported yet, then Low TVL. */
-export const poolRankGroupOf: RankGroupLookup = (pool) => poolRankGroup(pool, false);
+/** Rank groups: Not supported yet, then Low TVL, then everyone else. */
+export const poolRankGroupOf: RankGroupLookup = (pool) => poolRankGroup(pool);
 
 /** Negative when `a` should be kept over `b` (higher 7d APR; no 7d APR ranks last; then TVL, 24h volume, address). */
 export function compareDuplicateRank(a: UnifiedPool, b: UnifiedPool, apr7d: Apr7dLookup): number {
@@ -191,7 +190,7 @@ function sortValue(pool: UnifiedPool, key: SortKey, apr7d: Apr7dLookup): number 
 
 /**
  * Stable sort; missing numbers always go last whatever the direction; ties fall back to TVL (high first), then name.
- * By APR, rank groups come first in either direction (`RankGroup`: normal, Low TVL, New pool, Not supported yet).
+ * By APR, rank groups come first in either direction (`RankGroup`: normal, Low TVL, Not supported yet).
  */
 export function sortPools(pools: readonly UnifiedPool[], key: SortKey, dir: SortDir, apr7d: Apr7dLookup, group: RankGroupLookup = poolRankGroupOf): UnifiedPool[] {
   const sign = dir === "asc" ? 1 : -1;
@@ -224,7 +223,7 @@ export function sortPools(pools: readonly UnifiedPool[], key: SortKey, dir: Sort
  */
 export function selectPools(pools: readonly UnifiedPool[], options: {
   filters: PoolFilters; hideDuplicates: boolean; sort: { key: SortKey; dir: SortDir }; apr7d: Apr7dLookup;
-  /** Rank groups (default: from the pool alone, `poolRankGroupOf`; pass one that knows new pools). */
+  /** Rank groups (default: `poolRankGroupOf`). */
   group?: RankGroupLookup;
 }): { pools: UnifiedPool[]; hiddenDuplicates: number } {
   const group = options.group ?? poolRankGroupOf;

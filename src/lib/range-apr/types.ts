@@ -52,7 +52,7 @@ export type PoolRangeAprPayload = {
     days: number;
     /**
      * Complete UTC days in the last 30 on which the pool traded and had TVL (`countDataDays`, the same count the share
-     * calculator uses). The cards show "New pool" below `MIN_DATA_DAYS`. Absent on snapshots saved before it existed.
+     * calculator uses). A volume window shorter than `MIN_DATA_DAYS` is labelled "based on N days of data"; a window of 0 complete days shows "Too new". Absent on snapshots saved before it existed.
      */
     dataDays?: number;
     volumeSource: VolumeSource;

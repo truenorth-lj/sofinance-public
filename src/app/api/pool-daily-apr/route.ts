@@ -3,9 +3,7 @@ import { unstable_cache } from "next/cache";
 import { apiError } from "@/lib/api-response";
 import { dexRegistry, DexError } from "@/lib/dex";
 import { fetchPoolDailyApr, getCachedPoolDailyApr, NotRaydiumPoolError } from "@/lib/pool-daily-apr";
-import type { DailyAprPoint } from "@/lib/apr-series";
-import { selectBestPlanApr } from "@/lib/lp-plan-best-apr";
-import { isThinPlanSample } from "@/lib/lp-plan-yield";
+import { tooLittleData } from "@/lib/pool-daily-apr-cache";
 
 export const revalidate = 3600;
 
@@ -20,16 +18,6 @@ const DEGRADED_HEADERS = {
   "CDN-Cache-Control": "public, s-maxage=60",
   "Vercel-CDN-Cache-Control": "public, s-maxage=60",
 };
-/**
- * A 200 with too little data to project from (no 7 / 30 / 90-day average, or fewer days than the calculator needs, the
- * same `selectBestPlanApr` / `isThinPlanSample` checks the dialog and the homepage estimator run): kept only five
- * minutes at the CDN (`THIN_DATA_HEADERS`), so a young pool's numbers appear soon after it has the days (SP-2).
- */
-function tooLittleData(result: { points: DailyAprPoint[]; fetchedAt: string }): boolean {
-  const asOf = Date.parse(result.fetchedAt) / 1000;
-  const best = selectBestPlanApr(result.points, Number.isFinite(asOf) ? asOf : undefined);
-  return best === null || isThinPlanSample(best.sampleDays);
-}
 /** Success: an hour at the CDN (stale up to a day while it refreshes); too little data: five minutes; degraded: a minute (the shortest wins). */
 /** Too little data: five minutes at the CDN, so a young pool's numbers appear soon after it has the days. */
 const THIN_DATA_HEADERS = {
@@ -37,7 +25,7 @@ const THIN_DATA_HEADERS = {
   "CDN-Cache-Control": "public, s-maxage=300",
   "Vercel-CDN-Cache-Control": "public, s-maxage=300",
 };
-const headersFor = (result: { degraded?: string; points: DailyAprPoint[]; fetchedAt: string }) =>
+const headersFor = (result: { degraded?: string } & Parameters<typeof tooLittleData>[0]) =>
   result.degraded ? DEGRADED_HEADERS : tooLittleData(result) ? THIN_DATA_HEADERS : CDN_HEADERS;
 
 /** Carries a degraded answer out of `unstable_cache`, which keeps only values its function returns. */

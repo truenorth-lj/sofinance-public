@@ -12,7 +12,7 @@ import { buildOpenPositionUrl } from "../../lib/public-urls";
 import type { GetPoolRangeAprInput } from "../schemas";
 import { readListedPairs, readPoolApr } from "./pool-snapshot";
 
-export const WINDOW_LABEL = "7-day estimate: the last 7 full UTC days of pool volume against the pool's current liquidity";
+export const WINDOW_LABEL = "Fee estimate: complete UTC days of pool volume (up to the last 7) against the pool's current liquidity";
 /** Same approved risk line the site's APR help uses ("Fees not guaranteed" is the one allowed form). */
 export const FEES_NOTE =
   "Estimates from past trading, not a promise of future fees. Fees not guaranteed. Fees accrue only while the pool price is inside your range.";
@@ -34,6 +34,7 @@ export type PoolApr7dSummary =
     highestRange: string;
     lowConfidence: boolean;
     dataDelayed: boolean;
+    daysOfData: number;
     snapshotAt?: string;
   }
   | { status: "new"; daysOfData: number; reason: string; snapshotAt?: string }
@@ -50,13 +51,14 @@ export function summarizePoolApr7d(payload: PoolRangeAprPayload, protocol: strin
       highestRange: state.rangeLabel,
       lowConfidence: state.lowConfidence,
       dataDelayed: state.freshness?.delayed ?? false,
+      daysOfData: state.days,
       ...(snapshotAt ? { snapshotAt } : {}),
     };
   }
   if (state.status === "new") {
     return {
       status: "new", daysOfData: state.days,
-      reason: "New pool: too few days of trading data for a 7-day estimate.",
+      reason: "Too new: no complete day of trading data yet.",
       ...(snapshotAt ? { snapshotAt } : {}),
     };
   }
@@ -72,8 +74,9 @@ const UNAVAILABLE_WORDS: Record<RangeAprUnavailableReason, string> = {
 };
 
 /**
- * 7-day fee APR for each of the four range presets of one listed pool, from its saved snapshot, priced at the same
- * $1,000 basis as the pool cards. Numbers appear only when the pools page would show one (not for new pools or
+ * Fee APR for each of the four range presets of one listed pool, from its saved snapshot, priced at the same
+ * $1,000 basis as the pool cards. A pool with fewer than 7 complete UTC days is estimated from the days it has
+ * (`daysOfData`). Numbers appear only when the pools page would show one (not for a pool with no complete day, or
  * snapshots past the 48h limit).
  *
  * Safety: read-only. Production reads saved snapshots only (no RPC); no wallet or token needed.

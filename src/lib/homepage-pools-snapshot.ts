@@ -40,7 +40,7 @@ type AprRef = { key: string; chain: HomepagePool["chain"]; protocol: HomepagePoo
 /**
  * Estimated highest range APR (7-day) per pool key, read from the same saved APR snapshots as `/api/pool-range-apr`
  * and `/api/protocol-pools/range-apr` and resolved with the same `summarizeApr7d` as `/pools`. A pool whose
- * read fails, or whose estimate is missing, expired or too new (`status: "new"`), has no entry (it then ranks like a missing APR on that page).
+ * read fails, or whose estimate is missing, expired or has no complete day of data (`status: "new"`), has no entry (it then ranks like a missing APR on that page).
  */
 async function readApr7d(refs: AprRef[]): Promise<Record<string, number>> {
   const now = Date.now();

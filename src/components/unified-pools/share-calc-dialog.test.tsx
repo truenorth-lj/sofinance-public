@@ -4,7 +4,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ShareCalcDialog, type ShareCalcPool } from "./share-calc-dialog";
 import type { OpenAction } from "./pool-list";
-import { PLAN_HIDDEN_RISK_LINE } from "@/lib/lp-plan-notice";
 import { AMZN_LAUNCH_POINTS, AMZN_LAUNCH_POOL, AMZN_LAUNCH_TVL_USD } from "@/lib/amzn-launch-daily-apr.fixture";
 import { clearPoolYieldMemory } from "../plan/use-pool-yield";
 
@@ -169,21 +168,19 @@ describe("ShareCalcDialog (counted in the pool's asset, SP-2)", () => {
     expect(node.querySelector('[aria-label="HODL"]')!.textContent).toContain("1,000 USDC");
   });
 
-  it("shows no numbers for a pool with only a few days of data (AMZNx/AMZN: 78,551.2% before the fix)", async () => {
+  it("shows capped numbers for a short-window small pool (AMZNx/AMZN: 78,551.2% before the fee cap)", async () => {
     fetcher.mockImplementation(async () => ({ ok: true, json: async () => ({ poolId: AMZN_LAUNCH_POOL, points: AMZN_LAUNCH_POINTS, fetchedAt: "2026-11-04T10:21:06.000Z" }) }));
     await render({ poolAddress: AMZN_LAUNCH_POOL, pairLabel: "AMZNx/AMZN", protocol: "raydium-clmm", tvlUsd: AMZN_LAUNCH_TVL_USD, usdPerShare: 220 },
       { kind: "open", onOpen: vi.fn() });
-    for (let i = 0; i < 60 && !text().includes("Only 4 days"); i++) {
+    for (let i = 0; i < 60 && !node.querySelector("[data-testid=share-calc-warning]"); i++) {
       await act(async () => { await new Promise((resolve) => setTimeout(resolve, 15)); });
     }
-    expect(node.querySelector("[role=status]")!.textContent).toBe(
-      "Only 4 days of trading data for this pool, too few to project fees from, so no numbers are shown. Check back once it has 7 days.");
-    expect(node.querySelector("[data-testid=hodl-vs-pool]")).toBeNull();
-    expect(node.querySelector("[data-testid=share-calc-assumptions]")).toBeNull();
-    expect(text()).not.toMatch(/78,551|785,512|7,865|Break-even/);
-    expect(node.querySelector("[data-testid=share-calc-footnote]")).toBeNull();
-    expect(text()).not.toMatch(/Best case|compounded daily/);
-    expect(node.querySelector("[data-testid=share-calc-risk]")!.textContent).toBe(PLAN_HIDDEN_RISK_LINE);
+    const warning = node.querySelector("[data-testid=share-calc-warning]")!.textContent;
+    expect(warning).toContain("Based on 4 days of data.");
+    expect(warning).toContain("Small pool");
+    expect(node.querySelector("[data-testid=hodl-vs-pool]")).not.toBeNull();
+    expect(node.querySelector("[data-testid=share-calc-assumptions]")).not.toBeNull();
+    expect(text()).not.toMatch(/78,551|785,512|7,865/);
     expect(node.querySelector("button[aria-label='Open position in AMZNx/AMZN']")).not.toBeNull();
   });
 

@@ -5,7 +5,7 @@ import { rangeAprPayload } from "@/lib/range-apr/display-policy";
 export { poolLpFeesPerDayUsd } from "@/lib/range-apr/estimate-policy";
 import type { PoolRangeAprPayload } from "@/lib/range-apr/types";
 import { aprSnapshotExpired, aprSnapshotLate } from "@/lib/rwa-freshness";
-import { poolRankGroup, type RankGroupLookup, type UnifiedPool, type UnifiedProtocol } from "./model";
+import { poolRankGroupOf, type RankGroupLookup, type UnifiedProtocol } from "./model";
 import { hasTooFewDataDays } from "@/lib/min-data-days";
 
 /** When the pool's APR snapshot was taken, and whether its refresh is late or failed ("Data delayed"). */
@@ -18,19 +18,20 @@ export type Apr7dState =
     rangeLabel: string;
     /** Thin or patchy recent trading behind the estimate. */
     lowConfidence: boolean;
-    /** 7-day average daily volume behind the estimate (for the volume divergence note). */
+    /** Average daily volume behind the estimate (for the volume divergence note). */
     avgDailyVolumeUsd: number | null;
+    /** Complete UTC days the volume average was taken over (the sample window, zeros included). */
+    days: number;
     freshness?: AprFreshness;
   }
   /**
-   * A pool younger than `MIN_DATA_DAYS` complete UTC days: no APR is shown ("New pool · N days of data") and it is left
-   * out of the APR ranking. `days`: complete days the estimate would have averaged over.
+   * No complete UTC day in the volume window: no APR is shown ("Too new"). `days` is the window length (0).
    */
   | { status: "new"; days: number; freshness?: AprFreshness }
   | { status: "missing"; reason: string; degraded?: boolean; freshness?: AprFreshness };
 
 /**
- * Days of data behind the card: the payload's `dataDays` (`countDataDays`, the calculator's count: days with both
+ * Days of data behind the traded-day count: the payload's `dataDays` (`countDataDays`, days with both
  * volume and TVL), or the sample's calendar days on a snapshot saved before it existed.
  */
 export function cardDataDays(payload: PoolRangeAprPayload): number {
@@ -39,13 +40,21 @@ export function cardDataDays(payload: PoolRangeAprPayload): number {
 }
 
 /**
- * One pool's estimated highest range APR (7-day average) from its range-APR payload, with the same
+ * Complete UTC days the volume average was taken over (`sample.days`): the length of the window, including
+ * zero-volume days. The card labels a window shorter than 7 days and hides an estimate only when this is 0.
+ */
+export function cardWindowDays(payload: PoolRangeAprPayload): number {
+  return payload.sample.days;
+}
+
+/**
+ * One pool's estimated highest range APR (up to a 7-day average) from its range-APR payload, with the same
  * `highestRangeSummary` the cards and the Create position modal use. Pure, so `/pools` (client) and the
  * homepage snapshot (server) resolve the identical number from the identical payload.
  *
  * The APR is the best fitting range's, at the common $1,000 preview basis, held only to every fee the pool's LPs took (a
- * deposit can never earn more than all of them), so a thin $126 pool cannot show a range APR its fees never paid. It is
- * not held to the pool's average fee rate: a concentrated range earns above that average by design, so that cap
+ * deposit can never collect more than all of them), so a thin $126 pool cannot show a range APR its fees never paid. It is
+ * not held to the pool's average fee rate: a concentrated range collects above that average by design, so that cap
  * replaced the range's number on most cards (15 of 20 live pools on 2026-11-10).
  *
  */
@@ -60,7 +69,7 @@ export function summarizeApr7d(payload: PoolRangeAprPayload, protocol: UnifiedPr
     snapshotAt: payload.freshness.snapshotAt,
     delayed: payload.freshness.stale || payload.freshness.lastAttemptStatus === "error" || expired || aprSnapshotLate(payload, nowMs),
   } : undefined;
-  const days = cardDataDays(payload);
+  const days = cardWindowDays(payload);
   if (!expired && Number.isFinite(days) && hasTooFewDataDays(days)) {
     return { status: "new", days, freshness };
   }
@@ -72,7 +81,7 @@ export function summarizeApr7d(payload: PoolRangeAprPayload, protocol: UnifiedPr
   }
   const aprPct = summary.aprPct;
   return {
-    status: "ready", freshness, aprPct,
+    status: "ready", freshness, aprPct, days,
     rangeLabel: uiFor(protocol).rangeApr?.rangeLabels?.[summary.id]
       ?? OPEN_RANGE_UI_PRESETS.find((preset) => preset.id === summary.id)?.label ?? summary.label,
     lowConfidence: payload.sample.confidence === "low",
@@ -80,7 +89,7 @@ export function summarizeApr7d(payload: PoolRangeAprPayload, protocol: UnifiedPr
   };
 }
 
-/** Rank groups for the list (`RankGroup`): a pool whose APR state is "new" ranks with the new pools. */
-export function rankGroupLookup(apr: Readonly<Record<string, Apr7dState | undefined>>): RankGroupLookup {
-  return (pool: UnifiedPool) => poolRankGroup(pool, apr[pool.key]?.status === "new");
+/** Rank groups for the list (`RankGroup`): Low TVL and Not supported yet. A short or missing APR no longer has its own group. */
+export function rankGroupLookup(): RankGroupLookup {
+  return poolRankGroupOf;
 }

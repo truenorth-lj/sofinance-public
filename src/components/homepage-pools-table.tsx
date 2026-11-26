@@ -137,12 +137,12 @@ export function useHomepagePools(initial?: HomepagePoolsSnapshot | null): Homepa
   const apr7d = useCallback((pool: UnifiedPool) => {
     const state = apr[pool.key];
     if (state?.status === "ready") return state.aprPct;
-    // Missing, or a new pool (too few days of data): no APR, so it is left out of the ranking.
+    // Missing, or no complete day of data: no APR, so it is left out of the ranking.
     if (state && state.status !== "loading") return null;
     const saved = serverApr?.[pool.key];
     return typeof saved === "number" && Number.isFinite(saved) ? saved : null;
   }, [apr, serverApr]);
-  const group = useMemo(() => rankGroupLookup(apr), [apr]);
+  const group = useMemo(() => rankGroupLookup(), []);
   const retry = useCallback(() => {
     setLoading(true);
     setError(null);
