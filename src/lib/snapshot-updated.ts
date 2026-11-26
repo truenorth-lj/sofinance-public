@@ -10,6 +10,12 @@ export function utcMinuteLabel(iso: string): string | null {
   return `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")} UTC`;
 }
 
+/** Title on a "Data delayed" mark: "Snapshot from 2026-10-30 11:02 UTC". */
+export function delayedSnapshotTitle(iso: string): string | undefined {
+  const label = utcMinuteLabel(iso);
+  return label ? `Snapshot from ${label}` : undefined;
+}
+
 const CHAIN_NAMES: Readonly<Record<PoolChain, string>> = { solana: "Solana", robinhood: "Robinhood Chain" };
 
 /**

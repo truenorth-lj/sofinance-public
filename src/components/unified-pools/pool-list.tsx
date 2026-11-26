@@ -13,6 +13,7 @@ import type { OpenAction } from "@/lib/unified-pools/open-action";
 import { InfoTip } from "../info-tip";
 import { PairTokenIcons } from "../pair-token-icons";
 import { basedOnDataDaysLabel, isShortAprWindow } from "@/lib/min-data-days";
+import { delayedSnapshotTitle } from "@/lib/snapshot-updated";
 
 /* Pool list pieces shared by `/pools` and the homepage, so both render pools with the same component. */
 
@@ -76,7 +77,7 @@ export function Apr7dValue({ state, size = "lg", lowTvl = false }: {
     state?.status === "new" && <span key="new" data-testid="apr7d-new-days" className={line}>{NEW_POOL_LABEL}</span>,
     state?.status === "ready" && isShortAprWindow(state.days) && <span key="short" data-testid="apr7d-short-days" className={line}>{basedOnDataDaysLabel(state.days)}</span>,
     state?.status === "ready" && state.freshness?.delayed && <span key="delayed" data-testid="apr7d-delayed" className={line}
-      title={`Snapshot from ${new Date(state.freshness.snapshotAt).toLocaleString()}`}>Data delayed</span>,
+      title={delayedSnapshotTitle(state.freshness.snapshotAt)}>Data delayed</span>,
     lowTvl && state?.status !== "new" && <LowTvlTag key="low" tone="dark" />,
   ].filter(Boolean);
   if (!notes.length) return value;

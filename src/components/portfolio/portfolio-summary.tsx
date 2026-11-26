@@ -3,6 +3,7 @@
 import { Loader2 } from "lucide-react";
 import { useId, useState } from "react";
 import { cn } from "@/lib/cn";
+import { formatUtcTime } from "@/lib/format/datetime";
 import { formatUsd } from "@/lib/format/usd";
 import type { PortfolioTotals } from "@/lib/portfolio/figures";
 import type { PortfolioPosition } from "@/lib/portfolio/model";
@@ -16,7 +17,7 @@ export function PortfolioHistoryStatus({ rows }: { rows: readonly PortfolioPosit
   return <p role="status" data-testid="portfolio-history-status" className="mt-2 px-1 text-xs text-smoke">
     {updating ? "Updating fee history… Available values are shown. "
       : stale ? "Fee history may be out of date. Refresh to retry. " : ""}
-    {checked ? <>Fee history checked <time dateTime={checked}>{new Date(checked).toLocaleTimeString()}</time>.</> : null}
+    {checked ? <>Fee history checked <time dateTime={checked}>{formatUtcTime(checked, { seconds: true })}</time>.</> : null}
   </p>;
 }
 

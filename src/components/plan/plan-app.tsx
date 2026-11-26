@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
@@ -46,6 +46,24 @@ function syncPlanUrl(path: string, selection: { poolId?: string; pair?: string; 
   window.history.replaceState(null, "", qs ? `${path}?${qs}` : path);
 }
 
+/** Null on the server and during hydration; a frozen Date.now() after mount, so the planning end date is not in SSR HTML. */
+function useClientNow(): number | null {
+  const store = useRef<{ now: number | null; listeners: Set<() => void> }>({ now: null, listeners: new Set() });
+  const now = useSyncExternalStore(
+    (listener) => {
+      store.current.listeners.add(listener);
+      return () => { store.current.listeners.delete(listener); };
+    },
+    () => store.current.now,
+    () => null,
+  );
+  useEffect(() => {
+    if (store.current.now === null) store.current.now = Date.now();
+    store.current.listeners.forEach((listener) => listener());
+  }, []);
+  return now;
+}
+
 export function PlanApp() {
   const params = useSearchParams();
   const pathname = usePathname();
@@ -64,7 +82,7 @@ export function PlanApp() {
   const selection = chosen ?? fromUrl;
   const [setup, setSetup] = useState(() => parsePlanSetup(params));
   const [active, setActive] = useState<IntentField>(() => fieldFromParam(params.get("edit")));
-  const [now] = useState(() => Date.now());
+  const now = useClientNow();
   const poolId = selection.poolId;
   const pair = selection.pair;
   const poolYield = usePoolYield(poolId);

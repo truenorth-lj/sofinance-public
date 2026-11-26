@@ -18,6 +18,7 @@ import { InfoTip } from "../info-tip";
 import { PairTokenIcons } from "../pair-token-icons";
 import { basedOnDataDaysLabel, isShortAprWindow, MIN_APR_DATA_DAYS } from "@/lib/min-data-days";
 import { shortAddress } from "@/lib/format/address";
+import { delayedSnapshotTitle } from "@/lib/snapshot-updated";
 import { APR7D_SHORT, Apr7dValue, NEW_POOL_LABEL, newPoolTitle, rangeApr7dLabel, ChainBadge, chip, iconPair, LowTvlTag, money, OpenButton, type OpenAction } from "./pool-list";
 import type { Apr7dState } from "./use-pools-apr7d";
 import { chainMeta } from "./use-pool-sources";
@@ -97,7 +98,7 @@ export function PoolCard({ pool, apr, action, icons, onCalculate, calculateHref,
       {basedOnDataDaysLabel(ready.days)}.</p>}
     {/* No "Updated …" time on the card; only a late snapshot says so (its time in the title, like the table). */}
     {freshness?.delayed && <p className="mt-2 text-xs text-ink/60" data-testid="apr-delayed"
-      title={`Snapshot from ${new Date(freshness.snapshotAt).toLocaleString()}`}>Data delayed</p>}
+      title={delayedSnapshotTitle(freshness.snapshotAt)}>Data delayed</p>}
     {chain?.showHighestRange && <div className="mt-4">
       <p className={cn("flex items-center gap-1", cardEyebrow)}>
         {HIGHEST_RANGE_COLUMN_LABEL}

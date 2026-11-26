@@ -3,10 +3,9 @@
 import type { ReactNode } from "react";
 import { CheckCircle2, CircleAlert, LoaderCircle } from "lucide-react";
 import { shortAddress } from "@/lib/format/address";
+import { formatUtcTime } from "@/lib/format/datetime";
 import { solscanTxUrl } from "@/lib/format/explorer";
 import { useSessionActivity, type ActivityEntry } from "@/lib/portfolio/session-activity";
-
-const time = (at: number) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
 function Icon({ status }: { status: ActivityEntry["status"] }) {
   if (status === "success") return <CheckCircle2 aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-mint" />;
@@ -27,7 +26,7 @@ export function ActivityList({ positionKey, records, footer, savedSignatures = [
       <Icon status={entry.status} />
       <div className="min-w-0 flex-1">
         <p className="flex flex-wrap items-baseline justify-between gap-x-3"><span className="font-semibold text-cream">{entry.title}</span>
-          <span className="text-xs tabular-nums text-smoke">{time(entry.at)}</span></p>
+          <span className="text-xs tabular-nums text-smoke">{formatUtcTime(entry.at)}</span></p>
         {entry.detail ? <p className="mt-1 break-words text-xs leading-5 text-cream/80">{entry.detail}</p> : null}
         {entry.signature ? <a href={solscanTxUrl(entry.signature)} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-cream/80 underline">
           View transaction {shortAddress(entry.signature)}</a> : null}
