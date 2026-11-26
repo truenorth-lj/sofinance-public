@@ -33,8 +33,8 @@ export const meteoraDlmmDescriptor: DexDescriptor = Object.freeze({
     maxRangeUnitsPerPosition: 70,
     /** lb_clmm `MIN_BIN_ID` / `MAX_BIN_ID` (±443,636). A pool's bin step can narrow this further; the adapter checks that on chain. */
     rangeUnitBounds: Object.freeze({ min: -443_636, max: 443_636 }),
-    /** 1/2 setup (create the position account), 2/2 deposit (swap legs + add liquidity). */
-    openSteps: Object.freeze({ min: 2, max: 2 }),
+    /** 1/2 setup (create the position account), 2/2 deposit (swap legs + add liquidity); a SOL input wraps in between (3). */
+    openSteps: Object.freeze({ min: 2, max: 3 }),
     rent: Object.freeze({
       refundableOnClose: true,
       disclosure: "Opening sets aside about 0.042 SOL as position rent. You get it back when you fully withdraw.",
@@ -48,8 +48,10 @@ export const meteoraDlmmDescriptor: DexDescriptor = Object.freeze({
     /** datapi `pool_config.protocol_fee_pct` is 10 on the listed pools: LPs keep 90% of each swap fee. */
     planLpFeeShare: 0.9,
     feePolicy: METEORA_DLMM_FEE_POLICY,
-    /** Same inputs as opening (SOL is refused). */
+    /** Same inputs as opening, except native SOL (Add refuses it). */
     depositInputs: Object.freeze({ poolTokens: true, extra: Object.freeze([{ id: USDC_MINT, symbol: "USDC", decimals: 6 }]) }),
+    /** Opening takes native SOL in pools that hold wrapped SOL (SOL/hSOL; PM 11/26): wrap step, then a wSOL deposit. */
+    nativeSolOpen: "pools-with-wrapped-sol",
     /** DLMM charges a composition fee when a deposit changes the active bin's token mix (PM review of #289). */
     inRangeDepositPoolFee: "While the price is inside the range, the pool may charge its own composition fee on the part that goes into the bin at the current price. That fee goes to the pool, not to us.",
   }),

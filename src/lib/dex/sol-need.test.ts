@@ -24,4 +24,11 @@ describe("openSolNeed (shared by the server's INSUFFICIENT_FUNDS check and the o
       expect(openSolPartsFromQuote(43_939_120n, sol as never).ok).toBe(false);
     }
   });
+  it("a SOL-input quote adds the deposit to the need; a malformed deposit can't be computed", () => {
+    const base = { networkFeeLamports: "20000", swapAccountsLamports: "4245880", reserveLamports: "10000000" };
+    const withDeposit = openSolPartsFromQuote(43_939_120n, { ...base, inputLamports: "500000000" });
+    expect(withDeposit).toEqual({ ok: true, parts: { rentLamports: 43_939_120n, networkFeeLamports: 20_000n, swapAccountsLamports: 4_245_880n, reserveLamports: 10_000_000n, inputLamports: 500_000_000n } });
+    if (withDeposit.ok) expect(openSolNeed(withDeposit.parts)).toBe(558_205_000n);
+    expect(openSolPartsFromQuote(43_939_120n, { ...base, inputLamports: "0.5" }).ok).toBe(false);
+  });
 });

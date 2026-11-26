@@ -5,7 +5,7 @@
  * Everything comes from the descriptor: deposit inputs, the per-position range cap (`meta.maxRangeUnitsPerPosition`),
  * the rent model, the open fee rule and the number of steps. No layer here knows which DEX the pool belongs to.
  *
- * Flow: pick a token (the pool's two or the descriptor's extra inputs; never native SOL) → amount → a preset range
+ * Flow: pick a token (the pool's two or the descriptor's extra inputs; native SOL only where `meta.nativeSolOpen` allows) → amount → a preset range
  * (wider than the cap: shown as "not available to open yet") → POST /api/dex/[dex]/quote-open (rent, fee, blocked
  * reason) → each step through `dexTxAdapter("open")` + `useTxPipeline().runSteps`: loading → success / failure with a
  * Solscan link → balances refresh (the pipeline's notice asks every panel to re-read).
@@ -40,6 +40,11 @@ const QUOTE_DEBOUNCE_MS = 400;
 export const NETWORK_FEE_COPY = "Network fee is set by your wallet.";
 const SOL_RESERVE_COPY = "Keep some SOL beyond the rent. Your wallet may add a priority fee to each step (often about 0.001–0.002 SOL), and that fee must also fit in your SOL.";
 export const SOL_REFUSED_COPY = "SOL can't be used to open a position. Use one of the listed tokens.";
+/** Shown while native SOL is the selected input (the open gains a plain wrap step). */
+export const SOL_WRAP_COPY = "Using SOL adds one approval: your wallet wraps the SOL you deposit in its own step, between creating the position and depositing.";
+/** SOL left for the rent, fees and reserve when Max is pressed before a quote has priced them. */
+const SOL_MAX_HEADROOM_LAMPORTS = 70_000_000n;
+const NATIVE_SOL: TokenRef = { id: NATIVE_SOL_MINT, symbol: "SOL", decimals: 9 };
 const RANGE_TOO_WIDE_COPY = (units: number, max: number, unit: string) =>
   `Not available to open yet: this range spans ${units} ${unit}s, and one position holds at most ${max}.`;
 export const NO_RANGE_FITS_COPY = "No range of this pool fits one position, so it is not available to open yet.";
@@ -94,22 +99,34 @@ export function preferredOpenPresetId(
   return winner && available.some((item) => item.id === winner.id) ? winner.id : first;
 }
 
-/** Tokens the open accepts: the pool's two plus the descriptor's extra inputs, never native SOL. */
+/** Whether native SOL may open this pool: the descriptor allows it and one of the pool's tokens is wrapped SOL. */
+export const nativeSolOpens = (pool: Pick<UnifiedPool, "mintA" | "mintB">, descriptor: Pick<DexDescriptor, "meta">) =>
+  descriptor.meta.nativeSolOpen === "pools-with-wrapped-sol" && (pool.mintA === NATIVE_SOL_MINT || pool.mintB === NATIVE_SOL_MINT);
+
+/**
+ * Tokens the open accepts: the pool's two plus the descriptor's extra inputs. The wSOL mint is never offered as a
+ * token; where `nativeSolOpens`, native SOL takes its place (the adapter wraps it in its own step).
+ */
 export function openInputs(pool: Pick<UnifiedPool, "mintA" | "mintB" | "symbolA" | "symbolB">, descriptor: Pick<DexDescriptor, "meta">,
   decimals: { a: number; b: number } | null): TokenRef[] {
   const list: TokenRef[] = [];
   const { poolTokens, extra } = descriptor.meta.depositInputs;
   if (poolTokens && decimals) list.push({ id: pool.mintA, symbol: pool.symbolA, decimals: decimals.a }, { id: pool.mintB, symbol: pool.symbolB, decimals: decimals.b });
   for (const token of extra) if (!list.some((item) => item.id === token.id)) list.push(token);
-  return list.filter((token) => token.id !== NATIVE_SOL_MINT);
+  const native = nativeSolOpens(pool, descriptor);
+  return list.flatMap((token) => (token.id !== NATIVE_SOL_MINT ? [token] : native && poolTokens && decimals ? [NATIVE_SOL] : []));
 }
+
+/** What the wallet holds of an input, raw: lamports for native SOL, the token balance otherwise (undefined = unknown). */
+export const heldRaw = (balances: { sol: bigint | null; byMint: Record<string, string> } | null, id: string): string | undefined =>
+  id === NATIVE_SOL_MINT ? (balances?.sol === null || balances?.sol === undefined ? undefined : balances.sol.toString()) : balances?.byMint[id];
 
 type Balances = { sol: bigint | null; byMint: Record<string, string> };
 type WalletAssets = { assets?: { mint: string; kind: string; balance: string }[] };
 const solText = (lamports: bigint) => (Number(lamports) / 1e9).toFixed(4);
 /** The SOL-short message: what the open needs (rent, network fees, temporary swap accounts, reserve), what the wallet has, and what is missing. */
-const solShortCopy = (need: bigint, have: bigint) =>
-  `Not enough SOL: this open needs about ${solText(need)} SOL (rent, network fees, temporary swap accounts and a small reserve), and your wallet has ${solText(have)} SOL. Add about ${solText(need - have)} SOL to open.`;
+const solShortCopy = (need: bigint, have: bigint, deposit = false) =>
+  `Not enough SOL: this open needs about ${solText(need)} SOL (${deposit ? "your SOL deposit, " : ""}rent, network fees, temporary swap accounts and a small reserve), and your wallet has ${solText(have)} SOL. Add about ${solText(need - have)} SOL${deposit ? " or lower the amount" : ""} to open.`;
 const price = (value: number) => (value >= 1 ? value.toPrecision(6) : value.toPrecision(4));
 
 function useWalletBalances(wallet: string | null): Balances | null {
@@ -157,7 +174,9 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
   const payload = ranges instanceof Error ? null : ranges;
   const tokens = useMemo(() => openInputs(pool, descriptor, payload && payload.decimals[pool.mintA] !== undefined && payload.decimals[pool.mintB] !== undefined
     ? { a: payload.decimals[pool.mintA]!, b: payload.decimals[pool.mintB]! } : null), [pool, descriptor, payload]);
-  const solIsPoolToken = descriptor.meta.depositInputs.poolTokens && (pool.mintA === NATIVE_SOL_MINT || pool.mintB === NATIVE_SOL_MINT);
+  // SOL is a pool token but this DEX can't open with it: say so instead of silently leaving it out.
+  const solIsPoolToken = descriptor.meta.depositInputs.poolTokens && (pool.mintA === NATIVE_SOL_MINT || pool.mintB === NATIVE_SOL_MINT)
+    && !nativeSolOpens(pool, descriptor);
   const presets = useMemo(() => (payload ? presetOptions(payload.presets, descriptor, apr) : []), [payload, descriptor, apr]);
   const [tokenId, setTokenId] = useState("");
   const [presetId, setPresetId] = useState<RangeAprPresetId | "">("");
@@ -185,7 +204,7 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
   if (token && amount.trim()) {
     try { raw = parseTokenAmount(amount.trim(), token.decimals); } catch { problem = `Enter an amount with at most ${token.decimals} decimals.`; }
     if (raw !== null && raw <= 0n) { problem = "Enter an amount above zero."; raw = null; }
-    const have = balances?.byMint[token.id];
+    const have = heldRaw(balances, token.id);
     if (raw !== null && have !== undefined && raw > BigInt(have)) { problem = `Not enough ${token.symbol}: your wallet has ${formatAmount(have, token.decimals)}.`; raw = null; }
   }
 
@@ -259,8 +278,9 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
   const walletNote = tx.status === "wallet" && prepared ? tokenAccountRentLine(prepared.createsTokenAccounts, (mint) => tokens.find((item) => item.id === mint)?.symbol ?? "token") : null;
   const stepText = tx.step?.of && tx.step.of > 1 && tx.locked ? `Step ${tx.step.step} of ${tx.step.of}` : null;
 
+  const solInput = token?.id === NATIVE_SOL_MINT;
   const assets = tokens.map((item) => {
-    const have = balances?.byMint[item.id];
+    const have = heldRaw(balances, item.id);
     const symbol = item.symbol || "token";
     return {
       id: item.id,
@@ -286,14 +306,20 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
       assetSelectId="registry-open-token"
       assetPlaceholder="Select a token"
       assetDisabled={tx.locked}
-      assetNote={solIsPoolToken ? <p data-testid="registry-open-sol" className="mt-2 text-xs text-smoke">{SOL_REFUSED_COPY}</p> : null}
+      assetNote={solIsPoolToken ? <p data-testid="registry-open-sol" className="mt-2 text-xs text-smoke">{SOL_REFUSED_COPY}</p>
+        : solInput ? <p data-testid="registry-open-sol-wrap" className="mt-2 text-xs text-smoke">{SOL_WRAP_COPY}</p> : null}
       amount={amount}
       onAmountChange={setAmount}
       amountInputId="registry-open-amount"
       amountDisabled={tx.locked}
       amountProblem={problem ? <p role="alert" className="mt-2 text-xs text-cream/80">{problem}</p> : null}
       onFillMax={() => {
-        if (token && balances?.byMint[token.id]) setAmount(formatAmount(balances.byMint[token.id]!, token.decimals, token.decimals).replace(/,/g, ""));
+        const have = token ? heldRaw(balances, token.id) : undefined;
+        if (!token || !have) return;
+        // SOL: leave what the open itself needs in SOL (the quoted parts once priced, a fixed headroom before that).
+        const keep = !solInput ? 0n : solParts?.ok ? openSolNeed({ ...solParts.parts, inputLamports: 0n }) : SOL_MAX_HEADROOM_LAMPORTS;
+        const max = BigInt(have) - keep;
+        if (max > 0n) setAmount(formatAmount(max.toString(), token.decimals, token.decimals).replace(/,/g, ""));
       }}
       maxDisabled={tx.locked}
       range={{
@@ -329,7 +355,7 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
           <p>{NETWORK_FEE_COPY} {SOL_RESERVE_COPY}</p>
           {steps > 1 ? <p>Your wallet asks you to approve {steps} transactions, one after the other.</p> : null}
           {solUnknown ? <p role="alert" data-testid="registry-open-sol-unknown">{solUnknown}</p> : null}
-          {solShort ? <p role="alert" data-testid="registry-open-sol-short">{solShortCopy(solNeed, balances!.sol!)}</p> : null}
+          {solShort ? <p role="alert" data-testid="registry-open-sol-short">{solShortCopy(solNeed, balances!.sol!, solInput)}</p> : null}
           {blocked ? <p role="alert" data-testid="registry-open-blocked">{blocked}</p> : null}
           {tooSmall ? <p role="alert" data-testid="registry-open-too-small">{tooSmall}</p> : null}
         </div>

@@ -14,9 +14,11 @@ const mocks = vi.hoisted(() => ({ runSteps: vi.fn(async () => null), tx: {} as R
 vi.mock("../wallet-connection", () => ({ useWalletConnection: () => ({ address: mocks.connected ? WALLET : undefined, connected: mocks.connected, connect: vi.fn(), signTransaction: vi.fn(), signAndSendTransaction: vi.fn() }) }));
 vi.mock("../transactions/use-tx-pipeline", () => ({ useTxPipeline: () => ({ status: "idle", locked: false, closeLocked: false, runSteps: mocks.runSteps, retry: vi.fn(), interrupted: null, dismissInterrupted: vi.fn(), ...mocks.tx }) }));
 
-import { APR_UNAVAILABLE, NO_RANGE_FITS_COPY, openInputs, preferredOpenPresetId, presetOptions, RegistryOpenModal, NETWORK_FEE_COPY, SOL_REFUSED_COPY } from "./registry-open-modal";
+import { APR_UNAVAILABLE, NO_RANGE_FITS_COPY, openInputs, preferredOpenPresetId, presetOptions, RegistryOpenModal, NETWORK_FEE_COPY, SOL_REFUSED_COPY, SOL_WRAP_COPY } from "./registry-open-modal";
 
 const descriptor = dexDescriptors.descriptorFor("meteora-dlmm")!;
+/** The same descriptor without `nativeSolOpen`: a DEX that never opens with native SOL. */
+const noNativeSolMeta = Object.fromEntries(Object.entries(descriptor.meta).filter(([key]) => key !== "nativeSolOpen")) as typeof descriptor.meta;
 const pool = { key: "solana:met1", poolAddress: "met1", chain: "solana", protocol: "meteora-dlmm", pairLabel: "TSLAx/TSLA", symbolA: "TSLAx", symbolB: "TSLA",
   mintA: "mintA", mintB: "mintB" } as unknown as UnifiedPool;
 // The server's ranges (bin ids, inclusive) and an APR payload over the same bounds (bin step 10: ticks = bin id × 10, upper exclusive).
@@ -47,9 +49,14 @@ describe("presetOptions / openInputs", () => {
     const drifted = { ...apr, pool: { tickSpacing: 1 } } as unknown as PoolRangeAprPayload;
     expect(presetOptions(ranges.presets, descriptor, drifted).map((item) => item.apr)).toEqual([APR_UNAVAILABLE, "Est. APR ~12%", APR_UNAVAILABLE]);
   });
-  it("never offers native SOL as an input", () => {
-    const tokens = openInputs({ ...pool, mintB: NATIVE_SOL_MINT, symbolB: "SOL" }, descriptor, { a: 8, b: 9 });
-    expect(tokens.map((item) => item.id)).toEqual(["mintA", USDC_MINT]);
+  it("offers native SOL in place of the wSOL pool token only where the descriptor opens with it", () => {
+    const solPool = { ...pool, mintB: NATIVE_SOL_MINT, symbolB: "SOL" };
+    expect(openInputs(solPool, descriptor, { a: 8, b: 9 })).toEqual([
+      { id: "mintA", symbol: "TSLAx", decimals: 8 }, { id: NATIVE_SOL_MINT, symbol: "SOL", decimals: 9 }, { id: USDC_MINT, symbol: "USDC", decimals: 6 },
+    ]);
+    // A pool without wSOL never gets SOL, and a DEX that does not declare nativeSolOpen never offers it.
+    expect(openInputs(pool, descriptor, { a: 8, b: 8 }).map((item) => item.id)).toEqual(["mintA", "mintB", USDC_MINT]);
+    expect(openInputs(solPool, { meta: noNativeSolMeta }, { a: 8, b: 9 }).map((item) => item.id)).toEqual(["mintA", USDC_MINT]);
   });
 });
 
@@ -315,10 +322,56 @@ describe("RegistryOpenModal", () => {
     expect(openButton().disabled).toBe(true);
   });
 
-  it("says why SOL is not offered when it is a pool token", async () => {
-    await render({ pool: { ...pool, mintB: NATIVE_SOL_MINT, symbolB: "SOL" } as UnifiedPool, ranges: { ...ranges, decimals: { mintA: 8, [NATIVE_SOL_MINT]: 9 } } });
+  it("says why SOL is not offered when it is a pool token and the DEX can't open with it", async () => {
+    await render({ descriptor: { ...descriptor, meta: noNativeSolMeta }, pool: { ...pool, mintB: NATIVE_SOL_MINT, symbolB: "SOL" } as UnifiedPool, ranges: { ...ranges, decimals: { mintA: 8, [NATIVE_SOL_MINT]: 9 } } });
     expect(container.querySelector("[data-testid=registry-open-sol]")!.textContent).toBe(SOL_REFUSED_COPY);
     expect([...container.querySelectorAll("#registry-open-token option")].map((o) => o.textContent?.split(" · ")[0])).toEqual(["TSLAx", "USDC"]);
+  });
+
+  describe("native SOL in a pool that holds wSOL (Meteora SOL/hSOL)", () => {
+    const solPool = { ...pool, pairLabel: "hSOL/SOL", symbolA: "hSOL", symbolB: "SOL", mintB: NATIVE_SOL_MINT } as UnifiedPool;
+    const solRanges = { ...ranges, decimals: { mintA: 9, [NATIVE_SOL_MINT]: 9 } };
+    const pickSol = async () => {
+      const select = container.querySelector<HTMLSelectElement>("#registry-open-token")!;
+      await act(async () => { select.value = NATIVE_SOL_MINT; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    };
+
+    it("lists SOL with the wallet's lamports, explains the wrap step and quotes SOL as the input", async () => {
+      await render({ pool: solPool, ranges: solRanges });
+      expect(container.querySelector("[data-testid=registry-open-sol]")).toBeNull();
+      expect([...container.querySelectorAll("#registry-open-token option")].map((o) => o.textContent)).toContain("SOL · 1");
+      await pickSol();
+      expect(container.querySelector("[data-testid=registry-open-sol-wrap]")!.textContent).toBe(SOL_WRAP_COPY);
+      quoteBody = { ...quoteBody, steps: 3, sol: { networkFeeLamports: "20000", swapAccountsLamports: "4245880", reserveLamports: "10000000", inputLamports: "500000000" } };
+      await type("0.5");
+      const quote = calls.filter((call) => call.url.endsWith("/quote-open")).at(-1)!.body as { request: { input: unknown } };
+      expect(quote.request.input).toEqual({ token: NATIVE_SOL_MINT, amountRaw: "500000000" });
+      expect(container.textContent).toContain("Your wallet asks you to approve 3 transactions, one after the other.");
+      expect(openButton().disabled).toBe(false);
+    });
+
+    it("counts the SOL deposit in the SOL check and refuses more SOL than the wallet holds", async () => {
+      await render({ pool: solPool, ranges: solRanges });
+      await pickSol();
+      await type("1.5");
+      expect(container.textContent).toContain("Not enough SOL: your wallet has 1.");
+      // 0.99 SOL fits the balance alone, but not with rent, fees and reserve on top: the deposit is part of the need.
+      quoteBody = { ...quoteBody, steps: 3, sol: { networkFeeLamports: "20000", swapAccountsLamports: "4245880", reserveLamports: "10000000", inputLamports: "990000000" } };
+      await type("0.99");
+      expect(container.querySelector("[data-testid=registry-open-sol-short]")!.textContent).toContain("your SOL deposit");
+      expect(openButton().disabled).toBe(true);
+    });
+
+    it("Max leaves the quoted rent, fees and reserve in SOL", async () => {
+      await render({ pool: solPool, ranges: solRanges });
+      await pickSol();
+      quoteBody = { ...quoteBody, steps: 3, sol: { networkFeeLamports: "20000", swapAccountsLamports: "4245880", reserveLamports: "10000000", inputLamports: "100000000" } };
+      await type("0.1");
+      const max = [...container.querySelectorAll("button")].find((button) => button.textContent === "Max")!;
+      await act(async () => { max.click(); });
+      // 1 SOL − (41,899,840 + 2,039,280 rent + 20,000 fees + 4,245,880 swap accounts + 10,000,000 reserve) lamports.
+      expect(container.querySelector<HTMLInputElement>("#registry-open-amount")!.value).toBe("0.941795");
+    });
   });
 
   it("shows the full form without a wallet, with Connect wallet instead of hiding the fields", async () => {

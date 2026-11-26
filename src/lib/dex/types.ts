@@ -96,6 +96,11 @@ export type DexMeta = {
    */
   depositInputs: { poolTokens: boolean; extra: readonly TokenRef[] };
   /**
+   * Native SOL as an open input in the registry Open dialog: "pools-with-wrapped-sol" offers SOL (in place of the wSOL
+   * pool token) only in a pool whose own token is wrapped SOL. Omitted = never. Opening only; Add keeps `depositInputs`.
+   */
+  nativeSolOpen?: "pools-with-wrapped-sol";
+  /**
    * A fee the pool itself may take when tokens are added while the price is inside the range (not ours), as the plain
    * line the Compound panel shows before signing; omitted when the protocol has none.
    */

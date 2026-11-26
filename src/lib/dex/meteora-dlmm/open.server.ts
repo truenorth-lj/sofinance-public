@@ -1,7 +1,7 @@
 import "@/lib/engine-host";
 import "server-only";
 
-import { createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddressSync, unpackAccount } from "@solana/spl-token";
+import { createAssociatedTokenAccountIdempotentInstruction, createCloseAccountInstruction, getAssociatedTokenAddressSync, unpackAccount } from "@solana/spl-token";
 import { ComputeBudgetProgram, PublicKey, TransactionMessage, VersionedTransaction, type AccountInfo, type Connection, type TransactionInstruction } from "@solana/web3.js";
 import { decodeLbPair, type LbPairState } from "@sofinance/engine/protocols/meteora/accounts";
 import { METEORA_DLMM_PROGRAM_ID, SPL_TOKEN_PROGRAM_ID } from "@sofinance/engine/protocols/meteora/constants";
@@ -17,6 +17,7 @@ import { checkMeteoraPoolMint, meteoraPoolTokenPrograms, type MeteoraMintRestric
 import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT, SLIPPAGE_BPS, USDC_MINT } from "@sofinance/engine/ids";
 import type { SwapFeeConfig } from "@sofinance/engine/swap/fee";
 import { feeSwapLeg } from "@sofinance/engine/swap/leg";
+import { wrapNativeSolInstructions } from "@sofinance/engine/swap/collection";
 import { swapRouteInstructions } from "@sofinance/engine/swap/instructions";
 import type { BuildRoute } from "@sofinance/engine/swap/jupiter";
 import { JUPITER_ROUTE_ATTEMPTS, isTxOversizeError, type JupiterRouteConstraints } from "@sofinance/engine/jupiter-route-retry";
@@ -27,7 +28,7 @@ import { withContextSlotRetry } from "@sofinance/engine/rpc/context-slot";
 import { associatedTokenAccountRents, maxAssociatedTokenAccountSpace } from "@sofinance/engine/token-account-rent";
 import { binTickSqrtPriceX64 } from "@/lib/range-apr/meteora-liquidity";
 import { meteoraPresetRanges } from "@/lib/meteora-range-apr";
-import { assertMeteoraFeeRule } from "@/lib/meteora-open";
+import { assertMeteoraFeeRule, assertMeteoraWrapRule } from "@/lib/meteora-open";
 import type { DexFeeStrategy, OpenRangePreset, OpenRequest } from "../adapter";
 import { DexError } from "../errors";
 import { openSolNeed, type OpenSolParts } from "../sol-need";
@@ -45,6 +46,12 @@ import type { ListedMeteoraPool } from "./pools.server";
  *                `platformFeeBps` in the input mint, into the fee wallet's pre-existing ATA), then
  *                `add_liquidity_by_strategy2` (Spot), with the pool's bitmap extension when the range needs it.
  *   recovery     `close_position2` on an empty position: rent back to the owner.
+ * Native SOL input (only in a pool whose own token is wrapped SOL, e.g. SOL/hSOL; PM 11/26) adds a plain wrap step between
+ * the two, so it is three wallet steps: 1/3 setup, 2/3 wrap (create the wallet's wSOL account if needed, transfer exactly
+ * the deposit into it, sync_native; nothing else), 3/3 the deposit above with wSOL as its input. The wrap is its own
+ * transaction because wallets (Phantom) flag a wrap combined with a swap and an LP instruction, but pass a plain wrap
+ * and a token-input deposit. When the wSOL account holds only this deposit, 3/3 closes it after adding liquidity, so
+ * any unused wrapped SOL and the account rent come back as SOL.
  * Before anything is built: the pool must be listed (pools.server.ts) and match chain, both mints pass
  * `checkMeteoraPoolMint` (no transfer hook / pause / transfer fee), the range is at most 70 bins, every bin array it
  * covers already exists and, past the default bitmap, so does the bitmap extension. Every transaction runs
@@ -92,6 +99,8 @@ export type MeteoraOpenPlan = {
   positionRentLamports: bigint;
   amount: bigint;
   inputMint: string;
+  /** "native": SOL from the wallet's lamports, wrapped in step 2/3 (its mint is wSOL, a pool token). */
+  inputKind: "native" | "token";
   inputProgram: string;
   /** Spend per pool side; a side equal to the input mint is kept, the other is swapped (and charged). */
   sides: { side: "x" | "y"; mint: string; spend: bigint; swapped: boolean }[];
@@ -231,9 +240,20 @@ function inputProgramFor(pool: MeteoraPoolState, inputMint: string) {
   return SPL_TOKEN_PROGRAM_ID; // USDC
 }
 
-export function assertMeteoraOpenInput(request: OpenRequest, pool: MeteoraPoolState) {
+/** Whether one of the pool's two tokens is wrapped SOL: the only pools native SOL can open a position in. */
+export const meteoraPoolHoldsWrappedSol = (pool: Pick<MeteoraPoolState, "lbPair">) =>
+  pool.lbPair.tokenXMint === NATIVE_SOL_MINT || pool.lbPair.tokenYMint === NATIVE_SOL_MINT;
+
+/**
+ * Input rules. `NATIVE_SOL_MINT` as the input token means native SOL (same convention as the other registry DEXes). It
+ * opens only in a pool that holds wrapped SOL (wrap step, then a wSOL-input deposit); Add and every other pool refuse it.
+ */
+export function assertMeteoraOpenInput(request: OpenRequest, pool: MeteoraPoolState, op: "open" | "add" = "open") {
   const { token } = request.input;
-  if (token === NATIVE_SOL_MINT) {
+  if (token === NATIVE_SOL_MINT && op === "add") {
+    throw new DexError("INPUT_TOKEN_UNSUPPORTED", "SOL can't be added to a Meteora position yet. Use USDC or one of the pool's two tokens.");
+  }
+  if (token === NATIVE_SOL_MINT && !meteoraPoolHoldsWrappedSol(pool)) {
     throw new DexError("INPUT_TOKEN_UNSUPPORTED", "SOL can't be used to open a Meteora position yet. Use USDC or one of the pool's two tokens.");
   }
   if (![pool.lbPair.tokenXMint, pool.lbPair.tokenYMint, USDC_MINT].includes(token)) {
@@ -253,7 +273,7 @@ export async function planMeteoraOpen(
   op: "open" | "add" = "open",
 ): Promise<MeteoraOpenPlan> {
   publicKey(request.owner, "wallet");
-  assertMeteoraOpenInput(request, pool);
+  assertMeteoraOpenInput(request, pool, op);
   const { width, bitmapExtension } = await checkMeteoraOpenRange(deps.connection, pool, range.lowerBinId, range.upperBinId);
   const rent = await fetchMeteoraPositionRent(deps.connection, width);
   const amount = BigInt(request.input.amountRaw);
@@ -271,6 +291,7 @@ export async function planMeteoraOpen(
   const platformFeeRaw = legBps ? sides.filter((s) => s.swapped).reduce((sum, s) => sum + deps.fees.feeFor(op, s.spend), 0n) : 0n;
   return {
     pool, ...range, width, bitmapExtension, positionRentLamports: rent.lamports, amount, inputMint: request.input.token,
+    inputKind: request.input.token === NATIVE_SOL_MINT ? "native" : "token",
     inputProgram: inputProgramFor(pool, request.input.token), sides, legBps, platformFeeRaw,
   };
 }
@@ -323,9 +344,16 @@ export async function ownerPoolTokenAccountsExist(connection: Connection, pool: 
 /** Signatures across the two open steps: 1/2 wallet + position, 2/2 wallet. */
 export const OPEN_NETWORK_FEE_LAMPORTS = 3n * SIGNATURE_LAMPORTS;
 
-/** The SOL parts of an open; the setup check and the quote (so the dialog) both use this. */
-export const meteoraOpenSolParts = (rentLamports: bigint, swapAccountsLamports: bigint): OpenSolParts => ({
-  rentLamports, networkFeeLamports: OPEN_NETWORK_FEE_LAMPORTS, swapAccountsLamports, reserveLamports: BigInt(MIN_SOL_LAMPORTS),
+/** Native SOL the open deposits (0 for a token input). */
+export const nativeInputLamports = (plan: Pick<MeteoraOpenPlan, "inputKind" | "amount">) => (plan.inputKind === "native" ? plan.amount : 0n);
+
+/**
+ * The SOL parts of an open; the setup check and the quote (so the dialog) both use this. A SOL input adds the deposit
+ * itself and the wrap step's signature.
+ */
+export const meteoraOpenSolParts = (rentLamports: bigint, swapAccountsLamports: bigint, inputLamports = 0n): OpenSolParts => ({
+  rentLamports, networkFeeLamports: OPEN_NETWORK_FEE_LAMPORTS + (inputLamports > 0n ? SIGNATURE_LAMPORTS : 0n), swapAccountsLamports,
+  reserveLamports: BigInt(MIN_SOL_LAMPORTS), ...(inputLamports > 0n ? { inputLamports } : {}),
 });
 
 /** Swap-route temporary accounts a deposit may open and close (Jupiter setup / wrapped SOL). */
@@ -376,9 +404,12 @@ export async function readWallet(connection: Connection, plan: MeteoraOpenPlan, 
 }
 
 function assertInputBalance(plan: MeteoraOpenPlan, state: WalletState) {
-  if (state.inputBalance < plan.amount) {
-    throw new DexError("INSUFFICIENT_FUNDS", `Your wallet holds ${state.inputBalance} raw units of the input token but this deposit needs ${plan.amount}. Lower the amount or add more.`);
+  if (state.inputBalance >= plan.amount) return;
+  if (plan.inputKind === "native") {
+    // 3/3 deposits from the wSOL account step 2/3 filled; the SOL in the wallet is checked by steps 1/3 and 2/3.
+    throw new DexError("INSUFFICIENT_FUNDS", `Your wrapped SOL from step 2 of 3 is not in your wallet yet (it holds ${sol(state.inputBalance)} of the ${sol(plan.amount)} SOL needed). If you just ran step 2, wait a few seconds and try again.`);
   }
+  throw new DexError("INSUFFICIENT_FUNDS", `Your wallet holds ${state.inputBalance} raw units of the input token but this deposit needs ${plan.amount}. Lower the amount or add more.`);
 }
 
 export const cuLimit = (units: number) => ComputeBudgetProgram.setComputeUnitLimit({ units });
@@ -441,15 +472,20 @@ export function addInstruction(plan: MeteoraOpenPlan, state: WalletState, owner:
   });
 }
 
-/** Assembles 2/2. `compactAtas`: drop Jupiter ATA creates for accounts that already exist (once 1/2 has landed). */
+/**
+ * Assembles 2/2. `compactAtas`: drop Jupiter ATA creates for accounts that already exist (once 1/2 has landed).
+ * `closeWrappedSol`: close the wallet's wSOL account after adding liquidity (SOL input whose wSOL account holds only this
+ * deposit), so unused wrapped SOL and the account rent go back to the wallet as SOL.
+ */
 export async function compileDeposit(deps: MeteoraOpenDeps, plan: MeteoraOpenPlan, state: WalletState, owner: string, position: string, blockhash: string, compactAtas: boolean,
-  prefix: TransactionInstruction[] = []) {
+  prefix: TransactionInstruction[] = [], closeWrappedSol = false) {
   let lastError: unknown;
   const lookupTables = openLookupTableReader(deps.connection);
   const wallet = new PublicKey(owner);
   for (const constraints of JUPITER_ROUTE_ATTEMPTS) {
     const legs = await swapLegs(plan, owner, constraints);
-    const body = [...prefix, ...swapRouteInstructions(legs.routes, wallet), addInstruction(plan, state, owner, position, legs.amountX, legs.amountY)];
+    const body = [...prefix, ...swapRouteInstructions(legs.routes, wallet), addInstruction(plan, state, owner, position, legs.amountX, legs.amountY),
+      ...(closeWrappedSol ? [createCloseAccountInstruction(state.inputAta, wallet, wallet)] : [])];
     const instructions = compactAtas ? await compactAtaInstructions(deps.connection, [cuLimit(ATOMIC_COMPUTE_UNIT_LIMIT), ...body]) : [cuLimit(ATOMIC_COMPUTE_UNIT_LIMIT), ...body];
     assertMeteoraFeeRule(instructions, deps.feeConfig());
     const tables = await lookupTables(legs.routes.flatMap((route) => Object.keys(route.addressesByLookupTableAddress ?? {}).map((key) => new PublicKey(key))));
@@ -474,15 +510,18 @@ export async function buildMeteoraSetup(deps: MeteoraOpenDeps, plan: MeteoraOpen
   const { connection } = deps;
   const state = await readWallet(connection, plan, owner, position);
   if (state.positionInfo) throw new DexError("INVALID_REQUEST", "That position key is already in use on chain. Start the open again so a fresh one is created.");
-  assertInputBalance(plan, state);
+  // A SOL input is paid from lamports (wrapped in 2/3), so the SOL check below counts it instead.
+  if (plan.inputKind === "token") assertInputBalance(plan, state);
   const wallet = new PublicKey(owner);
   const [rent, allowance, latest] = await Promise.all([
     meteoraOpenRent(connection, plan, state), depositIntermediateRentAllowance(connection), connection.getLatestBlockhash("confirmed"),
   ]);
-  await compileDeposit(deps, plan, state, owner, position, latest.blockhash, false);
-  const required = openSolNeed(meteoraOpenSolParts(rent.totalLamports, allowance));
+  // Drafted with the wSOL close a SOL input may end with, so the size check covers the largest deposit.
+  await compileDeposit(deps, plan, state, owner, position, latest.blockhash, false, [], plan.inputKind === "native");
+  const deposit = nativeInputLamports(plan);
+  const required = openSolNeed(meteoraOpenSolParts(rent.totalLamports, allowance, deposit));
   if (state.walletLamports < required) {
-    throw new DexError("INSUFFICIENT_FUNDS", `Not enough SOL: this open needs about ${sol(required)} SOL (position rent ${sol(plan.positionRentLamports)} SOL, refunded when you fully withdraw, plus ${sol(rent.tokenAccountLamports)} SOL for new token accounts, ${sol(allowance)} SOL for temporary swap accounts, network fees and a ${sol(BigInt(MIN_SOL_LAMPORTS))} SOL reserve), and your wallet has ${sol(state.walletLamports)} SOL. Add about ${sol(required - state.walletLamports)} SOL to open. Your wallet may also add a priority fee to each step, which must fit in your SOL.`);
+    throw new DexError("INSUFFICIENT_FUNDS", `Not enough SOL: this open needs about ${sol(required)} SOL (${deposit ? `your ${sol(deposit)} SOL deposit, ` : ""}position rent ${sol(plan.positionRentLamports)} SOL, refunded when you fully withdraw, plus ${sol(rent.tokenAccountLamports)} SOL for new token accounts, ${sol(allowance)} SOL for temporary swap accounts, network fees and a ${sol(BigInt(MIN_SOL_LAMPORTS))} SOL reserve), and your wallet has ${sol(state.walletLamports)} SOL. Add about ${sol(required - state.walletLamports)} SOL${deposit ? " or lower the amount" : ""} to open. Your wallet may also add a priority fee to each step, which must fit in your SOL.`);
   }
   const instructions = setupInstructions(plan, state, owner, position);
   assertMeteoraFeeRule(instructions, deps.feeConfig());
@@ -501,6 +540,43 @@ export async function buildMeteoraSetup(deps: MeteoraOpenDeps, plan: MeteoraOpen
   const transaction = compileV0(wallet, latest.blockhash, final);
   assertOpenTransactionSize(transaction);
   return { transaction: encode(transaction), lastValidBlockHeight: latest.lastValidBlockHeight, rent };
+}
+
+/** SOL the wrap step may debit besides the wrapped amount: its own signature (the wSOL account exists after 1/3). */
+const WRAP_EXTRA_LAMPORTS = SIGNATURE_LAMPORTS;
+
+/**
+ * 2/3 of a SOL-input open: wrap exactly the deposit into the wallet's own wSOL account (the pool-token account 1/3
+ * created): create-idempotent, transfer, sync_native. No swap, no DEX instruction, no fee. Built only once 1/3 has landed
+ * (empty position of this wallet in this pool), and only while the wallet still covers 3/3 after it.
+ */
+export async function buildMeteoraWrapSol(deps: MeteoraOpenDeps, plan: MeteoraOpenPlan, owner: string, position: string): Promise<BuiltStep> {
+  if (plan.inputKind !== "native") throw new DexError("INVALID_REQUEST", "Only a SOL deposit has a wrap step.");
+  const { connection } = deps;
+  const state = await readWallet(connection, plan, owner, position);
+  assertEmptyOwnedPosition(state.positionInfo, owner, plan.pool.poolId);
+  if (!state.ataXExists || !state.ataYExists) throw new DexError("POSITION_NOT_FOUND", "Your pool token accounts from step 1 of 3 are missing. Wait for step 1 to confirm and try again.");
+  const allowance = await depositIntermediateRentAllowance(connection);
+  // After wrapping, 3/3 still needs its temporary swap accounts and fee, and every check keeps the reserve.
+  const required = plan.amount + WRAP_EXTRA_LAMPORTS + allowance + SIGNATURE_LAMPORTS + BigInt(MIN_SOL_LAMPORTS);
+  if (state.walletLamports < required) {
+    throw new DexError("INSUFFICIENT_FUNDS", `Not enough SOL to wrap your ${sol(plan.amount)} SOL deposit and finish step 3 of 3: add about ${sol(required - state.walletLamports)} SOL, or close the empty position to get its rent back.`);
+  }
+  const wallet = new PublicKey(owner);
+  const instructions = (units: number) => [cuLimit(units), ...wrapNativeSolInstructions(wallet, plan.amount)];
+  assertMeteoraWrapRule(instructions(ATOMIC_COMPUTE_UNIT_LIMIT), wallet, plan.amount, deps.feeConfig());
+  const latest = await connection.getLatestBlockhash("confirmed");
+  const sim = await simulate(connection, compileV0(wallet, latest.blockhash, instructions(ATOMIC_COMPUTE_UNIT_LIMIT)), [wallet, state.inputAta], state.slot, "wrap SOL");
+  const solDebit = state.walletLamports - BigInt(sim.accounts?.[0]?.lamports ?? 0);
+  if (solDebit > plan.amount + WRAP_EXTRA_LAMPORTS) throw new DexError("UPSTREAM", "The wrap simulation spends more SOL than the deposit and its network fee, so nothing was sent.");
+  const after = accountData(sim.accounts?.[1]);
+  const wrapped = after ? unpackAccount(state.inputAta, { data: after, owner: new PublicKey(plan.inputProgram), lamports: 0, executable: false }, new PublicKey(plan.inputProgram)).amount : 0n;
+  if (wrapped - state.inputBalance !== plan.amount) throw new DexError("UPSTREAM", "The wrap simulation did not put exactly your deposit into your wrapped SOL account, so nothing was sent.");
+  const final = instructions(measuredComputeUnitLimit(sim.unitsConsumed ?? 0));
+  assertMeteoraWrapRule(final, wallet, plan.amount, deps.feeConfig());
+  const transaction = compileV0(wallet, latest.blockhash, final);
+  assertOpenTransactionSize(transaction);
+  return { transaction: encode(transaction), lastValidBlockHeight: latest.lastValidBlockHeight };
 }
 
 /** Reads the position 1/2 created: a Meteora position owned by `owner` in `poolId`, still empty. */
@@ -530,7 +606,10 @@ export async function buildMeteoraDeposit(deps: MeteoraOpenDeps, plan: MeteoraOp
   }
   const wallet = new PublicKey(owner);
   const latest = await connection.getLatestBlockhash("confirmed");
-  const built = await compileDeposit(deps, plan, state, owner, position, latest.blockhash, true);
+  // SOL input: when the wSOL account holds exactly what 2/3 wrapped, close it after the deposit (leftover + rent back as
+  // SOL). Any other wSOL there is the wallet's own, so the account and whatever this deposit leaves stay wrapped.
+  const closeWrappedSol = plan.inputKind === "native" && state.inputBalance === plan.amount;
+  const built = await compileDeposit(deps, plan, state, owner, position, latest.blockhash, true, [], closeWrappedSol);
   const positionKey = new PublicKey(position);
   const sim = await simulate(connection, built.transaction, [positionKey, wallet, state.inputAta], state.slot, "deposit");
   const after = accountData(sim.accounts?.[0]);
