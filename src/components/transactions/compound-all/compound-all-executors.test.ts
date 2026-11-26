@@ -9,7 +9,8 @@ import { BLOCKHASH, testKeypair } from "@/lib/test-support/send-fixtures";
 import { TX_PREFLIGHT_POLICY, type TxWallet } from "@/lib/tx-pipeline";
 import { compoundAttemptKey, loadCompoundAttempt } from "@sofinance/engine/compound-attempt";
 import type { RowContext } from "@/lib/compound-all/runner";
-import { compoundRaydiumPosition, compoundRegistryPosition, createCompoundAllExecutors, ROW_LOCKED, ROW_STILL_CONFIRMING } from "./compound-all-executors";
+import { compoundRaydiumPosition, compoundRegistryPosition, createCompoundAllExecutors, ROW_EARLIER_COMPOUND, ROW_LOCKED, ROW_RECORDS_INVALID,
+  ROW_STILL_CONFIRMING } from "./compound-all-executors";
 import { beginPositionOp } from "../../unified-positions/position-op-lock";
 
 const positionMint = testKeypair(80).publicKey.toBase58();
@@ -104,6 +105,34 @@ describe("Raydium row (extracted per-position compound)", () => {
     expect(asked.message.recentBlockhash).not.toBe(preparedSeries[0]!.summary.blockhash);
   });
 
+  it("a voided prompt whose transaction landed anyway: the row confirms that signature, with no second prepare", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    const landed = bs58.encode(new Uint8Array(64).fill(9));
+    const hanging = { address: walletAddress, signTransaction: vi.fn(() => new Promise<VersionedTransaction>(() => {})) };
+    const waitVoided = vi.fn(async () => ({ status: "landed" as const, signature: landed }));
+    const run = compoundRaydiumPosition({ wallet: hanging, positionMint, storage: window.localStorage, context: context(), waitVoided, confirm: noWait });
+    await vi.advanceTimersByTimeAsync(TX_PREFLIGHT_POLICY.blockhashSafeMs + 1);
+    const outcome = await run;
+    expect(waitVoided).toHaveBeenCalledTimes(1);
+    expect(outcome).toEqual({ status: "done", signature: landed });
+    expect(loadCompoundAttempt(window.localStorage, walletAddress).attempt).toMatchObject({ kind: "compound", positionMint, signature: landed });
+    expect(prepares).toBe(1);
+    expect(requests.filter((url) => url === "/api/compound-confirm").length).toBeGreaterThan(0);
+  });
+
+  it("a voided prompt that can't be checked (unknown): failed, not retryable, nothing saved, no second prepare", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    const hanging = { address: walletAddress, signTransaction: vi.fn(() => new Promise<VersionedTransaction>(() => {})) };
+    const waitVoided = vi.fn(async () => ({ status: "unknown" as const }));
+    const run = compoundRaydiumPosition({ wallet: hanging, positionMint, storage: window.localStorage, context: context(), waitVoided, confirm: noWait });
+    await vi.advanceTimersByTimeAsync(TX_PREFLIGHT_POLICY.blockhashSafeMs + 1);
+    const outcome = await run;
+    expect(outcome).toMatchObject({ status: "failed", retryable: false });
+    expect(outcome).not.toHaveProperty("notSigned");
+    expect(window.localStorage.getItem(compoundAttemptKey(walletAddress))).toBeNull();
+    expect(prepares).toBe(1);
+  });
+
   it("maps a wallet rejection to a retryable rejected row with nothing saved", async () => {
     const wallet = { address: walletAddress, signTransaction: vi.fn(async () => { throw Object.assign(new Error("User rejected the request."), { code: 4001 }); }) };
     const outcome = await compoundRaydiumPosition({ wallet, positionMint, storage: window.localStorage, context: context(), confirm: noWait,
@@ -161,6 +190,19 @@ describe("registry row (Meteora: runTx + dexTxAdapter('compound'))", () => {
       simulate: async () => ({ ok: true }), poll: async () => chain });
     expect(outcome).toMatchObject({ status, retryable: true });
   });
+  it("a throw after runTx resolved (signature tracking) is failed and not retryable: no Retry can resend", async () => {
+    const poll = vi.fn(async () => "confirmed" as const);
+    const outcome = await compoundRegistryPosition({ wallet: signingWallet(), descriptor, positionKey: "meteora-dlmm:met3", storage: window.localStorage,
+      context: context(), simulate: async () => ({ ok: true }), poll, track: () => { throw new Error("lock state lost"); } });
+    expect(outcome).toEqual({ status: "failed", error: "lock state lost", retryable: false });
+    expect(requests).toContain("/api/tx-send");
+    expect(poll).not.toHaveBeenCalled();
+  });
+  it("a poll that throws after the send is failed and not retryable", async () => {
+    const outcome = await compoundRegistryPosition({ wallet: signingWallet(), descriptor, positionKey: "meteora-dlmm:met4", storage: window.localStorage,
+      context: context(), simulate: async () => ({ ok: true }), poll: async () => { throw new Error("rpc down"); } });
+    expect(outcome).toEqual({ status: "failed", error: "rpc down", retryable: false });
+  });
   it("a rejection is a retryable rejected row", async () => {
     const wallet = { address: walletAddress, signTransaction: vi.fn(async () => { throw Object.assign(new Error("User rejected the request."), { code: 4001 }); }) };
     const outcome = await compoundRegistryPosition({ wallet, descriptor, positionKey: "meteora-dlmm:met2", storage: window.localStorage, context: context(),
@@ -187,6 +229,46 @@ describe("executors", () => {
       expect(await deps.runRow(row, context())).toMatchObject({ status: "failed", retryable: false, notSigned: true });
     }
     expect(requests).toEqual([]);
+  });
+  it("a Raydium row waits for an earlier saved compound to settle (the row button's canStart): nothing is prepared", async () => {
+    const fixture = compoundHistoryFixture();
+    const { persistCompoundAttempt } = await import("@sofinance/engine/compound-attempt");
+    persistCompoundAttempt(window.localStorage, fixture.attempt);
+    confirmReply = (signature) => ({ signature, status: "pending", chainStatus: "pending", state: null });
+    const deps = createCompoundAllExecutors({ wallet: signingWallet(), storage: window.localStorage, descriptorFor: (dex) => dexDescriptors.descriptorFor(dex),
+      cleanupBatch: async () => ({ status: "done" }), confirm: noWait });
+    const row = { key: `raydium-clmm:${positionMint}` as const, dex: "raydium-clmm" as const, flow: "native-harvest" as const, positionId: positionMint,
+      partToWallet: false, selected: true, status: "preparing" as const, attempts: 1 };
+    expect(await deps.runRow(row, context())).toEqual({ status: "failed", error: ROW_EARLIER_COMPOUND, retryable: true, notSigned: true });
+    expect(prepares).toBe(0);
+    // Once Solana settles it, Retry goes ahead.
+    confirmReply = (signature) => ({ signature, status: "success", chainStatus: "success", state: null });
+    expect((await deps.runRow(row, context())).status).toBe("done");
+    expect(prepares).toBe(1);
+  });
+  it("unreadable saved compound records refuse the Raydium row and the cleanup, without a Retry", async () => {
+    window.localStorage.setItem(compoundAttemptKey(walletAddress), "{not json");
+    const cleanupBatch = vi.fn(async () => ({ status: "done" as const }));
+    const deps = createCompoundAllExecutors({ wallet: signingWallet(), storage: window.localStorage, descriptorFor: (dex) => dexDescriptors.descriptorFor(dex), cleanupBatch });
+    const row = { key: `raydium-clmm:${positionMint}` as const, dex: "raydium-clmm" as const, flow: "native-harvest" as const, positionId: positionMint,
+      partToWallet: false, selected: true, status: "preparing" as const, attempts: 1 };
+    expect(await deps.runRow(row, context())).toEqual({ status: "failed", error: ROW_RECORDS_INVALID, retryable: false, notSigned: true });
+    expect(await deps.runCleanup(["x"], { onStage: () => {} })).toEqual({ status: "failed", error: ROW_RECORDS_INVALID });
+    expect(cleanupBatch).not.toHaveBeenCalled();
+    expect(prepares).toBe(0);
+  });
+  it("tells the page after every Raydium row so the selected position re-reads its records", async () => {
+    const onRaydiumSettled = vi.fn();
+    const deps = createCompoundAllExecutors({ wallet: signingWallet(), storage: window.localStorage, descriptorFor: (dex) => dexDescriptors.descriptorFor(dex),
+      cleanupBatch: async () => ({ status: "done" }), onRaydiumSettled, confirm: noWait });
+    const row = { key: `raydium-clmm:${positionMint}` as const, dex: "raydium-clmm" as const, flow: "native-harvest" as const, positionId: positionMint,
+      partToWallet: false, selected: true, status: "preparing" as const, attempts: 1 };
+    expect((await deps.runRow(row, context())).status).toBe("done");
+    expect(onRaydiumSettled).toHaveBeenCalledTimes(1);
+    // The row's own confirmation admits the next one without another check.
+    const confirms = requests.filter((url) => url === "/api/compound-confirm").length;
+    expect((await deps.runRow(row, context())).status).toBe("done");
+    expect(requests.filter((url) => url === "/api/compound-confirm").length).toBe(confirms + 1);
   });
   it("the cleanup row hands the existing cleanup batch only this run's saved receipts", async () => {
     const fixture = compoundHistoryFixture();
@@ -218,5 +300,28 @@ describe("rowFailureOf", () => {
     expect(rowFailureOf(new TxRunError("unknown", "m", false, null), false)).toMatchObject({ status: "failed", retryable: false });
     expect(rowFailureOf(new Error("prepare broke"), true)).toMatchObject({ status: "failed", retryable: true, notSigned: true });
     expect(rowFailureOf(new Error("after send"), false)).toMatchObject({ status: "failed", retryable: false });
+  });
+  it("honors the pipeline's retryable: a pending cancel check and new terms offer no Retry", async () => {
+    const { rowFailureOf } = await import("./compound-all-executors");
+    const { TxRunError, TxCancelCheckPendingError } = await import("@/lib/tx-pipeline");
+    expect(rowFailureOf(new TxCancelCheckPendingError(), true)).toMatchObject({ status: "failed", retryable: false, notSigned: true });
+    expect(rowFailureOf(new TxRunError("not-sent", "New terms", false, null), true)).toMatchObject({ status: "failed", retryable: false, notSigned: true });
+    expect(rowFailureOf(new TxRunError("expired", "m", false, null), false)).toMatchObject({ status: "expired", retryable: false });
+    expect(rowFailureOf(new TxRunError("failed", "m", false, null), false)).toMatchObject({ status: "failed", retryable: false });
+  });
+  it("a non-explicit wallet cancel (walletRejected === false) is Skip only and is not labelled a rejection: the send may still land", async () => {
+    const { rowFailureOf } = await import("./compound-all-executors");
+    const { TxRunError, TxWalletCancelledError, COULDNT_SEND_TITLE } = await import("@/lib/tx-pipeline");
+    const cancelled = new TxWalletCancelledError(new Error("Wallet disconnected"), new Promise(() => {}));
+    expect(cancelled.walletRejected).toBe(false);
+    expect(cancelled.message.startsWith(COULDNT_SEND_TITLE)).toBe(true);
+    const wrapped = new TxRunError("rejected", cancelled.message, false, cancelled);
+    expect(rowFailureOf(wrapped, false)).toEqual({ status: "failed", error: cancelled.message, retryable: false });
+    expect(rowFailureOf(cancelled, false)).toEqual({ status: "failed", error: cancelled.message, retryable: false });
+    // An explicit "no" is still a retryable rejected row (PM review of #536, (a)).
+    const rejected = new TxWalletCancelledError(Object.assign(new Error("User rejected the request."), { code: 4001 }), new Promise(() => {}));
+    expect(rejected.walletRejected).toBe(true);
+    expect(rowFailureOf(new TxRunError("rejected", rejected.message, false, rejected), false))
+      .toMatchObject({ status: "rejected", retryable: true });
   });
 });

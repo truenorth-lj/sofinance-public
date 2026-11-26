@@ -19,13 +19,17 @@ async function post<T>(url: string, body: unknown, timeoutMs = 15_000): Promise<
   if (!response.ok) throw new ApiRequestError(value.error || "Cleanup request failed", value.sent === false ? false : undefined);
   return value;
 }
+export type CleanupBatchStage = "preparing" | "wallet" | "broadcasting";
+/** `refused`: nothing was prepared (another operation, an unsettled earlier transaction, or unreadable records). */
+export type CleanupBatchOutcome = { status: "done"; signatures: string[] } | { status: "refused" | "failed"; error: string };
+export const CLEANUP_NOT_READY = "The cleanup can't start yet: another transaction is still being checked or local records need verification.";
 const tabChanged = "Cleanup paused because another tab changed the transaction record. Reload and verify the other tab's transaction before continuing.";
 export function useCleanupBatchController(options: Options) {
   const latest = useRef(options); useLayoutEffect(() => { latest.current = options; });
   const [attempt, setAttempt] = useState<CleanupBatchAttempt | null>(null);
   const [invalid, setInvalid] = useState(false);
   const [loaded, setLoaded] = useState<string | null>(null);
-  const [stage, setStage] = useState<"preparing" | "wallet" | "broadcasting" | null>(null);
+  const [stage, setStageState] = useState<CleanupBatchStage | null>(null);
   const [error, setError] = useState("");
   const running = useRef(false), checking = useRef(false), alive = useRef(true);
   const lastPoll = useRef({ signatures: "", at: 0 });
@@ -36,7 +40,7 @@ export function useCleanupBatchController(options: Options) {
     const wallet = options.wallet;
     const timer = window.setTimeout(() => {
       if (!alive.current || latest.current.wallet !== wallet) return;
-      setStage(null); setError("");
+      setStageState(null); setError("");
       if (!wallet) { setAttempt(null); setInvalid(false); setLoaded(null); record.current = null; return; }
       try {
         const saved = loadCleanupBatch(window.localStorage, wallet);
@@ -49,7 +53,7 @@ export function useCleanupBatchController(options: Options) {
     return () => window.clearTimeout(timer);
   }, [options.wallet]);
   useEffect(() => {
-    const timer = window.setTimeout(() => setStage(null), 0);
+    const timer = window.setTimeout(() => setStageState(null), 0);
     return () => window.clearTimeout(timer);
   }, [options.identity, options.wallet, options.connection.connected]);
   useEffect(() => {
@@ -109,10 +113,15 @@ export function useCleanupBatchController(options: Options) {
     return () => { window.clearTimeout(initial); window.clearInterval(timer); window.removeEventListener("focus", run); document.removeEventListener("visibilitychange", run); };
   }, [options.wallet, loaded, pendingSignatures, invalid, reconcile]);
 
-  async function start(receipts: CompoundReceipt[]) {
+  /**
+   * Prepares, signs (one approval) and broadcasts the cleanup of `receipts`. The result is for compound all's cleanup
+   * row; the Compound screen ignores it and reads the controller's state, as before. `onStage` mirrors `stage`.
+   */
+  async function start(receipts: CompoundReceipt[], hooks: { onStage?: (stage: CleanupBatchStage) => void } = {}): Promise<CleanupBatchOutcome> {
     const initial = latest.current, wallet = initial.wallet;
     if (!wallet || loaded !== wallet || invalid || running.current || checking.current || batchUnresolved(attempt) || !receipts.length ||
-      !initial.connection.connected || initial.connection.address !== wallet || initial.blocked || !initial.canStart()) return;
+      !initial.connection.connected || initial.connection.address !== wallet || initial.blocked || !initial.canStart()) return { status: "refused", error: CLEANUP_NOT_READY };
+    const setStage = (next: CleanupBatchStage) => { setStageState(next); hooks.onStage?.(next); };
     const selectedGeneration = generation.current;
     const compoundRecord = window.localStorage.getItem(compoundAttemptKey(wallet));
     let batchRecord = window.localStorage.getItem(cleanupBatchKey(wallet));
@@ -126,6 +135,7 @@ export function useCleanupBatchController(options: Options) {
     };
     running.current = true; setError(""); setStage("preparing");
     let durable: CleanupBatchAttempt | null = null;
+    let outcomeError = "";
     try {
       fence();
       if (batchRecord !== record.current) throw new Error(tabChanged);
@@ -202,11 +212,17 @@ export function useCleanupBatchController(options: Options) {
         batchRecord = persistCleanupBatch(window.localStorage, durable); record.current = batchRecord; setAttempt(durable);
       }
     } catch (caught) {
-      if (alive.current && latest.current.wallet === wallet) setError(caught instanceof Error ? caught.message : "Cleanup stopped; signed transactions will be checked");
+      const message = caught instanceof Error ? caught.message : "Cleanup stopped; signed transactions will be checked";
+      if (alive.current && latest.current.wallet === wallet) setError(message);
+      outcomeError = message;
     } finally {
       running.current = false;
-      if (alive.current && latest.current.wallet === wallet) { setStage(null); void reconcile(); }
+      if (alive.current && latest.current.wallet === wallet) { setStageState(null); void reconcile(); }
     }
+    // Signed and saved: whatever the broadcast said, the signatures are checked from here and never signed again.
+    const sent = (durable as CleanupBatchAttempt | null)?.transactions.filter((tx) => !tx.unsent).map((tx) => tx.signature) ?? [];
+    if (durable && (sent.length || !(durable as CleanupBatchAttempt).transactions.length)) return { status: "done", signatures: sent };
+    return { status: "failed", error: outcomeError || "The cleanup did not complete." };
   }
   const visible = loaded === options.wallet ? attempt : null;
   const progress = visible ? cleanupBatchProgress(visible) : null;
