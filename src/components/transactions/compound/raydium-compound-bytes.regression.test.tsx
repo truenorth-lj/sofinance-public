@@ -9,6 +9,7 @@ import { compoundHistoryFixture } from "@/lib/test-support/compound-history-fixt
 import { raydiumCompoundPrepared } from "@/lib/test-support/raydium-compound-prepared";
 import { testKeypair } from "@/lib/test-support/send-fixtures";
 import { useCompoundController } from "../../use-compound-controller";
+import { compoundRaydiumPosition } from "../compound-all/compound-all-executors";
 
 /**
  * Compound-all PR1 regression: the Raydium compound transaction the wallet is asked to sign is byte-for-byte the one
@@ -75,5 +76,17 @@ describe("Raydium compound bytes (compound-all refactor guard)", () => {
     // What reaches the relay is that same message, signed once by the wallet.
     expect(relayed.map((bytes) => sha256(bytes))).toEqual([sha256(asked.message.serialize())]);
     expect({ message: sha256(asked.message.serialize()), size: preparedBytes.length }).toMatchSnapshot();
+  });
+
+  it("the compound-all per-position send hands the wallet the same bytes as the controller (recorded hash)", async () => {
+    const outcome = compoundRaydiumPosition({ wallet: { address: wallet, signTransaction: mocks.sign }, positionMint, storage: window.localStorage,
+      context: { isCurrent: () => true, onStage: () => {} }, confirm: { intervalMs: 1, maxWaitMs: 0 } });
+    await advance(10); await outcome;
+    expect(mocks.sign).toHaveBeenCalledTimes(1);
+    const asked = mocks.sign.mock.calls[0]![0] as VersionedTransaction;
+    expect(relayed.map((bytes) => sha256(bytes))).toEqual([sha256(asked.message.serialize())]);
+    // The hash recorded on origin/main before the refactor (see the snapshot above).
+    expect({ message: sha256(asked.message.serialize()), size: Buffer.from(prepared.unsignedTransaction, "base64").length })
+      .toEqual({ message: "6f0ee447f98d7886080dae78512bf2f511e72e4da21d4d2a0818a645cf145d1b", size: 930 });
   });
 });

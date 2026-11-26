@@ -2,15 +2,14 @@
 import "@/lib/engine-host";
 
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef } from "react";
-import { VersionedTransaction } from "@solana/web3.js";
-import { apiErrorCode, post } from "./transactions/compound/compound-client";
+import { apiErrorCode } from "./transactions/compound/compound-client";
+import { acceptRaydiumPrepared, requestRaydiumPrepare, sendRaydiumPrepared, type RaydiumPrepareResponse, type RaydiumSendTarget } from "./transactions/compound/raydium-compound-send";
 import type { AtomicStatus } from "@/lib/attempt-status";
-import { sendAndTrack, TxNotSentError, useCancelCheckPending } from "@/lib/tx-pipeline";
+import { TxNotSentError, useCancelCheckPending } from "@/lib/tx-pipeline";
 import { ApiRequestError, INSUFFICIENT_SOL_CODE, resolveCompoundBroadcastFailure } from "@/lib/public-error";
 import { abandonUnsentCompoundAttempt, compoundAttemptKey, compoundReceiptsKey, loadCompoundAttempt, loadCompoundReceipts, persistCompoundAttempt,
   type CompoundAttempt, type CompoundPrepared, type CompoundReceipt, type RecoveryPrepared } from "@sofinance/engine/compound-attempt";
 import type { CompoundChainStatus, CompoundSummary } from "@sofinance/engine/compound-types";
-import type { CompoundRecoverySummary } from "@sofinance/engine/compound-recovery-types";
 import { useWalletConnection } from "./wallet-connection";
 import { useCleanupBatchController } from "./use-cleanup-batch-controller";
 import { loadCleanupBatch, cleanupBatchKey } from "@/lib/compound-cleanup-batch-attempt";
@@ -30,7 +29,6 @@ export { confirmedStateFor } from "./transactions/compound/compound-controller-s
 export { COMPOUND_STATE_RPC_RETRY_DELAYS_MS } from "./transactions/compound/use-compound-position-snapshot";
 
 type Options = { wallet?: string; positionMint?: string; externalBlocked: boolean; onConfirmed?: () => void };
-type AlreadyClosedRecovery = { alreadyClosed: true; wallet: string; accounts: string[] };
 const CLEANUP_RENT_HINT = "Tip: \u201cClean up all balances\u201d below returns SOL rent held by earlier harvest accounts.";
 const recoveryConfirmationMs = 90_000;
 function abortableDelay(ms: number, signal: AbortSignal) {
@@ -226,24 +224,15 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
     let persisted = false;
     let next: CompoundAttempt | undefined;
     try {
-      const requestPrepare = () => receipt
-        ? post<RecoveryPrepared | AlreadyClosedRecovery>("/api/compound-recover-prepare", { wallet: submittedWallet, compoundAccounts: receipt.compoundAccounts })
-        : post<CompoundPrepared>("/api/compound-prepare", { wallet: submittedWallet, positionMint: submittedMint, sourceSignatures });
+      const target: RaydiumSendTarget = receipt
+        ? { kind: "recovery", wallet: submittedWallet, receipt }
+        : { kind: "compound", wallet: submittedWallet, positionMint: submittedMint, sourceSignatures };
       const acceptPrepared = (prepared: CompoundPrepared | RecoveryPrepared) => {
         if (!current() || externalBlockedRef.current) throw new Error("Wallet or position changed; transaction not yet signed");
         verifyRecoveryAttempt();
-        const summary = prepared.summary;
-        if (!prepared.permit || !summary.simulated ||
-          (receipt ? summary.operation !== "recovery" || (summary as CompoundRecoverySummary).wallet !== wallet :
-            summary.operation !== "compound" || (summary as CompoundSummary).state.wallet !== wallet ||
-            (summary as CompoundSummary).positionMint !== positionMint)) throw new Error("Simulation result and selection mismatch or expired");
-        const unsigned = VersionedTransaction.deserialize(Uint8Array.from(atob(prepared.unsignedTransaction), (item) => item.charCodeAt(0)));
-        if (unsigned.message.staticAccountKeys[0]?.toBase58() !== wallet || unsigned.message.recentBlockhash !== summary.blockhash) {
-          throw new Error("Transaction payer or blockhash and preparation result mismatch");
-        }
-        return { prepared, summary, unsigned };
+        return acceptRaydiumPrepared(target, prepared);
       };
-      const acceptClosed = (response: CompoundPrepared | RecoveryPrepared | AlreadyClosedRecovery) => {
+      const acceptClosed = (response: RaydiumPrepareResponse) => {
         if (!("alreadyClosed" in response)) return false;
         verifyRecoveryAttempt();
         if (!receipt || response.alreadyClosed !== true || response.wallet !== submittedWallet || !current() ||
@@ -261,26 +250,16 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
         dispatch({ type: "receipts/set", receipts: loadCompoundReceipts(window.localStorage, submittedWallet).receipts });
         return true;
       };
-      const response = await requestPrepare();
+      const response = await requestRaydiumPrepare(target);
       if (acceptClosed(response)) return "success";
       const loaded = acceptPrepared(response as CompoundPrepared | RecoveryPrepared);
       if (!receipt) dispatch({ type: "preview/set", preview: loaded.summary as CompoundSummary });
-      const { summary, unsigned } = loaded;
       if (window.localStorage.getItem(cleanupBatchKey(wallet)) !== cleanupBatchRecord) throw new Error("Cleanup transaction changed in another tab; verify original signatures before continuing.");
       verifyRecoveryAttempt();
       dispatch({ type: "stage/set", stage: "wallet" });
-      // Shared pipeline send stage: the wallet sends (or signs and we relay once). The
-      // compound record is saved right after send, keyed by the returned signature.
-      const { signature } = await sendAndTrack({
-        flow: "compound", successTitle: receipt ? "Cleanup confirmed" : "Compound confirmed", storage: window.localStorage,
-        wallet: { address: submittedWallet, signTransaction: connectionRef.current.signTransaction,
-          signAndSendTransaction: connectionRef.current.signAndSendTransaction },
-        // Only the compound itself goes into the position's history refresh marker (via the confirmation toast). A cleanup
-        // tx never touches the position account, so the history sync can never acknowledge its signature.
-        prepared: { transaction: unsigned, lastValidBlockHeight: summary.lastValidBlockHeight, ...(receipt ? {} : { positionMint: submittedMint }),
-          sendPermit: (loaded.prepared as { sendPermit?: string }).sendPermit,
-          landedPermit: (loaded.prepared as { landedPermit?: string }).landedPermit },
-        scope: receipt?.positionMint || submittedMint,
+      const created = await sendRaydiumPrepared(target, loaded, {
+        storage: window.localStorage,
+        signer: { signTransaction: connectionRef.current.signTransaction, signAndSendTransaction: connectionRef.current.signAndSendTransaction },
         onStage: (pipelineStage) => { if (pipelineStage === "checking" && current()) dispatch({ type: "stage/set", stage: "checking" }); },
         isCurrent: () => current() && !externalBlockedRef.current && (() => {
           try { verifyRecoveryAttempt(); } catch (error) {
@@ -292,11 +271,6 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
           return true;
         })(),
       });
-      const base = { version: 1 as const, wallet: submittedWallet, positionMint: receipt?.positionMint || submittedMint,
-        signature, createdAt: Date.now() };
-      const created: CompoundAttempt = receipt
-        ? { ...base, kind: "recovery", summary: summary as CompoundRecoverySummary, sourceSignature: receipt.sourceSignature }
-        : { ...base, kind: "compound", summary: summary as CompoundSummary };
       next = created;
       persistCompoundAttempt(window.localStorage, created);
       resolvedAttempt.current = null;
