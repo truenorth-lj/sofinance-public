@@ -3,6 +3,7 @@ import "server-only";
 import { issueOpenPositionPermit } from "@/lib/open-permit";
 import { withFeeEstimateRetry } from "@/lib/rpc-fee-estimate";
 import { assertSolInputAllowed } from "@/lib/sol-input-policy";
+import { assertNativeSolAllowedForPoolId } from "@/lib/sol-pool-native-input";
 import { txPermitsFor } from "@/lib/tx-send/permit";
 import { dexRegistry } from "./registry-instance";
 import { APP_OPEN_PREPARE, SINGLE_TX_SOL_OPEN_MESSAGE, type OpenPrepareCommand, type OpenPrepareProfile,
@@ -27,5 +28,6 @@ export async function prepareOpen(id: string, input: OpenPrepareCommand, readSig
 
 export async function quoteOpen(id: string, command: OpenQuoteCommand, profile: OpenQuoteProfile) {
   assertSolInputAllowed(command.selection);
+  assertNativeSolAllowedForPoolId(command.selection);
   return dexRegistry.quoteOpen(id, command, profile);
 }

@@ -14,6 +14,7 @@ import { OpenPositionForm } from "./open-position/open-position-form";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import { SOL_INPUT_DISABLED_MESSAGE } from "@/lib/feature-flags";
 import { isSolInputBlocked } from "@/lib/sol-input-policy";
+import { isNativeSolDisabledForPool, SOL_POOL_NATIVE_INPUT_MESSAGE } from "@/lib/sol-pool-native-input";
 import { solSwapReceiptLabel } from "@/components/transactions/open/use-open-submission";
 import { SOL_SWAP_RECEIPT_TTL_MS } from "@/components/transactions/open/sol-swap-receipt-store";
 import { depositUsd } from "@/lib/range-apr/size-aware";
@@ -126,7 +127,7 @@ export function OpenPositionModal({
     return {
       id: `${asset.kind}:${asset.mint}`,
       label: `${symbol} · ${formatAmount(asset.balance, asset.decimals)}${asset.eligible ? "" : ` (${asset.reason || "ineligible"})`}`,
-      disabled: isSolInputBlocked(asset.kind),
+      disabled: isSolInputBlocked(asset.kind) || isNativeSolDisabledForPool(asset.kind, pair),
     };
   });
 
@@ -254,7 +255,9 @@ export function OpenPositionModal({
       assetPlaceholder="Select SOL, USDC, or a pool token"
       assetNote={c.inputAssets.some((asset) => isSolInputBlocked(asset.kind))
         ? <p className="mt-1 text-xs text-smoke" data-testid="sol-input-disabled-note">{SOL_INPUT_DISABLED_MESSAGE}</p>
-        : null}
+        : c.inputAssets.some((asset) => isNativeSolDisabledForPool(asset.kind, pair))
+          ? <p className="mt-1 text-xs text-smoke" data-testid="sol-pool-native-input-note">{SOL_POOL_NATIVE_INPUT_MESSAGE}</p>
+          : null}
       amount={c.amount}
       onAmountChange={c.changeAmount}
       onFillMax={c.fillMax}

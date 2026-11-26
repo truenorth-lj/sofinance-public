@@ -14,6 +14,8 @@ import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import { OPEN_PREPARE_TIMEOUT_MS, useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
 import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
+import { HSOL_MINT, SOL_HSOL_CLMM_POOL_ID } from "@/lib/rwa-allowlist";
+import { SOL_POOL_NATIVE_INPUT_MESSAGE } from "@/lib/sol-pool-native-input";
 import { noticeIdFor, resetTxNotices, settleTxNotice } from "@/lib/tx-pipeline";
 import { appendWalletExtraInstruction, buildTransaction, openSummaryFixture, testKeypair, toBase64 } from "@/lib/test-support/send-fixtures";
 const mocks = vi.hoisted(() => ({ address: "", sign: vi.fn(), signAndSend: undefined as undefined | ReturnType<typeof vi.fn> }));
@@ -222,5 +224,51 @@ describe("open-position transaction lifecycle (shared pipeline)", () => {
     await act(async () => controller.signAndSend());
     expect(calls("/api/tx-send")).toHaveLength(1);
     expect(controller.error).toBe("");
+  });
+});
+
+describe("native SOL on SOL/hSOL vs a stock pool", () => {
+  const sol = { kind: "native" as const, mint: NATIVE_SOL_MINT, decimals: 9, balance: "1000000000", eligible: true, reason: null };
+  const wsol = { kind: "token" as const, mint: NATIVE_SOL_MINT, decimals: 9, balance: "500000000", eligible: true, reason: null };
+  const usdc = { kind: "token" as const, mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", decimals: 6, balance: "1000000", eligible: true, reason: null };
+  const hsol = { kind: "token" as const, mint: HSOL_MINT, decimals: 9, balance: "200000000", eligible: true, reason: null };
+  const solHsol: OpenPositionPair = {
+    poolAddress: SOL_HSOL_CLMM_POOL_ID, mintA: NATIVE_SOL_MINT, mintB: HSOL_MINT,
+    symbolA: "SOL", symbolB: "hSOL", wrappedSymbol: "SOL", plainSymbol: "hSOL",
+    feeTierBps: 1, token2022A: false, token2022B: false, freezeRisk: false,
+  };
+  const stock: OpenPositionPair = {
+    poolAddress: "spcx-pool", mintA: "spcx-mint", mintB: "spcxx-mint",
+    symbolA: "SPCX", symbolB: "SPCXx", wrappedSymbol: "SPCXx", plainSymbol: "SPCX",
+    feeTierBps: 1, token2022A: false, token2022B: false, freezeRisk: false,
+  };
+  function installAssets(assets: unknown[]) {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.startsWith("/api/wallet")) return Response.json({ assets });
+      if (url === "/api/open-quote") return Response.json(prepared().summary.quote);
+      throw new Error(`Unexpected request: ${url}`);
+    });
+  }
+
+  it("marks native SOL ineligible on SOL/hSOL and keeps token wSOL eligible", async () => {
+    currentPair = solHsol;
+    installAssets([sol, wsol, usdc, hsol]);
+    await mount();
+    const native = controller.inputAssets.find((item) => item.kind === "native");
+    const wrapped = controller.inputAssets.find((item) => item.kind === "token" && item.mint === NATIVE_SOL_MINT);
+    expect(native).toMatchObject({ eligible: false, reason: SOL_POOL_NATIVE_INPUT_MESSAGE });
+    expect(wrapped).toMatchObject({ eligible: true, reason: null });
+    expect(controller.inputKind).toBe("token");
+    expect(controller.inputMint).not.toBeUndefined();
+    expect(controller.selectedAsset?.kind).toBe("token");
+  });
+
+  it("still offers native SOL on a stock pool (SPCXx/SPCX)", async () => {
+    currentPair = stock;
+    installAssets([sol, usdc]);
+    await mount();
+    const native = controller.inputAssets.find((item) => item.kind === "native");
+    expect(native).toMatchObject({ eligible: true, reason: null });
+    expect(controller.inputAssets.some((item) => item.kind === "native" && item.eligible)).toBe(true);
   });
 });
