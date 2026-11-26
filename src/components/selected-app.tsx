@@ -40,7 +40,7 @@ import { useRegistryPositions } from "./unified-positions/registry-positions";
 import { RegistryPositionTool, RegistryRowCompound, type ToolBalance } from "./unified-positions/registry-tools";
 import { RegistryPerformancePanel } from "./unified-positions/registry-performance";
 import { RaydiumActivityRecords, RaydiumRowCompound } from "./compound-panel";
-import { balanceSymbol, tokenSymbol } from "@/lib/position-label";
+import { balanceSymbol, sentenceBalanceLabel, tokenSymbol } from "@/lib/position-label";
 import { shortAddress } from "@/lib/format/address";
 import { PortfolioSummary, PortfolioHistoryStatus } from "./portfolio/portfolio-summary";
 import { PortfolioPositionList, rowActions, type PortfolioRow, type RowTool } from "./portfolio/portfolio-rows";
@@ -171,8 +171,9 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
   }, [wallet]);
   const selectedAsset = discovery?.assets.find((asset) => asset.kind === selection?.inputKind && asset.mint === selection?.inputMint);
   const inputLabel = selectedAsset ? assetSymbol(selectedAsset, assetMetadata(selectedAsset, metadata)) : "Input asset";
+  const inputInSentence = sentenceBalanceLabel(inputLabel);
   const addStatus = compound.busy ? "A compound or recovery operation is in progress."
-    : insufficientInput && selectedAsset ? notEnoughBalanceMessage({ ...insufficientInput, symbol: inputLabel }) : status;
+    : insufficientInput && selectedAsset ? notEnoughBalanceMessage({ ...insufficientInput, symbol: inputInSentence }) : status;
   // Positions are read through the Raydium position source (unified-positions PR-A); same list and order as the scan.
   const solanaPositions = positionSource.fromDiscovery(discovery);
   const positionOptions = solanaPositions.map((position) => position.native);
@@ -234,9 +235,9 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
   };
   const noRouteOutput = quoteErrorOutputMint || state?.mintA || "";
   const displayError = quoteErrorCode === JUPITER_NO_ROUTE_CODE && noRouteOutput
-    ? formatSelectedNoRouteMessage(inputLabel, poolLabel(noRouteOutput))
+    ? formatSelectedNoRouteMessage(inputInSentence, poolLabel(noRouteOutput))
     : quoteErrorCode === AMOUNT_TOO_SMALL_CODE && quoteErrorAmount && quoteErrorOutputMint && state && error === quoteError
-      ? formatAmountTooSmallMessage({ input: inputLabel, minority: poolLabel(quoteErrorOutputMint),
+      ? formatAmountTooSmallMessage({ input: inputInSentence, minority: poolLabel(quoteErrorOutputMint),
         majority: quoteErrorAmount.majorityMint ? poolLabel(quoteErrorAmount.majorityMint) : undefined,
         minimum: money(quoteErrorAmount.minimumInput, state.inputDecimals, state.inputDecimals) })
       : quoteErrorCode === SMALL_LEG_MOVES_PRICE_CODE && quoteErrorOutputMint && state && error === quoteError

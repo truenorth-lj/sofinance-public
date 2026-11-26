@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { ArrowDown, CircleAlert, LoaderCircle } from "lucide-react";
 import { formatAmount } from "@sofinance/engine/amount";
+import { sentenceBalanceLabel } from "@/lib/position-label";
 import { shortAddress } from "@/lib/format/address";
 import { solscanTxUrl } from "@/lib/format/explorer";
 import { formatUsd } from "@/lib/format/usd";
@@ -228,7 +229,7 @@ export function AddLiquiditySection({
                 <Row title="Jupiter transaction slippage" value="0.5%(fixed)" />
                 <Row title="Simulated SOL total debit" value={result?.simulatedSolDebitLamports ? `${money(result.simulatedSolDebitLamports, 9, 9)} SOL(including input and possible rent)` : "Checked when you add liquidity"} />
               </div>
-              {totalCostPercent !== null && <p className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-xs leading-5 text-smoke">Estimated round-trip cost: about {totalCostPercent ?? "—"}% (assuming you add liquidity, immediately withdraw, and swap back to {inputLabel}). This conservative estimate includes swap fees, price impact, and slippage tolerance. It does not block signing. Network fees and account rent are separate. This value is not a promise of execution or future value.</p>}
+              {totalCostPercent !== null && <p className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-xs leading-5 text-smoke">Estimated round-trip cost: about {totalCostPercent ?? "—"}% (assuming you add liquidity, immediately withdraw, and swap back to {sentenceBalanceLabel(inputLabel)}). This conservative estimate includes swap fees, price impact, and slippage tolerance. It does not block signing. Network fees and account rent are separate. This value is not a promise of execution or future value.</p>}
             </>}
           </section>
           {(attempt || result?.simulated) && <section className="rounded-[28px] border border-white/12 bg-char p-5">

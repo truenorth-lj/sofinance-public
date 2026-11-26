@@ -18,7 +18,7 @@ import { readSelectedPositionState, type PositionSelection, type SelectedPositio
 import { selectedNoRouteError } from "./selected-no-route";
 import { AmountTooSmallError, formatAmountTooSmallMessage, formatSmallLegMovesPriceMessage, isJupiterAmountTooSmallHttp,
   minJupiterSwapAmount, SmallLegMovesPriceError } from "./selected-amount-error";
-import { balanceSymbol, tokenSymbol } from "./position-label";
+import { balanceSymbolInSentence, tokenSymbol } from "./position-label";
 import { withSelectedRouteRetries } from "./selected-route-retry";
 import { CROSS_LIQUIDITY_BAND_MESSAGE, CROSS_POSITION_RANGE_MESSAGE } from "@sofinance/engine/liquidity-band";
 import { projectTargetPoolSqrt } from "@sofinance/engine/target-pool-projection";
@@ -64,7 +64,7 @@ export function clampInsideSpend(requested: bigint, spendA: bigint, floors: Pick
 /** Genuine too-small amount: state the real cause and the computed minimum (raw input units). */
 function amountTooSmall(state: SelectedPositionState, minimum: bigint,
   minorityMint: string, majorityMint?: string): AmountTooSmallError {
-  const input = balanceSymbol(state.inputMint, state.inputKind);
+  const input = balanceSymbolInSentence(state.inputMint, state.inputKind);
   const message = formatAmountTooSmallMessage({ input, minority: tokenSymbol(minorityMint),
     majority: majorityMint ? tokenSymbol(majorityMint) : undefined,
     minimum: formatAmount(minimum.toString(), state.inputDecimals, state.inputDecimals) });

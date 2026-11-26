@@ -8,7 +8,10 @@ import {
   shortMint,
   tokenSymbol,
   balanceSymbol,
+  balanceSymbolInSentence,
+  sentenceBalanceLabel,
   WRAPPED_SOL_BALANCE_LABEL,
+  WRAPPED_SOL_SENTENCE_LABEL,
 } from "./position-label";
 
 const POSITION_MINT = "33333333333333333333333333333333";
@@ -47,6 +50,15 @@ describe("balanceSymbol", () => {
     expect(balanceSymbol(USDC_MINT, "token")).toBe("USDC");
     expect(balanceSymbol(USDC_MINT, "token", "USDC")).toBe("USDC");
     expect(tokenSymbol(NATIVE_SOL_MINT, undefined, "WSOL")).toBe("SOL");
+  });
+
+  it("uses wrapped SOL inside a sentence and SOL for native lamports", () => {
+    expect(balanceSymbolInSentence(NATIVE_SOL_MINT, "native")).toBe("SOL");
+    expect(balanceSymbolInSentence(NATIVE_SOL_MINT, "token")).toBe(WRAPPED_SOL_SENTENCE_LABEL);
+    expect(balanceSymbolInSentence(NATIVE_SOL_MINT, "token", "SOL")).toBe("wrapped SOL");
+    expect(sentenceBalanceLabel("SOL")).toBe("SOL");
+    expect(sentenceBalanceLabel(WRAPPED_SOL_BALANCE_LABEL)).toBe("wrapped SOL");
+    expect(sentenceBalanceLabel("USDC")).toBe("USDC");
   });
 });
 

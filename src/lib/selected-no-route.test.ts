@@ -28,6 +28,6 @@ describe("selected no-route message", () => {
     }).message).toBe(formatSelectedNoRouteMessage("SOL", "a"));
     expect(selectedNoRouteError({
       inputMint: NATIVE_SOL_MINT, inputKind: "token", mintA: "a", mintB: "b", rangeSide: "inside",
-    }).message).toBe(formatSelectedNoRouteMessage("SOL (wrapped)", "a"));
+    }).message).toBe(formatSelectedNoRouteMessage("wrapped SOL", "a"));
   });
 });

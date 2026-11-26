@@ -5,7 +5,7 @@ import { useId, useState } from "react";
 import { formatSolCost } from "@/lib/sol-cost";
 import { useSolUsdcPrice } from "./use-sol-usdc-price";
 import { formatAmount } from "@sofinance/engine/amount";
-import { formatPositionPriceRange, formatRangeStatus, balanceSymbol, tokenSymbol } from "@/lib/position-label";
+import { formatPositionPriceRange, formatRangeStatus, balanceSymbol, sentenceBalanceLabel, tokenSymbol } from "@/lib/position-label";
 import { ChevronDown, Info, RefreshCw } from "lucide-react";
 import { useOpenPositionController, type OpenPositionPair } from "./use-open-position-controller";
 import { smallAmountNarrowRangeHint } from "@/lib/open-range-hint";
@@ -102,7 +102,7 @@ export function OpenPositionModal({
         tokenSymbol(quote.inputMint, undefined, quote.inputMint === pair.mintA ? pair.symbolA : quote.inputMint === pair.mintB ? pair.symbolB : undefined),
       )
     : "SOL";
-  const totalCostHelp = `Estimated round-trip cost: about ${totalCostPercent ?? "—"}% (assuming you open the position, immediately withdraw, and swap back to ${inputSymbol}). This conservative estimate includes swap fees, price impact, and slippage tolerance. It does not block signing.`;
+  const totalCostHelp = `Estimated round-trip cost: about ${totalCostPercent ?? "—"}% (assuming you open the position, immediately withdraw, and swap back to ${sentenceBalanceLabel(inputSymbol)}). This conservative estimate includes swap fees, price impact, and slippage tolerance. It does not block signing.`;
   const detailWarnings = quote?.warnings.filter(isDetailWarning) ?? [];
   const upfrontCost = quote ? BigInt(quote.rent.refundableLamports) + BigInt(quote.rent.nonRefundableLamports)
     + BigInt(quote.rent.walletTokenAccountLamports ?? "0") + BigInt(quote.networkFeeLamportsEstimate) : 0n;

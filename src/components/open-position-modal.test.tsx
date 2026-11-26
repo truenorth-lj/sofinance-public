@@ -102,6 +102,11 @@ function signButton() {
   return [...container.querySelectorAll("button")].find((button) => button.textContent === "Create position")!;
 }
 
+function roundTripTooltip(input: string) {
+  return `Estimated round-trip cost: about 10.00% (assuming you open the position, immediately withdraw, and swap back to ${input}). This conservative estimate includes swap fees, price impact, and slippage tolerance. It does not block signing.`;
+}
+
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-10-09T12:00:00Z"));
@@ -308,7 +313,8 @@ describe("open-position signing and quote refresh", () => {
     expect(container.textContent).not.toContain("Immediate resale of this position");
     const info = container.querySelector<HTMLButtonElement>('button[aria-label="About Total cost"]')!;
     await act(async () => { info.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })); });
-    expect(container.querySelector('[role="tooltip"]')?.textContent).toBe("Estimated round-trip cost: about 10.00% (assuming you open the position, immediately withdraw, and swap back to SOL (wrapped)). This conservative estimate includes swap fees, price impact, and slippage tolerance. It does not block signing.");
+    expect(container.querySelector('[role="tooltip"]')?.textContent).toBe(roundTripTooltip("wrapped SOL"));
+    expect(container.querySelector('[role="tooltip"]')?.textContent).not.toContain("SOL (wrapped)");
     expect(container.querySelector('[role="tooltip"]')?.classList.contains("bg-char")).toBe(true);
     await act(async () => {
       info.click();
@@ -317,6 +323,35 @@ describe("open-position signing and quote refresh", () => {
     });
     expect(container.querySelector('[role="tooltip"]')).toBeNull();
     expect(container.textContent).not.toContain("Ready to sign");
+  });
+
+  it("keeps native SOL as SOL in the round-trip tooltip sentence", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.startsWith("/api/wallet")) return { ok: true, json: async () => ({ assets: [{
+        kind: "native", mint: NATIVE_SOL_MINT, decimals: 9, balance: "216474000", eligible: true,
+      }] }) };
+      if (url === "/api/open-quote") {
+        return { ok: true, json: async () => ({
+          ...quote(),
+          inputKind: "native",
+          passesFloor: false,
+          achievedResaleBps: 9000,
+          resaleInput: "108000000",
+          roundtripCostInput: "12000000",
+          warning: "Conservative immediate resale is 90.00% of input, below the 99.00% floor.",
+          warnings: ["Conservative immediate resale is 90.00% of input, below the 99.00% floor."],
+        }) };
+      }
+      if (url.startsWith("/api/pool-range-apr")) return { ok: true, json: async () => payloadFixture() };
+      if (url === "/api/sol-usdc-price") return { ok: true, json: async () => ({ rate: 150 }) };
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+    await mount();
+    expect(container.textContent).toContain("Total cost");
+    const info = container.querySelector<HTMLButtonElement>('button[aria-label="About Total cost"]')!;
+    await act(async () => { info.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })); });
+    expect(container.querySelector('[role="tooltip"]')?.textContent).toBe(roundTripTooltip("SOL"));
+    expect(container.querySelector('[role="tooltip"]')?.textContent).not.toContain("wrapped");
   });
 
   it("fetches a new quote every poll interval without waiting for expiry", async () => {
