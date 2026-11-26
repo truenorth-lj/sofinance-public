@@ -164,8 +164,8 @@ describe("official LST fair price (SOL/hSOL stake-pool rate)", () => {
   });
 
   it("drops the note when no official rate is provided (multiplier fair of 1 fails the 2% gate)", () => {
-    const { fairPriceBPerA: _ignored, ...without } = ray;
-    expect(fairPriceFor(without)).toBeNull();
-    expect(scaledUiFairNote({ ...without, priceBPerA: ray.price, protocol: "raydium-clmm" })).toBeNull();
+    const withoutOfficial = { symbolA: ray.symbolA, symbolB: ray.symbolB, multiplierA: ray.multiplierA, multiplierB: ray.multiplierB, price: ray.price };
+    expect(fairPriceFor(withoutOfficial)).toBeNull();
+    expect(scaledUiFairNote({ ...withoutOfficial, priceBPerA: ray.price, protocol: "raydium-clmm" })).toBeNull();
   });
 });

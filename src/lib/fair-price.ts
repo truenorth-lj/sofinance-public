@@ -45,8 +45,8 @@ type FairPrice = {
 
 const NEAR_ONE = 1e-12;
 
-function isPositiveFinite(value: number): boolean {
-  return Number.isFinite(value) && value > 0;
+function isPositiveFinite(value: number | undefined | null): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
 function isOne(value: number): boolean {

@@ -47,7 +47,8 @@ describe("sameAssetUsdPerShare (SP-2)", () => {
       tvlUsd: 96_580,
       sides: [{ amount: 502.99, multiplier: 1 }, { amount: 795.62, multiplier: 1 }],
     });
-    expect(naive.kind === "known" && result.kind === "known" && result.usdPerShare).not.toBeCloseTo(naive.usdPerShare, 2);
+    if (result.kind !== "known" || naive.kind !== "known") throw new Error("expected known prices");
+    expect(result.usdPerShare).not.toBeCloseTo(naive.usdPerShare, 2);
   });
 
   it("is unknown when an LST underlying rate is missing", () => {

@@ -3,7 +3,7 @@ import type { OpenRangeInput } from "./open-range-input";
 /** Same 2% gate as the app `fairPriceFor`. */
 export const FAIR_CENTER_MAX_RELATIVE_DIFF = 0.02;
 
-function isPositiveFinite(value: number | undefined): value is number {
+function isPositiveFinite(value: number | undefined | null): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 

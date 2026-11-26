@@ -88,12 +88,12 @@ describe("fetchMeteoraPools", () => {
     const pools = await fetchMeteoraPools({ fetcher: fetcher as unknown as typeof fetch });
     expect(pools.map(pool => pool.poolAddress)).toEqual([POOL]);
     expect(fetcher).toHaveBeenCalledTimes(2);
-    const urls = fetcher.mock.calls.map((call) => call[0] as string);
-    expect(urls).toEqual([
+    const calls = fetcher.mock.calls as unknown as [string, RequestInit | undefined][];
+    expect(calls.map((call) => String(call[0]))).toEqual([
       `${METEORA_DLMM_DATAPI}/pools/${POOL}`,
       `${METEORA_DLMM_DATAPI}/pools/${SOL_HSOL_DLMM_POOL_ID}`,
     ]);
-    const init = fetcher.mock.calls[0]![1] as RequestInit;
+    const init = calls[0]?.[1] ?? {};
     expect(init.method ?? "GET").toBe("GET");
     expect(init.body).toBeUndefined();
   });
