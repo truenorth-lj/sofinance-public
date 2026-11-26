@@ -277,3 +277,25 @@ describe("fair-center then current-price fallback", () => {
     expect(OPEN_RANGE_PRESETS.map((p) => p.id)).toEqual(["tight", "standard", "wide"]);
   });
 });
+
+describe("openRangeCenterPrice with an official LST fair price", () => {
+  it("centers on the official SOL-per-hSOL rate, not 1, when the pool is within 2%", () => {
+    const solPerHsol = 1.19785;
+    const onChain = 1.1967;
+    expect(openRangeCenterPrice({
+      multiplierA: 1,
+      multiplierB: 1,
+      fairPriceBPerA: solPerHsol,
+      onChainPriceBPerA: onChain,
+    })).toBe(solPerHsol);
+  });
+
+  it("falls back to the on-chain price when the official rate is more than 2% away", () => {
+    expect(openRangeCenterPrice({
+      multiplierA: 1,
+      multiplierB: 1,
+      fairPriceBPerA: 1.19785,
+      onChainPriceBPerA: 1.3,
+    })).toBe(1.3);
+  });
+});

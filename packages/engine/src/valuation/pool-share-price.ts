@@ -12,13 +12,25 @@ export type PoolShareSide = {
   amount: number;
   /** Effective multiplier at evaluation time; null when unknown. */
   multiplier: number | null;
+  /**
+   * Units of the shared underlying per token, when that is not the ScaledUi
+   * multiplier (e.g. official SOL per hSOL). When set, this is used instead of
+   * `multiplier`. null means the unit is unknown (same as a missing multiplier).
+   */
+  underlyingPerToken?: number | null;
 };
 
 export type PoolSharePrice =
   | { kind: "known"; usdPerShare: number }
   | { kind: "unknown"; reason: "multiplier-unknown" | "no-reserves" | "invalid-input" };
 
-const finitePositive = (value: number | null): value is number => value !== null && Number.isFinite(value) && value > 0;
+const finitePositive = (value: number | null | undefined): value is number => value !== null && value !== undefined && Number.isFinite(value) && value > 0;
+
+/** Share units for one side: an explicit underlying rate when present, otherwise the ScaledUi multiplier. */
+function underlyingUnitsOf(side: PoolShareSide): number | null {
+  if (side.underlyingPerToken !== undefined) return finitePositive(side.underlyingPerToken) ? side.underlyingPerToken : null;
+  return finitePositive(side.multiplier) ? side.multiplier : null;
+}
 
 export function sameAssetUsdPerShare(input: {
   tvlUsd: number | null;
@@ -28,8 +40,9 @@ export function sameAssetUsdPerShare(input: {
   if (!finitePositive(tvlUsd) || !sides.every((side) => Number.isFinite(side.amount) && side.amount >= 0)) {
     return { kind: "unknown", reason: "invalid-input" };
   }
-  if (!sides.every((side) => finitePositive(side.multiplier))) return { kind: "unknown", reason: "multiplier-unknown" };
-  const shares = sides.reduce((total, side) => total + side.amount * side.multiplier!, 0);
+  const units = sides.map(underlyingUnitsOf);
+  if (!units.every(finitePositive)) return { kind: "unknown", reason: "multiplier-unknown" };
+  const shares = sides.reduce((total, side, index) => total + side.amount * units[index]!, 0);
   if (!(shares > 0)) return { kind: "unknown", reason: "no-reserves" };
   const usdPerShare = tvlUsd / shares;
   return Number.isFinite(usdPerShare) && usdPerShare > 0 ? { kind: "known", usdPerShare } : { kind: "unknown", reason: "invalid-input" };

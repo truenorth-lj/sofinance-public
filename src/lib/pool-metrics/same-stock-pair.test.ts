@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { USDC_MINT, USDT_MINT } from "@/lib/rwa-allowlist";
+import { HSOL_MINT, NATIVE_SOL_MINT, USDC_MINT, USDT_MINT } from "@/lib/rwa-allowlist";
 import { isSameAssetPair } from "./token-registry";
 import { solanaStaticToken } from "./solana-registry";
 import { RHC_REGISTRY } from "./rhc-registry";
 import {
+  isLstPool,
+  isPublicSeoPool,
   isSameStockPool,
   isSameStockRegistryPair,
   isStockUnderlying,
@@ -13,6 +15,7 @@ describe("isStockUnderlying / isSameStockRegistryPair", () => {
   it("treats USD as a cash underlying and stock tickers as stocks", () => {
     expect(isStockUnderlying("USD")).toBe(false);
     expect(isStockUnderlying("USDC")).toBe(false);
+    expect(isStockUnderlying("SOL")).toBe(false);
     expect(isStockUnderlying("TSLA")).toBe(true);
     expect(isStockUnderlying("NVDA")).toBe(true);
   });
@@ -61,6 +64,33 @@ describe("isSameStockPool", () => {
   it("accepts an RHC stock wrap by ticker when the mints are not in the registry yet", () => {
     expect(isSameStockPool({
       chain: "robinhood", mintA: "0x-nvda-test", mintB: "0x-nvdaon-test", symbolA: "NVDA", symbolB: "NVDAon",
+    })).toBe(true);
+  });
+});
+
+describe("SOL/hSOL is an LST pair, not a same-stock pair, and is still a public SEO pool", () => {
+  const solHsol = {
+    chain: "solana" as const, mintA: NATIVE_SOL_MINT, mintB: HSOL_MINT, symbolA: "SOL", symbolB: "hSOL",
+  };
+
+  it("pairs as same-asset SOL from different issuers, but not as a stock", () => {
+    const sol = solanaStaticToken(NATIVE_SOL_MINT)!;
+    const hsol = solanaStaticToken(HSOL_MINT)!;
+    expect(isSameAssetPair(sol, hsol)).toBe(true);
+    expect(isSameStockRegistryPair(sol, hsol)).toBe(false);
+    expect(isSameStockPool(solHsol)).toBe(false);
+    expect(isLstPool(solHsol)).toBe(true);
+    expect(isLstPool({ mintA: HSOL_MINT, mintB: NATIVE_SOL_MINT })).toBe(true);
+    expect(isPublicSeoPool(solHsol)).toBe(true);
+  });
+
+  it("does not mark USDC/USDT or a stock wrap as an LST pool", () => {
+    expect(isLstPool({ mintA: USDC_MINT, mintB: USDT_MINT })).toBe(false);
+    expect(isPublicSeoPool({
+      chain: "solana", mintA: USDC_MINT, mintB: USDT_MINT, symbolA: "USDC", symbolB: "USDT",
+    })).toBe(false);
+    expect(isPublicSeoPool({
+      chain: "solana", mintA: "tsla-mint", mintB: "tslax-mint", symbolA: "TSLAx", symbolB: "TSLA",
     })).toBe(true);
   });
 });

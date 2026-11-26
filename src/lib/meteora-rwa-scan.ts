@@ -2,7 +2,7 @@ import "@/lib/engine-host";
 import "server-only";
 
 import type { Connection } from "@solana/web3.js";
-import { METEORA_DLMM_DATAPI, METEORA_RANGE_APR_MAX_BIN_STEP, type MeteoraPoolSpec } from "@sofinance/engine/protocols/meteora/constants";
+import { HSOL_MINT, NATIVE_SOL_MINT, SOL_HSOL_DLMM_POOL_ID, SPL_TOKEN_PROGRAM_ID, METEORA_DLMM_DATAPI, METEORA_RANGE_APR_MAX_BIN_STEP, type MeteoraPoolSpec } from "@sofinance/engine/protocols/meteora/constants";
 import {
   fetchMeteoraPoolsByMint, fetchMeteoraPoolsByQuery, parseMeteoraPool, parseMeteoraScanPool, type MeteoraPoolSummary,
 } from "@sofinance/engine/protocols/meteora/discovery";
@@ -27,6 +27,7 @@ import { fetchXstocksSolanaMintSet, getXstocksObservedAt } from "./rwa-xstocks-w
  * 2. Any query failing fails the scan (nothing is published).
  * 3. FOOx/FOO ticker shape, then Jupiter `stocks`/`rwa` tags or the xStocks list on both mints
  *    (`matchSameAssetPair`): same underlying, different issuer. No other pairs (no SOL / USDC quote pools).
+ *    Curated SOL/hSOL is listed only from `METEORA_ALLOWLISTED_LST_POOLS`, not by treating SOL as a stock seed.
  * 4. Bin step ≤ 10 (`METEORA_RANGE_APR_MAX_BIN_STEP`); wider ones are counted in the summary, not listed.
  * 5. On-chain: LbPair protocol share and token programs, mint freeze authority and the Token-2022 block. The one
  *    mint read also gives the ScaledUiAmount multipliers; it is reused by the freeze / TVL step (no second read).
@@ -36,6 +37,29 @@ import { fetchXstocksSolanaMintSet, getXstocksObservedAt } from "./rwa-xstocks-w
 
 /** Curated Meteora stablecoin pools (USDC / USDT). Empty: none is listed (product decision, SCAN_DESIGN.md §12.1). */
 const METEORA_ALLOWLISTED_STABLE_POOLS: readonly MeteoraPoolSpec[] = Object.freeze([]);
+
+type CuratedMeteoraPool = MeteoraPoolSpec & {
+  wrapKind: "stable" | "lst";
+  baseSymbol: string;
+  wrappedSymbol: string;
+  plainSymbol: string;
+};
+
+/** Curated Meteora SOL/hSOL LST pool. Exempt from the scan TVL floor, like stables. */
+const METEORA_ALLOWLISTED_LST_POOLS: readonly CuratedMeteoraPool[] = Object.freeze([
+  Object.freeze({
+    poolAddress: SOL_HSOL_DLMM_POOL_ID,
+    mintX: HSOL_MINT,
+    mintY: NATIVE_SOL_MINT,
+    binStep: 1,
+    tokenProgramX: SPL_TOKEN_PROGRAM_ID,
+    tokenProgramY: SPL_TOKEN_PROGRAM_ID,
+    wrapKind: "lst",
+    baseSymbol: "SOL",
+    wrappedSymbol: "SOL",
+    plainSymbol: "hSOL",
+  }),
+]);
 
 const QUERY_CONCURRENCY = 5;
 /** datapi text search that returns every pool with a Backed xStocks token (token names end in "xStock"). */
@@ -150,8 +174,22 @@ export async function discoverMeteoraRwaPairs(options: DiscoverMeteoraRwaOptions
     } });
   }
   const thresholded = new Set(matched.map((m) => m.pool.poolAddress));
-  const stable = await stablePoolRows(options.stablePools ?? METEORA_ALLOWLISTED_STABLE_POOLS, fetcher, apiBase, options.signal);
-  for (const entry of stable) if (!matched.some((m) => m.pool.poolAddress === entry.pool.poolAddress)) matched.push(entry);
+  const curated = await curatedPoolRows(
+    [
+      ...((options.stablePools ?? METEORA_ALLOWLISTED_STABLE_POOLS).map((spec) => ({
+        ...spec,
+        wrapKind: "stable" as const,
+        baseSymbol: "USD",
+        wrappedSymbol: "USDC",
+        plainSymbol: "USDT",
+      }))),
+      ...METEORA_ALLOWLISTED_LST_POOLS,
+    ],
+    fetcher,
+    apiBase,
+    options.signal,
+  );
+  for (const entry of curated) if (!matched.some((m) => m.pool.poolAddress === entry.pool.poolAddress)) matched.push(entry);
 
   // On-chain facts (best effort, like Raydium's freeze read): protocol share, token programs, freeze authority.
   let facts: MeteoraOnchainFacts = { protocolShareBps: new Map(), freezeAuthority: new Map() };
@@ -189,8 +227,8 @@ export async function discoverMeteoraRwaPairs(options: DiscoverMeteoraRwaOptions
   };
 }
 
-/** Curated stablecoin pools: fetched by id, kept only when both mints are the curated USDC / USDT tokens. */
-async function stablePoolRows(specs: readonly MeteoraPoolSpec[], fetcher: typeof fetch, apiBase: string, signal?: AbortSignal) {
+/** Curated pools (stables, SOL/hSOL LST): fetched by id, kept when both mints are the expected registry pair. Exempt from the TVL floor. */
+async function curatedPoolRows(specs: readonly CuratedMeteoraPool[], fetcher: typeof fetch, apiBase: string, signal?: AbortSignal) {
   const rows: { pool: MeteoraPoolSummary<MeteoraPoolSpec>; identity: MeteoraRowIdentity }[] = [];
   for (const spec of specs) {
     const response = await fetcher(`${apiBase}/pools/${encodeURIComponent(spec.poolAddress)}`, { headers: { accept: "application/json" }, signal });
@@ -198,7 +236,11 @@ async function stablePoolRows(specs: readonly MeteoraPoolSpec[], fetcher: typeof
     const pool = parseMeteoraPool(await response.json(), spec) as MeteoraPoolSummary<MeteoraPoolSpec> | null;
     const tokenX = solanaStaticToken(spec.mintX), tokenY = solanaStaticToken(spec.mintY);
     if (!pool || !tokenX || !tokenY || !pairRegistryTokens([tokenX], [tokenY]) || pool.binStep > METEORA_RANGE_APR_MAX_BIN_STEP) continue;
-    rows.push({ pool, identity: { baseSymbol: tokenX.underlying, wrappedSymbol: tokenX.symbol, plainSymbol: tokenY.symbol, wrapKind: "stable",
+    rows.push({ pool, identity: {
+      baseSymbol: spec.baseSymbol || tokenX.underlying,
+      wrappedSymbol: spec.wrappedSymbol,
+      plainSymbol: spec.plainSymbol,
+      wrapKind: spec.wrapKind,
       relatedness: "allowlisted", qualificationA: "allowlist", qualificationB: "allowlist", preferredTags: false, jupiterTagsA: [], jupiterTagsB: [] } });
   }
   return rows;

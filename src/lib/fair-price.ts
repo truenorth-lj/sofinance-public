@@ -26,6 +26,11 @@ type FairPricePool = {
   /** Effective ScaledUiAmount multiplier (1 when the mint has no config). */
   multiplierA: number;
   multiplierB: number;
+  /**
+   * Official fair price as token B per token A, when it is not the ScaledUi
+   * multiplier ratio (SOL/hSOL: the stake-pool exchange rate).
+   */
+  fairPriceBPerA?: number;
   /** Current raw UI price, token B per token A (decimals only, no ScaledUi multiplier). */
   price: number;
 };
@@ -40,8 +45,8 @@ type FairPrice = {
 
 const NEAR_ONE = 1e-12;
 
-function isPositiveFinite(value: number): boolean {
-  return Number.isFinite(value) && value > 0;
+function isPositiveFinite(value: number | undefined | null): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
 function isOne(value: number): boolean {
@@ -98,9 +103,10 @@ export function rawPriceBPerA(pool: {
 
 /** Fair raw price, or null when it and the pool price differ by more than 2% (or inputs are unusable). */
 export function fairPriceFor(pool: FairPricePool): FairPrice | null {
-  const { multiplierA, multiplierB, price } = pool;
+  const { multiplierA, multiplierB, fairPriceBPerA, price } = pool;
   if (![multiplierA, multiplierB, price].every(isPositiveFinite)) return null;
-  const fair = multiplierA / multiplierB;
+  const official = isPositiveFinite(fairPriceBPerA) ? fairPriceBPerA : null;
+  const fair = official ?? (multiplierA / multiplierB);
   if (!isPositiveFinite(fair)) return null;
   if (Math.abs(price - fair) / fair > FAIR_PRICE_MAX_RELATIVE_DIFF) return null;
   const shareLines: string[] = [];
@@ -116,6 +122,7 @@ function fairPriceFromPool(pool: {
   protocol?: string;
   multiplierA?: number;
   multiplierB?: number;
+  fairPriceBPerA?: number;
   priceBPerA?: number | null;
 }): FairPrice | null {
   if (pool.multiplierA === undefined || pool.multiplierA === null || pool.multiplierB === undefined || pool.multiplierB === null || pool.priceBPerA === undefined || pool.priceBPerA === null) return null;
@@ -124,6 +131,7 @@ function fairPriceFromPool(pool: {
     symbolB: pool.symbolB,
     multiplierA: pool.multiplierA,
     multiplierB: pool.multiplierB,
+    ...(isPositiveFinite(pool.fairPriceBPerA) ? { fairPriceBPerA: pool.fairPriceBPerA } : {}),
     price: rawPriceBPerA({
       protocol: pool.protocol,
       multiplierA: pool.multiplierA,
@@ -144,6 +152,7 @@ export function scaledUiFairNote(pool: {
   pairLabel?: string;
   multiplierA?: number;
   multiplierB?: number;
+  fairPriceBPerA?: number;
   priceBPerA?: number | null;
 }): string | null {
   const result = fairPriceFromPool(pool);

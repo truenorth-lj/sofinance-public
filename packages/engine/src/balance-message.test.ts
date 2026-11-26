@@ -17,7 +17,8 @@ describe("balance messages", () => {
   });
   it("knows only symbols it can be sure of", () => {
     expect(knownTokenSymbol(NATIVE_SOL_MINT, "native")).toBe("SOL");
-    expect(knownTokenSymbol(NATIVE_SOL_MINT, "token")).toBe("WSOL");
+    expect(knownTokenSymbol(NATIVE_SOL_MINT, "token")).toBe("SOL");
+    expect(knownTokenSymbol(NATIVE_SOL_MINT)).toBe("SOL");
     expect(knownTokenSymbol(USDC_MINT, "token")).toBe("USDC");
     expect(knownTokenSymbol("SomeOtherMint1111111111111111111111111111111", "token")).toBeNull();
   });

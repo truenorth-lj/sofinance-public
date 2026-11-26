@@ -46,6 +46,8 @@ export type UnifiedPool = {
   priceBPerA?: number | null;
   multiplierA?: number;
   multiplierB?: number;
+  /** Official fair price as token B per token A when it is not the ScaledUi ratio (SOL/hSOL). */
+  fairPriceBPerA?: number;
   /**
    * USD per real share for a same-asset pool (TVL over reserves × known multipliers, from the snapshot); absent when
    * unknown, never guessed. The calculator counts in the pool's asset and shows ≈$ only when this is set.

@@ -25,7 +25,9 @@ describe("tokenSymbol", () => {
     expect(tokenSymbol(MINT_A, undefined, "HOODx")).toBe("HOODx");
     expect(tokenSymbol(MINT_A, { [MINT_A]: { symbol: " SPCXx " } })).toBe("SPCXx");
     expect(tokenSymbol(USDC_MINT)).toBe("USDC");
-    expect(tokenSymbol(NATIVE_SOL_MINT)).toBe("WSOL");
+    expect(tokenSymbol(NATIVE_SOL_MINT)).toBe("SOL");
+    expect(tokenSymbol(NATIVE_SOL_MINT, undefined, "WSOL")).toBe("SOL");
+    expect(tokenSymbol(NATIVE_SOL_MINT, { [NATIVE_SOL_MINT]: { symbol: "WSOL" } })).toBe("SOL");
     expect(tokenSymbol(MINT_B)).toBe("2222…2222");
     expect(tokenSymbol(MINT_B, { [MINT_B]: { symbol: "" } })).toBe("2222…2222");
   });

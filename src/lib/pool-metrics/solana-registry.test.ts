@@ -5,7 +5,7 @@ import {
   hasPreferredJupiterTags, matchWrapPairShape, qualifyRwaMint,
   type MintHints, type PairingResult, type Relatedness,
 } from "../rwa-pairing";
-import { USDC_MINT, USDT_MINT } from "../rwa-allowlist";
+import { HSOL_MINT, NATIVE_SOL_MINT, USDC_MINT, USDT_MINT } from "../rwa-allowlist";
 import {
   matchSameAssetPair, SOLANA_PLAIN_TICKER_ISSUER, SOLANA_WRAPPED_TICKER_ISSUER, solanaRegistryEntries, solanaStaticToken,
 } from "./solana-registry";
@@ -100,5 +100,13 @@ describe("Solana registry pairing = the earlier FOOx/FOO rule", () => {
     const pair = pairRegistryTokens([solanaStaticToken(USDC_MINT)!], [solanaStaticToken(USDT_MINT)!]);
     expect(pair?.underlying).toBe("USD");
     expect(pairRegistryTokens([solanaStaticToken(USDC_MINT)!], [solanaStaticToken(USDC_MINT)!])).toBeNull();
+  });
+
+  it("the curated SOL / hSOL tokens pair as the same underlying from different issuers", () => {
+    const pair = pairRegistryTokens([solanaStaticToken(NATIVE_SOL_MINT)!], [solanaStaticToken(HSOL_MINT)!]);
+    expect(solanaStaticToken(NATIVE_SOL_MINT)?.symbol).toBe("SOL");
+    expect(solanaStaticToken(HSOL_MINT)?.symbol).toBe("hSOL");
+    expect(pair?.underlying).toBe("SOL");
+    expect(pair?.a.issuer).not.toBe(pair?.b.issuer);
   });
 });

@@ -9,8 +9,7 @@ export const NOT_ENOUGH_SOL_FOR_FEES_MESSAGE = "Not enough SOL for network fees:
 
 /** Symbol for a mint when no token metadata is at hand. */
 export function knownTokenSymbol(mint: string, inputKind?: "native" | "token"): string | null {
-  if (inputKind === "native" || mint === NATIVE_SOL_MINT && inputKind !== "token") return "SOL";
-  if (mint === NATIVE_SOL_MINT) return "WSOL";
+  if (inputKind === "native" || mint === NATIVE_SOL_MINT) return "SOL";
   if (mint === USDC_MINT) return "USDC";
   return null;
 }

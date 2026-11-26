@@ -50,15 +50,19 @@ export function withScaledUiTvl(row: RwaPairRow, multipliers: { a: number | null
  * mint read's multipliers, or without it when any of those is unknown. Run after `withScaledUiTvl`: a source whose TVL
  * leaves out the multiplier counts only once that TVL is `corrected`. Pure; never adds a read. Idempotent.
  */
-export function withUsdPerShare(row: RwaPairRow, multipliers: { a: number | null; b: number | null }): RwaPairRow {
+export function withUsdPerShare(
+  row: RwaPairRow,
+  multipliers: { a: number | null; b: number | null },
+  underlyingPerToken?: { a: number | null; b: number | null },
+): RwaPairRow {
   const rest: RwaPairRow = { ...row };
   delete rest.usdPerShare;
   const reserves = row.tvlSides ?? row.reserveAmounts;
   const tvlInRegistryUnit = !tvlLeavesOutScaledUi(row.protocol) || row.tvlScaledUi?.status === "corrected";
   if (!reserves || !tvlInRegistryUnit) return rest;
   const price = sameAssetUsdPerShare({ tvlUsd: row.tvlUsd, sides: [
-    { amount: reserves.amountA, multiplier: multipliers.a },
-    { amount: reserves.amountB, multiplier: multipliers.b },
+    { amount: reserves.amountA, multiplier: multipliers.a, ...(underlyingPerToken ? { underlyingPerToken: underlyingPerToken.a } : {}) },
+    { amount: reserves.amountB, multiplier: multipliers.b, ...(underlyingPerToken ? { underlyingPerToken: underlyingPerToken.b } : {}) },
   ] });
   return price.kind === "known" ? { ...rest, usdPerShare: price.usdPerShare } : rest;
 }

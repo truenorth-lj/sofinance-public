@@ -9,6 +9,7 @@ import { fakeMeteoraConnection, meteoraAccounts } from "./range-apr/meteora-chai
 const POOL = "53oyyjgybx6dH7i5aGeKfBUi3xPJQDeBkaENPri57x2H";
 const CBBTC = "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij";
 import { parseMeteoraPool } from "@sofinance/engine/protocols/meteora/discovery";
+import { SOL_HSOL_DLMM_POOL_ID } from "@sofinance/engine/protocols/meteora/constants";
 
 describe("Meteora pair rows", () => {
   it("maps the captured cbBTC/WBTC pool to a read-only meteora-dlmm row (golden)", () => {
@@ -34,7 +35,9 @@ describe("Meteora pair rows", () => {
     expect(result).toMatchObject({ protocol: "meteora-dlmm", readOnly: true, onchainSource: "onchain" });
     expect(result.pairs).toHaveLength(1);
     expect(fetcher.mock.calls.map(call => String((call as unknown[])[0]))).toEqual([
-      "https://dlmm.datapi.meteora.ag/pools/53oyyjgybx6dH7i5aGeKfBUi3xPJQDeBkaENPri57x2H"]);
+      "https://dlmm.datapi.meteora.ag/pools/53oyyjgybx6dH7i5aGeKfBUi3xPJQDeBkaENPri57x2H",
+      `https://dlmm.datapi.meteora.ag/pools/${SOL_HSOL_DLMM_POOL_ID}`,
+    ]);
     // On-chain protocol share is 10% (datapi says 5%): LP fees = gross × 0.9.
     expect(result.pairs[0]!.fees24hUsd).toBeCloseTo(4.247998606572472 * 0.9, 9);
     expect(result.pairs[0]!.estimatedFeeAprPct).toBeCloseTo(4.247998606572472 * 0.9 / 336203.47025545826 * 365 * 100, 6);

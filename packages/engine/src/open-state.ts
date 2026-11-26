@@ -4,6 +4,7 @@ import {
 } from "@solana/spl-token";
 import { scaledUiMultiplierFromMint } from "./scaled-ui-multiplier";
 import { Connection, PublicKey, type AccountInfo } from "@solana/web3.js";
+import { isSolHsolMintPair, lstFairPriceBPerA, readHsolSolExchangeRate } from "./hsol-rate";
 import { MIN_SOL_LAMPORTS, NATIVE_SOL_MINT, USDC_MINT } from "./ids";
 import { rpcConnection } from "./rpc";
 import { resolveMintSymbols } from "./mint-symbols";
@@ -120,8 +121,18 @@ export async function readOpenPoolState(
       /* shortened mints in the UI */
     }
   }
+  if (pool.mintA.toBase58() === NATIVE_SOL_MINT) symbolA = "SOL";
+  if (pool.mintB.toBase58() === NATIVE_SOL_MINT) symbolB = "SOL";
   const multiplierA = scaledUiMultiplierFromMint(mintA.mint);
   const multiplierB = scaledUiMultiplierFromMint(mintB.mint);
+  let fairPriceBPerA: number | undefined;
+  if (isSolHsolMintPair(pool.mintA.toBase58(), pool.mintB.toBase58())) {
+    try {
+      const rate = await readHsolSolExchangeRate({ connection });
+      const fair = rate ? lstFairPriceBPerA(pool.mintA.toBase58(), pool.mintB.toBase58(), rate.solPerHsol) : null;
+      if (fair !== null) fairPriceBPerA = fair;
+    } catch { /* center on the on-chain price when the official rate is missing */ }
+  }
   return {
     wallet: walletAddress, slot: discovered.slot, fetchedAt: Date.now(),
     poolId: poolId.toBase58(), programId: CLMM_PROGRAM_ID.toBase58(),
@@ -144,6 +155,7 @@ export async function readOpenPoolState(
     solLamports, sufficientSol: solLamports >= MIN_SOL_LAMPORTS,
     ...(multiplierA !== undefined ? { multiplierA } : {}),
     ...(multiplierB !== undefined ? { multiplierB } : {}),
+    ...(fairPriceBPerA !== undefined ? { fairPriceBPerA } : {}),
   };
 }
 

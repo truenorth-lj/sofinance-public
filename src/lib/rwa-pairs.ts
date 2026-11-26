@@ -27,6 +27,8 @@ import { readMintSafety, type MintSafety } from "./onchain-mint-freeze";
 import { unsupportedOf, type PoolMintUnsupported } from "./pool-mint-unsupported";
 import type { MintBlockReason } from "@sofinance/engine/token-safety";
 import type { ScaledUiMultiplierConfig } from "@sofinance/engine/valuation/types";
+import { isSolHsolMintPair, lstFairPriceBPerA, lstUnderlyingPerToken, readHsolSolExchangeRate } from "@sofinance/engine/hsol-rate";
+import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
 import { knownMultiplier, withScaledUiTvl, withUsdPerShare } from "./pool-tvl-scaled-ui";
 
 export const RAYDIUM_API_V3 = "https://api-v3.raydium.io";
@@ -66,7 +68,14 @@ export type RwaPairRow = {
   baseSymbol: string;
   wrappedSymbol: string;
   plainSymbol: string;
-  wrapKind: PairingMatch["wrapKind"] | "stable" | "same-asset";
+  wrapKind: PairingMatch["wrapKind"] | "stable" | "same-asset" | "lst";
+  /**
+   * Official fair price as token B per token A, when the pair has one that is not
+   * the ScaledUi multiplier ratio (SOL/hSOL: the stake-pool exchange rate).
+   */
+  fairPriceBPerA?: number;
+  /** Official SOL per hSOL used for `fairPriceBPerA` and share pricing, when known. */
+  lstSolPerHsol?: number;
   relatedness: Relatedness | "allowlisted";
   qualificationA: RwaQualificationSource | "allowlist";
   qualificationB: RwaQualificationSource | "allowlist";
@@ -203,6 +212,18 @@ function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
+/** Portfolio and list copy shows SOL, not WSOL, for the native mint. */
+export function displayMintSymbol(mint: string, reported?: string | null): string {
+  if (mint === NATIVE_SOL_MINT) return "SOL";
+  const symbol = reported?.trim();
+  return symbol || reported || "";
+}
+
+function displayMintName(mint: string, reported?: string | null): string {
+  if (mint === NATIVE_SOL_MINT) return "SOL";
+  return reported?.trim() || reported || "";
+}
+
 function mintTags(tags: unknown): string[] {
   return Array.isArray(tags) ? tags.filter((t): t is string => typeof t === "string") : [];
 }
@@ -296,10 +317,10 @@ function pairRowFromCandidate(
     protocol: DEFAULT_PROTOCOL,
     mintA: addressA,
     mintB: addressB,
-    symbolA,
-    symbolB,
-    nameA,
-    nameB,
+    symbolA: displayMintSymbol(addressA, symbolA),
+    symbolB: displayMintSymbol(addressB, symbolB),
+    nameA: displayMintName(addressA, nameA),
+    nameB: displayMintName(addressB, nameB),
     ...identity,
     jupiterTagsA: qualifiers?.jupiterTagsByMint.get(addressA) ?? [],
     jupiterTagsB: qualifiers?.jupiterTagsByMint.get(addressB) ?? [],
@@ -342,7 +363,7 @@ export function parseRaydiumPoolAsRwaPair(
         baseSymbol: spec.baseSymbol,
         wrappedSymbol: spec.wrappedSymbol,
         plainSymbol: spec.plainSymbol,
-        wrapKind: "stable",
+        wrapKind: spec.wrapKind,
         relatedness: "allowlisted",
         qualificationA: "allowlist",
         qualificationB: "allowlist",
@@ -648,6 +669,16 @@ export async function applyOnchainFreezeRisk(pairs: RwaPairRow[], connection?: C
       ]);
     } catch { /* RPC down: keep the tags */ } finally { if (timer) clearTimeout(timer); }
   }
+  let lstSolPerHsol: number | null = null;
+  if (pairs.some((pair) => isSolHsolMintPair(pair.mintA, pair.mintB)) && connection !== null) {
+    const conn = connection ?? rpcConnection();
+    if (typeof conn.getAccountInfo === "function") {
+      try {
+        const rate = await readHsolSolExchangeRate({ connection: conn });
+        if (rate) lstSolPerHsol = rate.solPerHsol;
+      } catch { /* leave official rate unknown; do not price shares 1:1 */ }
+    }
+  }
   let known = 0;
   const nowMs = Date.now();
   const updated = pairs.map((pair) => {
@@ -677,7 +708,19 @@ export async function applyOnchainFreezeRisk(pairs: RwaPairRow[], connection?: C
       a: knownMultiplier({ known: a?.scaledUiKnown === true, config: a?.scaledUiConfig }, nowMs),
       b: knownMultiplier({ known: b?.scaledUiKnown === true, config: b?.scaledUiConfig }, nowMs),
     };
-    return withUsdPerShare(withScaledUiTvl(row, multipliers), multipliers);
+    const lst = isSolHsolMintPair(row.mintA, row.mintB);
+    let pricedRow = row;
+    if (lst && lstSolPerHsol !== null) {
+      const fair = lstFairPriceBPerA(row.mintA, row.mintB, lstSolPerHsol);
+      pricedRow = fair !== null ? { ...row, fairPriceBPerA: fair, lstSolPerHsol } : { ...row, lstSolPerHsol };
+    }
+    const underlying = lst
+      ? {
+          a: lstSolPerHsol !== null ? lstUnderlyingPerToken(row.mintA, lstSolPerHsol) : null,
+          b: lstSolPerHsol !== null ? lstUnderlyingPerToken(row.mintB, lstSolPerHsol) : null,
+        }
+      : undefined;
+    return withUsdPerShare(withScaledUiTvl(pricedRow, multipliers), multipliers, underlying);
   });
   const source: "onchain" | "tags" | "mixed" = known === pairs.length * 2 ? "onchain" : known === 0 ? "tags" : "mixed";
   return { pairs: updated, source };

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import fixture from "../../fixtures/meteora-dlmm-pool-cbbtc-wbtc.json";
-import { CBBTC_MINT, METEORA_ALLOWLISTED_POOLS, METEORA_DLMM_DATAPI, SPL_TOKEN_PROGRAM_ID, WBTC_WORMHOLE_MINT } from "./constants";
+import { CBBTC_MINT, HSOL_MINT, METEORA_ALLOWLISTED_POOLS, METEORA_DLMM_DATAPI, NATIVE_SOL_MINT, SOL_HSOL_DLMM_POOL_ID, SPL_TOKEN_PROGRAM_ID, WBTC_WORMHOLE_MINT } from "./constants";
 import { fetchMeteoraPools, fetchMeteoraPoolsByMint, fetchMeteoraPoolsByQuery, meteoraScanSpec, parseMeteoraPool, parseMeteoraScanPool } from "./discovery";
 
 const POOL = "53oyyjgybx6dH7i5aGeKfBUi3xPJQDeBkaENPri57x2H";
@@ -13,12 +13,17 @@ type Raw = {
 const raw = () => structuredClone(fixture) as unknown as Raw;
 
 describe("Meteora allowlist", () => {
-  it("is exactly cbBTC/WBTC bin step 1 (SPL/SPL, no SOL)", () => {
-    expect(METEORA_ALLOWLISTED_POOLS).toEqual([{ poolAddress: POOL, mintX: CBBTC_MINT, mintY: WBTC_WORMHOLE_MINT,
+  it("lists cbBTC/WBTC and the curated SOL/hSOL LST pool, both bin step 1 (SPL/SPL)", () => {
+    expect(METEORA_ALLOWLISTED_POOLS).toHaveLength(2);
+    expect(METEORA_ALLOWLISTED_POOLS[0]).toEqual({ poolAddress: POOL, mintX: CBBTC_MINT, mintY: WBTC_WORMHOLE_MINT,
       tokenProgramX: SPL_TOKEN_PROGRAM_ID, tokenProgramY: SPL_TOKEN_PROGRAM_ID, binStep: 1,
-      baseSymbol: "BTC", wrappedSymbol: "cbBTC", plainSymbol: "WBTC" }]);
+      baseSymbol: "BTC", wrappedSymbol: "cbBTC", plainSymbol: "WBTC", wrapKind: "same-asset" });
+    expect(METEORA_ALLOWLISTED_POOLS[1]).toEqual({ poolAddress: SOL_HSOL_DLMM_POOL_ID, mintX: HSOL_MINT, mintY: NATIVE_SOL_MINT,
+      tokenProgramX: SPL_TOKEN_PROGRAM_ID, tokenProgramY: SPL_TOKEN_PROGRAM_ID, binStep: 1,
+      baseSymbol: "SOL", wrappedSymbol: "SOL", plainSymbol: "hSOL", wrapKind: "lst" });
     expect(Object.isFrozen(METEORA_ALLOWLISTED_POOLS)).toBe(true);
     expect(Object.isFrozen(METEORA_ALLOWLISTED_POOLS[0])).toBe(true);
+    expect(Object.isFrozen(METEORA_ALLOWLISTED_POOLS[1])).toBe(true);
   });
 });
 
@@ -82,9 +87,13 @@ describe("fetchMeteoraPools", () => {
     const fetcher = vi.fn(async () => Response.json(fixture));
     const pools = await fetchMeteoraPools({ fetcher: fetcher as unknown as typeof fetch });
     expect(pools.map(pool => pool.poolAddress)).toEqual([POOL]);
-    expect(fetcher).toHaveBeenCalledTimes(1);
-    const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe(`${METEORA_DLMM_DATAPI}/pools/${POOL}`);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    const calls = fetcher.mock.calls as unknown as [string, RequestInit | undefined][];
+    expect(calls.map((call) => String(call[0]))).toEqual([
+      `${METEORA_DLMM_DATAPI}/pools/${POOL}`,
+      `${METEORA_DLMM_DATAPI}/pools/${SOL_HSOL_DLMM_POOL_ID}`,
+    ]);
+    const init = calls[0]?.[1] ?? {};
     expect(init.method ?? "GET").toBe("GET");
     expect(init.body).toBeUndefined();
   });
