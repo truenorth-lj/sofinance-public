@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { USDC_MINT } from "@sofinance/engine/ids";
+import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
 import {
   formatSelectedNoRouteMessage, JUPITER_NO_ROUTE_CODE, selectedNoRouteError, selectedNoRouteOutputMint,
 } from "./selected-no-route";
@@ -23,5 +23,11 @@ describe("selected no-route message", () => {
     expect(selectedNoRouteOutputMint({
       inputMint: USDC_MINT, inputKind: "native", mintA: "a", mintB: "b", rangeSide: "above",
     })).toBe("b");
+    expect(selectedNoRouteError({
+      inputMint: NATIVE_SOL_MINT, inputKind: "native", mintA: "a", mintB: "b", rangeSide: "inside",
+    }).message).toBe(formatSelectedNoRouteMessage("SOL", "a"));
+    expect(selectedNoRouteError({
+      inputMint: NATIVE_SOL_MINT, inputKind: "token", mintA: "a", mintB: "b", rangeSide: "inside",
+    }).message).toBe(formatSelectedNoRouteMessage("SOL (wrapped)", "a"));
   });
 });

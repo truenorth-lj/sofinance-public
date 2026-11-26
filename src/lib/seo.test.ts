@@ -72,4 +72,13 @@ describe("public page metadata", () => {
     expect(metadata.openGraph).toMatchObject({ images: [OG_IMAGE] });
     expect(metadata.twitter).toMatchObject({ card: "summary_large_image" });
   });
+
+  it("keeps /pools metadata neutral so SOL/hSOL is not called same-stock", async () => {
+    const { metadata } = await import("@/app/app/rwa-pairs/layout");
+    const title = titleText(metadata.title);
+    expect(title).toContain("Liquidity pools");
+    expect(title).not.toMatch(/same-stock/i);
+    expect(metadata.description).not.toMatch(/same-stock/i);
+    expect(metadata.description).toContain("liquidity pools");
+  });
 });

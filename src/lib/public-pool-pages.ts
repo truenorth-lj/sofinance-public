@@ -228,7 +228,7 @@ export function publicPoolJsonLd(model: PublicPoolPageModel): JsonLd {
         "@type": "BreadcrumbList",
         itemListElement: [
           { "@type": "ListItem", position: 1, name: "Home", item: CANONICAL_SITE_URL },
-          { "@type": "ListItem", position: 2, name: "Same-stock liquidity pools", item: listUrl },
+          { "@type": "ListItem", position: 2, name: "Liquidity pools", item: listUrl },
           { "@type": "ListItem", position: 3, name: model.title, item: url },
         ],
       },

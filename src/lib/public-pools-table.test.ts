@@ -3,6 +3,7 @@ import type { HomepagePool, HomepagePoolsSnapshot } from "@/lib/homepage-pools";
 import { USDC_MINT, USDT_MINT } from "@/lib/rwa-allowlist";
 import {
   PUBLIC_POOLS_APR_COLUMN,
+  PUBLIC_POOLS_H1,
   PUBLIC_POOLS_INTRO,
   publicPoolRows,
   publicPoolsItemListJsonLd,
@@ -117,7 +118,7 @@ describe("publicPoolsItemListJsonLd", () => {
     expect(json).toMatchObject({
       "@context": "https://schema.org",
       "@type": "ItemList",
-      name: "Same-stock liquidity pools",
+      name: PUBLIC_POOLS_H1,
       numberOfItems: 3,
       url: "https://sofinancelab.xyz/pools",
     });
@@ -129,6 +130,12 @@ describe("publicPoolsItemListJsonLd", () => {
       url: "https://sofinancelab.xyz/pools/tsla-tslax-meteora",
     });
     expect(publicPoolsItemListJsonLd(null)).toBeNull();
+  });
+
+  it("uses the neutral Liquidity pools list name, not same-stock wording", () => {
+    expect(PUBLIC_POOLS_H1).toBe("Liquidity pools");
+    expect(PUBLIC_POOLS_H1).not.toMatch(/same-stock/i);
+    expect(publicPoolsItemListJsonLd(snapshot)?.name).toBe(PUBLIC_POOLS_H1);
   });
 
   it("keeps the 7-day window and 'Fees not guaranteed' in the description, without banned copy", () => {

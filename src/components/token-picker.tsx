@@ -4,11 +4,13 @@ import "@/lib/engine-host";
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Search, ShieldCheck, X } from "lucide-react";
 import { formatAmount } from "@sofinance/engine/amount";
+import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
 import type { TokenMetadata } from "@sofinance/engine/token-metadata";
 import type { WalletAsset } from "@sofinance/engine/wallet-types";
 import { TokenIcon } from "./token-icon";
 import { shortAddress } from "@/lib/format/address";
 import { rawAmountUsdLabel } from "@/lib/format/token-usd";
+import { balanceSymbol } from "@/lib/position-label";
 
 const short = shortAddress;
 const displayBalance = (asset: WalletAsset) => {
@@ -23,7 +25,7 @@ export function assetMetadata(asset: WalletAsset, metadata: Record<string, Token
 }
 
 export function assetSymbol(asset: WalletAsset, item: TokenMetadata | null) {
-  return asset.kind === "native" ? "SOL" : item?.symbol || short(asset.mint);
+  return balanceSymbol(asset.mint, asset.kind, item?.symbol || short(asset.mint));
 }
 
 function assetName(asset: WalletAsset, item: TokenMetadata | null) {
@@ -70,7 +72,8 @@ export function TokenPicker({ assets, selectedAsset, metadata, disabled, onSelec
   const search = query.trim().toLowerCase();
   const matching = assets.filter((asset) => {
     const item = assetMetadata(asset, metadata);
-    return !search || [asset.mint, assetSymbol(asset, item), assetName(asset, item), asset.reason || ""]
+    const aliases = asset.kind === "token" && asset.mint === NATIVE_SOL_MINT ? "WSOL wrapped SOL" : "";
+    return !search || [asset.mint, assetSymbol(asset, item), assetName(asset, item), asset.reason || "", aliases]
       .some((value) => value.toLowerCase().includes(search));
   });
   const usable = matching.filter((asset) => asset.eligible);

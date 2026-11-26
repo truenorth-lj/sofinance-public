@@ -308,7 +308,7 @@ describe("open-position signing and quote refresh", () => {
     expect(container.textContent).not.toContain("Immediate resale of this position");
     const info = container.querySelector<HTMLButtonElement>('button[aria-label="About Total cost"]')!;
     await act(async () => { info.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })); });
-    expect(container.querySelector('[role="tooltip"]')?.textContent).toBe("Estimated round-trip cost: about 10.00% (assuming you open the position, immediately withdraw, and swap back to SOL). This conservative estimate includes swap fees, price impact, and slippage tolerance. It does not block signing.");
+    expect(container.querySelector('[role="tooltip"]')?.textContent).toBe("Estimated round-trip cost: about 10.00% (assuming you open the position, immediately withdraw, and swap back to SOL (wrapped)). This conservative estimate includes swap fees, price impact, and slippage tolerance. It does not block signing.");
     expect(container.querySelector('[role="tooltip"]')?.classList.contains("bg-char")).toBe(true);
     await act(async () => {
       info.click();

@@ -68,7 +68,7 @@ describe("PublicPoolPage (HTML without JS)", () => {
     vi.stubEnv("NEXT_PUBLIC_REOWN_PROJECT_ID", "test-reown-id");
     const html = renderToStaticMarkup(createElement(PublicPoolPage, { model }));
     expect(html).toContain("<h1");
-    expect(html).toContain("Same-stock liquidity pools");
+    expect(html).toContain("Liquidity pools");
     expect(html).not.toContain("<!--$!-->");
     vi.unstubAllEnvs();
   });

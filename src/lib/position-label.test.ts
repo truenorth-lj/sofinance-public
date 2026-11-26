@@ -7,6 +7,8 @@ import {
   formatRangeStatus,
   shortMint,
   tokenSymbol,
+  balanceSymbol,
+  WRAPPED_SOL_BALANCE_LABEL,
 } from "./position-label";
 
 const POSITION_MINT = "33333333333333333333333333333333";
@@ -30,6 +32,21 @@ describe("tokenSymbol", () => {
     expect(tokenSymbol(NATIVE_SOL_MINT, { [NATIVE_SOL_MINT]: { symbol: "WSOL" } })).toBe("SOL");
     expect(tokenSymbol(MINT_B)).toBe("2222…2222");
     expect(tokenSymbol(MINT_B, { [MINT_B]: { symbol: "" } })).toBe("2222…2222");
+  });
+});
+
+describe("balanceSymbol", () => {
+  it("keeps native lamports as SOL and labels a WSOL token-account balance as SOL (wrapped)", () => {
+    expect(balanceSymbol(NATIVE_SOL_MINT, "native")).toBe("SOL");
+    expect(balanceSymbol(NATIVE_SOL_MINT, "token")).toBe(WRAPPED_SOL_BALANCE_LABEL);
+    expect(balanceSymbol(NATIVE_SOL_MINT, "token", "SOL")).toBe("SOL (wrapped)");
+    expect(balanceSymbol(NATIVE_SOL_MINT, "token", "WSOL")).toBe("SOL (wrapped)");
+  });
+
+  it("does not change other tokens, and pair labels stay SOL via tokenSymbol", () => {
+    expect(balanceSymbol(USDC_MINT, "token")).toBe("USDC");
+    expect(balanceSymbol(USDC_MINT, "token", "USDC")).toBe("USDC");
+    expect(tokenSymbol(NATIVE_SOL_MINT, undefined, "WSOL")).toBe("SOL");
   });
 });
 

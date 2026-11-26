@@ -29,7 +29,7 @@ export function tokenSymbol(
   metadata?: PositionLabelMetadata,
   explicit?: string | null,
 ): string {
-  // Portfolio and pool labels show SOL, not WSOL, for the native mint (including wrapped accounts).
+  // Pair and position labels show SOL, not WSOL, for the native mint.
   if (mint === NATIVE_SOL_MINT) return "SOL";
   const fromPosition = explicit?.trim();
   if (fromPosition) return fromPosition;
@@ -37,6 +37,19 @@ export function tokenSymbol(
   if (symbol) return symbol;
   if (mint === USDC_MINT) return "USDC";
   return shortMint(mint);
+}
+
+/** Label for a wallet balance. Native lamports stay "SOL"; a WSOL token-account balance is "SOL (wrapped)". */
+export const WRAPPED_SOL_BALANCE_LABEL = "SOL (wrapped)";
+
+export function balanceSymbol(
+  mint: string,
+  kind: "native" | "token",
+  fallback?: string,
+): string {
+  if (kind === "native") return "SOL";
+  if (mint === NATIVE_SOL_MINT) return WRAPPED_SOL_BALANCE_LABEL;
+  return fallback ?? tokenSymbol(mint);
 }
 
 export function formatRangeStatus(rangeSide: string | null | undefined): string | null {

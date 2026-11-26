@@ -40,7 +40,7 @@ import { useRegistryPositions } from "./unified-positions/registry-positions";
 import { RegistryPositionTool, RegistryRowCompound, type ToolBalance } from "./unified-positions/registry-tools";
 import { RegistryPerformancePanel } from "./unified-positions/registry-performance";
 import { RaydiumActivityRecords, RaydiumRowCompound } from "./compound-panel";
-import { tokenSymbol } from "@/lib/position-label";
+import { balanceSymbol, tokenSymbol } from "@/lib/position-label";
 import { shortAddress } from "@/lib/format/address";
 import { PortfolioSummary, PortfolioHistoryStatus } from "./portfolio/portfolio-summary";
 import { PortfolioPositionList, rowActions, type PortfolioRow, type RowTool } from "./portfolio/portfolio-rows";
@@ -50,7 +50,8 @@ import { cumulativeFeesUpdating as cumulativeFeesUpdatingOf, portfolioTotals, ty
 const short = shortAddress;
 const money = (value: string, decimals: number, digits = 6) => formatAmount(value, decimals, digits);
 const tokenLabel = (mint: string, kind?: "native" | "token") =>
-  kind === "native" || mint === NATIVE_SOL_MINT ? "SOL" : mint === USDC_MINT ? "USDC" : short(mint);
+  kind ? balanceSymbol(mint, kind, mint === USDC_MINT ? "USDC" : short(mint))
+    : mint === NATIVE_SOL_MINT ? "SOL" : mint === USDC_MINT ? "USDC" : short(mint);
 
 export function SelectedApp({ initialView = "portfolio", initialMint: initialMintProp = "", initialWallet = "", previewPoolId = "", initialPositionKey: initialKeyProp = "", external, onRescan }: {
   /** `performance`: a Performance link (`?view=performance`, /app/position-performance) opens its position's detail. */

@@ -326,6 +326,13 @@ describe("SOL / hSOL public SEO pages", () => {
     expect(page.metaDescription.length).toBeLessThanOrEqual(155);
     expect(page.metaDescription).toContain("liquidity pool");
     expect(page.metaDescription).not.toContain("same-stock");
+    expect(page.metaTitle).not.toMatch(/same-stock/i);
+    const json = publicPoolJsonLd(page);
+    const graph = json["@graph"] as { "@type": string; itemListElement?: { name: string }[] }[];
+    const crumbs = graph.find((node) => node["@type"] === "BreadcrumbList")?.itemListElement ?? [];
+    expect(crumbs[1]?.name).toBe(PUBLIC_POOLS_H1);
+    expect(crumbs[1]?.name).toBe("Liquidity pools");
+    expect(JSON.stringify(json)).not.toMatch(/same-stock/i);
     expect(page.metaDescription).not.toMatch(/backtest|\bearn\b|\byield\b|\bAPY\b|guaranteed|open source/i);
   });
 });

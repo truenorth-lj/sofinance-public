@@ -7,6 +7,9 @@ import { GUIDE_PAGES } from "@/lib/guides";
 import { APP_ROUTES, BLOG_ROUTES, CANONICAL_SITE_URL, FAQ_ROUTE, GUIDE_ROUTES, LEGAL_ROUTES } from "@/lib/public-urls";
 import { config as proxyConfig } from "@/proxy";
 import robots, { AI_CRAWLER_USER_AGENTS } from "./robots";
+import type { HomepagePool, HomepagePoolsSnapshot } from "@/lib/homepage-pools";
+import { HSOL_MINT, NATIVE_SOL_MINT, USDC_MINT, USDT_MINT } from "@/lib/rwa-allowlist";
+import { poolSitemapEntries } from "@/lib/public-pool-pages";
 import { PUBLIC_COPY_UPDATED, TERMS_UPDATED, publicSitemapEntries, publicSitemapPaths, revalidate as sitemapRevalidate, toSitemapUrls } from "./sitemap";
 
 function docsHrefsFromAppDir(root = resolve("src/app/docs")): string[] {
@@ -128,6 +131,73 @@ describe("SEO metadata routes", () => {
     const urls = toSitemapUrls(publicSitemapEntries("2026-11-20T00:00:00.000Z", extra)).map((entry) => entry.url);
     expect(urls).toContain(`${CANONICAL_SITE_URL}/pools/tsla-tslax`);
     expect(urls).toContain(`${CANONICAL_SITE_URL}/pools/tsla-tslax-meteora`);
+  });
+
+  it("includes SOL/hSOL sitemap slugs from the same isPublicSeoPool source as the public pages", () => {
+    delete process.env.NEXT_PUBLIC_APP_URL;
+    const pool = (
+      extra: Partial<HomepagePool> & Pick<HomepagePool, "key" | "protocol" | "poolAddress" | "symbolA" | "symbolB" | "mintA" | "mintB">,
+    ): HomepagePool => ({
+      chain: "solana",
+      pairLabel: `${extra.symbolA}/${extra.symbolB}`,
+      nameA: extra.symbolA,
+      nameB: extra.symbolB,
+      feeTierBps: 1,
+      tvlUsd: 50_000,
+      volume24hUsd: 2_000,
+      poolFeeApr24hPct: 12,
+      ...extra,
+    });
+    const ray = pool({
+      key: "solana:sol-hsol-raydium",
+      protocol: "raydium-clmm",
+      poolAddress: "51V5bAPGaz3vj4SiJeoLGNzAQNxGr4Vps8gSBKmSZx71",
+      symbolA: "SOL",
+      symbolB: "hSOL",
+      mintA: NATIVE_SOL_MINT,
+      mintB: HSOL_MINT,
+    });
+    const met = pool({
+      key: "solana:sol-hsol-meteora",
+      protocol: "meteora-dlmm",
+      poolAddress: "6a7EnjAoiRBbminKkWPdytMFFf5ogjLutqwpvAVyZ89j",
+      symbolA: "hSOL",
+      symbolB: "SOL",
+      mintA: HSOL_MINT,
+      mintB: NATIVE_SOL_MINT,
+    });
+    const stock = pool({
+      key: "solana:tsla-raydium",
+      protocol: "raydium-clmm",
+      poolAddress: "tsla-raydium",
+      symbolA: "TSLAx",
+      symbolB: "TSLA",
+      mintA: "tslax-mint",
+      mintB: "tsla-mint",
+      feeTierBps: 25,
+    });
+    const stable = pool({
+      key: "solana:usdc-usdt",
+      protocol: "raydium-clmm",
+      poolAddress: "usdc-usdt-pool",
+      symbolA: "USDC",
+      symbolB: "USDT",
+      mintA: USDC_MINT,
+      mintB: USDT_MINT,
+    });
+    const snapshot: HomepagePoolsSnapshot = {
+      pools: [ray, met, stock, stable],
+      apr7d: { [ray.key]: 20, [met.key]: 15, [stock.key]: 10, [stable.key]: 40 },
+      updated: [],
+    };
+    const extra = poolSitemapEntries(snapshot, "2026-11-26T00:00:00.000Z");
+    const paths = publicSitemapEntries("2026-11-26T00:00:00.000Z", extra).map((entry) => entry.path);
+    expect(paths).toEqual(expect.arrayContaining(["/pools/sol-hsol", "/pools/sol-hsol-meteora", "/pools/tsla-tslax"]));
+    expect(paths).not.toContain("/pools/usdc-usdt");
+    const sitemapSource = readFileSync(resolve("src/app/sitemap.ts"), "utf8");
+    expect(sitemapSource).toContain("poolSitemapEntries");
+    const pagesSource = readFileSync(resolve("src/lib/public-pool-pages.ts"), "utf8");
+    expect(pagesSource).toMatch(/snapshot\.pools\.filter\(isPublicSeoPool\)/);
   });
 
   it("exports an ISR revalidate window so /sitemap.xml can pick up new pool slugs without a redeploy", () => {
