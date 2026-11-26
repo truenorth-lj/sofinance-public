@@ -11,7 +11,7 @@ import { abandonUnsentCompoundAttempt, compoundAttemptKey, compoundReceiptsKey, 
   type CompoundAttempt, type CompoundPrepared, type CompoundReceipt, type RecoveryPrepared } from "@sofinance/engine/compound-attempt";
 import type { CompoundChainStatus, CompoundSummary } from "@sofinance/engine/compound-types";
 import { useWalletConnection } from "./wallet-connection";
-import { useCleanupBatchController } from "./use-cleanup-batch-controller";
+import { CLEANUP_NOT_READY, useCleanupBatchController, type CleanupBatchOutcome, type CleanupBatchStage } from "./use-cleanup-batch-controller";
 import { loadCleanupBatch, cleanupBatchKey } from "@/lib/compound-cleanup-batch-attempt";
 import { useCompoundPositionSnapshot } from "./transactions/compound/use-compound-position-snapshot";
 import {
@@ -22,6 +22,7 @@ import { useCompoundAttempt } from "./transactions/compound/use-compound-attempt
 import { useCompoundConfirmation } from "./transactions/compound/use-compound-confirmation";
 import { useCompoundRecovery } from "./transactions/compound/use-compound-recovery";
 import { useCleanupScan } from "./transactions/compound/use-cleanup-scan";
+import { recoveryMayProceed } from "./transactions/compound/compound-admission";
 
 export type { CompoundConfirmation } from "./transactions/compound/use-compound-attempt";
 export type { CompoundSubmitFeedback };
@@ -40,10 +41,6 @@ function abortableDelay(ms: number, signal: AbortSignal) {
   });
 }
 type RecoveryOutcome = "success" | "stopped";
-function recoveryMayProceed(value: { status: AtomicStatus; chainStatus?: CompoundChainStatus } | null) {
-  return !!value && ["success", "failed", "expired"].includes(value.status) &&
-    (value.chainStatus === undefined || value.chainStatus === value.status);
-}
 
 export function useCompoundController({ wallet, positionMint, externalBlocked, onConfirmed }: Options) {
   const connection = useWalletConnection();
@@ -167,6 +164,32 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
   const batchCleanup = useCleanupBatchController({ wallet, identity, connection, blocked: externalBlocked || stage !== null || !!cleanup?.running,
     canStart: () => !storageInvalid && !submitting.current && (!attempt || resolvedAttempt.current?.signature === attempt.signature && recoveryMayProceed(resolvedAttempt.current)),
     onReceipts: onBatchReceipts, onConfirmed: () => { void refreshState(); onConfirmedRef.current?.(); } });
+  // Compound all (SD-20) shares this controller's cleanup batch, admission and records with the selected position.
+  const cleanupAdmission = useRef<() => boolean>(() => false);
+  useLayoutEffect(() => {
+    cleanupAdmission.current = () => !!wallet && loadedWallet === wallet && batchCleanup.loaded && !batchCleanup.unresolved && !batchCleanup.invalid &&
+      !storageInvalid && !submitting.current && !cleanupRunning.current &&
+      (!attempt || resolvedAttempt.current?.signature === attempt.signature && recoveryMayProceed(resolvedAttempt.current));
+  });
+  /** Re-reads the saved attempt and receipts another flow (compound all) wrote, so this screen shows them without a reload. */
+  const reloadSaved = useCallback(() => {
+    const current = walletRef.current;
+    if (!current || submitting.current || cleanupRunning.current) return;
+    try {
+      const saved = loadCompoundAttempt(window.localStorage, current);
+      const savedReceipts = loadCompoundReceipts(window.localStorage, current);
+      if (!saved.invalid && !savedReceipts.invalid && (saved.attempt?.signature || null) === attemptSignatureRef.current) {
+        dispatch({ type: "receipts/set", receipts: savedReceipts.receipts });
+        return;
+      }
+      // A new attempt: confirmation polling picks it up and settles it (that is what admits the next cleanup).
+      attemptSignatureRef.current = saved.attempt?.signature || null;
+      dispatch({ type: "wallet/loaded", wallet: current, attempt: saved.attempt, receipts: savedReceipts.receipts,
+        invalid: saved.invalid || savedReceipts.invalid });
+    } catch {
+      dispatch({ type: "wallet/load-failed", wallet: current });
+    }
+  }, []);
   const busy = stage !== null || !!cleanup?.running || batchCleanup.busy;
   const walletBlocked = busy;
   const receiptReviewRequired = chainStatus === "success" && attemptStatus !== "success";
@@ -376,7 +399,14 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
     receiptReviewRequired, confirmationSlow: confirmationSlow && transactionUnresolved,
     canCompound, cancelPending, hasFees, priorReceipts, importing, canImport, importReceipt,
     scan: loadedWallet === wallet ? scan : emptyCompoundScan, scanWallet, cleanup: (loadedWallet === wallet ? cleanup : null) || batchCleanup.progress,
-    cleanupBatch: batchCleanup.attempt, cleanupAll: async () => {
+    cleanupBatch: batchCleanup.attempt,
+    reloadSaved, cleanupAdmission: () => cleanupAdmission.current(),
+    startCleanupBatch: async (items: CompoundReceipt[], onStage?: (stage: CleanupBatchStage) => void): Promise<CleanupBatchOutcome> => {
+      if (cleanupRunning.current || submitting.current) return { status: "refused", error: CLEANUP_NOT_READY };
+      dispatch({ type: "cleanup/set", cleanup: null });
+      return batchCleanup.start(items, { onStage });
+    },
+    cleanupAll: async () => {
       if (cleanupRunning.current || submitting.current || busy) return;
       dispatch({ type: "cleanup/set", cleanup: null });
       await batchCleanup.start(receipts);

@@ -36,20 +36,37 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
 
-describe("Compound all (LJ 11/14: greyed out, Coming soon, no transaction)", () => {
-  it("a click or tap only shows Coming soon: no request, no wallet", async () => {
+describe("Compound all button (LJ 11/26)", () => {
+  it("with nothing to compound it stays greyed out and only says why: no request, no wallet", async () => {
     const fetchSpy = vi.fn(); vi.stubGlobal("fetch", fetchSpy);
-    await act(async () => root.render(createElement(CompoundAllButton)));
+    const onOpen = vi.fn();
+    await act(async () => root.render(createElement(CompoundAllButton, { entry: { count: 0, busy: false, onOpen } })));
     const button = container.querySelector<HTMLButtonElement>("[data-testid=compound-all]")!;
     const tip = container.querySelector("[data-testid=compound-all-tip]")!;
     expect(button.getAttribute("aria-disabled")).toBe("true");
     expect(button.getAttribute("aria-describedby")).toBe(tip.id);
-    expect(tip.textContent).toBe("Coming soon");
+    expect(tip.textContent).toBe("No unclaimed fees to compound yet");
     expect(tip.classList.contains("hidden")).toBe(true);
     await act(async () => button.click());
     expect(tip.classList.contains("block")).toBe(true);
     await act(async () => button.click());
     expect(tip.classList.contains("hidden")).toBe(true);
+    await act(async () => root.render(createElement(CompoundAllButton, { entry: { count: 3, busy: true, onOpen } })));
+    expect(container.querySelector("[data-testid=compound-all-tip]")!.textContent).toBe("Another transaction is in progress");
+    await act(async () => container.querySelector<HTMLButtonElement>("[data-testid=compound-all]")!.click());
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+  it("with positions to compound it opens the popup (and sends nothing itself)", async () => {
+    const fetchSpy = vi.fn(); vi.stubGlobal("fetch", fetchSpy);
+    const onOpen = vi.fn();
+    await act(async () => root.render(createElement(CompoundAllButton, { entry: { count: 2, busy: false, onOpen } })));
+    const button = container.querySelector<HTMLButtonElement>("[data-testid=compound-all]")!;
+    expect(button.getAttribute("aria-disabled")).toBeNull();
+    expect(button.textContent).toBe("Compound all (2)");
+    expect(container.querySelector("[data-testid=compound-all-tip]")).toBeNull();
+    await act(async () => button.click());
+    expect(onOpen).toHaveBeenCalledTimes(1);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
@@ -57,7 +74,7 @@ describe("Compound all (LJ 11/14: greyed out, Coming soon, no transaction)", () 
 describe("PortfolioSummary", () => {
   const totals = { positions: 2, valueUsd: 1234.5, unclaimedFeesUsd: 3.25, cumulativeFeesUsd: 20, pending: 0, missing: 0, cumulativePending: 0 };
   it("shows the three totals, with Compound all in the unclaimed card and under LP value on phones", async () => {
-    await act(async () => root.render(createElement(PortfolioSummary, { totals })));
+    await act(async () => root.render(createElement(PortfolioSummary, { totals, compoundAll: { count: 1, busy: false, onOpen: () => {} } })));
     const text = (id: string) => container.querySelector(`[data-testid=${id}]`)!.textContent!;
     expect(text("portfolio-total-value")).toContain("Total LP value");
     expect(text("portfolio-total-value")).toContain("2 positions · includes unclaimed fees");

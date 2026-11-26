@@ -43,6 +43,11 @@ import { RaydiumActivityRecords, RaydiumRowCompound } from "./compound-panel";
 import { balanceSymbol, sentenceBalanceLabel, tokenSymbol } from "@/lib/position-label";
 import { shortAddress } from "@/lib/format/address";
 import { PortfolioSummary, PortfolioHistoryStatus } from "./portfolio/portfolio-summary";
+import { CompoundAllDialog } from "./compound-all/compound-all-dialog";
+import { cleanupThroughHost, useCompoundAll } from "./compound-all/use-compound-all";
+import { createCompoundAllExecutors } from "./transactions/compound-all/compound-all-executors";
+import { compoundAllRows } from "@/lib/compound-all/eligible-rows";
+import { dexDescriptors } from "@/lib/dex/client";
 import { PortfolioPositionList, rowActions, type PortfolioRow, type RowTool } from "./portfolio/portfolio-rows";
 import { usePortfolioFigures } from "./portfolio/use-portfolio-figures";
 import { cumulativeFeesUpdating as cumulativeFeesUpdatingOf, portfolioTotals, type FiguresState, type PositionFigures } from "@/lib/portfolio/figures";
@@ -78,7 +83,8 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
   const [detail, setDetail] = useState<string | null>(null);
   const [withdrawBusy,setWithdrawBusy]=useState(false);
   const controller = useSelectedController();
-  const { restoring, restoreStalled } = useWalletConnection();
+  const walletConnection = useWalletConnection();
+  const { restoring, restoreStalled } = walletConnection;
   const { wallet, connected, connect, disconnect, connectionError,
     discovery, selection, state, amount, tolerancePercent, result, attempt, attemptStatus,
     error, reprepare, quoteError, quoteErrorCode, quoteErrorOutputMint, quoteErrorAmount, showQuoteRecalculate,
@@ -109,7 +115,29 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
       void refreshState();
       refreshReports();
     } });
-  const busy = addBusy || compound.busy || withdrawBusy;
+  // Compound all (SD-20) shares the selected-position controller's cleanup batch and records; read through a ref so a
+  // run that started renders ago always talks to the current controller.
+  const compoundRef = useRef(compound);
+  useLayoutEffect(() => { compoundRef.current = compound; });
+  const compoundAll = useCompoundAll({ wallet: connected ? wallet || null : null,
+    createDeps: () => {
+      if (!wallet || !connected || walletConnection.address !== wallet) return null;
+      return createCompoundAllExecutors({
+        wallet: { address: wallet, signTransaction: walletConnection.signTransaction, signAndSendTransaction: walletConnection.signAndSendTransaction },
+        storage: window.localStorage,
+        descriptorFor: (dex) => dexDescriptors.descriptorFor(dex),
+        cleanupBatch: cleanupThroughHost({
+          reloadSaved: () => compoundRef.current.reloadSaved(),
+          cleanupAdmission: () => compoundRef.current.cleanupAdmission(),
+          startCleanupBatch: (receipts, onStage) => compoundRef.current.startCleanupBatch(receipts, onStage),
+        }),
+        // The selected position's Compound screen shows this run's attempt and harvest receipts without a reload.
+        onRaydiumSettled: () => compoundRef.current.reloadSaved(),
+      });
+    },
+    onEnded: () => { setRegistryRefresh((value) => value + 1); void refreshDiscovery(); refreshReports(); void compoundRef.current.refreshState(); },
+  });
+  const busy = addBusy || compound.busy || withdrawBusy || compoundAll.running;
   useLayoutEffect(() => {
     if (!busy && ownedPick && selection && selection.positionMint !== ownedPick.mint) choosePosition(ownedPick.mint);
   }, [busy, ownedPick, selection, choosePosition]);
@@ -310,6 +338,11 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
       busy: selectedKey === item.key ? addBusy ? { tool: "deposit", label: "Adding…" } : withdrawBusy ? { tool: "withdraw", label: "Withdrawing…" } : undefined : undefined,
       cumulativeFeesUpdating }];
   })));
+  // Compound all lists the positions that still have fees, as of when it opens (PM review of #535).
+  const compoundAllInputs = compoundAllRows(allPositions.map((item) => ({ position: item, compoundSupported: capabilitiesOf(item).compound.supported,
+    unclaimedFeesUsd: figuresOf(item)?.unclaimedFeesUsd ?? null, unclaimedFeesRaw: item.holdings?.unclaimedFeesRaw ?? null })),
+  (dex) => dexDescriptors.descriptorFor(dex));
+  const compoundAllLabel = (key: string) => { const row = portfolioRows.get(key); return row ? { title: row.title, subtitle: row.subtitle } : { title: key }; };
   const openTool = (key: string, view: RowTool) => {
     const found = allPositions.find((item) => item.key === key || positionKeysEqual(item.key, key));
     if (!found) return;
@@ -380,7 +413,10 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
         </button>
       </div>
 
-      {allPositions.length > 0 && <PortfolioSummary totals={portfolio} cumulativeFeesUpdating={figureKeys.some((key) => figures[key]?.retained === true)} />}
+      {allPositions.length > 0 && <PortfolioSummary totals={portfolio} cumulativeFeesUpdating={figureKeys.some((key) => figures[key]?.retained === true)}
+        compoundAll={{ count: compoundAllInputs.length, busy: !compoundAll.running && popupBusy, onOpen: () => compoundAll.openWith(compoundAllInputs) }} />}
+      <CompoundAllDialog open={compoundAll.open} state={compoundAll.state} labelOf={compoundAllLabel}
+        dexName={(dex) => dexDescriptors.descriptorFor(dex)?.displayName ?? dex} actions={compoundAll.actions} onClose={compoundAll.close} />
       {allPositions.length > 0 && <PortfolioHistoryStatus rows={figureKeys.flatMap((key) => figures[key] ? [figures[key]!] : [])} />}
 
       <section aria-labelledby="all-positions-heading" className="mt-3 rounded-[28px] border border-white/12 bg-char p-5 sm:p-7">

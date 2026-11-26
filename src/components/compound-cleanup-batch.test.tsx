@@ -281,8 +281,13 @@ describe("live admission after durable batch persistence", () => {
       }
       return handler(url, init);
     });
-    await act(async () => { await batch.start([receipt(0), receipt(1), receipt(2)]); });
+    let outcome: Awaited<ReturnType<typeof batch.start>> | undefined;
+    const stages: string[] = [];
+    await act(async () => { outcome = await batch.start([receipt(0), receipt(1), receipt(2)], { onStage: (stage) => stages.push(stage) }); });
     expect(mocks.signAll).toHaveBeenCalledOnce();
+    // Compound all's cleanup row: signed and saved is "done" (never signed again), whatever the broadcast said.
+    expect(outcome).toEqual({ status: "done", signatures: JSON.parse(savedSnapshot!).transactions.map((tx: { signature: string }) => tx.signature) });
+    expect(stages.slice(0, 2)).toEqual(["preparing", "wallet"]);
     expect(requests).toBe(revoke ? phase === "persist" ? 0 : 1 : 3);
     expect(savedSnapshot).not.toBeNull();
     expect(storage.getItem(cleanupBatchKey(fixture.wallet))).toBe(savedSnapshot);
@@ -291,7 +296,35 @@ describe("live admission after durable batch persistence", () => {
     if (revoke) expect(batch.error).toContain("authorization changed");
     // A later click cannot sign over retained unknown signatures, even after admission is restored.
     admission = true;
-    await act(async () => { await batch.start([receipt(0), receipt(1), receipt(2)]); });
+    await act(async () => { outcome = await batch.start([receipt(0), receipt(1), receipt(2)]); });
     expect(mocks.signAll).toHaveBeenCalledOnce();
+    expect(outcome).toMatchObject({ status: "refused" });
+  });
+});
+
+describe("compound all shares this controller (SD-20)", () => {
+  it("shows a compound another flow saved without a reload, admits the cleanup only once Solana settles it, then runs the batch", async () => {
+    await render();
+    expect(controller.receipts).toEqual([]);
+    expect(controller.cleanupAdmission()).toBe(true);
+    // Compound all saved a Raydium compound (its attempt and harvest receipt) without going through this controller.
+    persistCompoundAttempt(localStorage, fixture.attempt);
+    let status: "pending" | "success" = "pending";
+    const handler = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((url, init) => url === "/api/compound-confirm"
+      ? Promise.resolve(Response.json({ signature: fixture.attempt.signature, status, chainStatus: status, state: null }))
+      : handler(url, init));
+    await act(async () => { controller.reloadSaved(); });
+    await flush();
+    expect(controller.attempt?.signature).toBe(fixture.attempt.signature);
+    expect(controller.receipts.map((item) => item.sourceSignature)).toEqual([fixture.attempt.signature]);
+    expect(controller.cleanupAdmission()).toBe(false);
+    status = "success";
+    await act(async () => { await vi.advanceTimersByTimeAsync(4_100); });
+    expect(controller.cleanupAdmission()).toBe(true);
+    let outcome: Awaited<ReturnType<typeof controller.startCleanupBatch>> | undefined;
+    await act(async () => { outcome = await controller.startCleanupBatch(controller.receipts); });
+    expect(outcome).toMatchObject({ status: "done" });
+    expect(broadcasts).toHaveLength(1);
   });
 });
