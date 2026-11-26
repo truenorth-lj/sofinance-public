@@ -10,10 +10,26 @@ import type { PortfolioPosition } from "./model";
  * (`refreshAfter`); both still force a sync inside the window. Was 30 s, which made nearly every page load "updating".
  */
 export const PORTFOLIO_HISTORY_TTL_MS = 5 * 60_000;
-type SnapshotResult = Pick<PortfolioPosition, "historyUpdatedAt" | "historyStatus" | "historyRefreshAfter" | "historyRefreshResolved"> & {
+export type PortfolioHistoryResult = Pick<PortfolioPosition, "historyUpdatedAt" | "historyStatus" | "historyRefreshAfter" | "historyRefreshResolved"> & {
   history: SyncedPositionHistory;
   needsSync: boolean;
 };
+type SnapshotResult = PortfolioHistoryResult;
+
+/**
+ * The position-history store could not be read. Valuation does not need it: value and unclaimed fees come from the
+ * position's on-chain accounts and prices. This is an empty, incomplete ledger (so cumulative fees stay unknown),
+ * with the store's error code carried through. It schedules no sync and makes no RPC call.
+ */
+export function unavailablePortfolioHistory(code: string, elapsedMs = 0): PortfolioHistoryResult & { historyError: string } {
+  return {
+    history: { history: [], signatureCount: 0, truncated: true, metric: {
+      txCount: 0, elapsedMs, provider: "default", source: "databaseSnapshot", defaultTxCount: 0, fallbackReasons: [],
+      cachedTxCount: 0, fetchedTxCount: 0, listingCount: 0, historyComplete: false,
+    } },
+    historyUpdatedAt: null, historyStatus: "unavailable", historyRefreshResolved: false, needsSync: false, historyError: code,
+  };
+}
 
 /** No history RPC or lease acquisition is allowed on this path. */
 export async function readPortfolioHistory(options: {

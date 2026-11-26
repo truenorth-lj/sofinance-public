@@ -8,7 +8,8 @@ import { getTokenMetadata } from "@sofinance/engine/token-metadata";
 import { getPositionFigures, fetchRaydiumPoolSymbolsBatch } from "@/lib/position-performance";
 import { getRwaConfig } from "@/lib/config/rwa-env";
 import { getPositionHistoryStore } from "@/lib/position-history-store";
-import { readPortfolioHistory } from "@/lib/portfolio/history-snapshot";
+import { readPortfolioHistory, unavailablePortfolioHistory, type PortfolioHistoryResult } from "@/lib/portfolio/history-snapshot";
+import { PositionHistoryStoreError } from "@/lib/position-history-store-types";
 import { syncPositionHistory } from "@/lib/position-history-sync";
 import { createHistoryRpcConnections } from "@/lib/position-history-rpc";
 import type { Connection } from "@solana/web3.js";
@@ -68,9 +69,19 @@ export async function prepareRaydiumPortfolio(input: PortfolioInput, signal: Abo
     if (!snapshot) throw new Error("Position accounts unavailable");
     const context = { positionMint: item.key.split(":")[1]!, positionAccount: snapshot.positionAccount,
       poolId: snapshot.poolId, mintA: snapshot.mintA, mintB: snapshot.mintB, vaultA: snapshot.vaultA, vaultB: snapshot.vaultB };
-    const store = input.scheduleHistoryRefresh && getRwaConfig().positionHistoryEnabled ? getPositionHistoryStore() : null;
-    const history = store ? await readPortfolioHistory({ store, context, fresh: input.fresh,
-      refreshAfter: item.refreshAfter, afterSignatures: item.afterSignatures }) : null;
+    let store: ReturnType<typeof getPositionHistoryStore> | null = null;
+    let history: (PortfolioHistoryResult & { historyError?: string }) | null = null;
+    // A history store outage must not blank the row: value and unclaimed fees do not need it. Only the store's own
+    // error degrades (cumulative fees stay unknown, the code is carried through); anything else still fails the row.
+    try {
+      store = input.scheduleHistoryRefresh && getRwaConfig().positionHistoryEnabled ? getPositionHistoryStore() : null;
+      history = store ? await readPortfolioHistory({ store, context, fresh: input.fresh,
+        refreshAfter: item.refreshAfter, afterSignatures: item.afterSignatures }) : null;
+    } catch (error) {
+      if (!(error instanceof PositionHistoryStoreError)) throw error;
+      store = null;
+      history = unavailablePortfolioHistory(error.code);
+    }
     readSignal.throwIfAborted();
     if (history?.needsSync) input.scheduleHistoryRefresh!(JSON.stringify(context), async (signal) => {
       const connections = createHistoryRpcConnections(signal);
@@ -87,11 +98,14 @@ export async function prepareRaydiumPortfolio(input: PortfolioInput, signal: Abo
       symbols: labels.get(snapshot.poolId) ?? { symbolA: null, symbolB: null },
       refreshHistory: input.fresh, historyAfterSignatures: item.afterSignatures,
       historyResult: history?.history,
+      // Store outage: valuation must not read the store again either.
+      ...(history?.historyError ? { historyStore: null } : {}),
     });
     return { figures: read.figures, evaluatedAt: read.evaluatedAt, historyComplete: read.historyComplete,
       historyRefreshResolved: history?.historyRefreshResolved ?? read.historyRefreshResolved,
       historyUpdatedAt: history?.historyUpdatedAt, historyStatus: history?.historyStatus,
       historyRefreshAfter: history?.historyRefreshAfter,
+      ...(history?.historyError ? { historyError: history.historyError } : {}),
       timings: { ...read.timings, history: read.historyFetch } };
   };
 }

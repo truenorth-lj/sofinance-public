@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SourceCapabilities } from "@/lib/unified-positions/model";
-import { CompoundAllButton, PortfolioSummary } from "./portfolio-summary";
+import { CompoundAllButton, PortfolioHistoryStatus, PortfolioSummary } from "./portfolio-summary";
 import { PortfolioPositionList, rowActions, type PortfolioRow } from "./portfolio-rows";
 import type { UnifiedPosition } from "@/lib/unified-positions/model";
 
@@ -173,5 +173,47 @@ describe("cumulative fees while history updates", () => {
     })));
     expect(container.textContent).toContain("Some values are unavailable for 1 position; totals include available values only.");
     expect(container.querySelector("[data-testid=portfolio-cumulative-pending]")).toBeNull();
+  });
+});
+
+describe("position-history outage (cumulative fees only)", () => {
+  const item: UnifiedPosition = {
+    key: "raydium-clmm:11111111111111111111111111111111", source: "raydium-clmm", chain: "solana",
+    nativeId: "11111111111111111111111111111111", poolId: "p",
+    tokenA: { id: "a", symbol: "USDC", decimals: 6 }, tokenB: { id: "b", symbol: "USDT", decimals: 6 },
+    range: { mode: "tick", tickLower: -10, tickUpper: 10, currentTick: 0 }, rangeStatus: "in", liquidity: "1", native: {},
+  };
+  const outageRow: PortfolioRow = { item, title: "USDC / USDT", subtitle: "", actions: [], cumulativeFeesUnavailable: true,
+    figures: { stock: null, shares: null, valueUsd: 0.64, unclaimedFeesUsd: 0.0006, cumulativeFeesUsd: null } };
+
+  it("keeps value and unclaimed fees and says cumulative fees are temporarily unavailable on the row (desktop and phone)", async () => {
+    await act(async () => root.render(createElement(PortfolioPositionList, {
+      groups: [{ chain: "solana", label: "Solana", positions: [item], showSourceName: false }], rows: new Map([[item.key, outageRow]]),
+      disabled: false, popup: null, onOpenDetail: () => undefined, onAction: () => undefined, onClosePopup: () => undefined,
+    })));
+    expect(container.querySelector("[data-testid=position-row-value]")!.textContent).toBe("$0.64");
+    expect(container.querySelector("[data-testid=position-row-unclaimed]")!.textContent).not.toBe("—");
+    expect(container.querySelector("[data-testid=position-row-cumulative]")!.textContent).toBe("—temporarily unavailable");
+    expect(container.querySelectorAll("[data-testid=cumulative-fees-unavailable]")).toHaveLength(2);
+    expect(container.querySelector("[data-testid=cumulative-fees-updating]")).toBeNull();
+  });
+
+  it("explains the outage once under the summary and never uses banned or technical wording", async () => {
+    const outage = { key: item.key as string, status: "partial" as const, figures: outageRow.figures!, evaluatedAt: "2026-11-26T13:10:00.000Z", historyComplete: false, historyRefreshResolved: false,
+      historyStatus: "unavailable" as const, historyError: "POSITION_STORE_UNAVAILABLE" };
+    await act(async () => root.render(createElement(PortfolioHistoryStatus, { rows: [outage] })));
+    expect(container.textContent).toContain("Cumulative fees are temporarily unavailable. Value and unclaimed fees are current. Refresh to retry.");
+    expect(container.textContent).not.toContain("POSITION_STORE_UNAVAILABLE");
+  });
+
+  it("the summary card says it too, without a bare dash for value or unclaimed fees", async () => {
+    await act(async () => root.render(createElement(PortfolioSummary, {
+      totals: { positions: 1, valueUsd: 0.64, unclaimedFeesUsd: 0.0006, cumulativeFeesUsd: null, pending: 0, missing: 0, cumulativePending: 1 },
+      cumulativeFeesUnavailable: true,
+    })));
+    expect(container.querySelector("[data-testid=portfolio-cumulative-fees]")!.textContent).toContain("temporarily unavailable");
+    expect(container.querySelector("[data-testid=portfolio-total-value]")!.textContent).toContain("$0.64");
+    expect(container.querySelector("[data-testid=portfolio-unclaimed-fees]")!.textContent).not.toContain("—");
+    expect(container.textContent).not.toContain("Some values are unavailable");
   });
 });

@@ -331,12 +331,13 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
     const pair = item.tokenA.id || item.tokenB.id ? pairOf(item) : "";
     const title = rowFigures?.stock ?? (pair || `Position ${id}`);
     // Retained last complete value, or a dash while history catches up: both labeled "Updating" on the row.
-    const cumulativeFeesUpdating = reportedKeys.has(item.key) && cumulativeFeesUpdatingOf(figuresState(item));
+    const cumulativeFeesUnavailable = reportedKeys.has(item.key) && Boolean(figures[item.key]?.historyError) && rowFigures?.cumulativeFeesUsd === null;
+    const cumulativeFeesUpdating = !cumulativeFeesUnavailable && reportedKeys.has(item.key) && cumulativeFeesUpdatingOf(figuresState(item));
     return [item.key, { item, figures: rowFigures, title,
       subtitle: [title !== pair ? pair : null, group.showSourceName ? sourceName(item) : null, title.endsWith(id) ? null : id].filter(Boolean).join(" · "),
       actions: rowActions(capabilitiesOf(item), isClosed(item), { activity: item.source === positionSource.id || registry.owns(item) }), compound: rowCompound(item),
       busy: selectedKey === item.key ? addBusy ? { tool: "deposit", label: "Adding…" } : withdrawBusy ? { tool: "withdraw", label: "Withdrawing…" } : undefined : undefined,
-      cumulativeFeesUpdating }];
+      cumulativeFeesUpdating, cumulativeFeesUnavailable }];
   })));
   // Compound all lists the positions that still have fees, as of when it opens (PM review of #535).
   const compoundAllInputs = compoundAllRows(allPositions.map((item) => ({ position: item, compoundSupported: capabilitiesOf(item).compound.supported,
@@ -414,6 +415,7 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
       </div>
 
       {allPositions.length > 0 && <PortfolioSummary totals={portfolio} cumulativeFeesUpdating={figureKeys.some((key) => figures[key]?.retained === true)}
+        cumulativeFeesUnavailable={figureKeys.some((key) => figures[key]?.historyError && figures[key]?.figures.cumulativeFeesUsd === null)}
         compoundAll={{ count: compoundAllInputs.length, busy: !compoundAll.running && popupBusy, onOpen: () => compoundAll.openWith(compoundAllInputs) }} />}
       <CompoundAllDialog open={compoundAll.open} state={compoundAll.state} labelOf={compoundAllLabel}
         dexName={(dex) => dexDescriptors.descriptorFor(dex)?.displayName ?? dex} actions={compoundAll.actions} onClose={compoundAll.close} />
