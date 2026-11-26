@@ -8,6 +8,7 @@ import { DEFAULT_PLAN_DAYS } from "@/lib/lp-plan-intent";
 import { aprWindowAvgLabel } from "@/lib/lp-plan-best-apr";
 import { lowPlanApr, parsePlanAssetAmount, planAssetAmounts, planAssetPresetLabel } from "@/lib/lp-plan-shares";
 import { PLAN_HIDDEN_RISK_LINE } from "@/lib/lp-plan-notice";
+import { shareCalcPriceMoveNote } from "@/lib/pool-kind-copy";
 import { cn } from "@/lib/cn";
 import { CALCULATE_LABEL } from "@/lib/unified-pools/calculate-label";
 import { HodlVsPool } from "../plan/hodl-vs-pool";
@@ -25,6 +26,9 @@ const panel = "rounded-xl border border-white/10 bg-white/[0.03]";
 
 export type ShareCalcPool = {
   poolAddress: string; pairLabel: string; protocol: string;
+  /** Used only to pick stock vs same-asset footnote wording (cbBTC/WBTC and SOL/hSOL). */
+  mintA?: string;
+  mintB?: string;
   /** Pool TVL from the list, used to split the pool's fees with your deposit; the daily data's newest TVL otherwise. */
   tvlUsd?: number | null;
   /** USD per real share from the pools snapshot (X3 valuation, `withUsdPerShare`); absent when unknown, never guessed. */
@@ -170,7 +174,7 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
             <InfoRow label={planAprLabel(best)}>{formatPct(plan.cappedAprPct)}</InfoRow>
             <InfoRow label="Fees collected">{formatInUnit(plan.feesEarned, unit)}</InfoRow>
             <InfoRow label="Protocol cut of fees">{`${Math.round((1 - terms.lpFeeShare) * 100)}%`}</InfoRow>
-            <InfoRow label="Opening cost (USDC deposit)">{formatCostInUnit(plan.entryCost, unit)}</InfoRow>
+            <InfoRow label={`Opening cost (${assetSymbol} deposit)`}>{formatCostInUnit(plan.entryCost, unit)}</InfoRow>
             <InfoRow label={exit === "usdc" ? "Closing cost (to USDC)" : "Closing cost (keep tokens)"}>{formatCostInUnit(plan.exitCost, unit)}</InfoRow>
             {projection.low && projection.lowWindow ? (
               <InfoRow label={`At the ${aprWindowAvgLabel(projection.lowWindow, "pool avg")}`}>{`${formatSignedInUnit(projection.low.vsHold, unit)} vs HODL`}</InfoRow>
@@ -179,7 +183,7 @@ export function ShareCalcDialog({ pool, open, onClose }: { pool: ShareCalcPool; 
           {notice?.kind === "hide" ? <p className="px-1 text-[11px] leading-relaxed text-smoke" data-testid="share-calc-risk">
             {PLAN_HIDDEN_RISK_LINE}
           </p> : <p className="px-1 text-[11px] leading-relaxed text-smoke" data-testid="share-calc-footnote">
-            {`Best case from the pool's past fees, the same fees every day (not compounded), counted in ${assetSymbol}: fees ${terms.lpShareLabel}, ${terms.openCost.rowLabel} to open, ${terms.exitCost[exit].label}.${projection?.capped ? " Fees are capped at what the pool actually paid, shared with your deposit." : best?.poolFeesPerDayUsd !== undefined ? ` This pool's ${assetSymbol} price is unknown right now, so fees are not capped at what the pool paid and no dollar value is shown.` : ""} The stock's own price moves both sides alike and is left out. Network fees are ignored. Not a forecast.`}
+            {`Best case from the pool's past fees, the same fees every day (not compounded), counted in ${assetSymbol}: fees ${terms.lpShareLabel}, ${terms.openCost.rowLabel} to open, ${terms.exitCost[exit].label}.${projection?.capped ? " Fees are capped at what the pool actually paid, shared with your deposit." : best?.poolFeesPerDayUsd !== undefined ? ` This pool's ${assetSymbol} price is unknown right now, so fees are not capped at what the pool paid and no dollar value is shown.` : ""} ${shareCalcPriceMoveNote(pool)} Network fees are ignored. Not a forecast.`}
           </p>}
         </aside>
 

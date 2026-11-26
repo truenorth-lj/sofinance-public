@@ -275,7 +275,7 @@ export function OpenPositionModal({
         capitalUsd,
         showCustom: true,
       }}
-      parityCenter={{ checked: c.centerOnParity, onChange: c.changeCenterOnParity, disabled: c.busy || c.rangePreset === "custom" }}
+      parityCenter={{ checked: c.centerOnParity, onChange: c.changeCenterOnParity, disabled: c.busy || c.rangePreset === "custom", mintA: pair.mintA, mintB: pair.mintB }}
       rangeHint={rangeHint ? (
         <p data-testid="small-amount-narrow-range-hint" className="mt-2 text-xs leading-5 text-smoke">{rangeHint}</p>
       ) : null}

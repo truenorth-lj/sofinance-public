@@ -4,6 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ShareCalcDialog, type ShareCalcPool } from "./share-calc-dialog";
 import type { OpenAction } from "./pool-list";
+import { CBBTC_MINT, HSOL_MINT, NATIVE_SOL_MINT, WBTC_PORTAL_MINT } from "@/lib/rwa-allowlist";
+import { SAME_ASSET_PRICE_MOVE_NOTE, STOCK_PRICE_MOVE_NOTE } from "@/lib/pool-kind-copy";
 import { AMZN_LAUNCH_POINTS, AMZN_LAUNCH_POOL, AMZN_LAUNCH_TVL_USD } from "@/lib/amzn-launch-daily-apr.fixture";
 import { clearPoolYieldMemory } from "../plan/use-pool-yield";
 
@@ -99,7 +101,7 @@ describe("ShareCalcDialog (counted in the pool's asset, SP-2)", () => {
     expect(rows).toContain("Est. fee APR · 7-day avg27.9%");
     expect(rows).not.toContain("Est. LP APY");
     expect(rows).toContain("Protocol cut of fees16%");
-    expect(rows).toContain("Opening cost (USDC deposit)−0.1 SPCX");
+    expect(rows).toContain("Opening cost (SPCX deposit)−0.1 SPCX");
     expect(rows).toContain("Closing cost (keep tokens)0 SPCX");
     expect(rows).toMatch(/Fees collected\d\.\d{1,4} SPCX/);
     const horizons = node.querySelector('[aria-label="Difference vs HODL by horizon"]')!;
@@ -115,7 +117,7 @@ describe("ShareCalcDialog (counted in the pool's asset, SP-2)", () => {
   it("shows a free closing step as 0, not −0 (Meteora, keeping the pool tokens)", async () => {
     await render({ poolAddress: POOL, pairLabel: "TSLAx/TSLA", protocol: "meteora-dlmm", usdPerShare: 100 }, { kind: "open", onOpen: vi.fn() });
     const rows = node.querySelector("[data-testid=share-calc-assumptions]")!.textContent!;
-    expect(rows).toContain("Opening cost (USDC deposit)−0.11 TSLA");
+    expect(rows).toContain("Opening cost (TSLA deposit)−0.11 TSLA");
     expect(rows).toContain("Closing cost (keep tokens)0 TSLA");
     expect(rows).not.toContain("−0 TSLA");
   });
@@ -193,5 +195,31 @@ describe("ShareCalcDialog (counted in the pool's asset, SP-2)", () => {
       "Small pool: about $1,238 in it. These numbers are capped at the fees this pool actually paid, shared with your deposit. With so little in the pool, a few trades can swing them a lot.");
     expect(node.querySelector("[data-testid=share-calc-footnote]")!.textContent).toContain("Fees are capped at what the pool actually paid, shared with your deposit.");
     expect(node.querySelector('[aria-label="Difference"]')!.textContent).toContain("+1.5962 SPCX");
+  });
+
+  it("keeps the stock-price footnote for a same-stock pool and for USDC/USDT", async () => {
+    for (const pool of [SPCX, STABLE]) {
+      await render(pool, { kind: "open", onOpen: vi.fn() });
+      const note = node.querySelector("[data-testid=share-calc-footnote]")!.textContent;
+      expect(note).toContain(STOCK_PRICE_MOVE_NOTE);
+      expect(note).not.toContain("Both tokens track the same asset");
+    }
+  });
+
+  it("uses same-asset footnote wording for cbBTC/WBTC and SOL/hSOL", async () => {
+    const pools: ShareCalcPool[] = [
+      { poolAddress: POOL, pairLabel: "cbBTC/WBTC", protocol: "raydium-clmm", mintA: CBBTC_MINT, mintB: WBTC_PORTAL_MINT, usdPerShare: 60_000 },
+      { poolAddress: POOL, pairLabel: "SOL/hSOL", protocol: "raydium-clmm", mintA: NATIVE_SOL_MINT, mintB: HSOL_MINT, usdPerShare: 150 },
+    ];
+    for (const pool of pools) {
+      await render(pool, { kind: "open", onOpen: vi.fn() });
+      const note = node.querySelector("[data-testid=share-calc-footnote]")!.textContent;
+      expect(note).toContain(SAME_ASSET_PRICE_MOVE_NOTE);
+      expect(note).not.toContain("The stock's own price");
+    }
+    await render(pools[0]!, { kind: "open", onOpen: vi.fn() });
+    expect(node.querySelector("[data-testid=share-calc-assumptions]")!.textContent).toContain("Opening cost (WBTC deposit)");
+    await render(pools[1]!, { kind: "open", onOpen: vi.fn() });
+    expect(node.querySelector("[data-testid=share-calc-assumptions]")!.textContent).toContain("Opening cost (hSOL deposit)");
   });
 });

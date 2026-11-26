@@ -312,7 +312,7 @@ export function RegistryOpenModal({ pool, descriptor, ranges, apr = null, onClos
         showCustom: false,
         unavailable,
       }}
-      parityCenter={canCenterOnParity ? { checked: centerOnParity, onChange: setCenterOnParity, disabled: tx.locked } : undefined}
+      parityCenter={canCenterOnParity ? { checked: centerOnParity, onChange: setCenterOnParity, disabled: tx.locked, mintA: pool.mintA, mintB: pool.mintB } : undefined}
       rangeHint={!rangesError && payload && presets.length > 0 && !presets.some((item) => item.available)
         ? <p role="alert" className="mt-2 text-sm text-cream/80">{NO_RANGE_FITS_COPY}</p>
         : null}
