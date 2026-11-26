@@ -22,8 +22,8 @@ vi.mock("./onchain-mint-freeze", () => ({
 }));
 
 import { discoverMeteoraRwaPairs, METEORA_SCAN_MIN_TVL_USD, scanPageCounts } from "./meteora-rwa-scan";
-import { HSOL_MINT, NATIVE_SOL_MINT, USDC_MINT, USDT_MINT } from "./rwa-allowlist";
-import { SOL_HSOL_DLMM_POOL_ID } from "@sofinance/engine/protocols/meteora/constants";
+import { CBBTC_MINT, HSOL_MINT, NATIVE_SOL_MINT, USDC_MINT, USDT_MINT, WBTC_PORTAL_MINT } from "./rwa-allowlist";
+import { CBBTC_WBTC_DLMM_POOL_ID, SOL_HSOL_DLMM_POOL_ID } from "@sofinance/engine/protocols/meteora/constants";
 
 const MSTRX = "MstrX11111111111111111111111111111111111111", MSTR = "Mstr111111111111111111111111111111111111111";
 const TSLAX = "TsLaX11111111111111111111111111111111111111", TSLA = "TsLa111111111111111111111111111111111111111";
@@ -218,5 +218,34 @@ describe("Meteora DLMM RWA scan", () => {
     const result = await discoverMeteoraRwaPairs({ fetcher: datapi([...POOLS, lst]) as unknown as typeof fetch, connection: null, minTvl: 5_000 });
     const row = result.pairs.find((item) => item.poolAddress === SOL_HSOL_DLMM_POOL_ID);
     expect(row).toMatchObject({ wrapKind: "lst", baseSymbol: "SOL", wrappedSymbol: "SOL", plainSymbol: "hSOL", symbolA: "hSOL", symbolB: "SOL", tvlUsd: 4_000 });
+  });
+  it("lists the curated cbBTC/WBTC pool as a same-asset BTC pair with no fair price, even under the TVL floor", async () => {
+    tagged();
+    const btc = pool(CBBTC_WBTC_DLMM_POOL_ID, [CBBTC_MINT, "cbBTC", "Coinbase Wrapped BTC"], [WBTC_PORTAL_MINT, "WBTC", "Wrapped BTC (Portal)"], 1, 4_000);
+    const fetcher = datapi([...POOLS, btc]);
+    const result = await discoverMeteoraRwaPairs({
+      fetcher: fetcher as unknown as typeof fetch, connection: null, minTvl: 5_000, seedMints: [MSTR, CBBTC_MINT, WBTC_PORTAL_MINT],
+    });
+    const row = result.pairs.find((item) => item.poolAddress === CBBTC_WBTC_DLMM_POOL_ID);
+    expect(row).toMatchObject({
+      protocol: "meteora-dlmm", wrapKind: "same-asset", relatedness: "allowlisted", baseSymbol: "BTC",
+      wrappedSymbol: "cbBTC", plainSymbol: "WBTC", symbolA: "cbBTC", symbolB: "WBTC", mintA: CBBTC_MINT, mintB: WBTC_PORTAL_MINT, binStep: 1, tvlUsd: 4_000,
+    });
+    expect(row!.fairPriceBPerA).toBeUndefined();
+    expect(row!.lstSolPerHsol).toBeUndefined();
+    // The curated mints are fetched by pool id only: never asked as scan seeds.
+    expect(fetcher.mock.calls.some(([url]) => String(url).includes("filter_by=token_x=" + CBBTC_MINT))).toBe(false);
+    expect(fetcher.mock.calls.some(([url]) => String(url).includes("filter_by=token_y=" + WBTC_PORTAL_MINT))).toBe(false);
+  });
+
+  it("drops the curated cbBTC/WBTC pool when datapi reports other mints or a wider bin step for its id", async () => {
+    tagged();
+    const nativeWbtc = "5XZw2LKTyrfvfiskJ78AMpackRjPcyCif1WhUsPDuVqQ";
+    const otherMint = pool(CBBTC_WBTC_DLMM_POOL_ID, [CBBTC_MINT, "cbBTC", "Coinbase Wrapped BTC"], [nativeWbtc, "WBTC", "Wrapped BTC"], 1, 300_000);
+    const wideBin = pool(CBBTC_WBTC_DLMM_POOL_ID, [CBBTC_MINT, "cbBTC", "Coinbase Wrapped BTC"], [WBTC_PORTAL_MINT, "WBTC", "Wrapped BTC (Portal)"], 20, 300_000);
+    for (const bad of [otherMint, wideBin]) {
+      const result = await discoverMeteoraRwaPairs({ fetcher: datapi([...POOLS, bad]) as unknown as typeof fetch, connection: null, minTvl: 5_000 });
+      expect(result.pairs.map((item) => item.poolAddress)).not.toContain(CBBTC_WBTC_DLMM_POOL_ID);
+    }
   });
 });

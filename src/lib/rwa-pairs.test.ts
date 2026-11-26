@@ -25,7 +25,7 @@ import {
 import { clearJupiterTagsCache } from "./rwa-jupiter-tags";
 import { clearXstocksWhitelistCache } from "./rwa-xstocks-whitelist";
 import { TOKEN_2022_PROGRAM_ID } from "./rwa-pairing";
-import { HSOL_MINT, NATIVE_SOL_MINT, SOL_HSOL_CLMM_POOL_ID, USDC_MINT, USDC_USDT_CLMM_POOL_ID, USDT_MINT } from "./rwa-allowlist";
+import { CBBTC_MINT, CBBTC_WBTC_CLMM_POOL_ID, HSOL_MINT, NATIVE_SOL_MINT, SOL_HSOL_CLMM_POOL_ID, USDC_MINT, USDC_USDT_CLMM_POOL_ID, USDT_MINT, WBTC_PORTAL_MINT } from "./rwa-allowlist";
 import { HSOL_STAKE_POOL, HSOL_STAKE_POOL_PROGRAM, STAKE_POOL_MINT_OFFSET, STAKE_POOL_MIN_LEN, STAKE_POOL_TOKEN_PROGRAM_OFFSET, STAKE_POOL_TOKEN_SUPPLY_OFFSET, STAKE_POOL_TOTAL_LAMPORTS_OFFSET, clearHsolRateCache } from "@sofinance/engine/hsol-rate";
 import { PublicKey } from "@solana/web3.js";
 
@@ -195,6 +195,35 @@ describe("parseRaydiumPoolAsRwaPair", () => {
       mintA: { address: NATIVE_SOL_MINT, symbol: "WSOL" },
       mintB: { address: HSOL_MINT, symbol: "hSOL" },
     })).not.toBeNull();
+  });
+
+  it("accepts the curated cbBTC/WBTC CLMM pool as a same-asset pair with no fair price", () => {
+    const fixture = poolFixture({
+      id: CBBTC_WBTC_CLMM_POOL_ID,
+      feeRate: 0.0001,
+      tvl: 131_000,
+      mintA: { address: CBBTC_MINT, symbol: "cbBTC", name: "Coinbase Wrapped BTC", programId: TOKEN_PROGRAM, tags: ["hasFreeze"], extensions: {} },
+      mintB: { address: WBTC_PORTAL_MINT, symbol: "WBTC", name: "Wrapped BTC (Wormhole)", programId: TOKEN_PROGRAM, tags: [], extensions: {} },
+    });
+    const row = parseRaydiumPoolAsRwaPair(fixture);
+    expect(row).not.toBeNull();
+    expect(row!.wrapKind).toBe("same-asset");
+    expect(row!.relatedness).toBe("allowlisted");
+    expect(row!.qualificationA).toBe("allowlist");
+    expect(row!.baseSymbol).toBe("BTC");
+    expect(row!.wrappedSymbol).toBe("cbBTC");
+    expect(row!.plainSymbol).toBe("WBTC");
+    expect(row!.symbolA).toBe("cbBTC");
+    expect(row!.symbolB).toBe("WBTC");
+    expect(row!.feeTierBps).toBeCloseTo(1, 5);
+    expect(row!.fairPriceBPerA).toBeUndefined();
+    expect(row!.freezeRiskA).toBe(true);
+    // Wrong id, or the id with BitGo's native WBTC mint, is not the curated pool.
+    expect(parseRaydiumPoolAsRwaPair({ ...fixture, id: "DifferentCbbtcWbtcPool11111111111111111111" })).toBeNull();
+    expect(parseRaydiumPoolAsRwaPair({
+      ...fixture,
+      mintB: { address: "5XZw2LKTyrfvfiskJ78AMpackRjPcyCif1WhUsPDuVqQ", symbol: "WBTC", name: "Wrapped BTC", programId: TOKEN_PROGRAM, tags: [], extensions: {} },
+    })).toBeNull();
   });
 
   it("rejects a different USDC/USDT pool id and a mint mismatch on the allowlisted id", () => {
@@ -373,13 +402,21 @@ describe("discoverRwaPairs", () => {
       mintB: { address: HSOL_MINT, symbol: "hSOL", name: "Helius Staked SOL", programId: TOKEN_PROGRAM, tags: [], extensions: {} },
       day: { volume: 10_000, volumeFee: 1, feeApr: 0.5 },
     });
+    const cbbtcWbtc = poolFixture({
+      id: CBBTC_WBTC_CLMM_POOL_ID,
+      feeRate: 0.0001,
+      tvl: 131_000,
+      mintA: { address: CBBTC_MINT, symbol: "cbBTC", name: "Coinbase Wrapped BTC", programId: TOKEN_PROGRAM, tags: [], extensions: {} },
+      mintB: { address: WBTC_PORTAL_MINT, symbol: "WBTC", name: "Wrapped BTC (Wormhole)", programId: TOKEN_PROGRAM, tags: [], extensions: {} },
+      day: { volume: 10_000, volumeFee: 1, feeApr: 0.7 },
+    });
     const matching = poolFixture();
 
     const listThenIds = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/pools/info/list")) {
         return new Response(
-          JSON.stringify({ success: true, data: { count: 3, data: [matching, usdcUsdt, solHsol], hasNextPage: false } }),
+          JSON.stringify({ success: true, data: { count: 4, data: [matching, usdcUsdt, solHsol, cbbtcWbtc], hasNextPage: false } }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
@@ -404,9 +441,10 @@ describe("discoverRwaPairs", () => {
     const fromScan = await discoverRwaPairs({
       minTvl: 0, maxPages: 1, sortBy: "tvl", fetcher: listThenIds as unknown as typeof fetch, bypassCache: true, jupiterApiKey: "test-key",
     });
-    expect(fromScan.pairs.map((row) => row.poolAddress)).toEqual([SOL_HSOL_CLMM_POOL_ID, USDC_USDT_CLMM_POOL_ID, matching.id]);
+    expect(fromScan.pairs.map((row) => row.poolAddress)).toEqual([CBBTC_WBTC_CLMM_POOL_ID, SOL_HSOL_CLMM_POOL_ID, USDC_USDT_CLMM_POOL_ID, matching.id]);
     expect(fromScan.pairs.find((row) => row.poolAddress === USDC_USDT_CLMM_POOL_ID)!.wrapKind).toBe("stable");
     expect(fromScan.pairs.find((row) => row.poolAddress === SOL_HSOL_CLMM_POOL_ID)!.wrapKind).toBe("lst");
+    expect(fromScan.pairs.find((row) => row.poolAddress === CBBTC_WBTC_CLMM_POOL_ID)!.wrapKind).toBe("same-asset");
     expect(listThenIds.mock.calls.some((call) => String(call[0]).includes("/pools/info/ids"))).toBe(false);
 
     const idsFallback = vi.fn(async (input: RequestInfo | URL) => {
@@ -420,7 +458,8 @@ describe("discoverRwaPairs", () => {
       if (url.includes("/pools/info/ids")) {
         expect(url).toContain(USDC_USDT_CLMM_POOL_ID);
         expect(url).toContain(SOL_HSOL_CLMM_POOL_ID);
-        return new Response(JSON.stringify({ success: true, data: [usdcUsdt, solHsol] }), { status: 200, headers: { "Content-Type": "application/json" } });
+        expect(url).toContain(CBBTC_WBTC_CLMM_POOL_ID);
+        return new Response(JSON.stringify({ success: true, data: [usdcUsdt, solHsol, cbbtcWbtc] }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
       if (url.includes("/tokens/v2/search")) {
         return new Response(
@@ -440,8 +479,9 @@ describe("discoverRwaPairs", () => {
     const fromIds = await discoverRwaPairs({
       minTvl: 0, maxPages: 1, sortBy: "tvl", fetcher: idsFallback as unknown as typeof fetch, bypassCache: true, jupiterApiKey: "test-key",
     });
-    expect(fromIds.pairs.map((row) => row.poolAddress)).toEqual([SOL_HSOL_CLMM_POOL_ID, USDC_USDT_CLMM_POOL_ID, matching.id]);
+    expect(fromIds.pairs.map((row) => row.poolAddress)).toEqual([CBBTC_WBTC_CLMM_POOL_ID, SOL_HSOL_CLMM_POOL_ID, USDC_USDT_CLMM_POOL_ID, matching.id]);
     expect(fromIds.pairs.find((row) => row.poolAddress === USDC_USDT_CLMM_POOL_ID)!.relatedness).toBe("allowlisted");
+    expect(fromIds.pairs.find((row) => row.poolAddress === CBBTC_WBTC_CLMM_POOL_ID)!.wrapKind).toBe("same-asset");
   });
 
   it("returns null from getCachedRwaPairs when cache is empty", () => {
@@ -852,5 +892,59 @@ describe("applyOnchainFreezeRisk LST share pricing", () => {
     const { pairs } = await applyOnchainFreezeRisk([row] as never, null, mintSafety as never);
     expect(pairs[0]!.usdPerShare).toBeUndefined();
     expect(pairs[0]!.fairPriceBPerA).toBeUndefined();
+  });
+});
+
+describe("cbBTC/WBTC curated pool pricing", () => {
+  const row = {
+    poolAddress: CBBTC_WBTC_CLMM_POOL_ID,
+    protocol: "raydium-clmm" as const,
+    mintA: CBBTC_MINT,
+    mintB: WBTC_PORTAL_MINT,
+    symbolA: "cbBTC",
+    symbolB: "WBTC",
+    nameA: "Coinbase Wrapped BTC",
+    nameB: "Wrapped BTC (Wormhole)",
+    baseSymbol: "BTC",
+    wrappedSymbol: "cbBTC",
+    plainSymbol: "WBTC",
+    wrapKind: "same-asset" as const,
+    relatedness: "allowlisted" as const,
+    qualificationA: "allowlist" as const,
+    qualificationB: "allowlist" as const,
+    preferredTags: false,
+    jupiterTagsA: [],
+    jupiterTagsB: [],
+    feeRate: 0.0001,
+    feeTierBps: 1,
+    tvlUsd: 120_000,
+    reserveAmounts: { amountA: 1, amountB: 1 },
+    volume24hUsd: 24_000,
+    fees24hUsd: 2.4,
+    raydiumFeeApr24h: null,
+    estimatedFeeAprPct: 1,
+    estimatedFeeAprLabel: "est",
+    token2022A: false,
+    token2022B: false,
+    freezeRiskA: false,
+    freezeRiskB: false,
+    freezeRisk: false,
+  };
+  const mintSafety = new Map([
+    [CBBTC_MINT, { freezeAuthority: true, blockReasons: [] as string[], scaledUiKnown: true as const }],
+    [WBTC_PORTAL_MINT, { freezeAuthority: false, blockReasons: [] as string[], scaledUiKnown: true as const }],
+  ]);
+
+  it("sets no fair price and no LST rate, reads no stake pool, and prices a share 1:1 from the reserves", async () => {
+    const getAccountInfo = vi.fn();
+    const { pairs } = await applyOnchainFreezeRisk([row] as never, { getAccountInfo } as never, mintSafety as never);
+    expect(getAccountInfo).not.toHaveBeenCalled();
+    expect(pairs[0]!.fairPriceBPerA).toBeUndefined();
+    expect(pairs[0]!.lstSolPerHsol).toBeUndefined();
+    // 1 cbBTC + 1 WBTC = 2 BTC; 120000 / 2 = 60000 per BTC.
+    expect(pairs[0]!.usdPerShare).toBeCloseTo(60_000, 10);
+    // cbBTC's mint keeps a freeze authority: listed, flagged, never blocked.
+    expect(pairs[0]!.freezeRiskA).toBe(true);
+    expect(pairs[0]!.blocked).toBeUndefined();
   });
 });

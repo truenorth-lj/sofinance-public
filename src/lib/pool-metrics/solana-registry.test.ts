@@ -5,7 +5,7 @@ import {
   hasPreferredJupiterTags, matchWrapPairShape, qualifyRwaMint,
   type MintHints, type PairingResult, type Relatedness,
 } from "../rwa-pairing";
-import { HSOL_MINT, NATIVE_SOL_MINT, USDC_MINT, USDT_MINT } from "../rwa-allowlist";
+import { CBBTC_MINT, HSOL_MINT, NATIVE_SOL_MINT, USDC_MINT, USDT_MINT, WBTC_PORTAL_MINT } from "../rwa-allowlist";
 import {
   matchSameAssetPair, SOLANA_PLAIN_TICKER_ISSUER, SOLANA_WRAPPED_TICKER_ISSUER, solanaRegistryEntries, solanaStaticToken,
 } from "./solana-registry";
@@ -108,5 +108,14 @@ describe("Solana registry pairing = the earlier FOOx/FOO rule", () => {
     expect(solanaStaticToken(HSOL_MINT)?.symbol).toBe("hSOL");
     expect(pair?.underlying).toBe("SOL");
     expect(pair?.a.issuer).not.toBe(pair?.b.issuer);
+  });
+  it("the curated cbBTC / WBTC tokens pair as BTC from different issuers (Coinbase and Wormhole Portal)", () => {
+    const pair = pairRegistryTokens([solanaStaticToken(CBBTC_MINT)!], [solanaStaticToken(WBTC_PORTAL_MINT)!]);
+    expect(solanaStaticToken(CBBTC_MINT)?.symbol).toBe("cbBTC");
+    expect(solanaStaticToken(WBTC_PORTAL_MINT)?.symbol).toBe("WBTC");
+    expect(pair?.underlying).toBe("BTC");
+    expect(pair?.a.issuer).not.toBe(pair?.b.issuer);
+    // BitGo's native WBTC mint is not a curated token.
+    expect(solanaStaticToken("5XZw2LKTyrfvfiskJ78AMpackRjPcyCif1WhUsPDuVqQ")).toBeUndefined();
   });
 });

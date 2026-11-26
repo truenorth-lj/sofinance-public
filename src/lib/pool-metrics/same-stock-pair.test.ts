@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { HSOL_MINT, NATIVE_SOL_MINT, USDC_MINT, USDT_MINT } from "@/lib/rwa-allowlist";
+import { CBBTC_MINT, HSOL_MINT, NATIVE_SOL_MINT, USDC_MINT, USDT_MINT, WBTC_PORTAL_MINT } from "@/lib/rwa-allowlist";
 import { isSameAssetPair } from "./token-registry";
 import { solanaStaticToken } from "./solana-registry";
 import { RHC_REGISTRY } from "./rhc-registry";
 import {
+  isBtcPool,
+  isCuratedCryptoPool,
   isLstPool,
   isPublicSeoPool,
   isSameStockPool,
@@ -16,6 +18,8 @@ describe("isStockUnderlying / isSameStockRegistryPair", () => {
     expect(isStockUnderlying("USD")).toBe(false);
     expect(isStockUnderlying("USDC")).toBe(false);
     expect(isStockUnderlying("SOL")).toBe(false);
+    expect(isStockUnderlying("BTC")).toBe(false);
+    expect(isStockUnderlying("btc")).toBe(false);
     expect(isStockUnderlying("TSLA")).toBe(true);
     expect(isStockUnderlying("NVDA")).toBe(true);
   });
@@ -92,5 +96,38 @@ describe("SOL/hSOL is an LST pair, not a same-stock pair, and is still a public 
     expect(isPublicSeoPool({
       chain: "solana", mintA: "tsla-mint", mintB: "tslax-mint", symbolA: "TSLAx", symbolB: "TSLA",
     })).toBe(true);
+  });
+});
+
+describe("cbBTC/WBTC is a BTC pair, not a same-stock pair, and is a public SEO pool", () => {
+  const cbbtcWbtc = {
+    chain: "solana" as const, mintA: CBBTC_MINT, mintB: WBTC_PORTAL_MINT, symbolA: "cbBTC", symbolB: "WBTC",
+  };
+
+  it("pairs as same-asset BTC from different issuers, but not as a stock", () => {
+    const cbbtc = solanaStaticToken(CBBTC_MINT)!;
+    const wbtc = solanaStaticToken(WBTC_PORTAL_MINT)!;
+    expect(cbbtc).toMatchObject({ symbol: "cbBTC", issuer: "coinbase", underlying: "BTC" });
+    expect(wbtc).toMatchObject({ symbol: "WBTC", issuer: "wormhole-portal", underlying: "BTC" });
+    expect(isSameAssetPair(cbbtc, wbtc)).toBe(true);
+    expect(isSameStockRegistryPair(cbbtc, wbtc)).toBe(false);
+    expect(isSameStockPool(cbbtcWbtc)).toBe(false);
+    expect(isLstPool(cbbtcWbtc)).toBe(false);
+    expect(isBtcPool(cbbtcWbtc)).toBe(true);
+    expect(isBtcPool({ mintA: WBTC_PORTAL_MINT, mintB: CBBTC_MINT })).toBe(true);
+    expect(isCuratedCryptoPool(cbbtcWbtc)).toBe(true);
+    expect(isPublicSeoPool(cbbtcWbtc)).toBe(true);
+    expect(isPublicSeoPool({ ...cbbtcWbtc, mintA: WBTC_PORTAL_MINT, mintB: CBBTC_MINT })).toBe(true);
+  });
+
+  it("does not mark other BTC mints, other crypto pairs or USDC/USDT as a public BTC pool", () => {
+    // BitGo's native WBTC mint is a different token from the Wormhole (Portal) one.
+    const nativeWbtc = "5XZw2LKTyrfvfiskJ78AMpackRjPcyCif1WhUsPDuVqQ";
+    expect(isBtcPool({ mintA: CBBTC_MINT, mintB: nativeWbtc })).toBe(false);
+    expect(isBtcPool({ mintA: CBBTC_MINT, mintB: CBBTC_MINT })).toBe(false);
+    expect(isBtcPool({ mintA: CBBTC_MINT, mintB: USDC_MINT })).toBe(false);
+    expect(isBtcPool({ mintA: NATIVE_SOL_MINT, mintB: HSOL_MINT })).toBe(false);
+    expect(isPublicSeoPool({ chain: "solana", mintA: CBBTC_MINT, mintB: nativeWbtc, symbolA: "cbBTC", symbolB: "WBTC" })).toBe(false);
+    expect(isPublicSeoPool({ chain: "solana", mintA: USDC_MINT, mintB: USDT_MINT, symbolA: "USDC", symbolB: "USDT" })).toBe(false);
   });
 });

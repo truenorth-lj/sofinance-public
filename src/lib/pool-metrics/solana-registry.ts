@@ -10,7 +10,7 @@ import {
   type RwaQualificationSource,
   type WrapKind,
 } from "../rwa-pairing";
-import { HSOL_MINT, NATIVE_SOL_MINT, USDC_MINT, USDT_MINT } from "../rwa-allowlist";
+import { CBBTC_MINT, HSOL_MINT, NATIVE_SOL_MINT, USDC_MINT, USDT_MINT, WBTC_PORTAL_MINT } from "../rwa-allowlist";
 import { pairRegistryTokens, type RegistryToken } from "./token-registry";
 
 /**
@@ -66,6 +66,10 @@ const SOLANA_STATIC_TOKENS: readonly SolanaRegistryToken[] = Object.freeze([
   { chain: "solana", address: NATIVE_SOL_MINT, symbol: "SOL", issuer: "solana", underlying: "SOL", verification: { method: "allowlist" },
     wrapKind: null, qualification: "allowlist", jupiterTags: [] },
   { chain: "solana", address: HSOL_MINT, symbol: "hSOL", issuer: "helius", underlying: "SOL", verification: { method: "allowlist" },
+    wrapKind: null, qualification: "allowlist", jupiterTags: [] },
+  { chain: "solana", address: CBBTC_MINT, symbol: "cbBTC", issuer: "coinbase", underlying: "BTC", verification: { method: "allowlist" },
+    wrapKind: null, qualification: "allowlist", jupiterTags: [] },
+  { chain: "solana", address: WBTC_PORTAL_MINT, symbol: "WBTC", issuer: "wormhole-portal", underlying: "BTC", verification: { method: "allowlist" },
     wrapKind: null, qualification: "allowlist", jupiterTags: [] },
 ]);
 

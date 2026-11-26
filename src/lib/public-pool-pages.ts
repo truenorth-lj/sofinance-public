@@ -4,7 +4,7 @@ import { DEX_IDS, normalizeDexId } from "@/lib/dex/types";
 import { publicDexLabel } from "@/lib/dex/ui";
 import { formatPoolUsd } from "@/lib/format/usd";
 import { aprLookupFrom, type HomepagePool, type HomepagePoolsSnapshot } from "@/lib/homepage-pools";
-import { isLstPool, isPublicSeoPool } from "@/lib/pool-metrics/same-stock-pair";
+import { isCuratedCryptoPool, isPublicSeoPool } from "@/lib/pool-metrics/same-stock-pair";
 import type { JsonLd } from "@/lib/json-ld";
 import { poolFeeTierLabel, poolPairLabel } from "@/lib/pool-names";
 import {
@@ -159,7 +159,7 @@ export function publicPoolPageModel(pool: HomepagePool, apr7dPct: number | null,
     pairLabel,
     title,
     metaTitle: feeTier ? `${title}, ${feeTier} (${chain})` : `${title} (${chain})`,
-    metaDescription: isLstPool(pool)
+    metaDescription: isCuratedCryptoPool(pool)
       ? `${pairLabel} liquidity pool on ${dex} (${chain}): TVL, 24h volume and an estimated 7-day fee APR. Not a prediction. Fee income can vary.`
       : `${pairLabel} same-stock pool on ${dex} (${chain}): TVL, 24h volume and an estimated 7-day fee APR. Not a prediction. Fees not guaranteed.`,
     chain,
