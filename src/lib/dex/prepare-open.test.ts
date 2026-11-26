@@ -12,6 +12,9 @@ import { verifyTxSendPermit, verifyTxLandedPermit } from "@/lib/tx-send/permit";
 import { prepareOpen, quoteOpen } from "./prepare-open.server";
 import { prepareSolSwapStep, readSolSwapStepStatus } from "./prepare-sol-swap.server";
 import { APP_OPEN_PREPARE, MCP_OPEN_PREPARE, APP_OPEN_QUOTE, type OpenPrepareCommand } from "./open-prepare";
+import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
+import { SOL_HSOL_CLMM_POOL_ID } from "@/lib/rwa-allowlist";
+import { SOL_POOL_NATIVE_INPUT_MESSAGE } from "@/lib/sol-pool-native-input";
 import { createDexRegistry } from "./registry";
 import { fakeSolanaModule } from "./__contract__/testing/fake-dex";
 vi.mock("server-only", () => ({}));
@@ -121,4 +124,25 @@ it("requires explicit native bindings and clones terms before lazy loading even 
     await expect(absent.buildSolSwapStep(id, { wallet, poolId: "pool", amount: "1" })).rejects.toMatchObject({ code: "UNSUPPORTED" });
     await expect(absent.readSolSwapDelivery(id, { wallet, signature: "sig", outputMint: "mint" })).rejects.toMatchObject({ code: "UNSUPPORTED" });
   }
+});
+
+it("rejects a native SOL quote and sol-swap prepare for the SOL/hSOL pool with the pool-specific message", async () => {
+  const input = request();
+  input.selection.poolId = SOL_HSOL_CLMM_POOL_ID;
+  input.selection.inputMint = NATIVE_SOL_MINT;
+  input.selection.inputKind = "native";
+  await expect(quoteOpen("raydium-clmm", input, APP_OPEN_QUOTE)).rejects.toThrow(SOL_POOL_NATIVE_INPUT_MESSAGE);
+  expect(backend.quote).not.toHaveBeenCalled();
+  await expect(prepareSolSwapStep("raydium-clmm", wallet, SOL_HSOL_CLMM_POOL_ID, "1")).rejects.toThrow(SOL_POOL_NATIVE_INPUT_MESSAGE);
+  expect(backend.swap).not.toHaveBeenCalled();
+});
+
+it("still quotes native SOL for a pool that does not hold wrapped SOL", async () => {
+  const input = request();
+  input.selection.inputMint = NATIVE_SOL_MINT;
+  input.selection.inputKind = "native";
+  expect(await quoteOpen("raydium-clmm", input, APP_OPEN_QUOTE)).toBe(summary.quote);
+  expect(backend.quote).toHaveBeenCalledOnce();
+  await prepareSolSwapStep("raydium-clmm", wallet, input.selection.poolId, "1");
+  expect(backend.swap).toHaveBeenCalledOnce();
 });

@@ -12,6 +12,8 @@ vi.mock("@/lib/feature-flags", async (importOriginal) => ({
   get SOL_INPUT_ENABLED() { return solInputFlag.enabled; },
 }));
 import { NATIVE_SOL_MINT, QUOTE_TTL_MS } from "@sofinance/engine/ids";
+import { HSOL_MINT, SOL_HSOL_CLMM_POOL_ID } from "@/lib/rwa-allowlist";
+import { SOL_POOL_NATIVE_INPUT_MESSAGE } from "@/lib/sol-pool-native-input";
 import type { OpenPositionQuote } from "@sofinance/engine/open-types";
 import { payloadFixture, cardPayloadWithAprs } from "../lib/range-apr/payload.fixture";
 import { clearPoolRangeAprClientCache } from "./range-apr/pool-range-apr-client";
@@ -619,5 +621,53 @@ describe("closing", () => {
     } finally {
       mocks.closeLocked = undefined;
     }
+  });
+});
+
+describe("native SOL on SOL/hSOL vs a stock pool", () => {
+  const usdc = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+  const solAsset = { kind: "native" as const, mint: NATIVE_SOL_MINT, decimals: 9, balance: "216474000", eligible: true, reason: null };
+  const wsolAsset = { kind: "token" as const, mint: NATIVE_SOL_MINT, decimals: 9, balance: "100000000", eligible: true, reason: null };
+  const usdcAsset = { kind: "token" as const, mint: usdc, decimals: 6, balance: "5000000", eligible: true, reason: null };
+  const stubWallet = (assets: unknown[]) => {
+    const original = fetch as unknown as (url: string, init?: RequestInit) => Promise<unknown>;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) =>
+      url.startsWith("/api/wallet") ? { ok: true, json: async () => ({ assets }) } : original(url, init)));
+  };
+  const solHsol: OpenPositionPair = {
+    poolAddress: SOL_HSOL_CLMM_POOL_ID, mintA: NATIVE_SOL_MINT, mintB: HSOL_MINT,
+    symbolA: "SOL", symbolB: "hSOL", wrappedSymbol: "SOL", plainSymbol: "hSOL",
+    feeTierBps: 1, token2022A: false, token2022B: false, freezeRisk: false,
+  };
+  const stock: OpenPositionPair = {
+    poolAddress: "spcx-pool", mintA: "spcx-mint", mintB: "spcxx-mint",
+    symbolA: "SPCX", symbolB: "SPCXx", wrappedSymbol: "SPCXx", plainSymbol: "SPCX",
+    feeTierBps: 1, token2022A: false, token2022B: false, freezeRisk: false,
+  };
+
+  it("disables SOL on the Raydium SOL/hSOL pool and shows the pool-specific hint, leaving wrapped SOL selectable", async () => {
+    stubWallet([solAsset, wsolAsset, usdcAsset]);
+    await act(async () => { root.render(createElement(OpenPositionModal, { pair: solHsol, onClose: vi.fn() })); });
+    await advance(1);
+    const native = container.querySelector<HTMLOptionElement>(`option[value='native:${NATIVE_SOL_MINT}']`)!;
+    const wrapped = container.querySelector<HTMLOptionElement>(`option[value='token:${NATIVE_SOL_MINT}']`)!;
+    expect(native.disabled).toBe(true);
+    expect(native.textContent).toContain(SOL_POOL_NATIVE_INPUT_MESSAGE);
+    expect(wrapped.disabled).toBe(false);
+    expect(container.querySelector("[data-testid='sol-pool-native-input-note']")!.textContent)
+      .toBe(SOL_POOL_NATIVE_INPUT_MESSAGE);
+    expect(container.querySelector("[data-testid='sol-input-disabled-note']")).toBeNull();
+    expect(container.textContent).not.toContain("SOL deposits are temporarily unavailable");
+    expect(mocks.controller!.inputKind).toBe("token");
+  });
+
+  it("still offers SOL on a stock pool (SPCXx/SPCX)", async () => {
+    stubWallet([solAsset, usdcAsset]);
+    await act(async () => { root.render(createElement(OpenPositionModal, { pair: stock, onClose: vi.fn() })); });
+    await advance(1);
+    const native = container.querySelector<HTMLOptionElement>(`option[value='native:${NATIVE_SOL_MINT}']`)!;
+    expect(native.disabled).toBe(false);
+    expect(container.querySelector("[data-testid='sol-pool-native-input-note']")).toBeNull();
+    expect(container.querySelector("[data-testid='sol-input-disabled-note']")).toBeNull();
   });
 });

@@ -3,12 +3,14 @@ import "server-only";
 import { getSigningSecret } from "@sofinance/engine/config/server-env";
 import { issueSolSwapPermit } from "@/lib/sol-swap-permit";
 import { assertSolInputAllowed } from "@/lib/sol-input-policy";
+import { assertNativeSolAllowedForPoolId } from "@/lib/sol-pool-native-input";
 import { withFeeEstimateRetry } from "@/lib/rpc-fee-estimate";
 import { txPermitsFor } from "@/lib/tx-send/permit";
 import { dexRegistry } from "./registry-instance";
 
 export async function prepareSolSwapStep(id: string, wallet: string, poolId: string, amount: string) {
   assertSolInputAllowed({ inputKind: "native" });
+  assertNativeSolAllowedForPoolId({ inputKind: "native", poolId });
   const { summary, transaction } = await withFeeEstimateRetry(() => dexRegistry.buildSolSwapStep(id, { wallet, poolId, amount }));
   const secret = getSigningSecret();
   const permit = issueSolSwapPermit(secret, { wallet, message: Buffer.from(transaction.message.serialize()).toString("base64"), summary });
