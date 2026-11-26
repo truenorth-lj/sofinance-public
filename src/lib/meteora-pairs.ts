@@ -9,7 +9,8 @@ import { estimateFeeAprPct, FEE_APR_ESTIMATE_LABEL, isToken2022Program } from ".
 import { readMintSafety, type MintSafety } from "./onchain-mint-freeze";
 import { unsupportedOf } from "./pool-mint-unsupported";
 import type { RwaPairRow } from "./rwa-pairs";
-import { knownMultiplier, withScaledUiTvl } from "./pool-tvl-scaled-ui";
+import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
+import { applyOnchainFreezeRisk, displayMintSymbol } from "./rwa-pairs";
 
 /** On-chain facts that override Meteora's datapi in the rows. */
 export type MeteoraOnchainFacts = {
@@ -49,10 +50,10 @@ export function meteoraPairRow(pool: MeteoraPoolSummary<MeteoraPoolSpec>, facts:
     protocol: "meteora-dlmm",
     mintA: pool.mintX,
     mintB: pool.mintY,
-    symbolA: pool.symbolX || id.wrappedSymbol,
-    symbolB: pool.symbolY || id.plainSymbol,
-    nameA: pool.nameX,
-    nameB: pool.nameY,
+    symbolA: displayMintSymbol(pool.mintX, pool.symbolX || id.wrappedSymbol),
+    symbolB: displayMintSymbol(pool.mintY, pool.symbolY || id.plainSymbol),
+    nameA: pool.mintX === NATIVE_SOL_MINT ? "SOL" : pool.nameX,
+    nameB: pool.mintY === NATIVE_SOL_MINT ? "SOL" : pool.nameY,
     baseSymbol: id.baseSymbol,
     wrappedSymbol: id.wrappedSymbol,
     plainSymbol: id.plainSymbol,
@@ -93,7 +94,7 @@ export type MeteoraRowIdentity = Pick<RwaPairRow, "baseSymbol" | "wrappedSymbol"
   "qualificationA" | "qualificationB" | "preferredTags" | "jupiterTagsA" | "jupiterTagsB">;
 
 function allowlistIdentity(spec: MeteoraAllowlistedPool): MeteoraRowIdentity {
-  return { baseSymbol: spec.baseSymbol, wrappedSymbol: spec.wrappedSymbol, plainSymbol: spec.plainSymbol, wrapKind: "same-asset",
+  return { baseSymbol: spec.baseSymbol, wrappedSymbol: spec.wrappedSymbol, plainSymbol: spec.plainSymbol, wrapKind: spec.wrapKind ?? "same-asset",
     relatedness: "allowlisted", qualificationA: "allowlist", qualificationB: "allowlist", preferredTags: false, jupiterTagsA: [], jupiterTagsB: [] };
 }
 
@@ -157,17 +158,15 @@ export async function discoverMeteoraPairs(
   } catch { /* RPC down: fall back to the datapi */ }
   const onchain = pools.every((pool) => facts.protocolShareBps.has(pool.poolAddress) &&
     facts.freezeAuthority.has(pool.mintX) && facts.freezeAuthority.has(pool.mintY));
+  const listed = pools.map((pool) => meteoraPairRow(pool, facts));
+  // Shared chokepoint: ScaledUi TVL, usdPerShare, and the cached official hSOL rate when the pair is SOL/hSOL.
+  const freeze = await applyOnchainFreezeRisk(listed, options.connection ?? rpcConnection(), facts.mintSafety);
   const result: MeteoraPairsResult = {
     protocol: "meteora-dlmm",
     readOnly: true,
-    pairs: pools.map((pool) => {
-      // Same mint read as the facts: TVL in the registry's unit (X3-7); an unread mint keeps datapi's figure.
-      const mint = (address: string) => ({ known: facts.mintSafety?.get(address)?.scaledUiKnown === true, config: facts.mintSafety?.get(address)?.scaledUiConfig });
-      const nowMs = Date.now();
-      return withScaledUiTvl(meteoraPairRow(pool, facts), { a: knownMultiplier(mint(pool.mintX), nowMs), b: knownMultiplier(mint(pool.mintY), nowMs) });
-    }),
+    pairs: freeze.pairs,
     fetchedAt: new Date().toISOString(),
-    source: "https://dlmm.datapi.meteora.ag/pools/{address} (allowlist: cbBTC/WBTC); Solana RPC: LbPair protocol share, mint freeze authority",
+    source: "https://dlmm.datapi.meteora.ag/pools/{address} (allowlist: cbBTC/WBTC, SOL/hSOL); Solana RPC: LbPair protocol share, mint freeze authority, hSOL stake-pool rate",
     onchainSource: onchain ? "onchain" : "datapi",
   };
   if (!options.bypassCache) cache = { at: Date.now(), result };

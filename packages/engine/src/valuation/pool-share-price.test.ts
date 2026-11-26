@@ -30,3 +30,29 @@ describe("sameAssetUsdPerShare (SP-2)", () => {
       .toEqual({ kind: "unknown", reason: "multiplier-unknown" });
   });
 });
+
+  it("counts SOL-equivalent shares with the official SOL-per-hSOL rate, not 1 hSOL = 1 SOL", () => {
+    const rate = 1.19785;
+    const result = sameAssetUsdPerShare({
+      tvlUsd: 96_580,
+      sides: [
+        { amount: 502.99, multiplier: 1, underlyingPerToken: 1 },
+        { amount: 795.62, multiplier: 1, underlyingPerToken: rate },
+      ],
+    });
+    expect(result.kind).toBe("known");
+    const shares = 502.99 + 795.62 * rate;
+    expect(result.kind === "known" && result.usdPerShare).toBeCloseTo(96_580 / shares, 6);
+    const naive = sameAssetUsdPerShare({
+      tvlUsd: 96_580,
+      sides: [{ amount: 502.99, multiplier: 1 }, { amount: 795.62, multiplier: 1 }],
+    });
+    expect(naive.kind === "known" && result.kind === "known" && result.usdPerShare).not.toBeCloseTo(naive.usdPerShare, 2);
+  });
+
+  it("is unknown when an LST underlying rate is missing", () => {
+    expect(sameAssetUsdPerShare({
+      tvlUsd: 96_580,
+      sides: [{ amount: 502.99, multiplier: 1, underlyingPerToken: 1 }, { amount: 795.62, multiplier: 1, underlyingPerToken: null }],
+    })).toEqual({ kind: "unknown", reason: "multiplier-unknown" });
+  });

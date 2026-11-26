@@ -144,3 +144,28 @@ describe("formatShareMultiplier", () => {
     expect(formatShareMultiplier(8.000000056997418)).toBe("8");
   });
 });
+
+describe("official LST fair price (SOL/hSOL stake-pool rate)", () => {
+  const solPerHsol = 1.198025;
+  const ray = {
+    symbolA: "SOL",
+    symbolB: "hSOL",
+    multiplierA: 1,
+    multiplierB: 1,
+    fairPriceBPerA: 1 / solPerHsol,
+    price: 1 / 1.1967,
+  };
+
+  it("uses the official rate instead of the 1/1 multiplier ratio, and the 2% gate passes", () => {
+    const result = fairPriceFor(ray);
+    expect(result?.fair).toBeCloseTo(1 / solPerHsol, 10);
+    expect(scaledUiFairNote({ ...ray, priceBPerA: ray.price, protocol: "raydium-clmm", pairLabel: "SOL/hSOL" }))
+      .toMatch(/^Fair price: 1 SOL ≈ 0\.8347\d* hSOL$/);
+  });
+
+  it("drops the note when no official rate is provided (multiplier fair of 1 fails the 2% gate)", () => {
+    const { fairPriceBPerA: _ignored, ...without } = ray;
+    expect(fairPriceFor(without)).toBeNull();
+    expect(scaledUiFairNote({ ...without, priceBPerA: ray.price, protocol: "raydium-clmm" })).toBeNull();
+  });
+});

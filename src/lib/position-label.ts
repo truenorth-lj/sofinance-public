@@ -29,12 +29,13 @@ export function tokenSymbol(
   metadata?: PositionLabelMetadata,
   explicit?: string | null,
 ): string {
+  // Portfolio and pool labels show SOL, not WSOL, for the native mint (including wrapped accounts).
+  if (mint === NATIVE_SOL_MINT) return "SOL";
   const fromPosition = explicit?.trim();
   if (fromPosition) return fromPosition;
   const symbol = metadata?.[mint]?.symbol?.trim();
   if (symbol) return symbol;
   if (mint === USDC_MINT) return "USDC";
-  if (mint === NATIVE_SOL_MINT) return "WSOL";
   return shortMint(mint);
 }
 

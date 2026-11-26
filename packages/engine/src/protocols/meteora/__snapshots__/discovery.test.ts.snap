@@ -38,6 +38,7 @@ exports[`parseMeteoraPool > parses the captured datapi pool (golden) 1`] = `
     "poolAddress": "53oyyjgybx6dH7i5aGeKfBUi3xPJQDeBkaENPri57x2H",
     "tokenProgramX": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
     "tokenProgramY": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+    "wrapKind": "same-asset",
     "wrappedSymbol": "cbBTC",
   },
   "symbolX": "cbBTC",

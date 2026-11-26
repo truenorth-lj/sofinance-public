@@ -50,7 +50,7 @@ import { cumulativeFeesUpdating as cumulativeFeesUpdatingOf, portfolioTotals, ty
 const short = shortAddress;
 const money = (value: string, decimals: number, digits = 6) => formatAmount(value, decimals, digits);
 const tokenLabel = (mint: string, kind?: "native" | "token") =>
-  kind === "native" ? "SOL" : mint === USDC_MINT ? "USDC" : mint === NATIVE_SOL_MINT ? "WSOL" : short(mint);
+  kind === "native" || mint === NATIVE_SOL_MINT ? "SOL" : mint === USDC_MINT ? "USDC" : short(mint);
 
 export function SelectedApp({ initialView = "portfolio", initialMint: initialMintProp = "", initialWallet = "", previewPoolId = "", initialPositionKey: initialKeyProp = "", external, onRescan }: {
   /** `performance`: a Performance link (`?view=performance`, /app/position-performance) opens its position's detail. */

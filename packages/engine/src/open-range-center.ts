@@ -9,20 +9,26 @@ function isPositiveFinite(value: number | undefined): value is number {
 
 /**
  * Default open-range center, as raw token-B per token-A.
- * Uses multiplierA / multiplierB when both are present and the on-chain price is
- * within 2% of that fair value; otherwise the on-chain price.
- * `onChainPriceBPerA` must come from on-chain sqrtPrice, never from a list/API price.
+ * Prefers `fairPriceBPerA` (the official hSOL stake-pool rate, in the pool's
+ * B-per-A units) when present; otherwise multiplierA / multiplierB. Uses that
+ * fair value only when the on-chain price is within 2% of it; otherwise the
+ * on-chain price. `onChainPriceBPerA` must come from on-chain sqrtPrice / the
+ * active bin, never from a list/API price.
  */
 export function openRangeCenterPrice(input: {
   multiplierA?: number;
   multiplierB?: number;
+  /** Official fair price in token-B-per-token-A units, when known (LST rate). */
+  fairPriceBPerA?: number;
   onChainPriceBPerA: number;
 }): number {
-  const { multiplierA, multiplierB, onChainPriceBPerA } = input;
-  if (!isPositiveFinite(multiplierA) || !isPositiveFinite(multiplierB) || !isPositiveFinite(onChainPriceBPerA)) {
-    return onChainPriceBPerA;
-  }
-  const fair = multiplierA / multiplierB;
+  const { multiplierA, multiplierB, fairPriceBPerA, onChainPriceBPerA } = input;
+  if (!isPositiveFinite(onChainPriceBPerA)) return onChainPriceBPerA;
+  const fair = isPositiveFinite(fairPriceBPerA)
+    ? fairPriceBPerA
+    : isPositiveFinite(multiplierA) && isPositiveFinite(multiplierB)
+      ? multiplierA / multiplierB
+      : null;
   if (!isPositiveFinite(fair)) return onChainPriceBPerA;
   if (Math.abs(onChainPriceBPerA - fair) / fair > FAIR_CENTER_MAX_RELATIVE_DIFF) return onChainPriceBPerA;
   return fair;
@@ -34,6 +40,7 @@ export function rangeWithFairCenter(
   pool: {
     multiplierA?: number;
     multiplierB?: number;
+    fairPriceBPerA?: number;
     price: string | number;
   },
 ): OpenRangeInput {
@@ -45,6 +52,7 @@ export function rangeWithFairCenter(
     centerPrice: openRangeCenterPrice({
       multiplierA: pool.multiplierA,
       multiplierB: pool.multiplierB,
+      fairPriceBPerA: pool.fairPriceBPerA,
       onChainPriceBPerA,
     }),
   };

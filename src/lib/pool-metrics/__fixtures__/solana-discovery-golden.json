@@ -917,7 +917,7 @@
  "freezeRiskSource": "tags",
  "scannedPools": 55,
  "pagesFetched": 10,
- "pairingRuleSummary": "FOOx/FOO (or FOO-x / xFOO) symbol wrap + both mints Jupiter-tagged (stocks|rwa) or on Backed xStocks whitelist; stables excluded except the curated USDC/USDT CLMM allowlist.",
+ "pairingRuleSummary": "FOOx/FOO (or FOO-x / xFOO) symbol wrap + both mints Jupiter-tagged (stocks|rwa) or on Backed xStocks whitelist; stables excluded except the curated USDC/USDT CLMM allowlist; plus the curated SOL/hSOL CLMM and DLMM allowlist.",
  "estimatedFeeAprLabel": "Estimated fee APR = (24h pool fees USD / TVL USD) × 365 × 100. Not LP return; ignores IL, range, and rewards.",
  "source": "https://api-v3.raydium.io/pools/info/list?poolType=concentrated + Jupiter tokens/v2/search tags + xStocks whitelist + curated CLMM allowlist; Solana RPC: mint freeze authority",
  "discovery": {

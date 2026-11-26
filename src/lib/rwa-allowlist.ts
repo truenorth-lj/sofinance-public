@@ -12,23 +12,37 @@
  * ~$2.48M 24h volume). Raydium's own defaultRange for this pool is 0.1%
  * with points 0.1 / 0.3 / 0.5 / 0.8 / 1%; the app's Tight / Standard / Wide
  * (±0.05% / ±0.3% / ±1%) cover that band without changing fee rules.
+ *
+ * SOL/hSOL: Raydium CLMM 1 bps pool 51V5bAPGaz3vj4SiJeoLGNzAQNxGr4Vps8gSBKmSZx71
+ * (LJ, 2026-11-25). hSOL is Helius Staked SOL. Display uses SOL, not WSOL.
  */
+
+import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
+import { HSOL_MINT } from "@sofinance/engine/hsol-rate";
 
 export const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 export const USDT_MINT = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
+export { NATIVE_SOL_MINT, HSOL_MINT };
 
 /** Deepest Raydium CLMM USDC/USDT pool on Solana mainnet (1 bps). */
 export const USDC_USDT_CLMM_POOL_ID = "BZtgQEyS6eXUXicYPHecYQ7PybqodXQMvkjUbP4R8mUU";
+
+/** Raydium CLMM SOL/hSOL pool on Solana mainnet (1 bps). */
+export const SOL_HSOL_CLMM_POOL_ID = "51V5bAPGaz3vj4SiJeoLGNzAQNxGr4Vps8gSBKmSZx71";
+
+/** How a curated (non-FOOx/FOO) pair is labelled on the row. */
+export type AllowlistWrapKind = "stable" | "same-asset" | "lst";
 
 export type AllowlistedPoolSpec = {
   poolAddress: string;
   mintA: string;
   mintB: string;
-  /** Shared underlying label for display (USD for the stable pair). */
+  /** Shared underlying label for display (USD for the stable pair, SOL for SOL/hSOL). */
   baseSymbol: string;
-  /** Shown first in pair labels / icons (USDC so deposit-USDC reads naturally). */
+  /** Shown first in pair labels / icons (USDC so deposit-USDC reads naturally; SOL for SOL/hSOL). */
   wrappedSymbol: string;
   plainSymbol: string;
+  wrapKind: AllowlistWrapKind;
 };
 
 export const ALLOWLISTED_CLMM_POOLS: readonly AllowlistedPoolSpec[] = [
@@ -39,6 +53,16 @@ export const ALLOWLISTED_CLMM_POOLS: readonly AllowlistedPoolSpec[] = [
     baseSymbol: "USD",
     wrappedSymbol: "USDC",
     plainSymbol: "USDT",
+    wrapKind: "stable",
+  },
+  {
+    poolAddress: SOL_HSOL_CLMM_POOL_ID,
+    mintA: NATIVE_SOL_MINT,
+    mintB: HSOL_MINT,
+    baseSymbol: "SOL",
+    wrappedSymbol: "SOL",
+    plainSymbol: "hSOL",
+    wrapKind: "lst",
   },
 ];
 

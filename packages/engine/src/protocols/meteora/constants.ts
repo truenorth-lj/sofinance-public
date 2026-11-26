@@ -1,3 +1,8 @@
+import { HSOL_MINT } from "../../hsol-rate";
+import { NATIVE_SOL_MINT } from "../../ids";
+
+export { HSOL_MINT, NATIVE_SOL_MINT };
+
 /** Meteora DLMM (Liquidity Book) mainnet program and its public data API. */
 export const METEORA_DLMM_PROGRAM_ID = "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo";
 export const METEORA_DLMM_DATAPI = "https://dlmm.datapi.meteora.ag";
@@ -41,6 +46,8 @@ export type MeteoraAllowlistedPool = {
   baseSymbol: string;
   wrappedSymbol: string;
   plainSymbol: string;
+  /** How the curated pair is labelled. Default is same-asset (cbBTC/WBTC). */
+  wrapKind?: "same-asset" | "lst" | "stable";
 };
 
 /**
@@ -48,7 +55,12 @@ export type MeteoraAllowlistedPool = {
  * when its id, X/Y mint pair and bin step all match and Meteora does not blacklist it.
  * cbBTC/WBTC bin step 1 (0.01% base fee) uses the same mints as the Orca pool and
  * contains no SOL (~$336k TVL as of 2026-10-29).
+ *
+ * SOL/hSOL: curated DLMM 1 bps pool 6a7EnjAoiRBbminKkWPdytMFFf5ogjLutqwpvAVyZ89j
+ * (LJ, 2026-11-25). X = hSOL, Y = wSOL. Display uses SOL, not WSOL.
  */
+export const SOL_HSOL_DLMM_POOL_ID = "6a7EnjAoiRBbminKkWPdytMFFf5ogjLutqwpvAVyZ89j";
+
 export const METEORA_ALLOWLISTED_POOLS: readonly MeteoraAllowlistedPool[] = Object.freeze([
   Object.freeze({
     poolAddress: "53oyyjgybx6dH7i5aGeKfBUi3xPJQDeBkaENPri57x2H",
@@ -60,5 +72,18 @@ export const METEORA_ALLOWLISTED_POOLS: readonly MeteoraAllowlistedPool[] = Obje
     baseSymbol: "BTC",
     wrappedSymbol: "cbBTC",
     plainSymbol: "WBTC",
+    wrapKind: "same-asset",
+  }),
+  Object.freeze({
+    poolAddress: SOL_HSOL_DLMM_POOL_ID,
+    mintX: HSOL_MINT,
+    mintY: NATIVE_SOL_MINT,
+    tokenProgramX: SPL_TOKEN_PROGRAM_ID,
+    tokenProgramY: SPL_TOKEN_PROGRAM_ID,
+    binStep: 1,
+    baseSymbol: "SOL",
+    wrappedSymbol: "SOL",
+    plainSymbol: "hSOL",
+    wrapKind: "lst",
   }),
 ]);

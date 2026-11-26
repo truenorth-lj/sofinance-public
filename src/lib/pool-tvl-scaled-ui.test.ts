@@ -75,3 +75,23 @@ describe("withUsdPerShare (SP-2)", () => {
     expect(withUsdPerShare(priced, { a: 8, b: 8 })).toEqual(priced);
   });
 });
+
+describe("withUsdPerShare LST underlying units", () => {
+  const solHsol = {
+    poolAddress: "sol-hsol",
+    protocol: "raydium-clmm",
+    tvlUsd: 26_400,
+    reserveAmounts: { amountA: 100, amountB: 100 },
+  } as RwaPairRow;
+
+  it("prices SOL/hSOL in official SOL units, not 1:1 token amounts", () => {
+    const priced = withUsdPerShare(solHsol, { a: 1, b: 1 }, { a: 1, b: 1.2 });
+    // 100 SOL + 100 hSOL × 1.2 = 220 SOL; 26400 / 220 = 120 USD per SOL.
+    expect(priced.usdPerShare).toBeCloseTo(120, 10);
+    expect(withUsdPerShare(solHsol, { a: 1, b: 1 }).usdPerShare).toBeCloseTo(132, 10);
+  });
+
+  it("omits usdPerShare when the official rate is missing, rather than falling back to 1:1", () => {
+    expect(withUsdPerShare(solHsol, { a: 1, b: 1 }, { a: null, b: null })).not.toHaveProperty("usdPerShare");
+  });
+});

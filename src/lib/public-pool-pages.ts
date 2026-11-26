@@ -4,7 +4,7 @@ import { DEX_IDS, normalizeDexId } from "@/lib/dex/types";
 import { publicDexLabel } from "@/lib/dex/ui";
 import { formatPoolUsd } from "@/lib/format/usd";
 import { aprLookupFrom, type HomepagePool, type HomepagePoolsSnapshot } from "@/lib/homepage-pools";
-import { isSameStockPool } from "@/lib/pool-metrics/same-stock-pair";
+import { isLstPool, isPublicSeoPool } from "@/lib/pool-metrics/same-stock-pair";
 import type { JsonLd } from "@/lib/json-ld";
 import { poolFeeTierLabel, poolPairLabel } from "@/lib/pool-names";
 import {
@@ -19,6 +19,9 @@ import { CHAIN_LABELS, type UnifiedPool } from "@/lib/unified-pools/model";
 
 const SLUG_TOKEN = /[^a-z0-9]+/g;
 const dash = "—";
+
+/** Alphabetical symbol order would be hsol-sol; the public URL is /pools/sol-hsol. */
+const PUBLIC_PAIR_BASE_OVERRIDES: Readonly<Record<string, string>> = { "hsol-sol": "sol-hsol", "hsol-wsol": "sol-hsol" };
 
 /** The only time the phrase "7d APR" may appear on a per-pool page (the facts label). */
 export const PUBLIC_POOL_APR_LABEL = "7d APR";
@@ -50,7 +53,8 @@ export function symbolSlugToken(symbol: string): string {
 /** Stable pair token, symbols sorted so A/B and B/A share one base (tsla-tslax, nvda-nvdaon). */
 export function publicPoolPairBase(pool: Pick<UnifiedPool, "symbolA" | "symbolB">): string {
   const tokens = [symbolSlugToken(pool.symbolA), symbolSlugToken(pool.symbolB)].sort();
-  return `${tokens[0]}-${tokens[1]}`;
+  const base = `${tokens[0]}-${tokens[1]}`;
+  return PUBLIC_PAIR_BASE_OVERRIDES[base] ?? base;
 }
 
 /** Brand token of the canonical DEX id (raydium-clmm → raydium). Unknown ids still use the first kebab segment. */
@@ -138,7 +142,7 @@ export function assignPublicPoolSlugs(pools: readonly UnifiedPool[]): Map<string
 
 /** Pools that may appear on /pools/{slug}, the SSR table, the sitemap and public JSON-LD. */
 export function seoPublicPools(snapshot: HomepagePoolsSnapshot | null): HomepagePool[] {
-  return snapshot ? snapshot.pools.filter(isSameStockPool) : [];
+  return snapshot ? snapshot.pools.filter(isPublicSeoPool) : [];
 }
 
 export function publicPoolPageModel(pool: HomepagePool, apr7dPct: number | null, slug: string): PublicPoolPageModel {
@@ -155,8 +159,9 @@ export function publicPoolPageModel(pool: HomepagePool, apr7dPct: number | null,
     pairLabel,
     title,
     metaTitle: feeTier ? `${title}, ${feeTier} (${chain})` : `${title} (${chain})`,
-    metaDescription:
-      `${pairLabel} same-stock pool on ${dex} (${chain}): TVL, 24h volume and an estimated 7-day fee APR. Not a prediction. Fees not guaranteed.`,
+    metaDescription: isLstPool(pool)
+      ? `${pairLabel} liquidity pool on ${dex} (${chain}): TVL, 24h volume and an estimated 7-day fee APR. Not a prediction. Fee income can vary.`
+      : `${pairLabel} same-stock pool on ${dex} (${chain}): TVL, 24h volume and an estimated 7-day fee APR. Not a prediction. Fees not guaranteed.`,
     chain,
     dex,
     feeTier: feeTier ?? dash,

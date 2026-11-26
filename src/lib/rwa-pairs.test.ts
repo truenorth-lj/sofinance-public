@@ -25,7 +25,9 @@ import {
 import { clearJupiterTagsCache } from "./rwa-jupiter-tags";
 import { clearXstocksWhitelistCache } from "./rwa-xstocks-whitelist";
 import { TOKEN_2022_PROGRAM_ID } from "./rwa-pairing";
-import { USDC_MINT, USDC_USDT_CLMM_POOL_ID, USDT_MINT } from "./rwa-allowlist";
+import { HSOL_MINT, NATIVE_SOL_MINT, SOL_HSOL_CLMM_POOL_ID, USDC_MINT, USDC_USDT_CLMM_POOL_ID, USDT_MINT } from "./rwa-allowlist";
+import { HSOL_STAKE_POOL, HSOL_STAKE_POOL_PROGRAM, STAKE_POOL_MINT_OFFSET, STAKE_POOL_MIN_LEN, STAKE_POOL_TOKEN_PROGRAM_OFFSET, STAKE_POOL_TOKEN_SUPPLY_OFFSET, STAKE_POOL_TOTAL_LAMPORTS_OFFSET, clearHsolRateCache } from "@sofinance/engine/hsol-rate";
+import { PublicKey } from "@solana/web3.js";
 
 const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 const MINT_A = "MintA1111111111111111111111111111111111111";
@@ -167,6 +169,32 @@ describe("parseRaydiumPoolAsRwaPair", () => {
     expect(row!.feeTierBps).toBeCloseTo(1, 5);
     expect(row!.token2022A).toBe(false);
     expect(isAllowlistedPoolCandidate({ id: USDC_USDT_CLMM_POOL_ID, mintA: { address: USDC_MINT, symbol: "USDC" }, mintB: { address: USDT_MINT, symbol: "USDT" } })).not.toBeNull();
+  });
+
+  it("accepts the curated SOL/hSOL CLMM pool as an LST pair and displays SOL, not WSOL", () => {
+    const row = parseRaydiumPoolAsRwaPair(
+      poolFixture({
+        id: SOL_HSOL_CLMM_POOL_ID,
+        feeRate: 0.0001,
+        tvl: 96_000,
+        mintA: { address: NATIVE_SOL_MINT, symbol: "WSOL", name: "Wrapped SOL", programId: TOKEN_PROGRAM, tags: [], extensions: {} },
+        mintB: { address: HSOL_MINT, symbol: "hSOL", name: "Helius Staked SOL", programId: TOKEN_PROGRAM, tags: [], extensions: {} },
+      }),
+    );
+    expect(row).not.toBeNull();
+    expect(row!.wrapKind).toBe("lst");
+    expect(row!.relatedness).toBe("allowlisted");
+    expect(row!.baseSymbol).toBe("SOL");
+    expect(row!.wrappedSymbol).toBe("SOL");
+    expect(row!.plainSymbol).toBe("hSOL");
+    expect(row!.symbolA).toBe("SOL");
+    expect(row!.symbolB).toBe("hSOL");
+    expect(row!.nameA).toBe("SOL");
+    expect(isAllowlistedPoolCandidate({
+      id: SOL_HSOL_CLMM_POOL_ID,
+      mintA: { address: NATIVE_SOL_MINT, symbol: "WSOL" },
+      mintB: { address: HSOL_MINT, symbol: "hSOL" },
+    })).not.toBeNull();
   });
 
   it("rejects a different USDC/USDT pool id and a mint mismatch on the allowlisted id", () => {
@@ -337,13 +365,21 @@ describe("discoverRwaPairs", () => {
       mintB: { address: USDT_MINT, symbol: "USDT", name: "USDT", programId: TOKEN_PROGRAM, tags: ["hasFreeze"], extensions: {} },
       day: { volume: 10_000, volumeFee: 1, feeApr: 0.73 },
     });
+    const solHsol = poolFixture({
+      id: SOL_HSOL_CLMM_POOL_ID,
+      feeRate: 0.0001,
+      tvl: 96_000,
+      mintA: { address: NATIVE_SOL_MINT, symbol: "WSOL", name: "Wrapped SOL", programId: TOKEN_PROGRAM, tags: [], extensions: {} },
+      mintB: { address: HSOL_MINT, symbol: "hSOL", name: "Helius Staked SOL", programId: TOKEN_PROGRAM, tags: [], extensions: {} },
+      day: { volume: 10_000, volumeFee: 1, feeApr: 0.5 },
+    });
     const matching = poolFixture();
 
     const listThenIds = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/pools/info/list")) {
         return new Response(
-          JSON.stringify({ success: true, data: { count: 2, data: [matching, usdcUsdt], hasNextPage: false } }),
+          JSON.stringify({ success: true, data: { count: 3, data: [matching, usdcUsdt, solHsol], hasNextPage: false } }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
@@ -368,8 +404,9 @@ describe("discoverRwaPairs", () => {
     const fromScan = await discoverRwaPairs({
       minTvl: 0, maxPages: 1, sortBy: "tvl", fetcher: listThenIds as unknown as typeof fetch, bypassCache: true, jupiterApiKey: "test-key",
     });
-    expect(fromScan.pairs.map((row) => row.poolAddress)).toEqual([USDC_USDT_CLMM_POOL_ID, matching.id]);
-    expect(fromScan.pairs[0]!.wrapKind).toBe("stable");
+    expect(fromScan.pairs.map((row) => row.poolAddress)).toEqual([SOL_HSOL_CLMM_POOL_ID, USDC_USDT_CLMM_POOL_ID, matching.id]);
+    expect(fromScan.pairs.find((row) => row.poolAddress === USDC_USDT_CLMM_POOL_ID)!.wrapKind).toBe("stable");
+    expect(fromScan.pairs.find((row) => row.poolAddress === SOL_HSOL_CLMM_POOL_ID)!.wrapKind).toBe("lst");
     expect(listThenIds.mock.calls.some((call) => String(call[0]).includes("/pools/info/ids"))).toBe(false);
 
     const idsFallback = vi.fn(async (input: RequestInfo | URL) => {
@@ -382,7 +419,8 @@ describe("discoverRwaPairs", () => {
       }
       if (url.includes("/pools/info/ids")) {
         expect(url).toContain(USDC_USDT_CLMM_POOL_ID);
-        return new Response(JSON.stringify({ success: true, data: [usdcUsdt] }), { status: 200, headers: { "Content-Type": "application/json" } });
+        expect(url).toContain(SOL_HSOL_CLMM_POOL_ID);
+        return new Response(JSON.stringify({ success: true, data: [usdcUsdt, solHsol] }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
       if (url.includes("/tokens/v2/search")) {
         return new Response(
@@ -402,8 +440,8 @@ describe("discoverRwaPairs", () => {
     const fromIds = await discoverRwaPairs({
       minTvl: 0, maxPages: 1, sortBy: "tvl", fetcher: idsFallback as unknown as typeof fetch, bypassCache: true, jupiterApiKey: "test-key",
     });
-    expect(fromIds.pairs.map((row) => row.poolAddress)).toEqual([USDC_USDT_CLMM_POOL_ID, matching.id]);
-    expect(fromIds.pairs[0]!.relatedness).toBe("allowlisted");
+    expect(fromIds.pairs.map((row) => row.poolAddress)).toEqual([SOL_HSOL_CLMM_POOL_ID, USDC_USDT_CLMM_POOL_ID, matching.id]);
+    expect(fromIds.pairs.find((row) => row.poolAddress === USDC_USDT_CLMM_POOL_ID)!.relatedness).toBe("allowlisted");
   });
 
   it("returns null from getCachedRwaPairs when cache is empty", () => {
@@ -735,5 +773,84 @@ describe("applyOnchainFreezeRisk (Raydium rows)", () => {
     expect(result.freezeRiskSource).toBe("onchain");
     expect(result.pairs.every((pair) => pair.freezeRisk === false)).toBe(true);
     expect(result.source).toMatch(/mint freeze authority/);
+  });
+});
+
+describe("applyOnchainFreezeRisk LST share pricing", () => {
+  afterEach(() => {
+    clearHsolRateCache();
+    freezeMock.read.mockReset();
+    freezeMock.read.mockResolvedValue(new Map());
+  });
+
+  const TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+
+  function stakePoolAccount(totalLamports: bigint, poolTokenSupply: bigint) {
+    const data = Buffer.alloc(STAKE_POOL_MIN_LEN);
+    data.set(new PublicKey(HSOL_MINT).toBytes(), STAKE_POOL_MINT_OFFSET);
+    data.set(new PublicKey(TOKEN_PROGRAM_ID).toBytes(), STAKE_POOL_TOKEN_PROGRAM_OFFSET);
+    data.writeBigUInt64LE(totalLamports, STAKE_POOL_TOTAL_LAMPORTS_OFFSET);
+    data.writeBigUInt64LE(poolTokenSupply, STAKE_POOL_TOKEN_SUPPLY_OFFSET);
+    return { data, owner: new PublicKey(HSOL_STAKE_POOL_PROGRAM), executable: false, lamports: 1, rentEpoch: 0 };
+  }
+
+  const row = {
+    poolAddress: SOL_HSOL_CLMM_POOL_ID,
+    protocol: "raydium-clmm" as const,
+    mintA: NATIVE_SOL_MINT,
+    mintB: HSOL_MINT,
+    symbolA: "SOL",
+    symbolB: "hSOL",
+    nameA: "SOL",
+    nameB: "hSOL",
+    baseSymbol: "SOL",
+    wrappedSymbol: "SOL",
+    plainSymbol: "hSOL",
+    wrapKind: "lst" as const,
+    relatedness: "allowlisted" as const,
+    qualificationA: "allowlist" as const,
+    qualificationB: "allowlist" as const,
+    preferredTags: false,
+    jupiterTagsA: [],
+    jupiterTagsB: [],
+    feeRate: 0.0001,
+    feeTierBps: 1,
+    tvlUsd: 26_400,
+    reserveAmounts: { amountA: 100, amountB: 100 },
+    volume24hUsd: 1_000,
+    fees24hUsd: 10,
+    raydiumFeeApr24h: null,
+    estimatedFeeAprPct: 10,
+    estimatedFeeAprLabel: "est",
+    token2022A: false,
+    token2022B: false,
+    freezeRiskA: false,
+    freezeRiskB: false,
+    freezeRisk: false,
+  };
+
+  const mintSafety = new Map([
+    [NATIVE_SOL_MINT, { freezeAuthority: false, blockReasons: [] as string[], scaledUiKnown: true as const }],
+    [HSOL_MINT, { freezeAuthority: false, blockReasons: [] as string[], scaledUiKnown: true as const }],
+  ]);
+
+  it("attaches the official rate once, prices shares in SOL units, and does not cache a miss", async () => {
+    const connection = {
+      getAccountInfo: async (key: { toBase58: () => string }) => {
+        expect(key.toBase58()).toBe(HSOL_STAKE_POOL);
+        return stakePoolAccount(12n * 10n ** 14n, 10n * 10n ** 14n);
+      },
+    };
+    const { pairs } = await applyOnchainFreezeRisk([row] as never, connection as never, mintSafety as never);
+    expect(pairs[0]!.lstSolPerHsol).toBeCloseTo(1.2, 10);
+    expect(pairs[0]!.fairPriceBPerA).toBeCloseTo(1 / 1.2, 10);
+    // 100 SOL + 100 hSOL × 1.2 = 220; 26400 / 220 = 120 (not 132).
+    expect(pairs[0]!.usdPerShare).toBeCloseTo(120, 10);
+  });
+
+  it("omits usdPerShare when the official rate cannot be read, rather than pricing 1:1", async () => {
+    const { pairs } = await applyOnchainFreezeRisk([row] as never, null, mintSafety as never);
+    expect(pairs[0]!.usdPerShare).toBeUndefined();
+    expect(pairs[0]!.fairPriceBPerA).toBeUndefined();
   });
 });

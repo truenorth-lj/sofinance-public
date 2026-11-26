@@ -24,6 +24,7 @@ import { buildMeteoraAdd, buildMeteoraClaim, buildMeteoraCompound, buildMeteoraW
 import { meteoraDepositMinimum, type MeteoraLegQuote, type MeteoraUsdPrices } from "./minimum.server";
 import { listedMeteoraPool, type MeteoraPoolList } from "./pools.server";
 import { withSharedAccountReads } from "@/lib/portfolio/account-batch";
+import { isSolHsolMintPair, lstFairPriceBPerA, readHsolSolExchangeRate } from "@sofinance/engine/hsol-rate";
 import { openRangeCenterPrice } from "@/lib/open-range-center";
 
 function meteoraQuotedRange(pool: MeteoraPoolState, lowerBinId: number, upperBinId: number) {
@@ -324,10 +325,19 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
       const { activeId, binStep } = pool.lbPair;
       const parityUnit = meteoraBinIdAtPrice(1, binStep, pool.decimalsX, pool.decimalsY);
       const onChainPriceBPerA = meteoraBinUiPrice(activeId, binStep, pool.decimalsX, pool.decimalsY);
+      let fairPriceBPerA: number | undefined;
+      if (isSolHsolMintPair(pool.lbPair.tokenXMint, pool.lbPair.tokenYMint)) {
+        try {
+          const rate = await readHsolSolExchangeRate({ connection: deps().connection });
+          const fair = rate ? lstFairPriceBPerA(pool.lbPair.tokenXMint, pool.lbPair.tokenYMint, rate.solPerHsol) : null;
+          if (fair !== null) fairPriceBPerA = fair;
+        } catch { /* center on the on-chain price when the official rate is missing */ }
+      }
       const centerPrice = openRangeCenterPrice({
         multiplierA: pool.multiplierX,
         multiplierB: pool.multiplierY,
         onChainPriceBPerA,
+        ...(fairPriceBPerA !== undefined ? { fairPriceBPerA } : {}),
       });
       const centerUnit = meteoraBinIdAtPrice(centerPrice, binStep, pool.decimalsX, pool.decimalsY);
       return { poolId, decimals: { [pool.lbPair.tokenXMint]: pool.decimalsX, [pool.lbPair.tokenYMint]: pool.decimalsY }, presets: meteoraOpenPresets(pool), parityUnit, centerUnit, currentUnit: activeId };

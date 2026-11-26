@@ -22,7 +22,8 @@ vi.mock("./onchain-mint-freeze", () => ({
 }));
 
 import { discoverMeteoraRwaPairs, METEORA_SCAN_MIN_TVL_USD, scanPageCounts } from "./meteora-rwa-scan";
-import { USDC_MINT, USDT_MINT } from "./rwa-allowlist";
+import { HSOL_MINT, NATIVE_SOL_MINT, USDC_MINT, USDT_MINT } from "./rwa-allowlist";
+import { SOL_HSOL_DLMM_POOL_ID } from "@sofinance/engine/protocols/meteora/constants";
 
 const MSTRX = "MstrX11111111111111111111111111111111111111", MSTR = "Mstr111111111111111111111111111111111111111";
 const TSLAX = "TsLaX11111111111111111111111111111111111111", TSLA = "TsLa111111111111111111111111111111111111111";
@@ -52,6 +53,11 @@ function datapi(pools: unknown[], options: { status?: number; pages?: number } =
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(String(input));
     if (options.status) return new Response("", { status: options.status });
+    const byId = url.pathname.match(/\/pools\/([^/]+)$/);
+    if (byId && !url.searchParams.get("query") && !url.searchParams.get("filter_by")) {
+      const found = pools.find((item) => (item as { address: string }).address === decodeURIComponent(byId[1]!));
+      return found ? Response.json(found) : new Response("", { status: 404 });
+    }
     const page = Number(url.searchParams.get("page"));
     const pages = options.pages ?? 1;
     const query = url.searchParams.get("query");
@@ -204,5 +210,13 @@ describe("Meteora DLMM RWA scan", () => {
   it("page counts split scanned pools into ≤ 1000-row pages (store schema)", () => {
     expect(scanPageCounts(0)).toEqual([0]);
     expect(scanPageCounts(2_500)).toEqual([1000, 1000, 500]);
+  });
+
+  it("lists the curated SOL/hSOL LST pool even when its TVL is under the $5k scan floor", async () => {
+    tagged();
+    const lst = pool(SOL_HSOL_DLMM_POOL_ID, [HSOL_MINT, "hSOL", "Helius Staked SOL"], [NATIVE_SOL_MINT, "WSOL", "Wrapped SOL"], 1, 4_000);
+    const result = await discoverMeteoraRwaPairs({ fetcher: datapi([...POOLS, lst]) as unknown as typeof fetch, connection: null, minTvl: 5_000 });
+    const row = result.pairs.find((item) => item.poolAddress === SOL_HSOL_DLMM_POOL_ID);
+    expect(row).toMatchObject({ wrapKind: "lst", baseSymbol: "SOL", wrappedSymbol: "SOL", plainSymbol: "hSOL", symbolA: "hSOL", symbolB: "SOL", tvlUsd: 4_000 });
   });
 });

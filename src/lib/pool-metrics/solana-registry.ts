@@ -10,7 +10,7 @@ import {
   type RwaQualificationSource,
   type WrapKind,
 } from "../rwa-pairing";
-import { USDC_MINT, USDT_MINT } from "../rwa-allowlist";
+import { HSOL_MINT, NATIVE_SOL_MINT, USDC_MINT, USDT_MINT } from "../rwa-allowlist";
 import { pairRegistryTokens, type RegistryToken } from "./token-registry";
 
 /**
@@ -57,11 +57,15 @@ export function solanaRegistryEntries(mint: SolanaMintInput): SolanaRegistryToke
   return entries;
 }
 
-/** Curated Solana tokens (the USDC / USDT CLMM allowlist pool): issuer identity is the mint itself. */
+/** Curated Solana tokens (allowlist pools): issuer identity is the mint itself. */
 const SOLANA_STATIC_TOKENS: readonly SolanaRegistryToken[] = Object.freeze([
   { chain: "solana", address: USDC_MINT, symbol: "USDC", issuer: "circle", underlying: "USD", verification: { method: "allowlist" },
     wrapKind: null, qualification: "allowlist", jupiterTags: [] },
   { chain: "solana", address: USDT_MINT, symbol: "USDT", issuer: "tether", underlying: "USD", verification: { method: "allowlist" },
+    wrapKind: null, qualification: "allowlist", jupiterTags: [] },
+  { chain: "solana", address: NATIVE_SOL_MINT, symbol: "SOL", issuer: "solana", underlying: "SOL", verification: { method: "allowlist" },
+    wrapKind: null, qualification: "allowlist", jupiterTags: [] },
+  { chain: "solana", address: HSOL_MINT, symbol: "hSOL", issuer: "helius", underlying: "SOL", verification: { method: "allowlist" },
     wrapKind: null, qualification: "allowlist", jupiterTags: [] },
 ]);
 

@@ -6,6 +6,7 @@
  * Used only by public SEO surfaces (/pools/{slug}, the SSR table, sitemap, JSON-LD). The
  * interactive pool list is unchanged.
  */
+import { isSolHsolMintPair } from "@sofinance/engine/hsol-rate";
 import { matchWrapPairShape, STABLECOIN_BASES } from "@/lib/rwa-pairing";
 import { isSameAssetPair, type RegistryToken } from "./token-registry";
 import { solanaStaticToken } from "./solana-registry";
@@ -19,9 +20,12 @@ export type SameStockPoolInput = {
   symbolB: string;
 };
 
-/** True when the underlying ticker is a stock, not a stablecoin base (USDC/USDT share underlying USD). */
+/** Underlyings that are same-asset but not stocks (cash, SOL LSTs). */
+const NON_STOCK_UNDERLYINGS = new Set([...STABLECOIN_BASES, "SOL"]);
+
+/** True when the underlying ticker is a stock, not a stablecoin base or SOL (USDC/USDT share USD; SOL/hSOL shares SOL). */
 export function isStockUnderlying(underlying: string): boolean {
-  return !STABLECOIN_BASES.has(underlying.trim().toUpperCase());
+  return !NON_STOCK_UNDERLYINGS.has(underlying.trim().toUpperCase());
 }
 
 /** Registry same-asset pair whose underlying is a stock. */
@@ -68,4 +72,17 @@ export function isSameStockPool(pool: SameStockPoolInput): boolean {
   // Fallback when RHC mints are not in the checked-in registry (tests, or a newly
   // listed pool): Ondo stock tokens use the BASEon ticker next to the plain ticker.
   return matchRhcStockWrap(pool.symbolA, pool.symbolB);
+}
+
+/** SOL/hSOL LST pair (either mint order). */
+export function isLstPool(pool: Pick<SameStockPoolInput, "mintA" | "mintB">): boolean {
+  return isSolHsolMintPair(pool.mintA, pool.mintB);
+}
+
+/**
+ * Pools that may appear on /pools/{slug}, the SSR table, the sitemap and public JSON-LD:
+ * same-stock pairs, plus the curated SOL/hSOL LST pools. USDC/USDT and cbBTC/WBTC stay off these pages.
+ */
+export function isPublicSeoPool(pool: SameStockPoolInput): boolean {
+  return isSameStockPool(pool) || isLstPool(pool);
 }

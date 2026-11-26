@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { HIGHEST_RANGE_APR_7D_HELP } from "@/lib/apr-labels/copy";
 import type { HomepagePool, HomepagePoolsSnapshot } from "@/lib/homepage-pools";
-import { USDC_MINT, USDT_MINT } from "@/lib/rwa-allowlist";
+import { HSOL_MINT, NATIVE_SOL_MINT, USDC_MINT, USDT_MINT } from "@/lib/rwa-allowlist";
 import { PUBLIC_POOLS_H1, publicPoolRows } from "@/lib/public-pools-table";
 import {
   PUBLIC_POOL_APR_LABEL,
@@ -37,6 +37,9 @@ describe("public pool slugs", () => {
     expect(publicPoolPairBase({ symbolA: "TSLAx", symbolB: "TSLA" })).toBe("tsla-tslax");
     expect(publicPoolPairBase({ symbolA: "TSLA", symbolB: "TSLAx" })).toBe("tsla-tslax");
     expect(publicPoolPairBase({ symbolA: "NVDA", symbolB: "NVDAon" })).toBe("nvda-nvdaon");
+    expect(publicPoolPairBase({ symbolA: "SOL", symbolB: "hSOL" })).toBe("sol-hsol");
+    expect(publicPoolPairBase({ symbolA: "hSOL", symbolB: "SOL" })).toBe("sol-hsol");
+    expect(publicPoolPairBase({ symbolA: "WSOL", symbolB: "hSOL" })).toBe("sol-hsol");
     expect(publicDexSlug("raydium-clmm")).toBe("raydium");
     expect(publicDexSlug("meteora-dlmm")).toBe("meteora");
     expect(publicDexSlug("uniswap-v4-rhc")).toBe("uniswap");
@@ -264,5 +267,65 @@ describe("public pool page models", () => {
       expect(row?.pairLabel, page.slug).toBe(page.pairLabel);
       expect(page.metaDescription.length, page.metaDescription).toBeLessThanOrEqual(155);
     }
+  });
+});
+
+describe("SOL / hSOL public SEO pages", () => {
+  const ray = pool({
+    key: "solana:sol-hsol-raydium",
+    protocol: "raydium-clmm",
+    poolAddress: "51V5bAPGaz3vj4SiJeoLGNzAQNxGr4Vps8gSBKmSZx71",
+    symbolA: "SOL",
+    symbolB: "hSOL",
+    mintA: NATIVE_SOL_MINT,
+    mintB: HSOL_MINT,
+    feeTierBps: 1,
+  });
+  const met = pool({
+    key: "solana:sol-hsol-meteora",
+    protocol: "meteora-dlmm",
+    poolAddress: "6a7EnjAoiRBbminKkWPdytMFFf5ogjLutqwpvAVyZ89j",
+    symbolA: "hSOL",
+    symbolB: "SOL",
+    mintA: HSOL_MINT,
+    mintB: NATIVE_SOL_MINT,
+    feeTierBps: 1,
+  });
+  const stable = pool({
+    key: "solana:usdc-usdt",
+    protocol: "raydium-clmm",
+    poolAddress: "usdc-usdt-pool",
+    symbolA: "USDC",
+    symbolB: "USDT",
+    mintA: USDC_MINT,
+    mintB: USDT_MINT,
+  });
+  const snap: HomepagePoolsSnapshot = {
+    pools: [ray, met, stable],
+    apr7d: { [ray.key]: 20, [met.key]: 15 },
+    updated: [],
+  };
+
+  it("publishes /pools/sol-hsol for Raydium and suffixes Meteora, and keeps USDC/USDT off the public pages", () => {
+    expect(assignPublicPoolSlugs([ray, met]).get(ray.key)).toBe("sol-hsol");
+    expect(assignPublicPoolSlugs([ray, met]).get(met.key)).toBe("sol-hsol-meteora");
+    const page = findPublicPoolPageModel(snap, "sol-hsol")!;
+    expect(page.path).toBe("/pools/sol-hsol");
+    expect(page.pairLabel).toBe("SOL / hSOL");
+    expect(findPublicPoolPageModel(snap, "sol-hsol-meteora")?.path).toBe("/pools/sol-hsol-meteora");
+    expect(findPublicPoolPageModel(snap, "hsol-sol")).toBeNull();
+    expect(findPublicPoolPageModel(snap, "usdc-usdt")).toBeNull();
+    expect(poolSitemapEntries(snap, "2026-11-26T00:00:00.000Z").map((entry) => entry.path).sort()).toEqual([
+      "/pools/sol-hsol",
+      "/pools/sol-hsol-meteora",
+    ]);
+  });
+
+  it("uses LST copy that avoids banned words and the same-stock phrasing", () => {
+    const page = findPublicPoolPageModel(snap, "sol-hsol")!;
+    expect(page.metaDescription.length).toBeLessThanOrEqual(155);
+    expect(page.metaDescription).toContain("liquidity pool");
+    expect(page.metaDescription).not.toContain("same-stock");
+    expect(page.metaDescription).not.toMatch(/backtest|\bearn\b|\byield\b|\bAPY\b|guaranteed|open source/i);
   });
 });
