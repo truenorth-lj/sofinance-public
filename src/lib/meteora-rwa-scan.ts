@@ -2,7 +2,7 @@ import "@/lib/engine-host";
 import "server-only";
 
 import type { Connection } from "@solana/web3.js";
-import { HSOL_MINT, NATIVE_SOL_MINT, SOL_HSOL_DLMM_POOL_ID, SPL_TOKEN_PROGRAM_ID, METEORA_DLMM_DATAPI, METEORA_RANGE_APR_MAX_BIN_STEP, type MeteoraPoolSpec } from "@sofinance/engine/protocols/meteora/constants";
+import { CBBTC_MINT, CBBTC_WBTC_DLMM_POOL_ID, HSOL_MINT, NATIVE_SOL_MINT, SOL_HSOL_DLMM_POOL_ID, WBTC_WORMHOLE_MINT, SPL_TOKEN_PROGRAM_ID, METEORA_DLMM_DATAPI, METEORA_RANGE_APR_MAX_BIN_STEP, type MeteoraPoolSpec } from "@sofinance/engine/protocols/meteora/constants";
 import {
   fetchMeteoraPoolsByMint, fetchMeteoraPoolsByQuery, parseMeteoraPool, parseMeteoraScanPool, type MeteoraPoolSummary,
 } from "@sofinance/engine/protocols/meteora/discovery";
@@ -27,7 +27,7 @@ import { fetchXstocksSolanaMintSet, getXstocksObservedAt } from "./rwa-xstocks-w
  * 2. Any query failing fails the scan (nothing is published).
  * 3. FOOx/FOO ticker shape, then Jupiter `stocks`/`rwa` tags or the xStocks list on both mints
  *    (`matchSameAssetPair`): same underlying, different issuer. No other pairs (no SOL / USDC quote pools).
- *    Curated SOL/hSOL is listed only from `METEORA_ALLOWLISTED_LST_POOLS`, not by treating SOL as a stock seed.
+ *    Curated SOL/hSOL and cbBTC/WBTC are listed only from `METEORA_CURATED_POOLS`, not by treating SOL or BTC as a stock seed.
  * 4. Bin step ≤ 10 (`METEORA_RANGE_APR_MAX_BIN_STEP`); wider ones are counted in the summary, not listed.
  * 5. On-chain: LbPair protocol share and token programs, mint freeze authority and the Token-2022 block. The one
  *    mint read also gives the ScaledUiAmount multipliers; it is reused by the freeze / TVL step (no second read).
@@ -39,14 +39,17 @@ import { fetchXstocksSolanaMintSet, getXstocksObservedAt } from "./rwa-xstocks-w
 const METEORA_ALLOWLISTED_STABLE_POOLS: readonly MeteoraPoolSpec[] = Object.freeze([]);
 
 type CuratedMeteoraPool = MeteoraPoolSpec & {
-  wrapKind: "stable" | "lst";
+  wrapKind: "stable" | "lst" | "same-asset";
   baseSymbol: string;
   wrappedSymbol: string;
   plainSymbol: string;
 };
 
-/** Curated Meteora SOL/hSOL LST pool. Exempt from the scan TVL floor, like stables. */
-const METEORA_ALLOWLISTED_LST_POOLS: readonly CuratedMeteoraPool[] = Object.freeze([
+/**
+ * Curated Meteora pools that are not stock pairs: SOL/hSOL (LST) and cbBTC/WBTC (same-asset). Exempt from the scan
+ * TVL floor, like stables. The cbBTC/WBTC pair has no official rate, so no fair price is set for it.
+ */
+const METEORA_CURATED_POOLS: readonly CuratedMeteoraPool[] = Object.freeze([
   Object.freeze({
     poolAddress: SOL_HSOL_DLMM_POOL_ID,
     mintX: HSOL_MINT,
@@ -58,6 +61,18 @@ const METEORA_ALLOWLISTED_LST_POOLS: readonly CuratedMeteoraPool[] = Object.free
     baseSymbol: "SOL",
     wrappedSymbol: "SOL",
     plainSymbol: "hSOL",
+  }),
+  Object.freeze({
+    poolAddress: CBBTC_WBTC_DLMM_POOL_ID,
+    mintX: CBBTC_MINT,
+    mintY: WBTC_WORMHOLE_MINT,
+    binStep: 1,
+    tokenProgramX: SPL_TOKEN_PROGRAM_ID,
+    tokenProgramY: SPL_TOKEN_PROGRAM_ID,
+    wrapKind: "same-asset",
+    baseSymbol: "BTC",
+    wrappedSymbol: "cbBTC",
+    plainSymbol: "WBTC",
   }),
 ]);
 
@@ -183,7 +198,7 @@ export async function discoverMeteoraRwaPairs(options: DiscoverMeteoraRwaOptions
         wrappedSymbol: "USDC",
         plainSymbol: "USDT",
       }))),
-      ...METEORA_ALLOWLISTED_LST_POOLS,
+      ...METEORA_CURATED_POOLS,
     ],
     fetcher,
     apiBase,
@@ -227,7 +242,7 @@ export async function discoverMeteoraRwaPairs(options: DiscoverMeteoraRwaOptions
   };
 }
 
-/** Curated pools (stables, SOL/hSOL LST): fetched by id, kept when both mints are the expected registry pair. Exempt from the TVL floor. */
+/** Curated pools (stables, SOL/hSOL LST, cbBTC/WBTC): fetched by id, kept when both mints are the expected registry pair. Exempt from the TVL floor. */
 async function curatedPoolRows(specs: readonly CuratedMeteoraPool[], fetcher: typeof fetch, apiBase: string, signal?: AbortSignal) {
   const rows: { pool: MeteoraPoolSummary<MeteoraPoolSpec>; identity: MeteoraRowIdentity }[] = [];
   for (const spec of specs) {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { HIGHEST_RANGE_APR_7D_HELP } from "@/lib/apr-labels/copy";
 import type { HomepagePool, HomepagePoolsSnapshot } from "@/lib/homepage-pools";
-import { HSOL_MINT, NATIVE_SOL_MINT, USDC_MINT, USDT_MINT } from "@/lib/rwa-allowlist";
+import { CBBTC_MINT, HSOL_MINT, NATIVE_SOL_MINT, USDC_MINT, USDT_MINT, WBTC_PORTAL_MINT } from "@/lib/rwa-allowlist";
 import { PUBLIC_POOLS_H1, publicPoolRows } from "@/lib/public-pools-table";
 import {
   PUBLIC_POOL_APR_LABEL,
@@ -334,5 +334,100 @@ describe("SOL / hSOL public SEO pages", () => {
     expect(crumbs[1]?.name).toBe("Liquidity pools");
     expect(JSON.stringify(json)).not.toMatch(/same-stock/i);
     expect(page.metaDescription).not.toMatch(/backtest|\bearn\b|\byield\b|\bAPY\b|guaranteed|open source/i);
+  });
+});
+
+describe("cbBTC / WBTC public SEO pages", () => {
+  const ray = pool({
+    key: "solana:cbbtc-wbtc-raydium",
+    protocol: "raydium-clmm",
+    poolAddress: "8GuXrPq6deS1ZzNXYmBjVZ5P48cAmKGrhhpdAn2FURPC",
+    symbolA: "cbBTC",
+    symbolB: "WBTC",
+    mintA: CBBTC_MINT,
+    mintB: WBTC_PORTAL_MINT,
+    feeTierBps: 1,
+  });
+  const met = pool({
+    key: "solana:cbbtc-wbtc-meteora",
+    protocol: "meteora-dlmm",
+    poolAddress: "53oyyjgybx6dH7i5aGeKfBUi3xPJQDeBkaENPri57x2H",
+    symbolA: "cbBTC",
+    symbolB: "WBTC",
+    mintA: CBBTC_MINT,
+    mintB: WBTC_PORTAL_MINT,
+    feeTierBps: 1,
+  });
+  const stable = pool({
+    key: "solana:usdc-usdt",
+    protocol: "raydium-clmm",
+    poolAddress: "usdc-usdt-pool",
+    symbolA: "USDC",
+    symbolB: "USDT",
+    mintA: USDC_MINT,
+    mintB: USDT_MINT,
+  });
+  const snap: HomepagePoolsSnapshot = {
+    pools: [ray, met, stable],
+    apr7d: { [ray.key]: 5, [met.key]: 8 },
+    updated: [],
+  };
+
+  it("publishes /pools/cbbtc-wbtc for Raydium and suffixes Meteora, in the sitemap like the LST pools", () => {
+    expect(publicPoolPairBase({ symbolA: "cbBTC", symbolB: "WBTC" })).toBe("cbbtc-wbtc");
+    expect(publicPoolPairBase({ symbolA: "WBTC", symbolB: "cbBTC" })).toBe("cbbtc-wbtc");
+    expect(assignPublicPoolSlugs([ray, met]).get(ray.key)).toBe("cbbtc-wbtc");
+    expect(assignPublicPoolSlugs([ray, met]).get(met.key)).toBe("cbbtc-wbtc-meteora");
+    const page = findPublicPoolPageModel(snap, "cbbtc-wbtc")!;
+    expect(page.path).toBe("/pools/cbbtc-wbtc");
+    expect(page.pairLabel).toBe("cbBTC / WBTC");
+    expect(page.dex).toBe("Raydium CLMM");
+    expect(page.apr7d).toContain("5");
+    const meteora = findPublicPoolPageModel(snap, "cbbtc-wbtc-meteora")!;
+    expect(meteora.path).toBe("/pools/cbbtc-wbtc-meteora");
+    expect(meteora.dex).toBe("Meteora DLMM");
+    expect(findPublicPoolPageModel(snap, "usdc-usdt")).toBeNull();
+    expect(poolSitemapEntries(snap, "2026-11-26T00:00:00.000Z").map((entry) => entry.path).sort()).toEqual([
+      "/pools/cbbtc-wbtc",
+      "/pools/cbbtc-wbtc-meteora",
+    ]);
+    expect(publicPoolDetailHrefs(snap)).toEqual({
+      [ray.key]: "/pools/cbbtc-wbtc",
+      [met.key]: "/pools/cbbtc-wbtc-meteora",
+    });
+    expect(publicPoolRows(snap).map((row) => row.href).sort()).toEqual(["/pools/cbbtc-wbtc", "/pools/cbbtc-wbtc-meteora"]);
+  });
+
+  it("does not list a pool with the same symbols on other mints (BitGo's native WBTC, look-alikes)", () => {
+    const nativeWbtc = pool({
+      key: "solana:cbbtc-wbtc-native",
+      protocol: "raydium-clmm",
+      poolAddress: "cbbtc-nativewbtc-pool",
+      symbolA: "cbBTC",
+      symbolB: "WBTC",
+      mintA: CBBTC_MINT,
+      mintB: "5XZw2LKTyrfvfiskJ78AMpackRjPcyCif1WhUsPDuVqQ",
+    });
+    expect(listPublicPoolPageModels({ pools: [nativeWbtc], apr7d: {}, updated: [] })).toEqual([]);
+  });
+
+  it("uses neutral copy that avoids banned words, fee claims and the same-stock phrasing", () => {
+    for (const slug of ["cbbtc-wbtc", "cbbtc-wbtc-meteora"]) {
+      const page = findPublicPoolPageModel(snap, slug)!;
+      expect(page.metaDescription.length).toBeLessThanOrEqual(155);
+      expect(page.metaDescription).toContain("liquidity pool");
+      expect(page.metaDescription).toBe(
+        `cbBTC / WBTC liquidity pool on ${page.dex} (Solana): TVL, 24h volume and an estimated 7-day fee APR. Not a prediction. Fee income can vary.`,
+      );
+      expect(page.metaTitle).toContain("cbBTC / WBTC pool on");
+      expect(page.metaDescription).not.toMatch(/same-stock|stock/i);
+      expect(page.metaTitle).not.toMatch(/same-stock|stock/i);
+      expect(page.metaDescription).not.toMatch(/backtest|\bearn\b|\byield\b|\bAPY\b|guaranteed|open source/i);
+      expect(page.scaledUiFair).toBeNull();
+      const json = publicPoolJsonLd(page);
+      expect(JSON.stringify(json)).not.toMatch(/same-stock|stock/i);
+      expect(JSON.stringify(json)).not.toMatch(/backtest|\bearn\b|\byield\b|\bAPY\b|guaranteed|open source/i);
+      expect(publicPoolMetadata(page).title).toBeTruthy();
+    }
   });
 });

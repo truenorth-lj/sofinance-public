@@ -7,6 +7,7 @@
  * interactive pool list is unchanged.
  */
 import { isSolHsolMintPair } from "@sofinance/engine/hsol-rate";
+import { CBBTC_MINT, WBTC_PORTAL_MINT } from "@/lib/rwa-allowlist";
 import { matchWrapPairShape, STABLECOIN_BASES } from "@/lib/rwa-pairing";
 import { isSameAssetPair, type RegistryToken } from "./token-registry";
 import { solanaStaticToken } from "./solana-registry";
@@ -20,10 +21,10 @@ export type SameStockPoolInput = {
   symbolB: string;
 };
 
-/** Underlyings that are same-asset but not stocks (cash, SOL LSTs). */
-const NON_STOCK_UNDERLYINGS = new Set([...STABLECOIN_BASES, "SOL"]);
+/** Underlyings that are same-asset but not stocks (cash, SOL LSTs, BTC wraps). */
+const NON_STOCK_UNDERLYINGS = new Set([...STABLECOIN_BASES, "SOL", "BTC"]);
 
-/** True when the underlying ticker is a stock, not a stablecoin base or SOL (USDC/USDT share USD; SOL/hSOL shares SOL). */
+/** True when the underlying ticker is a stock, not a stablecoin base, SOL or BTC (USDC/USDT share USD; SOL/hSOL shares SOL; cbBTC/WBTC shares BTC). */
 export function isStockUnderlying(underlying: string): boolean {
   return !NON_STOCK_UNDERLYINGS.has(underlying.trim().toUpperCase());
 }
@@ -79,10 +80,21 @@ export function isLstPool(pool: Pick<SameStockPoolInput, "mintA" | "mintB">): bo
   return isSolHsolMintPair(pool.mintA, pool.mintB);
 }
 
+/** Curated cbBTC/WBTC BTC pair (either mint order): Coinbase Wrapped BTC and the Wormhole (Portal) WBTC. */
+export function isBtcPool(pool: Pick<SameStockPoolInput, "mintA" | "mintB">): boolean {
+  const { mintA, mintB } = pool;
+  return (mintA === CBBTC_MINT && mintB === WBTC_PORTAL_MINT) || (mintA === WBTC_PORTAL_MINT && mintB === CBBTC_MINT);
+}
+
+/** Curated non-stock pools with public pages and neutral copy: the SOL/hSOL LST pair and the cbBTC/WBTC BTC pair. */
+export function isCuratedCryptoPool(pool: Pick<SameStockPoolInput, "mintA" | "mintB">): boolean {
+  return isLstPool(pool) || isBtcPool(pool);
+}
+
 /**
  * Pools that may appear on /pools/{slug}, the SSR table, the sitemap and public JSON-LD:
- * same-stock pairs, plus the curated SOL/hSOL LST pools. USDC/USDT and cbBTC/WBTC stay off these pages.
+ * same-stock pairs, plus the curated SOL/hSOL LST pools and the curated cbBTC/WBTC pools. USDC/USDT stays off these pages.
  */
 export function isPublicSeoPool(pool: SameStockPoolInput): boolean {
-  return isSameStockPool(pool) || isLstPool(pool);
+  return isSameStockPool(pool) || isCuratedCryptoPool(pool);
 }

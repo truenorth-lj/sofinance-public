@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildPlanComparison, planEntryCost } from "./lp-plan-yield";
-import { endShares, lowPlanApr, parsePlanAssetAmount, planAssetSymbol, planShareSymbol, profitToShareDelta } from "./lp-plan-shares";
+import { endShares, lowPlanApr, parsePlanAssetAmount, planAssetAmounts, planAssetSymbol, planShareSymbol, profitToShareDelta } from "./lp-plan-shares";
 
 function plan(capital: string, days: number, aprPct: string) {
   return buildPlanComparison({ capital, days, aprPct, sampleDays: 29, aprWindowDays: 30, entryCost: planEntryCost(capital) });
@@ -72,5 +72,19 @@ describe("planAssetSymbol and parsePlanAssetAmount (SP-2)", () => {
     expect(parsePlanAssetAmount("1,250.5")).toBe("1250.5");
     expect(parsePlanAssetAmount("0.000000001")).toBe("0.000000001");
     for (const bad of ["", "0", "-1", "1.0000000001", "abc", "2000000000"]) expect(parsePlanAssetAmount(bad)).toBeNull();
+  });
+});
+
+describe("planAssetAmounts", () => {
+  it("keeps 1 / 10 / 100 for stock shares and 100 / 1K / 10K for USDC", () => {
+    expect(planAssetAmounts("TSLA")).toEqual({ presets: ["1", "10", "100"], defaultAmount: "10" });
+    expect(planAssetAmounts(null)).toEqual({ presets: ["100", "1000", "10000"], defaultAmount: "1000" });
+  });
+
+  it("uses BTC-sized amounts (0.01 / 0.1 / 1, default 0.1) for the BTC wraps", () => {
+    expect(planShareSymbol({ wrappedSymbol: "cbBTC", plainSymbol: "WBTC" })).toBe("WBTC");
+    for (const symbol of ["WBTC", "cbBTC", "BTC"]) {
+      expect(planAssetAmounts(symbol)).toEqual({ presets: ["0.01", "0.1", "1"], defaultAmount: "0.1" });
+    }
   });
 });

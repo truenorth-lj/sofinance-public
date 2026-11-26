@@ -61,9 +61,12 @@ export type MeteoraAllowlistedPool = {
  */
 export const SOL_HSOL_DLMM_POOL_ID = "6a7EnjAoiRBbminKkWPdytMFFf5ogjLutqwpvAVyZ89j";
 
+/** Curated Meteora DLMM cbBTC/WBTC pool (bin step 1, X = cbBTC, Y = WBTC). LJ listed it in the feed on 2026-11-26. */
+export const CBBTC_WBTC_DLMM_POOL_ID = "53oyyjgybx6dH7i5aGeKfBUi3xPJQDeBkaENPri57x2H";
+
 export const METEORA_ALLOWLISTED_POOLS: readonly MeteoraAllowlistedPool[] = Object.freeze([
   Object.freeze({
-    poolAddress: "53oyyjgybx6dH7i5aGeKfBUi3xPJQDeBkaENPri57x2H",
+    poolAddress: CBBTC_WBTC_DLMM_POOL_ID,
     mintX: CBBTC_MINT,
     mintY: WBTC_WORMHOLE_MINT,
     tokenProgramX: SPL_TOKEN_PROGRAM_ID,

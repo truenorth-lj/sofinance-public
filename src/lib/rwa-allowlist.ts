@@ -15,20 +15,31 @@
  *
  * SOL/hSOL: Raydium CLMM 1 bps pool 51V5bAPGaz3vj4SiJeoLGNzAQNxGr4Vps8gSBKmSZx71
  * (LJ, 2026-11-25). hSOL is Helius Staked SOL. Display uses SOL, not WSOL.
+ *
+ * cbBTC/WBTC: Raydium CLMM 1 bps pool 8GuXrPq6deS1ZzNXYmBjVZ5P48cAmKGrhhpdAn2FURPC (LJ, 2026-11-26). cbBTC is Coinbase
+ * Wrapped BTC; WBTC is the Wormhole (Portal) wrapped mint, not BitGo's native WBTC mint. Both are plain SPL mints
+ * and the pair has no official rate: the range is centered on the on-chain price.
  */
 
 import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
 import { HSOL_MINT } from "@sofinance/engine/hsol-rate";
+import { CBBTC_MINT, WBTC_WORMHOLE_MINT } from "@sofinance/engine/protocols/meteora/constants";
 
 export const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 export const USDT_MINT = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
 export { NATIVE_SOL_MINT, HSOL_MINT };
+/** Coinbase Wrapped BTC and the Wormhole (Portal) WBTC on Solana. */
+export { CBBTC_MINT };
+export const WBTC_PORTAL_MINT = WBTC_WORMHOLE_MINT;
 
 /** Deepest Raydium CLMM USDC/USDT pool on Solana mainnet (1 bps). */
 export const USDC_USDT_CLMM_POOL_ID = "BZtgQEyS6eXUXicYPHecYQ7PybqodXQMvkjUbP4R8mUU";
 
 /** Raydium CLMM SOL/hSOL pool on Solana mainnet (1 bps). */
 export const SOL_HSOL_CLMM_POOL_ID = "51V5bAPGaz3vj4SiJeoLGNzAQNxGr4Vps8gSBKmSZx71";
+
+/** Raydium CLMM cbBTC/WBTC pool on Solana mainnet (1 bps). */
+export const CBBTC_WBTC_CLMM_POOL_ID = "8GuXrPq6deS1ZzNXYmBjVZ5P48cAmKGrhhpdAn2FURPC";
 
 /** How a curated (non-FOOx/FOO) pair is labelled on the row. */
 export type AllowlistWrapKind = "stable" | "same-asset" | "lst";
@@ -37,7 +48,7 @@ export type AllowlistedPoolSpec = {
   poolAddress: string;
   mintA: string;
   mintB: string;
-  /** Shared underlying label for display (USD for the stable pair, SOL for SOL/hSOL). */
+  /** Shared underlying label for display (USD for the stable pair, SOL for SOL/hSOL, BTC for cbBTC/WBTC). */
   baseSymbol: string;
   /** Shown first in pair labels / icons (USDC so deposit-USDC reads naturally; SOL for SOL/hSOL). */
   wrappedSymbol: string;
@@ -63,6 +74,15 @@ export const ALLOWLISTED_CLMM_POOLS: readonly AllowlistedPoolSpec[] = [
     wrappedSymbol: "SOL",
     plainSymbol: "hSOL",
     wrapKind: "lst",
+  },
+  {
+    poolAddress: CBBTC_WBTC_CLMM_POOL_ID,
+    mintA: CBBTC_MINT,
+    mintB: WBTC_PORTAL_MINT,
+    baseSymbol: "BTC",
+    wrappedSymbol: "cbBTC",
+    plainSymbol: "WBTC",
+    wrapKind: "same-asset",
   },
 ];
 

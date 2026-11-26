@@ -224,7 +224,7 @@ export const FEE_APR_ESTIMATE_LABEL =
   "Estimated fee APR = (24h pool fees USD / TVL USD) × 365 × 100. Not LP return; ignores IL, range, and rewards.";
 
 export const PAIRING_RULE_SUMMARY =
-  "FOOx/FOO (or FOO-x / xFOO) symbol wrap + both mints Jupiter-tagged (stocks|rwa) or on Backed xStocks whitelist; stables excluded except the curated USDC/USDT CLMM allowlist; plus the curated SOL/hSOL CLMM and DLMM allowlist.";
+  "FOOx/FOO (or FOO-x / xFOO) symbol wrap + both mints Jupiter-tagged (stocks|rwa) or on Backed xStocks whitelist; stables excluded except the curated USDC/USDT CLMM allowlist; plus the curated SOL/hSOL and cbBTC/WBTC CLMM and DLMM allowlist.";
 
 export function isToken2022Program(programId?: string | null): boolean {
   return (programId || "") === TOKEN_2022_PROGRAM_ID;

@@ -37,12 +37,20 @@ export function planAssetSymbol(pair: { wrappedSymbol?: string; plainSymbol?: st
   return sides.every((symbol) => STABLE_SYMBOLS.has(symbol)) ? "USDC" : null;
 }
 
+/** Plain symbols of the curated BTC wraps (the calculator counts in the plain side). */
+const BTC_WRAP_SYMBOLS: ReadonlySet<string> = new Set(["WBTC", "CBBTC", "BTC"]);
+
 /**
  * Quick amounts and the default for an amount counted in the pool's asset (SP-2), shared by the Calculate dialog and
  * the homepage estimator: shares of the stock (1 / 10 / 100, default 10), or USDC for the stablecoin pool (100 / 1K /
  * 10K, default 1,000).
  */
 export function planAssetAmounts(shareSymbol: string | null): { presets: readonly [string, string, string]; defaultAmount: string } {
+  // BTC wraps are worth tens of thousands of dollars each: 0.01 / 0.1 / 1 (default 0.1) instead of 1 / 10 / 100.
+  if (shareSymbol && BTC_WRAP_SYMBOLS.has(shareSymbol.trim().toUpperCase())) {
+    const presets = ["0.01", "0.1", "1"] as const;
+    return { presets, defaultAmount: presets[1] };
+  }
   const presets = shareSymbol ? (["1", "10", "100"] as const) : (["100", "1000", "10000"] as const);
   return { presets, defaultAmount: presets[1] };
 }
