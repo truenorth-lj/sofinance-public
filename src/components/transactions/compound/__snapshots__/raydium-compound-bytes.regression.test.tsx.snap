@@ -1,0 +1,8 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Raydium compound bytes (compound-all refactor guard) > the selected-position controller hands the wallet exactly the prepared transaction 1`] = `
+{
+  "message": "6f0ee447f98d7886080dae78512bf2f511e72e4da21d4d2a0818a645cf145d1b",
+  "size": 930,
+}
+`;

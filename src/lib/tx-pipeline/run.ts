@@ -82,6 +82,12 @@ export type RunTxOptions = {
    * still turn them into a success).
    */
   inlineFailure?: boolean;
+  /**
+   * The wallet-prompt void alone (no server simulation or quote-age re-prepare), for flows without `adapter.preflight`
+   * (compound all's Raydium rows reuse `TX_PREFLIGHT_POLICY`). An unsigned prompt is voided at the same deadline and
+   * Try again waits until the voided transaction has expired or landed. Ignored when the adapter has its own policy.
+   */
+  voidPrompt?: Pick<TxPreflightPolicy, "maxPromptMs" | "blockhashSafeMs">;
 };
 
 export type RunTxResult<Prepared> = {
@@ -130,6 +136,7 @@ export async function runTx<Input, Prepared extends PreparedTx>(
   try {
     options.onStage?.("preparing");
     const policy = adapter.preflight;
+    const voidPolicy = policy ?? options.voidPrompt;
     let quotedAt = Date.now();
     prepared = await adapter.prepare(input, { wallet: wallet.address });
     let preparedAt = Date.now();
@@ -174,8 +181,8 @@ export async function runTx<Input, Prepared extends PreparedTx>(
         cosign: prepared.cosign, presign: prepared.presign, sendPermit: prepared.sendPermit, landedPermit: prepared.landedPermit,
         sendRaw: options.sendRaw, stillWanted: options.isCurrent,
         lastValidBlockHeight: prepared.lastValidBlockHeight, findLanded: options.findLanded, checkingWindowMs: options.checkingWindowMs,
-        ...(policy ? {
-          promptDeadlineAt: Math.min(Date.now() + policy.maxPromptMs, preparedAt + policy.blockhashSafeMs),
+        ...(voidPolicy ? {
+          promptDeadlineAt: Math.min(Date.now() + voidPolicy.maxPromptMs, preparedAt + voidPolicy.blockhashSafeMs),
           // Voided, but this wallet broadcast it anyway: the expiry wait below checks this signature's status.
           onLateSignature: (late: string) => {
             lateSignature = late;
@@ -197,7 +204,7 @@ export async function runTx<Input, Prepared extends PreparedTx>(
         captureTxWalletErrorLanded(adapter.flow, { ...context, landedCheck: "landed" });
       }
     } catch (error) {
-      if (policy && error instanceof TxPromptExpiredError) {
+      if (voidPolicy && error instanceof TxPromptExpiredError) {
         // No double-landing (PM 2026-11-02): the voided transaction can still land until its blockhash expires.
         // Wait for that (Try again stays disabled); if it lands, this step is done and nothing else is sent.
         captureTxPreflightEvent(adapter.flow, "prompt-expired");
@@ -282,8 +289,11 @@ export async function sendAndTrack(input: {
   onStage?: RunTxOptions["onStage"]; findLanded?: FindLanded;
   /** Position mint (or other id) for the after-cancel resubmit block. */
   scope?: string;
+  /** Opt-in prompt void (see `RunTxOptions.voidPrompt`); absent for every existing caller, which stay unchanged. */
+  voidPrompt?: RunTxOptions["voidPrompt"]; waitVoided?: WaitVoided; signal?: AbortSignal;
 }) {
   return runTx({ flow: input.flow, successTitle: input.successTitle, prepare: async () => input.prepared }, undefined,
     { wallet: input.wallet, storage: input.storage, sendRaw: input.sendRaw, retry: input.retry, isCurrent: input.isCurrent,
-      onStage: input.onStage, findLanded: input.findLanded, scope: input.scope });
+      onStage: input.onStage, findLanded: input.findLanded, scope: input.scope,
+      ...(input.voidPrompt ? { voidPrompt: input.voidPrompt, waitVoided: input.waitVoided, signal: input.signal } : {}) });
 }
