@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NATIVE_SOL_MINT, USDC_MINT } from "@sofinance/engine/ids";
+import { CBBTC_MINT, HSOL_MINT, WBTC_PORTAL_MINT } from "@/lib/rwa-allowlist";
 import { dexDescriptors, SOL_NEED_UNKNOWN_COPY, OPEN_RANGES_UNAVAILABLE, DEPOSIT_MINIMUM_UNAVAILABLE } from "@/lib/dex/client";
 import type { OpenRanges } from "@/lib/dex/client";
 import type { PoolRangeAprPayload } from "@/lib/range-apr/types";
@@ -340,5 +341,22 @@ describe("RegistryOpenModal", () => {
     mocks.tx = { status: "wallet", locked: true, closeLocked: true };
     await render();
     expect(container.querySelector<HTMLButtonElement>("button[aria-label=Close]")!.disabled).toBe(true);
+  });
+});
+
+describe("RegistryOpenModal range-center copy", () => {
+  it("keeps fair-price wording for a same-stock pool and uses current-pool-price wording for SOL/hSOL and cbBTC/WBTC", async () => {
+    await render({ ranges: { ...ranges, parityUnit: 46054 } });
+    expect(container.querySelector("input[type=checkbox]")!.parentElement!.textContent).toContain("Center range on the fair price");
+
+    for (const extra of [
+      { pairLabel: "SOL/hSOL", symbolA: "SOL", symbolB: "hSOL", mintA: NATIVE_SOL_MINT, mintB: HSOL_MINT },
+      { pairLabel: "cbBTC/WBTC", symbolA: "cbBTC", symbolB: "WBTC", mintA: CBBTC_MINT, mintB: WBTC_PORTAL_MINT },
+    ]) {
+      await render({ pool: { ...pool, ...extra } as UnifiedPool, ranges: { ...ranges, parityUnit: 46054 } });
+      const label = container.querySelector("input[type=checkbox]")!.parentElement!.textContent;
+      expect(label).toContain("Center range on the current pool price");
+      expect(label).not.toContain("Center range on the fair price");
+    }
   });
 });

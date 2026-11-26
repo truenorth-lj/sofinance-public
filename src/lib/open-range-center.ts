@@ -7,4 +7,4 @@ export {
 } from "@sofinance/engine/open-range-center";
 
 /** Label for the default-on control that recenters the open range. */
-export const CENTER_ON_FAIR_LABEL = "Center range on the fair price";
+export { CENTER_ON_CURRENT_PRICE_LABEL, CENTER_ON_FAIR_LABEL, centerRangeLabel } from "./pool-kind-copy";
