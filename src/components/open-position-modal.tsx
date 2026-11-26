@@ -23,6 +23,7 @@ import { poolPairLabel } from "@/lib/pool-names";
 import { openPositionStatusCopy } from "@/lib/status-copy";
 import { shortAddress } from "@/lib/format/address";
 import { solscanTxUrl } from "@/lib/format/explorer";
+import { formatUtcTime } from "@/lib/format/datetime";
 
 const FIELD_HELP = {
   "Token A": "The conservative amount of token A available to open your LP position. The position may use less; any remaining tokens stay in your wallet.",
@@ -176,7 +177,7 @@ export function OpenPositionModal({
         {c.pendingSwap && !c.busy && c.submitStage !== "confirmed" && (
           <div role="status" data-testid="pending-sol-swap" className="mt-3 space-y-2 rounded-2xl border border-white/12 p-3 text-xs leading-5 text-cream/90">
             <p>Your wallet already has {solSwapReceiptLabel(c.pendingSwap)} from step 1/2 (the SOL swap you just made). Open the position with it?</p>
-            <p className="text-smoke">Step 2/2 deposits exactly this amount and includes the 10 bps protocol fee. Amount and input asset edits don&apos;t apply to it; you can still change the range. Available until {new Date(c.pendingSwap.landedAt + SOL_SWAP_RECEIPT_TTL_MS).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.</p>
+            <p className="text-smoke">Step 2/2 deposits exactly this amount and includes the 10 bps protocol fee. Amount and input asset edits don&apos;t apply to it; you can still change the range. Available until {formatUtcTime(c.pendingSwap.landedAt + SOL_SWAP_RECEIPT_TTL_MS)}.</p>
             <div className="flex flex-wrap items-center gap-3">
               <button type="button" onClick={() => void c.signAndSend()} disabled={c.actionDisabled}
                 className="rounded-full bg-lemon px-3 py-1.5 font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40">

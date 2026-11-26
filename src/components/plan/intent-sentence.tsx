@@ -44,7 +44,7 @@ export function IntentSentence({
   setup: PlanSetup;
   /** Exit choices the pool's DEX pays out (its `withdrawOutputs`); others are not offered. */
   exits?: readonly ExitAsset[];
-  now: number;
+  now: number | null;
   active: IntentField;
   onActiveChange: (field: IntentField) => void;
   onChange: (patch: Partial<PlanSetup>) => void;
@@ -100,8 +100,8 @@ export function IntentSentence({
             eyebrow="How long it stays in"
             note={
               <>
-                Type any whole number of days from 1 to 365, or slide. Ends{" "}
-                <span suppressHydrationWarning>{formatUtcDate(now + setup.days * DAY_MS)}</span> (UTC). A planning
+                Type any whole number of days from 1 to 365, or slide.
+                {now !== null ? <> Ends {formatUtcDate(now + setup.days * DAY_MS)} (UTC).</> : null} A planning
                 horizon, not a lock-up or a promise of profit.
               </>
             }

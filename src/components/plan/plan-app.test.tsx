@@ -431,4 +431,16 @@ describe("PlanApp", () => {
     const link = [...node.querySelectorAll("a")].find((a) => a.textContent?.includes("Create a position in this pool"));
     expect(link?.getAttribute("href")).toContain(POOL);
   });
+
+  it("shows the planning end date in UTC after mount", async () => {
+    const now = Date.parse("2026-11-25T14:22:17.000Z");
+    const spy = vi.spyOn(Date, "now").mockReturnValue(now);
+    try {
+      await render(`pool=${POOL}&days=90&edit=days`);
+      await waitForText("Est. best fee APR used (compounded daily) · not a prediction");
+      expect(text()).toContain("Ends Feb 23, 2027 (UTC).");
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });

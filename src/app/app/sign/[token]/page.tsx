@@ -23,6 +23,7 @@ import { openFailureProperties, openOutcomeFailureProperties } from "@/lib/analy
 import { GROWTH_EVENTS, openEventProperties } from "@/lib/analytics/events";
 import { shortAddress } from "@/lib/format/address";
 import { solscanTxUrl } from "@/lib/format/explorer";
+import { formatUtcDateTime } from "@/lib/format/datetime";
 
 type Status = "loading" | "expired" | "wallet-mismatch" | "ready" | "signing" | "checking" | "submitting" | "success" | "error";
 
@@ -338,7 +339,7 @@ export default function SignPage() {
               <div className="flex items-start justify-between gap-4 text-sm">
                 <span className="text-smoke">Expires</span>
                 <span className="text-xs text-smoke">
-                  {new Date(payload.expiresAt).toLocaleString()}
+                  {formatUtcDateTime(payload.expiresAt)}
                 </span>
               </div>
             </div>
