@@ -177,6 +177,22 @@ describe("Portfolio client request lifecycle", () => {
     await render("A", 1);
     expect(latest[key]?.status).toBe("failed");
   });
+  it("keeps value and unclaimed fees when the history store is down, carries the code, and does not poll", async () => {
+    vi.useFakeTimers();
+    fetchMock.mockResolvedValue(Response.json({ wallet: "A", positions: [{ ...row(), status: "partial", historyComplete: false, historyRefreshResolved: false,
+      historyStatus: "unavailable", historyError: "POSITION_STORE_UNAVAILABLE",
+      figures: { stock: null, shares: null, valueUsd: 0.64, unclaimedFeesUsd: 0.0006, cumulativeFeesUsd: null } }] }));
+    await render("A");
+    expect(latest[key]).toMatchObject({ status: "partial", historyError: "POSITION_STORE_UNAVAILABLE",
+      figures: { valueUsd: 0.64, unclaimedFeesUsd: 0.0006, cumulativeFeesUsd: null } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it("rejects a malformed history error code instead of passing it to the page", async () => {
+    fetchMock.mockResolvedValue(Response.json({ wallet: "A", positions: [{ ...row(), historyError: "postgres://secret@host/db" }] }));
+    await render("A");
+    expect(latest[key]?.status).toBe("failed");
+  });
   it("keeps failed/missing rows explicit instead of counting them as zero", async () => {
     fetchMock.mockResolvedValue(Response.json({ wallet: "A", positions: [] }));
     await render("A"); expect(latest[key]?.status).toBe("failed"); expect(latest[key]?.figures.valueUsd).toBeNull();

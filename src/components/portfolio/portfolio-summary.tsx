@@ -11,11 +11,13 @@ import type { PortfolioPosition } from "@/lib/portfolio/model";
 export function PortfolioHistoryStatus({ rows }: { rows: readonly PortfolioPosition[] }) {
   const histories = rows.filter((row) => row.historyStatus);
   if (!histories.length) return null;
+  const unavailable = histories.some((row) => row.historyError);
   const updating = histories.some((row) => row.historyStatus === "updating");
   const stale = histories.some((row) => row.historyStatus === "stale" || row.historyStatus === "unavailable");
   const checked = histories.flatMap((row) => row.historyUpdatedAt ? [row.historyUpdatedAt] : []).sort()[0];
   return <p role="status" data-testid="portfolio-history-status" className="mt-2 px-1 text-xs text-smoke">
-    {updating ? "Updating fee history… Available values are shown. "
+    {unavailable ? "Cumulative fees are temporarily unavailable. Value and unclaimed fees are current. Refresh to retry. "
+      : updating ? "Updating fee history… Available values are shown. "
       : stale ? "Fee history may be out of date. Refresh to retry. " : ""}
     {checked ? <>Fee history checked <time dateTime={checked}>{formatUtcTime(checked, { seconds: true })}</time>.</> : null}
   </p>;
@@ -85,9 +87,10 @@ const card = "rounded-2xl border border-white/12 bg-char p-4 sm:p-5";
  * unclaimed) and unclaimed fees, with "Compound all". Phones get one card: LP value, the two fee totals on one
  * line, then "Compound all".
  */
-export function PortfolioSummary({ totals, cumulativeFeesUpdating = false, compoundAll }: { totals: PortfolioTotals; cumulativeFeesUpdating?: boolean; compoundAll?: CompoundAllEntry }) {
+export function PortfolioSummary({ totals, cumulativeFeesUpdating = false, cumulativeFeesUnavailable = false, compoundAll }: { totals: PortfolioTotals; cumulativeFeesUpdating?: boolean; cumulativeFeesUnavailable?: boolean; compoundAll?: CompoundAllEntry }) {
   const fees = (value: number | null) => formatUsd(value);
-  const updating = cumulativeFeesUpdating ? <span data-testid="cumulative-fees-updating" className="text-smoke"> Updating</span> : null;
+  const updating = cumulativeFeesUnavailable ? <span data-testid="cumulative-fees-unavailable" className="text-smoke"> temporarily unavailable</span>
+    : cumulativeFeesUpdating ? <span data-testid="cumulative-fees-updating" className="text-smoke"> Updating</span> : null;
   return <section aria-label="Portfolio totals" data-testid="portfolio-summary" className="mt-3 grid gap-3 sm:grid-cols-3">
     <div className={card} data-testid="portfolio-total-value">
       <h2 className="text-xs font-semibold text-smoke">Total LP value</h2>

@@ -38,6 +38,8 @@ export const portfolioPositionSchema = z.object({
   historyUpdatedAt: z.iso.datetime().nullable().optional(),
   historyStatus: z.enum(["fresh", "updating", "stale", "unavailable"]).optional(),
   historyRefreshAfter: z.iso.datetime().optional(),
+  /** Position-history store failure code (for example POSITION_STORE_UNAVAILABLE). Value and unclaimed fees are still read; cumulative fees are not. */
+  historyError: z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/).optional(),
   /** Client-only: a last complete cumulative fee was kept while history is catching up. */
   retained: z.boolean().optional(),
 });
