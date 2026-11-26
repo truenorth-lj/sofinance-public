@@ -284,6 +284,21 @@ describe("Raydium position performance characterization", () => {
     expect(compact).not.toHaveProperty("history"); expect(compact).not.toHaveProperty("realizedFeeAprSeries");
     expect(options.fetcher).not.toHaveBeenCalled();
   });
+  it("reports raw unclaimed fees from the same fee read, also when no price is available (no extra RPC)", async () => {
+    await run("full");
+    const base = { connection, nowSeconds: NOW, symbols: { symbolA: "HOODx", symbolB: "HOOD" } };
+    const reads = () => vi.mocked(connection.getMultipleAccountsInfo).mock.calls.length;
+    const before = reads();
+    const priced = await getPositionFigures(nft.toBase58(), { ...base, prices: quotes(mintA.toBase58(), mintB.toBase58()) });
+    const pricedReads = reads() - before;
+    expect(priced.unclaimedFeesRaw).toEqual({ a: expect.stringMatching(/^\d+$/), b: expect.stringMatching(/^\d+$/) });
+    const unpriced = await getPositionFigures(nft.toBase58(), { ...base, skipPricing: true });
+    expect(unpriced.figures.unclaimedFeesUsd).toBeNull();
+    expect(unpriced.unclaimedFeesRaw).toEqual(priced.unclaimedFeesRaw);
+    // The raw amounts come from the existing fee read: the same account reads as before, none added for them.
+    expect(pricedReads).toBeGreaterThan(0);
+    expect(reads() - before - pricedReads).toBe(pricedReads);
+  });
   it("keeps current value/shares but withholds cumulative fees for missing opening or truncated history", async () => {
     await run("truncated");
     const compact = await getPositionFigures(nft.toBase58(), { connection, nowSeconds: NOW,

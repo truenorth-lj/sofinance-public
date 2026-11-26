@@ -168,6 +168,15 @@ describe("Portfolio client request lifecycle", () => {
     expect(latest[key]?.figures.cumulativeFeesUsd).toBeNull();
     expect(latest[key]?.retained).toBeFalsy();
   });
+  it("passes raw unclaimed fees through and rejects malformed amounts", async () => {
+    fetchMock.mockResolvedValueOnce(Response.json({ wallet: "A", positions: [{ ...row(), unclaimedFeesRaw: { a: "0", b: "590" },
+      figures: { stock: "TSLA", shares: 1, valueUsd: 10, unclaimedFeesUsd: null, cumulativeFeesUsd: 2 } }] }));
+    await render("A");
+    expect(latest[key]?.unclaimedFeesRaw).toEqual({ a: "0", b: "590" });
+    fetchMock.mockResolvedValueOnce(Response.json({ wallet: "A", positions: [{ ...row(), unclaimedFeesRaw: { a: "-1", b: "x" } }] }));
+    await render("A", 1);
+    expect(latest[key]?.status).toBe("failed");
+  });
   it("keeps failed/missing rows explicit instead of counting them as zero", async () => {
     fetchMock.mockResolvedValue(Response.json({ wallet: "A", positions: [] }));
     await render("A"); expect(latest[key]?.status).toBe("failed"); expect(latest[key]?.figures.valueUsd).toBeNull();

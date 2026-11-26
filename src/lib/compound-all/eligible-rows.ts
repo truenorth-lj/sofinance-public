@@ -1,6 +1,6 @@
 import { compoundAllFlowFor, type CompoundAllRowInput } from "./state";
 import type { DexDescriptor } from "@/lib/dex/types";
-import type { RangeStatus, TokenPairRaw, UnifiedPosition } from "@/lib/unified-positions/model";
+import type { PositionHoldings, RangeStatus, TokenPairRaw, UnifiedPosition } from "@/lib/unified-positions/model";
 import { isClosed } from "@/lib/unified-positions/rows";
 
 /** What Portfolio knows about one position when the Compound all checklist opens. */
@@ -12,6 +12,10 @@ export type CompoundAllCandidate = {
   /** Registry DEXes read the raw unclaimed fees too; `null` = not read. */
   unclaimedFeesRaw?: TokenPairRaw | null;
 };
+
+/** Raw unclaimed fees for one position: the source's own holdings first, else the Portfolio read of the same position. */
+export const unclaimedFeesRawFor = (holdings: PositionHoldings | undefined, portfolioRaw: TokenPairRaw | undefined): TokenPairRaw | null =>
+  holdings?.unclaimedFeesRaw ?? portfolioRaw ?? null;
 
 const positive = (raw: string) => { try { return BigInt(raw) > 0n; } catch { return false; } };
 

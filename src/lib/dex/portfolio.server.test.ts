@@ -33,6 +33,14 @@ describe("Portfolio aggregation", () => {
     expect(mocks.reset).toHaveBeenCalledTimes(1);
     expect(mocks.figures).toHaveBeenCalledWith(mint(1), expect.objectContaining({ wallet: mint(7), prices: expect.any(Map), symbols: { symbolA: "TSLA", symbolB: "TSLAx" }, refreshHistory: true, historyAfterSignatures: ["receipt"] }));
   });
+  it("carries the raw unclaimed fees so Compound all still works when a USD figure is missing", async () => {
+    mocks.figures.mockResolvedValue({ figures: { ...figures, unclaimedFeesUsd: null }, unclaimedFeesRaw: { a: "0", b: "590" }, evaluatedAt: "2026-11-15T00:00:00Z",
+      historyComplete: true, historyRefreshResolved: true, timings: {}, historyFetch: {} });
+    const result = await readPortfolio({ wallet: mint(7), positions: [{ key: key(1) }] }, signal());
+    expect(result.positions[0]).toMatchObject({ status: "partial", figures: { unclaimedFeesUsd: null }, unclaimedFeesRaw: { a: "0", b: "590" } });
+    mocks.figures.mockResolvedValue({ figures, evaluatedAt: "2026-11-15T00:00:00Z", historyComplete: true, historyRefreshResolved: true, timings: {}, historyFetch: {} });
+    expect((await readPortfolio({ wallet: mint(7), positions: [{ key: key(1) }] }, signal())).positions[0]).not.toHaveProperty("unclaimedFeesRaw");
+  });
   it("limits active history reads to two, fills slots immediately and keeps request order", async () => {
     let active = 0, max = 0;
     const complete: (() => void)[] = [];
