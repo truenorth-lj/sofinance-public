@@ -81,7 +81,7 @@ export function runRwaDatabaseRequest<T>(db: postgres.Sql, work: () => Promise<T
 export function createRwaDatabase(url: string, schemaName = "public") {
   if (!/^[a-z_][a-z0-9_]*$/.test(schemaName)) throw new Error("Invalid database schema");
   const config = getRwaConfig();
-  const target = rwaConnectionTarget(url, config.expectedRole, config.storeMode === "neon" || config.isVercel);
+  const target = rwaConnectionTarget(url, config.expectedRole, config.storeMode === "neon" || config.isVercel, config.databaseCaPem);
   const state: PoolState = { retired: false, deadlineMs: rwaDatabaseDeadlineMs(config),
     boundIdentity: config.storeMode === "neon", sockets: new Set(), waiters: new Set() };
   const options: SocketOptions = {
@@ -129,8 +129,8 @@ export function getRwaDatabase() {
   const config = getRwaConfig();
   if (!config.databaseUrl) throw new Error("RWA database is unavailable");
   // Validate on every selection, including cache hits; no gateway/insecure fallback on Neon failure.
-  rwaConnectionTarget(config.databaseUrl, config.expectedRole, config.storeMode === "neon" || config.isVercel);
-  const key = JSON.stringify([config.databaseUrl, config.storeMode, config.expectedRole, config.isVercel,
+  rwaConnectionTarget(config.databaseUrl, config.expectedRole, config.storeMode === "neon" || config.isVercel, config.databaseCaPem);
+  const key = JSON.stringify([config.databaseUrl, config.storeMode, config.expectedRole, config.databaseCaPem, config.isVercel,
     config.poolMax, config.connectTimeoutMs, config.queryTimeoutMs, config.jobTimeoutMs]);
   if (!runtime || runtime.key !== key) {
     const previous = runtime;

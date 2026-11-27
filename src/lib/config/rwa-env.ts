@@ -1,10 +1,12 @@
 import "server-only";
-import { getRwaExpectedRole } from "./rwa-database-env";
+import { getRwaDatabaseCaPem, getRwaExpectedRole } from "./rwa-database-env";
 /** Server-only RWA configuration. No credentials are returned to public APIs. */
 export function getRwaConfig() {
   const storeMode = process.env.SOFINANCE_RWA_STORE_MODE || "gateway";
   if (storeMode !== "gateway" && storeMode !== "neon") throw new Error("Invalid RWA store mode");
-  const databaseUrl = process.env.DATABASE_URL;
+  // SOFINANCE_RWA_DATABASE_URL (when set) selects a replacement database without overwriting the
+  // original DATABASE_URL, so switching back is deleting one variable.
+  const databaseUrl = process.env.SOFINANCE_RWA_DATABASE_URL || process.env.DATABASE_URL;
   const gatewayUrl = process.env.SOFINANCE_RWA_GATEWAY_URL;
   const secret = process.env.CRON_SECRET;
   const number = (
@@ -49,6 +51,7 @@ export function getRwaConfig() {
     databaseUrl,
     storeMode,
     expectedRole: getRwaExpectedRole(),
+    databaseCaPem: getRwaDatabaseCaPem(),
     nativeCronEnabled: process.env.SOFINANCE_RWA_NATIVE_CRON_ENABLED === "true",
     gatewayUrl,
     secret,

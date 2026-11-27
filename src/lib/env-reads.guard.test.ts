@@ -18,9 +18,10 @@ const SIGNING_ENV_NAMES = ["SOFINANCE_SIGNING_SECRET", "SOFINANCE_SIGNING_SECRET
 
 /** Names whose values are credentials (or embed credentials, like an RPC URL with an api key). */
 const SECRET_ENV_NAMES = [
-  "DATABASE_URL", "CRON_SECRET", "SOFINANCE_RWA_MIGRATION_DATABASE_URL",
+  "DATABASE_URL", "SOFINANCE_RWA_DATABASE_URL", "CRON_SECRET", "SOFINANCE_RWA_MIGRATION_DATABASE_URL",
   // Non-secret routing controls are also ratcheted: selection must stay in config helpers.
   "SOFINANCE_RWA_STORE_MODE", "SOFINANCE_RWA_NATIVE_CRON_ENABLED", "SOFINANCE_RWA_DB_EXPECTED_ROLE",
+  "SOFINANCE_RWA_DB_CA_PEM",
   "JUPITER_API_KEY", "SOLANA_RPC_URL", "SOFINANCE_MCP_TOKEN",
   ...SIGNING_ENV_NAMES,
   // Optional dedicated Robinhood Chain RPC (may embed a provider key); read only inside the engine.
@@ -35,6 +36,8 @@ const ALLOWED_SECRET_READS: Record<string, Reads> = {
   SOFINANCE_RWA_DB_EXPECTED_ROLE: { "lib/config/rwa-database-env.ts": 1 },
   SOFINANCE_RWA_MIGRATION_DATABASE_URL: { "lib/config/rwa-migration-env.ts": 1 },
   DATABASE_URL: { "lib/config/rwa-env.ts": 1 },
+  SOFINANCE_RWA_DATABASE_URL: { "lib/config/rwa-env.ts": 1 },
+  SOFINANCE_RWA_DB_CA_PEM: { "lib/config/rwa-database-env.ts": 1 },
   CRON_SECRET: { "lib/config/rwa-env.ts": 1 },
   // JUPITER_API_KEY and SOLANA_RPC_URL readers (config/server-env, jupiter/urls,
   // rpc/providers) moved into @sofinance/engine, which reads only the configuration the
