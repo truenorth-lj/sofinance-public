@@ -197,6 +197,14 @@ it("maps each reject path to its own code, and still accepts a valid swap", () =
   record(writable.validate, "account_writable_mismatch");
   expect([...seen].sort()).toEqual([...COMPOUND_SWAP_GUARD_CODES].sort());
 });
+it("rejects a 10-byte swap_v2 as data_length_mismatch without reading past the buffer", () => {
+  const short = fixture();
+  short.ix.data = Buffer.from(short.ix.data.subarray(0, 10));
+  expect(short.ix.data.length).toBe(10);
+  expect(() => short.ix.data.readBigUInt64LE(8)).toThrow(RangeError);
+  expect(() => short.ix.data.readBigUInt64LE(16)).toThrow(RangeError);
+  expectCode(short.validate, "data_length_mismatch");
+});
 it("rejects the USDC/USDT pool's live observation with observation_mismatch", () => {
   const programId = "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK";
   const poolId = "BZtgQEyS6eXUXicYPHecYQ7PybqodXQMvkjUbP4R8mUU";

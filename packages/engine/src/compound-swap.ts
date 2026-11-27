@@ -142,29 +142,31 @@ export function validateCompoundSwapInstruction(ix: TransactionInstruction, shap
     TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58(), MEMO_PROGRAM_ID.toBase58(),
     swap.inputMint, swap.outputMint,
     getPdaExBitmapAccount(new PublicKey(state.programId), new PublicKey(state.poolId)).publicKey.toBase58(), ...tickArrays];
-  const checks: readonly [failed: boolean, code: CompoundSwapGuardCode][] = [
-    [swap.poolId !== state.poolId, "pool_mismatch"],
-    [![state.mintA, state.mintB].includes(swap.inputMint), "input_mint_mismatch"],
-    [swap.outputMint !== (inputA ? state.mintB : state.mintA), "output_mint_mismatch"],
-    [inputAmount <= 0n || inputAmount > MAX_U64, "input_amount_invalid"],
-    [minOutput <= 0n || minOutput > quotedOutput, "min_output_invalid"],
-    [quotedOutput > MAX_U64, "quoted_output_invalid"],
-    [accounts[0].mint !== state.mintA || accounts[1].mint !== state.mintB, "account_mint_mismatch"],
-    [accounts.some((account) => [state.ataA, state.ataB].includes(account.address)), "isolated_account_is_ata"],
-    [accounts[0].address === accounts[1].address, "isolated_accounts_equal"],
-    [tickArrays.length === 0, "tick_arrays_empty"],
-    [new Set(tickArrays).size !== tickArrays.length, "tick_arrays_duplicate"],
-    [observation !== getPdaObservationAccount(new PublicKey(state.programId), new PublicKey(state.poolId)).publicKey.toBase58(), "observation_mismatch"],
-    [ix.programId.toBase58() !== state.programId, "program_mismatch"],
-    [ix.data.length !== 41, "data_length_mismatch"],
-    [!ix.data.subarray(0, 8).equals(createHash("sha256").update("global:swap_v2").digest().subarray(0, 8)), "discriminator_mismatch"],
-    [ix.data.readBigUInt64LE(8) !== inputAmount, "input_amount_data_mismatch"],
-    [ix.data.readBigUInt64LE(16) !== minOutput, "min_output_data_mismatch"],
-    [ix.data.subarray(24, 40).some((byte) => byte !== 0), "price_limit_nonzero"],
-    [ix.data[40] !== 1, "not_base_input"],
-    [ix.keys.length !== expected.length, "key_count_mismatch"],
+  // Thunks so later reads (u64 at offsets 8 and 16, observation PDA, byte 40) never
+  // run unless every earlier check passed — same short-circuit as the original `||`.
+  const checks: readonly [check: () => boolean, code: CompoundSwapGuardCode][] = [
+    [() => swap.poolId !== state.poolId, "pool_mismatch"],
+    [() => ![state.mintA, state.mintB].includes(swap.inputMint), "input_mint_mismatch"],
+    [() => swap.outputMint !== (inputA ? state.mintB : state.mintA), "output_mint_mismatch"],
+    [() => inputAmount <= 0n || inputAmount > MAX_U64, "input_amount_invalid"],
+    [() => minOutput <= 0n || minOutput > quotedOutput, "min_output_invalid"],
+    [() => quotedOutput > MAX_U64, "quoted_output_invalid"],
+    [() => accounts[0].mint !== state.mintA || accounts[1].mint !== state.mintB, "account_mint_mismatch"],
+    [() => accounts.some((account) => [state.ataA, state.ataB].includes(account.address)), "isolated_account_is_ata"],
+    [() => accounts[0].address === accounts[1].address, "isolated_accounts_equal"],
+    [() => tickArrays.length === 0, "tick_arrays_empty"],
+    [() => new Set(tickArrays).size !== tickArrays.length, "tick_arrays_duplicate"],
+    [() => observation !== getPdaObservationAccount(new PublicKey(state.programId), new PublicKey(state.poolId)).publicKey.toBase58(), "observation_mismatch"],
+    [() => ix.programId.toBase58() !== state.programId, "program_mismatch"],
+    [() => ix.data.length !== 41, "data_length_mismatch"],
+    [() => !ix.data.subarray(0, 8).equals(createHash("sha256").update("global:swap_v2").digest().subarray(0, 8)), "discriminator_mismatch"],
+    [() => ix.data.readBigUInt64LE(8) !== inputAmount, "input_amount_data_mismatch"],
+    [() => ix.data.readBigUInt64LE(16) !== minOutput, "min_output_data_mismatch"],
+    [() => ix.data.subarray(24, 40).some((byte) => byte !== 0), "price_limit_nonzero"],
+    [() => ix.data[40] !== 1, "not_base_input"],
+    [() => ix.keys.length !== expected.length, "key_count_mismatch"],
   ];
-  for (const [failed, code] of checks) if (failed) fail(code);
+  for (const [check, code] of checks) if (check()) fail(code);
   const writable = new Set([2, 3, 4, 5, 6, 7, ...expected.slice(13).map((_, index) => index + 13)]);
   ix.keys.forEach((key, index) => {
     if (key.pubkey.toBase58() !== expected[index]) fail("account_pubkey_mismatch");
