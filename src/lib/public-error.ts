@@ -120,6 +120,11 @@ export function publicErrorCode(error: unknown): string | undefined {
   if (error instanceof SolInputDisabledError) return error.code;
   // Engine CompoundInsufficientSolError; matched by code so client bundles need not load the simulator.
   if (error instanceof Error && (error as { code?: unknown }).code === INSUFFICIENT_SOL_CODE) return INSUFFICIENT_SOL_CODE;
+  // Compound swap shape guard: named codes only, no RPC URLs or account dumps in the message.
+  if (error instanceof Error && error.name === "CompoundSwapGuardError") {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === "string" && code) return code;
+  }
   if (error instanceof JupiterHttpError && error.status === 400) return JUPITER_CLIENT_ERROR_CODE;
   if (error instanceof JupiterUnavailableError || isJupiterUpstreamError(error)) {
     return JUPITER_UNAVAILABLE_CODE;
