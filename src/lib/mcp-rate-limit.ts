@@ -15,7 +15,7 @@ import { slidingWindowLimiter } from "@/lib/tx-send/rate-limit";
  * A request refused by an earlier limit is not counted against a later one.
  *
  * Limits of this design (as in `dex-route-rate-limit.ts`): per server instance, not global (N warm instances allow up to
- * N times the limit; a cold start forgets the counts); keyed by `x-real-ip`, then the first `x-forwarded-for`; at most
+ * N times the limit; a cold start forgets the counts); keyed by `clientIp()` (`request-origin/client-ip.ts`); at most
  * 5,000 keys per limiter. A cheap brake on one client hammering, not a quota.
  */
 export const MCP_REQUESTS_PER_IP_PER_MINUTE = 120;

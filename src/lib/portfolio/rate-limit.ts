@@ -13,7 +13,7 @@ export const PORTFOLIO_REQUESTS_PER_LOAD = 1 + PORTFOLIO_POLL_DELAYS_MS.length;
  *
  * 40 = room for 6 full loads in a minute (first load, a few Refreshes, a second tab), each with its whole follow-up
  * schedule, and some headroom. Same design limits as `dex-route-rate-limit.ts`: per server instance, keyed by
- * `x-real-ip` then the first `x-forwarded-for`, bounded memory. It is a brake on hammering, not a quota.
+ * `clientIp()` (`request-origin/client-ip.ts`), bounded memory. It is a brake on hammering, not a quota.
  */
 export const PORTFOLIO_REQUESTS_PER_IP_PER_MINUTE = 40;
 export const PORTFOLIO_RETRY_AFTER_SECONDS = 60;

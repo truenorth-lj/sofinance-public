@@ -14,8 +14,8 @@ import { slidingWindowLimiter } from "@/lib/tx-send/rate-limit";
  *   on hammering one position.
  * A request refused by the request limit is not counted as a lookup.
  *
- * Same limits of this design as `mcp-rate-limit.ts`: per server instance, not global; keyed by `x-real-ip`, then the
- * first `x-forwarded-for`; bounded memory (5,000 keys per map).
+ * Same limits of this design as `mcp-rate-limit.ts`: per server instance, not global; keyed by `clientIp()`
+ * (`request-origin/client-ip.ts`); bounded memory (5,000 keys per map).
  */
 export const POSITION_PERFORMANCE_LOOKUPS_PER_IP_PER_MINUTE = 12;
 export const POSITION_PERFORMANCE_REQUESTS_PER_IP_PER_MINUTE = 60;
