@@ -3,7 +3,8 @@ import type { DexModule } from "../registry";
 import type { NativeEvmPositionReads } from "../evm-position-read";
 import type { NativeEvmLiquidity } from "../evm-liquidity";
 import { isRhcUniv4TradingEnabled, isRhcUniv4TxBuildEnabled, isRhcUniv4DiscoveryEnabled, isRhcApr7dEnabled } from "@/lib/protocol-flags";
-import { rhcScanClientIp, rhcScanRateLimited } from "@/lib/rhc-scan-rate-limit";
+import { clientIp } from "@/lib/request-origin/client-ip";
+import { rhcScanRateLimited } from "@/lib/rhc-scan-rate-limit";
 import { uniswapV4RhcDescriptor } from "./descriptor";
 import { RhcOpenRequestSchema, RhcExitRequestSchema } from "./liquidity-input";
 import { parsePositionIds, RHC_SCAN_FAILED_MESSAGE } from "./position-input";
@@ -53,5 +54,5 @@ export const uniswapV4RhcModule: DexModule = Object.freeze({
   } satisfies NativeEvmLiquidity),
   adapter: async () => (await import("./adapter.server")).createUniswapV4RhcAdapter(),
   enabled: (op) => op === "positions" && isRhcUniv4TradingEnabled(),
-  rateLimited: (op, request) => op === "positions" && rhcScanRateLimited(rhcScanClientIp(request)),
+  rateLimited: (op, request) => op === "positions" && rhcScanRateLimited(clientIp(request)),
 });

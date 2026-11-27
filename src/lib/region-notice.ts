@@ -2,9 +2,11 @@
  * Region notice (LJ decision, 2026-10-28): visitors from these countries see a small, dismissible
  * notice. They are NOT blocked: no redirect, no 403/451, no disabled connect / open / withdraw.
  *
- * The country comes from Vercel's `x-vercel-ip-country` header, read in `src/proxy.ts`, which sets a
+ * The country comes from the hosting edge via `requestCountry` (src/lib/request-origin/country.ts: Cloudflare
+ * `CF-IPCountry` when trusted, then Vercel `x-vercel-ip-country`), read in `src/proxy.ts`, which sets a
  * short-lived flag cookie so pages stay static and CDN-cached. `<RegionNotice />` reads that cookie.
- * Without the header (local dev, non-Vercel hosts) nothing is shown.
+ * Without a trusted geo header (local dev, Railway without Cloudflare) the country is unknown: no cookie is set or
+ * cleared, so a first visit shows nothing and an existing flag cookie simply lives out its 24 h max-age.
  *
  * This is the only country list in the app. Sanctions wording lives in the Terms (Section 3) and is
  * not enforced by IP; see src/lib/terms-content.ts.

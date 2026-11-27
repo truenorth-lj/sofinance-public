@@ -10,7 +10,7 @@ import { ThrottleGate } from "@/lib/range-apr/throttle-gate";
 import { PositionReadBusyError } from "../evm-position-read";
 import { resetRhcScanRateLimit } from "@/lib/rhc-scan-rate-limit";
 
-export { REQUESTS_PER_IP_PER_MINUTE, rhcScanClientIp, rhcScanRateLimited, resetRhcScanRateLimit } from "@/lib/rhc-scan-rate-limit";
+export { REQUESTS_PER_IP_PER_MINUTE, rhcScanRateLimited, resetRhcScanRateLimit } from "@/lib/rhc-scan-rate-limit";
 
 /**
  * Server side of "find the Robinhood Chain v4 positions this wallet holds" (`GET /api/rhc-univ4-positions`).

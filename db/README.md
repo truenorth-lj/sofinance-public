@@ -60,7 +60,9 @@ Two clocks call `/api/internal/rwa-refresh`. They are not the same schedule.
 `SOFINANCE_RWA_NATIVE_CRON_ENABLED=true`, `SOFINANCE_RWA_REFRESH_ENABLED=true`,
 the Bearer `CRON_SECRET` matches and is at least 32 characters, and the deployment
 is not a preview (`VERCEL_ENV` is unset or `production`). GET ignores the query
-string and has no body.
+string and has no body. On Railway the `rwa-refresh-cron` service sends the same GET
+on the same schedule; which deployment owns the refresh is set by
+`SOFINANCE_RWA_NATIVE_CRON_ENABLED` (see `docs/deploy/railway.md`).
 
 The gateway process (`scripts/rwa-data-service.ts`) is the 15-minute tick. When
 `SOFINANCE_RWA_SCHEDULER_ENABLED=true` and `SOFINANCE_RWA_REFRESH_URL` is set, it

@@ -1,4 +1,5 @@
-import { clientIp, slidingWindowLimiter } from "@/lib/tx-send/rate-limit";
+import { clientIp } from "@/lib/request-origin/client-ip";
+import { slidingWindowLimiter } from "@/lib/tx-send/rate-limit";
 
 /**
  * Per-IP limits for `POST /api/mcp`. Same in-memory sliding-minute limiter as `/api/tx-send` and the DEX routes:

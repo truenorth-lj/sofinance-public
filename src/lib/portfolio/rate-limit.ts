@@ -1,4 +1,5 @@
-import { clientIp, slidingWindowLimiter } from "@/lib/tx-send/rate-limit";
+import { clientIp } from "@/lib/request-origin/client-ip";
+import { slidingWindowLimiter } from "@/lib/tx-send/rate-limit";
 import { PORTFOLIO_POLL_DELAYS_MS } from "./model";
 
 /** Requests one Portfolio page load makes for a wallet of up to MAX_PORTFOLIO_POSITIONS positions: the first read plus every follow-up. */

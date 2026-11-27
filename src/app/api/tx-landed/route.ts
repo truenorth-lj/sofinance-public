@@ -9,7 +9,8 @@ import { exceedsTxSizeLimit } from "@sofinance/engine/transaction-limits";
 import { cacheLandedResult, cachedLandedResult } from "@/lib/tx-landed/cache";
 import { findLandedTransaction, LandedCheckWindowClosedError, LANDED_REQUEST_BUDGET_MS } from "@/lib/tx-landed/lookup";
 import { verifyTxLandedPermit } from "@/lib/tx-send/permit";
-import { clientIp, txLandedCheckRateLimited, txLandedRateLimited } from "@/lib/tx-send/rate-limit";
+import { clientIp } from "@/lib/request-origin/client-ip";
+import { txLandedCheckRateLimited, txLandedRateLimited } from "@/lib/tx-send/rate-limit";
 
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 const MAX_BASE64 = 2_500;

@@ -68,6 +68,7 @@ export function sentryInitOptions() {
             "x-cron-secret",
             "x-forwarded-for",
             "x-real-ip",
+            "cf-connecting-ip",
             "forwarded",
             "x-vercel-protection-bypass",
           ],

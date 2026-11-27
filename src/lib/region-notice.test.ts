@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { NextRequest } from "next/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { proxy } from "../proxy";
 import {
   hasRegionNoticeCookie, REGION_NOTICE_COOKIE, REGION_NOTICE_COUNTRIES, REGION_NOTICE_TEXT, regionNoticeForCountry,
@@ -79,5 +79,29 @@ describe("Proxy never blocks notice countries", () => {
     const response = visit("/app/", "US");
     expect(response.status).toBe(308);
     expect(new URL(response.headers.get("location")!).pathname).toBe("/app");
+  });
+});
+
+describe("Proxy geo source (request-origin)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  function visitWith(headers: Record<string, string>) {
+    return proxy(new NextRequest("https://sofinancelab.xyz/app", { headers: { host: "sofinancelab.xyz", ...headers } }));
+  }
+
+  it("on Railway without Cloudflare: a client-sent x-vercel-ip-country is ignored (country unknown)", () => {
+    vi.stubEnv("RAILWAY_PROJECT_ID", "railway-project");
+    vi.stubEnv("SOFINANCE_TRUST_CLOUDFLARE_HEADERS", "");
+    expect(visitWith({ "x-vercel-ip-country": "US" }).cookies.get(REGION_NOTICE_COOKIE)).toBeUndefined();
+    expect(visitWith({ "x-vercel-ip-country": "TW", cookie: `${REGION_NOTICE_COOKIE}=1` }).cookies.get(REGION_NOTICE_COOKIE))
+      .toBeUndefined();
+  });
+
+  it("behind a trusted Cloudflare proxy: CF-IPCountry drives the flag", () => {
+    vi.stubEnv("RAILWAY_PROJECT_ID", "railway-project");
+    vi.stubEnv("SOFINANCE_TRUST_CLOUDFLARE_HEADERS", "true");
+    expect(visitWith({ "cf-ipcountry": "AU" }).cookies.get(REGION_NOTICE_COOKIE)?.value).toBe("1");
+    expect(visitWith({ "cf-ipcountry": "TW", cookie: `${REGION_NOTICE_COOKIE}=1` }).cookies.get(REGION_NOTICE_COOKIE)?.value)
+      .toBe("");
   });
 });

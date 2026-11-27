@@ -13,13 +13,14 @@ NAMES=(JUPITER_API_KEY SOFINANCE_SIGNING_SECRET SOFINANCE_SIGNING_SECRET_PREVIOU
   SOFINANCE_RWA_DB_ENABLED SOFINANCE_RWA_REFRESH_ENABLED VERCEL VERCEL_ENV
   SOFINANCE_RWA_DB_POOL_MAX SOFINANCE_RWA_DB_CONNECT_TIMEOUT_MS SOFINANCE_RWA_DB_QUERY_TIMEOUT_MS
   SOFINANCE_RWA_JOB_TIMEOUT_MS SOFINANCE_RWA_JOB_LEASE_MS RWA_DB_TEST_URL RHC_UNIV4_FEE_WALLET
-  SOFINANCE_STOCK_MARKET_LIVE)
+  SOFINANCE_STOCK_MARKET_LIVE SOFINANCE_TRUST_CLOUDFLARE_HEADERS RAILWAY_PROJECT_ID)
 
 echo "== all config/secret env vars unset"
 env $(printf -- '-u %s ' "${NAMES[@]}") pnpm test
 
 echo "== all config/secret env vars set to dummy values"
-env -u RWA_DB_TEST_URL \
+env -u RWA_DB_TEST_URL -u RAILWAY_PROJECT_ID \
+  SOFINANCE_TRUST_CLOUDFLARE_HEADERS=false \
   DATABASE_URL=postgres://sofinance:dummy@ep-dummy.ap-southeast-1.aws.neon.tech/sofinance \
   CRON_SECRET=dummy-cron-secret-never-real-at-least-32-characters \
   SOFINANCE_RWA_MIGRATION_DATABASE_URL=postgres://sofinance:dummy@ep-dummy.ap-southeast-1.aws.neon.tech/sofinance \

@@ -13,7 +13,7 @@ const ADDRESS_RE = /\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g;
 const SECRET_KEY_RE =
   /(?:^|[_-])(?:api[_-]?key|authorization|cookie|secret|token|password|bearer)(?:$|[_-])/i;
 const NAMED_SENSITIVE_HEADER_RE =
-  /^(authorization|cookie|set-cookie|proxy-authorization|x-api-key|x-cron-secret|x-forwarded-for|x-real-ip|forwarded)$/i;
+  /^(authorization|cookie|set-cookie|proxy-authorization|x-api-key|x-cron-secret|x-forwarded-for|x-real-ip|cf-connecting-ip|forwarded)$/i;
 /** Whole segments only — must not match "description" or "zip". */
 const IP_ENV_SEGMENT_RE = /(?:^|[_\-])(?:ip|forwarded|remote[_-]?addr)(?:$|[_\-])/i;
 
