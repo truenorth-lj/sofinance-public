@@ -39,5 +39,6 @@ ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
 COPY --from=build --chown=node:node /app /app
 USER node
 EXPOSE 8080
-# Railway sets PORT; bind every interface so Railway's edge and private network can reach the server.
-CMD ["sh", "-c", "exec node_modules/.bin/next start --hostname 0.0.0.0 --port \"${PORT:-8080}\""]
+# scripts/railway-web-start.ts runs `next start --hostname 0.0.0.0 --port $PORT` (Railway sets PORT; every interface so
+# Railway's edge and private network reach it), then warms the store-backed ISR pages once it is healthy.
+CMD ["node", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "scripts/railway-web-start.ts"]

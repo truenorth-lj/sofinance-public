@@ -73,8 +73,11 @@ Enter values in the Railway dashboard, never in the repo. "public" and "sentry" 
 `ARG` in `railway/web.Dockerfile` (Railway passes service variables to a Dockerfile build only for declared ARGs).
 Changing a **public** value needs a rebuild. "runtime" = read only by the running server and never passed to the
 build: Railway's Dockerfile builder has no secret mounts, so no secret is a build ARG. The build is the same keyless
-build CI runs; data pages (ISR, 15 min) render without the store at build and fill in on their first revalidation
-after a deploy.
+build CI runs. The store-backed ISR pages (`/`, `/sitemap.xml`) are therefore prerendered without data; the start
+entry (`scripts/railway-web-start.ts`) fixes that seconds after start: once `/api/health` answers it calls
+`POST /api/internal/revalidate` (CRON_SECRET bearer, Railway only, 404 elsewhere) and renders each page from the
+runtime env (`src/lib/isr-warmup.ts`; logs `isr-warmup ...`). Without `CRON_SECRET` the warm-up is skipped and the
+pages fill in on their normal 15-minute ISR window.
 
 ### `web`: copy from Vercel Production (same names, same values)
 
