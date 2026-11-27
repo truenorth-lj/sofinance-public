@@ -56,8 +56,13 @@ describe("railway/web.Dockerfile", () => {
       expect(buildArgs.has(name), name).toBe(false);
   });
 
-  it("serves next start on 0.0.0.0:$PORT", () => {
-    expect(webDockerfile).toMatch(/next start --hostname 0\.0\.0\.0 --port \\"\$\{PORT:-8080\}\\"/);
+  it("starts through the warm-up entry, which serves next start on 0.0.0.0:$PORT", () => {
+    expect(webDockerfile).toContain('CMD ["node", "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "scripts/railway-web-start.ts"]');
+    const entry = read("scripts/railway-web-start.ts");
+    expect(entry).toContain('spawn("node_modules/.bin/next", ["start", "--hostname", "0.0.0.0", "--port", port]');
+    expect(entry).toContain('const port = process.env.PORT || "8080";');
+    // Node type stripping cannot resolve `@/` aliases: the entry imports node builtins and the dependency-free warm-up only.
+    expect([...entry.matchAll(/from "([^"]+)"/g)].map((m) => m[1])).toEqual(["node:child_process", "../src/lib/isr-warmup.ts"]);
   });
 
   it("the documented healthcheck route exists", () => {

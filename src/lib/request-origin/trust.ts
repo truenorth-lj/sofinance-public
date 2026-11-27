@@ -27,7 +27,7 @@ export interface TrustedEdges {
 }
 
 /** Railway injects `RAILWAY_PROJECT_ID` into every deployment at runtime. */
-function isRailwayRuntime(env: HeaderEnv): boolean {
+export function isRailwayRuntime(env: HeaderEnv = processHeaderEnv()): boolean {
   return !!env.RAILWAY_PROJECT_ID?.trim();
 }
 
