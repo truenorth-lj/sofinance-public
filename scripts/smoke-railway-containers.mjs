@@ -1,4 +1,4 @@
-// CI smoke for the Railway images (docs/deploy/railway.md), with no real credentials and no external network:
+// Smoke for the Railway images, with no real credentials and no external network (see docs/deploy/railway.md):
 // - web: boots `next start` on 0.0.0.0:$PORT and answers GET /api/health through a published port (Docker forwards
 //   to the container's own interface, so a 127.0.0.1-only bind would fail);
 // - rwa-refresh-cron: runs the dependency-free entry and exits 1 on missing configuration without printing secrets.

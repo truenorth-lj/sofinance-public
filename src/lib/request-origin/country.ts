@@ -8,9 +8,9 @@ import { processHeaderEnv, trustedEdges, type HeaderEnv, type TrustedEdges } fro
  * Values are trimmed and upper-cased, exactly as callers did before; an empty value counts as missing. Cloudflare's
  * `XX` ("no country data") also counts as missing so a later provider can still answer.
  */
-export type GeoProviderId = "cloudflare" | "vercel";
+type GeoProviderId = "cloudflare" | "vercel";
 
-export interface GeoProvider {
+interface GeoProvider {
   readonly id: GeoProviderId;
   readonly header: string;
   readonly trusted: (edges: TrustedEdges) => boolean;
