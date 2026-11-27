@@ -6,6 +6,7 @@ import { decodeLbPair, decodeMintDecimals } from "@sofinance/engine/protocols/me
 import { METEORA_DLMM_PROGRAM_ID } from "@sofinance/engine/protocols/meteora/constants";
 import { decodeMeteoraPosition, isMeteoraPositionAccount, meteoraPositionLiquidity, meteoraRangeSide } from "@sofinance/engine/protocols/meteora/position";
 import { rpcConnection } from "@sofinance/engine/rpc";
+import { NATIVE_SOL_MINT } from "@sofinance/engine/ids";
 import { isJupiterUpstreamError, asJupiterUserError } from "@sofinance/engine/jupiter";
 import { readSwapFeeConfig, type SwapFeeConfig } from "@sofinance/engine/swap/fee";
 import { getMeteoraPositionPerformance, listMeteoraPositions, METEORA_POOL_NOT_SUPPORTED, type MeteoraListedPosition, type MeteoraPerformanceOptions, type MeteoraReadOptions } from "@/lib/meteora-positions";
@@ -17,7 +18,7 @@ import { bpsFeeStrategy } from "../fees";
 import { meteoraDlmmDescriptor } from "./descriptor";
 import type { PositionPerformanceReport } from "@/lib/position-performance-report";
 import {
-  buildMeteoraCloseRefund, buildMeteoraDeposit, buildMeteoraSetup, meteoraBinIdAtPrice, meteoraBinUiPrice, meteoraOpenRent, meteoraRequestRange, ownerPoolTokenAccountsExist,
+  buildMeteoraCloseRefund, buildMeteoraDeposit, buildMeteoraSetup, buildMeteoraWrapSol, nativeInputLamports, meteoraBinIdAtPrice, meteoraBinUiPrice, meteoraOpenRent, meteoraRequestRange, ownerPoolTokenAccountsExist,
   depositIntermediateRentAllowance, meteoraOpenPresets, meteoraOpenSolParts, planMeteoraOpen, readMeteoraPool, assertEmptyOwnedPosition, type MeteoraOpenDeps, type MeteoraPoolState,
 } from "./open.server";
 import { buildMeteoraAdd, buildMeteoraClaim, buildMeteoraCompound, buildMeteoraWithdraw, quoteMeteoraAdd } from "./manage.server";
@@ -182,15 +183,18 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
         depositIntermediateRentAllowance(d.connection),
         meteoraDepositMinimum(plan, request.owner, options.quoteLeg, options.usdPrices),
       ]);
-      const parts = meteoraOpenSolParts(rent.totalLamports, allowance);
+      const parts = meteoraOpenSolParts(rent.totalLamports, allowance, nativeInputLamports(plan));
       return {
         poolId: request.poolId,
         range: meteoraQuotedRange(pool, plan.lowerBinId, plan.upperBinId),
         rangeSide: meteoraRangeSide(pool.lbPair.activeId, plan.lowerBinId, plan.upperBinId),
-        steps: 2,
+        steps: openStepCount(request),
         rent: { refundableLamports: rent.positionLamports.toString(), nonRefundableLamports: "0", tokenAccountLamports: rent.tokenAccountLamports.toString() },
         platformFeeRaw: plan.platformFeeRaw.toString(),
-        sol: { networkFeeLamports: parts.networkFeeLamports.toString(), swapAccountsLamports: parts.swapAccountsLamports.toString(), reserveLamports: parts.reserveLamports.toString() },
+        sol: {
+          networkFeeLamports: parts.networkFeeLamports.toString(), swapAccountsLamports: parts.swapAccountsLamports.toString(), reserveLamports: parts.reserveLamports.toString(),
+          ...(parts.inputLamports ? { inputLamports: parts.inputLamports.toString() } : {}),
+        },
         ...(depositMinimum ? { depositMinimum } : {}),
       };
     } catch (error) {
@@ -202,7 +206,7 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
           ? meteoraQuotedRange(pool!, range!.lowerBinId, range!.upperBinId)
           : { lowerPrice: 0, upperPrice: 0, units: 0 },
         rangeSide: priced ? meteoraRangeSide(pool!.lbPair.activeId, range!.lowerBinId, range!.upperBinId) : undefined,
-        steps: 2,
+        steps: openStepCount(request),
         rent: { refundableLamports: "0", nonRefundableLamports: "0" },
         platformFeeRaw: "0",
         blockedReason: error.message,
@@ -210,35 +214,52 @@ export function createMeteoraDlmmAdapter(options: MeteoraDlmmAdapterOptions = {}
     }
   }
 
+  /** Wallet steps of an open: setup + deposit, plus the wrap step in between for native SOL (the input-token rule decides). */
+  const openStepCount = (request: OpenRequest) => (request.input.token === NATIVE_SOL_MINT ? 3 : 2);
+
+  /** The plan of a step after 1: against the empty position step 1 created (its range, not the request's: the price may have moved). */
+  async function landedPlan(d: MeteoraOpenDeps, request: OpenRequest, context: StepContext, of: number) {
+    const position = context.planToken ?? request.cosigner;
+    if (!position) throw new DexError("INVALID_REQUEST", `Step ${context.step} of ${of} needs the position created in step 1.`);
+    const positionKeyValue = new PublicKey(cosignerOf({ ...request, cosigner: position }));
+    const pool = await readMeteoraPool(d, request.poolId);
+    const existing = assertEmptyOwnedPosition(await d.connection.getAccountInfo(positionKeyValue, "confirmed"), request.owner, request.poolId);
+    const plan = await planMeteoraOpen(d, request, pool, { lowerBinId: existing.lowerBinId, upperBinId: existing.upperBinId });
+    return { plan, position: positionKeyValue.toBase58() };
+  }
+
   async function open(request: OpenRequest, context: StepContext): Promise<StepResult> {
     const d = deps();
+    const of = openStepCount(request);
     if (context.step === 1) {
       const position = cosignerOf(request);
       const pool = await readMeteoraPool(d, request.poolId);
       const plan = await planMeteoraOpen(d, request, pool, meteoraRequestRange(request, pool));
       const { rent, ...built } = await buildMeteoraSetup(d, plan, request.owner, position);
       return {
-        step: 1, of: 2, label: "Create the position account (step 1 of 2)", done: false, planToken: position,
+        step: 1, of, label: `Create the position account (step 1 of ${of})`, done: false, planToken: position,
         prepared: { kind: "solana-tx", ...built, cosignRef: position, positionMint: position },
         ...(rent.tokenAccounts.length
           ? { createsTokenAccounts: rent.tokenAccounts.map((item) => ({ mint: item.mint, rentLamports: item.rentLamports.toString() })) } : {}),
       };
     }
-    if (context.step === 2) {
-      const position = context.planToken ?? request.cosigner;
-      if (!position) throw new DexError("INVALID_REQUEST", "Step 2 of 2 needs the position created in step 1.");
-      const positionKeyValue = new PublicKey(cosignerOf({ ...request, cosigner: position }));
-      const pool = await readMeteoraPool(d, request.poolId);
-      // The range comes from the position account step 1 created, not from the request (the price may have moved).
-      const existing = assertEmptyOwnedPosition(await d.connection.getAccountInfo(positionKeyValue, "confirmed"), request.owner, request.poolId);
-      const plan = await planMeteoraOpen(d, request, pool, { lowerBinId: existing.lowerBinId, upperBinId: existing.upperBinId });
-      const built = await buildMeteoraDeposit(d, plan, request.owner, positionKeyValue.toBase58());
+    if (context.step === 2 && of === 3) {
+      const { plan, position } = await landedPlan(d, request, context, of);
+      const built = await buildMeteoraWrapSol(d, plan, request.owner, position);
       return {
-        step: 2, of: 2, label: "Deposit into the position (step 2 of 2)", done: true,
-        prepared: { kind: "solana-tx", ...built, positionMint: positionKeyValue.toBase58() },
+        step: 2, of, label: "Wrap your SOL for the deposit (step 2 of 3)", done: false, planToken: position,
+        prepared: { kind: "solana-tx", ...built, positionMint: position },
       };
     }
-    throw new DexError("INVALID_REQUEST", `A Meteora open has 2 steps; step ${context.step} does not exist.`);
+    if (context.step === of) {
+      const { plan, position } = await landedPlan(d, request, context, of);
+      const built = await buildMeteoraDeposit(d, plan, request.owner, position);
+      return {
+        step: of, of, label: `Deposit into the position (step ${of} of ${of})`, done: true,
+        prepared: { kind: "solana-tx", ...built, positionMint: position },
+      };
+    }
+    throw new DexError("INVALID_REQUEST", `This Meteora open has ${of} steps; step ${context.step} does not exist.`);
   }
 
   return Object.freeze({

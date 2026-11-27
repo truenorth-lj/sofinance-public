@@ -4,8 +4,9 @@
  * accounts, their Token-2022 mints, the bitmap extension PDAs, which bin arrays around the active bin exist,
  * and the cluster's rent-exempt minimums. No wallets, keys, signatures or credentials are read or written.
  *
- * Usage: pnpm exec tsx scripts/capture-meteora-rwa-fixture.ts [publicRpcUrl]
- * Defaults to the public mainnet endpoint; it never reads an RPC URL from the environment.
+ * Usage: pnpm exec tsx scripts/capture-meteora-rwa-fixture.ts [publicRpcUrl] [--pool <id> ...] [--out <file>]
+ * Defaults to the public mainnet endpoint and the two RWA pools; it never reads an RPC URL from the environment.
+ * `meteora-dlmm-sol-hsol.json` comes from `--pool 6a7EnjAoiRBbminKkWPdytMFFf5ogjLutqwpvAVyZ89j --out <that file>`.
  */
 import { writeFileSync } from "node:fs";
 import { Connection, PublicKey } from "@solana/web3.js";
@@ -13,11 +14,15 @@ import { BIN_ARRAY_ACCOUNT_LEN, decodeLbPair, meteoraBinArrayAddress, meteoraBin
 import { meteoraBitmapExtensionAddress } from "@sofinance/engine/protocols/meteora/open";
 import { METEORA_POSITION_BASE_LEN } from "@sofinance/engine/protocols/meteora/position";
 
-const POOLS = ["8k2c9Kiavx5pbWc2dmzhL7vFp11sLgMcKFfSueq8haAh", "5pw5tNUaZJpUCnYjZ1V3gd7XkLbrb4zA9pir4LFph2mj"];
-const OUT = "packages/engine/src/fixtures/meteora-dlmm-rwa-t22.json";
+const args = process.argv.slice(2);
+const flag = (name: string) => args.flatMap((arg, i) => (arg === name && args[i + 1] ? [args[i + 1]!] : []));
+const picked = flag("--pool");
+const POOLS = picked.length ? picked : ["8k2c9Kiavx5pbWc2dmzhL7vFp11sLgMcKFfSueq8haAh", "5pw5tNUaZJpUCnYjZ1V3gd7XkLbrb4zA9pir4LFph2mj"];
+const OUT = flag("--out")[0] ?? "packages/engine/src/fixtures/meteora-dlmm-rwa-t22.json";
+const rpcArg = args.find((arg, i) => !arg.startsWith("--") && !args[i - 1]?.startsWith("--"));
 
 async function main() {
-  const connection = new Connection(process.argv[2] ?? "https://api.mainnet-beta.solana.com", "confirmed");
+  const connection = new Connection(rpcArg ?? "https://api.mainnet-beta.solana.com", "confirmed");
   const slot = await connection.getSlot();
   const pairInfos = await connection.getMultipleAccountsInfo(POOLS.map((pool) => new PublicKey(pool)));
   const pools: Record<string, unknown> = {};

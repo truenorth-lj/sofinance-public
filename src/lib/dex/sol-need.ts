@@ -12,13 +12,15 @@ export type OpenSolParts = {
   swapAccountsLamports: bigint;
   /** SOL every check leaves in the wallet (`MIN_SOL_LAMPORTS`). */
   reserveLamports: bigint;
+  /** Native SOL the open deposits (SOL input only; omitted or 0 for a token input). */
+  inputLamports?: bigint;
 };
 
 /** The parts the quote sends so the browser can add them the same way (lamports as decimal strings). */
-export type OpenSolQuote = { networkFeeLamports: string; swapAccountsLamports: string; reserveLamports: string };
+export type OpenSolQuote = { networkFeeLamports: string; swapAccountsLamports: string; reserveLamports: string; inputLamports?: string };
 
 export const openSolNeed = (parts: OpenSolParts): bigint =>
-  parts.rentLamports + parts.networkFeeLamports + parts.swapAccountsLamports + parts.reserveLamports;
+  parts.rentLamports + parts.networkFeeLamports + parts.swapAccountsLamports + parts.reserveLamports + (parts.inputLamports ?? 0n);
 
 /** SOL still missing (0n when the wallet has enough). */
 export const openSolShortfall = (walletLamports: bigint, parts: OpenSolParts): bigint => {
@@ -40,6 +42,8 @@ export const openSolPartsFromQuote = (rentLamports: bigint, sol: OpenSolQuote | 
   const networkFeeLamports = lamports(sol?.networkFeeLamports);
   const swapAccountsLamports = lamports(sol?.swapAccountsLamports);
   const reserveLamports = lamports(sol?.reserveLamports);
-  if (networkFeeLamports === null || swapAccountsLamports === null || reserveLamports === null) return { ok: false, reason: SOL_NEED_UNKNOWN_COPY };
-  return { ok: true, parts: { rentLamports, networkFeeLamports, swapAccountsLamports, reserveLamports } };
+  // A SOL-input quote also names the SOL it deposits; when present it must parse (a malformed one is never read as 0).
+  const inputLamports = sol?.inputLamports === undefined ? 0n : lamports(sol.inputLamports);
+  if (networkFeeLamports === null || swapAccountsLamports === null || reserveLamports === null || inputLamports === null) return { ok: false, reason: SOL_NEED_UNKNOWN_COPY };
+  return { ok: true, parts: { rentLamports, networkFeeLamports, swapAccountsLamports, reserveLamports, ...(inputLamports ? { inputLamports } : {}) } };
 };
