@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { getPdaExBitmapAccount, getPdaObservationAccount, MEMO_PROGRAM_ID } from "@raydium-io/raydium-sdk-v2";
+import { getPdaExBitmapAccount, MEMO_PROGRAM_ID, PoolInfoLayout } from "@raydium-io/raydium-sdk-v2";
 import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { PublicKey, type TransactionInstruction } from "@solana/web3.js";
 import { MAX_U64, sizeCompoundLiquidity } from "./compound-math";
@@ -76,13 +76,30 @@ export function optimizeCompoundSwap(input: SwapContext) {
 export type CompoundSwapShape = {
   state: CompoundPositionState; accounts: [CompoundAccount, CompoundAccount];
   swap: CompoundSwap; config: string; observation: string; tickArrays: string[];
+  /** observation_id decoded from the on-chain CLMM pool account, or null if that read or decode failed. */
+  onChainObservation: string | null;
 };
+
+/** Decode observation_id from a fetched CLMM pool account. Null if missing, wrong owner, or undecodable. */
+export function decodeOnChainPoolObservation(
+  account: { owner: PublicKey; data: Uint8Array } | null, programId: string,
+): string | null {
+  if (!account || account.owner.toBase58() !== programId) return null;
+  try {
+    const observationId = PoolInfoLayout.decode(Buffer.from(account.data)).observationId;
+    if (!(observationId instanceof PublicKey)) return null;
+    const encoded = observationId.toBase58();
+    return encoded === PublicKey.default.toBase58() ? null : encoded;
+  } catch {
+    return null;
+  }
+}
 
 /** Stable codes for each check in validateCompoundSwapInstruction. Order matches the original short-circuit. */
 export const COMPOUND_SWAP_GUARD_CODES = [
   "pool_mismatch", "input_mint_mismatch", "output_mint_mismatch", "input_amount_invalid",
   "min_output_invalid", "quoted_output_invalid", "account_mint_mismatch", "isolated_account_is_ata",
-  "isolated_accounts_equal", "tick_arrays_empty", "tick_arrays_duplicate", "observation_mismatch",
+  "isolated_accounts_equal", "tick_arrays_empty", "tick_arrays_duplicate", "observation_unreadable", "observation_mismatch",
   "program_mismatch", "data_length_mismatch", "discriminator_mismatch", "input_amount_data_mismatch",
   "min_output_data_mismatch", "price_limit_nonzero", "not_base_input", "key_count_mismatch",
   "account_pubkey_mismatch", "account_signer_mismatch", "account_writable_mismatch",
@@ -102,6 +119,7 @@ export const COMPOUND_SWAP_GUARD_MESSAGES = {
   isolated_accounts_equal: "Compound swap isolated accounts are the same",
   tick_arrays_empty: "Compound swap tick arrays empty",
   tick_arrays_duplicate: "Compound swap tick arrays duplicate",
+  observation_unreadable: "Compound swap on-chain observation unreadable",
   observation_mismatch: "Compound swap observation mismatch",
   program_mismatch: "Compound swap program mismatch",
   data_length_mismatch: "Compound swap data length mismatch",
@@ -131,9 +149,9 @@ function fail(code: CompoundSwapGuardCode): never {
 
 /** Validate every account and privilege independently of the SDK's builder.
  * The caller supplies tick arrays whose ownership/pool/PDA were read on chain.
- * Accept/reject is unchanged; each check now has its own code and message. */
+ * Observation is accepted only when it equals the on-chain pool observation_id. */
 export function validateCompoundSwapInstruction(ix: TransactionInstruction, shape: CompoundSwapShape) {
-  const { state, accounts, swap, config, observation, tickArrays } = shape;
+  const { state, accounts, swap, config, observation, onChainObservation, tickArrays } = shape;
   const inputA = swap.inputMint === state.mintA;
   const inputIndex = inputA ? 0 : 1, outputIndex = inputA ? 1 : 0;
   const inputAmount = BigInt(swap.inputAmount), minOutput = BigInt(swap.minOutputAmount), quotedOutput = BigInt(swap.quotedOutputAmount);
@@ -142,7 +160,7 @@ export function validateCompoundSwapInstruction(ix: TransactionInstruction, shap
     TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58(), MEMO_PROGRAM_ID.toBase58(),
     swap.inputMint, swap.outputMint,
     getPdaExBitmapAccount(new PublicKey(state.programId), new PublicKey(state.poolId)).publicKey.toBase58(), ...tickArrays];
-  // Thunks so later reads (u64 at offsets 8 and 16, observation PDA, byte 40) never
+  // Thunks so later reads (u64 at offsets 8 and 16, byte 40) never
   // run unless every earlier check passed — same short-circuit as the original `||`.
   const checks: readonly [check: () => boolean, code: CompoundSwapGuardCode][] = [
     [() => swap.poolId !== state.poolId, "pool_mismatch"],
@@ -156,7 +174,8 @@ export function validateCompoundSwapInstruction(ix: TransactionInstruction, shap
     [() => accounts[0].address === accounts[1].address, "isolated_accounts_equal"],
     [() => tickArrays.length === 0, "tick_arrays_empty"],
     [() => new Set(tickArrays).size !== tickArrays.length, "tick_arrays_duplicate"],
-    [() => observation !== getPdaObservationAccount(new PublicKey(state.programId), new PublicKey(state.poolId)).publicKey.toBase58(), "observation_mismatch"],
+    [() => onChainObservation === null, "observation_unreadable"],
+    [() => observation !== onChainObservation, "observation_mismatch"],
     [() => ix.programId.toBase58() !== state.programId, "program_mismatch"],
     [() => ix.data.length !== 41, "data_length_mismatch"],
     [() => !ix.data.subarray(0, 8).equals(createHash("sha256").update("global:swap_v2").digest().subarray(0, 8)), "discriminator_mismatch"],
