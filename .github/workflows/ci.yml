@@ -117,3 +117,17 @@ jobs:
           node-version-file: .node-version
       - run: docker build --tag sofinance-rwa-ci .
       - run: node scripts/smoke-rwa-container.mjs sofinance-rwa-ci
+
+  railway-containers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+      - run: docker build --file railway/web.Dockerfile --tag sofinance-web-ci .
+      - run: docker build --file railway/rwa-refresh-cron.Dockerfile --tag sofinance-rwa-cron-ci .
+      - run: node scripts/smoke-railway-containers.mjs sofinance-web-ci sofinance-rwa-cron-ci

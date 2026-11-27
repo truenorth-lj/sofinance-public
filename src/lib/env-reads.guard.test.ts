@@ -38,7 +38,11 @@ const ALLOWED_SECRET_READS: Record<string, Reads> = {
   DATABASE_URL: { "lib/config/rwa-env.ts": 1 },
   SOFINANCE_RWA_DATABASE_URL: { "lib/config/rwa-env.ts": 1 },
   SOFINANCE_RWA_DB_CA_PEM: { "lib/config/rwa-database-env.ts": 1 },
-  CRON_SECRET: { "lib/config/rwa-env.ts": 1 },
+  CRON_SECRET: {
+    "lib/config/rwa-env.ts": 1,
+    // the Railway cron entry is dependency-free (copied alone into its image), so it reads the bearer itself
+    "lib/rwa-refresh-trigger.ts": 1,
+  },
   // JUPITER_API_KEY and SOLANA_RPC_URL readers (config/server-env, jupiter/urls,
   // rpc/providers) moved into @sofinance/engine, which reads only the configuration the
   // host injects (lib/engine-host.ts hands it process.env, listed in ALLOWED_WHOLE_ENV_PASSES).

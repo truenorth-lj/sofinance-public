@@ -7,7 +7,8 @@ import { rpcConnection } from "@sofinance/engine/rpc";
 import { exceedsTxSizeLimit, isZeroSignature } from "@sofinance/engine/transaction-limits";
 import { assertWalletReturnedTransaction } from "@sofinance/engine/wallet-returned-tx";
 import { verifyTxSendPermit } from "@/lib/tx-send/permit";
-import { clientIp, txSendRateLimited } from "@/lib/tx-send/rate-limit";
+import { clientIp } from "@/lib/request-origin/client-ip";
+import { txSendRateLimited } from "@/lib/tx-send/rate-limit";
 import { assertStrictRelayMatch, rpcLookupResolver } from "@/lib/tx-send/strict-match";
 import { broadcastSignedTransaction } from "@/lib/broadcast-signed-transaction";
 

@@ -4,6 +4,7 @@ import { FLAG_OFF_NOT_FOUND_PATH, isFlaggedOffPage } from "@/lib/flagged-pages";
 import { appSubdomainRewritePath, isAppSubdomainHost, trailingSlashRedirectPath } from "@/lib/app-host";
 import { unifiedAppRedirect } from "@/lib/unified-pools/deep-link";
 import { REGION_NOTICE_COOKIE, REGION_NOTICE_COOKIE_MAX_AGE, regionNoticeForCountry } from "@/lib/region-notice";
+import { requestCountry } from "@/lib/request-origin/country";
 
 /**
  * Next.js 16 Proxy (formerly middleware). Host-based App rewrite, plus the region-notice flag cookie
@@ -14,7 +15,7 @@ import { REGION_NOTICE_COOKIE, REGION_NOTICE_COOKIE_MAX_AGE, regionNoticeForCoun
  * `/api/*` and the PostHog relay (`/lumen/*`, see src/lib/analytics/relay.ts) are excluded by the
  * matcher and by `appSubdomainRewritePath`.
  *
- * To enable: attach apex + `app.` hostnames in Vercel. See README.
+ * To enable: attach apex + `app.` hostnames on the host (Vercel or Railway). See README.
  */
 export function proxy(request: NextRequest) {
   // `skipTrailingSlashRedirect` (for the PostHog relay) disables Next's built-in redirect; keep it for pages.
@@ -45,9 +46,12 @@ export function proxy(request: NextRequest) {
   return withRegionNotice(request, NextResponse.rewrite(url));
 }
 
-/** Sets (or clears) the readable notice flag from Vercel's geo header. Never changes status or path. */
+/**
+ * Sets (or clears) the readable notice flag from the edge's geo signal (`requestCountry`). Never changes status or
+ * path. Unknown country (no trusted geo header): the cookie is left exactly as the browser sent it.
+ */
 function withRegionNotice(request: NextRequest, response: NextResponse) {
-  const show = regionNoticeForCountry(request.headers.get("x-vercel-ip-country"));
+  const show = regionNoticeForCountry(requestCountry(request.headers)?.country);
   const hasFlag = request.cookies.get(REGION_NOTICE_COOKIE)?.value === "1";
   if (show && !hasFlag) {
     response.cookies.set(REGION_NOTICE_COOKIE, "1", {

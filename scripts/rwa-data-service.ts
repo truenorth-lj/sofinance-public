@@ -12,11 +12,13 @@ import { positionStoreRequestSchema } from "../src/lib/position-history-store-ty
 import { PostgresStockEntryPriceStore } from "../src/lib/stock-entry-price-postgres-store";
 import { entryPriceStoreRequestSchema } from "../src/lib/stock-entry-price-store-types";
 import { dataServiceFailure, logObservedError } from "../src/lib/observed-error";
+import { parseRwaRefreshUrl, triggerRwaRefresh } from "../src/lib/rwa-refresh-trigger";
 
 const config = getRwaConfig(),
   service = getRwaServiceConfig();
 if (!config.databaseUrl || !config.secret || config.secret.length < 32)
   throw new Error("RWA service configuration is incomplete");
+const refreshSecret: string = config.secret;
 const db = createRwaDatabase(config.databaseUrl),
   store = new PostgresRwaStore(db);
 const positionStore = new PostgresPositionHistoryStore(db);
@@ -102,23 +104,12 @@ let stopping = false,
 async function tick() {
   if (stopping || busy || !service.schedulerEnabled || !service.refreshUrl)
     return;
-  const url = new URL(service.refreshUrl);
-  if (url.protocol !== "https:" || url.username || url.password)
-    throw new Error("Scheduler requires HTTPS");
+  const url = parseRwaRefreshUrl(service.refreshUrl, { allowRailwayPrivateHttp: false });
   busy = true;
   try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.secret}`,
-        "Content-Type": "application/json",
-      },
-      body: "{}",
-      signal: AbortSignal.timeout(250_000),
-    });
-    console.log("rwa-scheduler", JSON.stringify({ status: response.status }));
-  } catch {
-    console.error("rwa-scheduler request failed");
+    const outcome = await triggerRwaRefresh({ url, secret: refreshSecret, method: "POST", timeoutMs: 250_000 });
+    if (outcome.status === null) console.error("rwa-scheduler request failed");
+    else console.log("rwa-scheduler", JSON.stringify({ status: outcome.status }));
   } finally {
     busy = false;
   }

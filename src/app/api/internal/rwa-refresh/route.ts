@@ -5,6 +5,7 @@ import { refreshRwaSnapshots } from "@/lib/rwa-refresh";
 import { errorForMonitoring } from "@/lib/refresh-monitoring";
 import { captureApiRouteError } from "@/lib/sentry/capture";
 import { NO_STORE_HEADERS } from "@/lib/http/no-store";
+import { RWA_REFRESH_DISABLED_ERROR } from "@/lib/rwa-refresh-trigger";
 
 // Literal for Next's static analysis; `RWA_REFRESH_MAX_DURATION_MS` (rwa-refresh.ts) budgets the jobs to it.
 export const maxDuration = 300;
@@ -22,7 +23,7 @@ async function handleRefresh(request: Request, method: "GET" | "POST") {
     );
   if (!config.refreshEnabled || config.isPreview || (method === "GET" && !config.nativeCronEnabled))
     return Response.json(
-      { error: "Refresh is disabled" },
+      { error: RWA_REFRESH_DISABLED_ERROR },
       { status: 503, headers: NO_STORE_HEADERS },
     );
   let force: boolean | undefined = false;
