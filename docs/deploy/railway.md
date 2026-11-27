@@ -1,7 +1,9 @@
 # Deploying the web app on Railway
 
 Production runs on Vercel today. This page is how the same `release` branch also runs on Railway, so the site can be
-tested there before DNS moves. The app behaves the same on both. Nothing here changes Vercel.
+tested there before DNS moves. Nothing here changes Vercel. Railway runs the same code with two differences until
+Cloudflare is in front of it: no region notice (no trusted geo header, see Geo) and no Vercel Firewall rule; Railway
+builds also upload no Sentry source maps (see Env checklist).
 
 | Railway service | Built from | What it does |
 | --- | --- | --- |
@@ -67,9 +69,12 @@ is disabled", which the Railway cron treats as standby. Exactly one deployment o
 
 ## Env checklist (names only)
 
-Enter values in the Railway dashboard, never in the repo. "Build" = must be present at build time, because it is
-declared as an `ARG` in `railway/web.Dockerfile`. Railway passes service variables to the build only for declared
-ARGs. Changing a **public** build value needs a redeploy (rebuild).
+Enter values in the Railway dashboard, never in the repo. "public" and "sentry" = needed at build time, declared as an
+`ARG` in `railway/web.Dockerfile` (Railway passes service variables to a Dockerfile build only for declared ARGs).
+Changing a **public** value needs a rebuild. "runtime" = read only by the running server and never passed to the
+build: Railway's Dockerfile builder has no secret mounts, so no secret is a build ARG. The build is the same keyless
+build CI runs; data pages (ISR, 15 min) render without the store at build and fill in on their first revalidation
+after a deploy.
 
 ### `web`: copy from Vercel Production (same names, same values)
 
@@ -79,27 +84,27 @@ ARGs. Changing a **public** build value needs a redeploy (rebuild).
 | `NEXT_PUBLIC_POSTHOG_KEY` | public | |
 | `NEXT_PUBLIC_REOWN_PROJECT_ID` | public | |
 | `NEXT_PUBLIC_SENTRY_DSN` | public | |
-| `SENTRY_AUTH_TOKEN` | sentry | Source-map upload only |
+| `SENTRY_AUTH_TOKEN` | not used | Not a build ARG on Railway (it would sit in the build stage). Railway builds upload no source maps; upload from CI is a follow-up |
 | `SENTRY_ORG` | sentry | |
 | `SENTRY_PROJECT` | sentry | |
-| `SENTRY_DSN` | server | |
-| `CRON_SECRET` | server | ≥ 32 characters; the cron service references it |
-| `DATABASE_URL` | server | Neon. Keep as is: `SOFINANCE_RWA_DATABASE_URL` takes precedence |
-| `SOFINANCE_RWA_DATABASE_URL` | server | Railway Postgres TCP-proxy URL (as on Vercel) |
-| `SOFINANCE_RWA_DB_CA_PEM` | server | Railway CA, pinned for the TCP proxy |
-| `SOFINANCE_RWA_DB_ENABLED` | server | |
-| `SOFINANCE_RWA_DB_EXPECTED_ROLE` | server | |
-| `SOFINANCE_RWA_STORE_MODE` | server | |
-| `SOFINANCE_RWA_GATEWAY_URL` | server | |
-| `SOFINANCE_RWA_REFRESH_ENABLED` | server | |
-| `SOFINANCE_RWA_NATIVE_CRON_ENABLED` | server | **`false` on Railway** until the switch above |
-| `SOFINANCE_POSITION_HISTORY_DB_ENABLED` | server | |
-| `SOFINANCE_FEE_WALLET` | server | |
-| `RHC_UNIV4_FEE_WALLET` | server | |
-| `JUPITER_API_KEY` | server | |
-| `SOLANA_RPC_URL` | server | |
-| `SOLANA_RPC_PROVIDERS` | server | |
-| `ALCHEMY_RPC_URL` | server | Expanded inside `SOLANA_RPC_PROVIDERS` (`$ALCHEMY_RPC_URL`) |
+| `SENTRY_DSN` | runtime | |
+| `CRON_SECRET` | runtime | ≥ 32 characters; the cron service references it |
+| `DATABASE_URL` | runtime | Neon. Keep as is: `SOFINANCE_RWA_DATABASE_URL` takes precedence |
+| `SOFINANCE_RWA_DATABASE_URL` | runtime | Railway Postgres TCP-proxy URL (as on Vercel) |
+| `SOFINANCE_RWA_DB_CA_PEM` | runtime | Railway CA, pinned for the TCP proxy |
+| `SOFINANCE_RWA_DB_ENABLED` | runtime | |
+| `SOFINANCE_RWA_DB_EXPECTED_ROLE` | runtime | |
+| `SOFINANCE_RWA_STORE_MODE` | runtime | |
+| `SOFINANCE_RWA_GATEWAY_URL` | runtime | |
+| `SOFINANCE_RWA_REFRESH_ENABLED` | runtime | |
+| `SOFINANCE_RWA_NATIVE_CRON_ENABLED` | runtime | **`false` on Railway** until the switch above |
+| `SOFINANCE_POSITION_HISTORY_DB_ENABLED` | runtime | |
+| `SOFINANCE_FEE_WALLET` | runtime | |
+| `RHC_UNIV4_FEE_WALLET` | runtime | |
+| `JUPITER_API_KEY` | runtime | |
+| `SOLANA_RPC_URL` | runtime | |
+| `SOLANA_RPC_PROVIDERS` | runtime | |
+| `ALCHEMY_RPC_URL` | runtime | Expanded inside `SOLANA_RPC_PROVIDERS` (`$ALCHEMY_RPC_URL`) |
 | `RHC_RPC_URL` | runtime | Dedicated Robinhood Chain RPC slot in `@sofinance/engine` (`rpc-evm/providers.ts`) |
 
 Not needed (on Vercel, but no app code reads them): `COINGECKO_API_KEY`, `SOLAMI_DATA_API_KEY`, `SOLAMI_RPC_URL`.
@@ -139,6 +144,12 @@ else.
   trusted provider with a value wins. If none has one, the country is unknown.
 - `client-ip.ts` (rate limits) checks `CF-Connecting-IP` (trusted Cloudflare only), then `x-real-ip`, then the first
   `x-forwarded-for` entry.
+  Railway's edge overwrites a client-sent `X-Real-IP` (checked on the `*.up.railway.app` domain on 2026-11-27: 35
+  `POST /api/tx-expiry` in a minute, each with the same fake `X-Real-IP`, `X-Forwarded-For` or `CF-Connecting-IP`,
+  were never limited at 30/min, while the edge logged the real, changing client addresses). So a spoofed header
+  cannot choose a rate-limit bucket on Railway. Behind a
+  Cloudflare proxy, `X-Real-IP` becomes a Cloudflare edge address, which is why `SOFINANCE_TRUST_CLOUDFLARE_HEADERS=true`
+  (and `CF-Connecting-IP`) must come with the Cloudflare proxy.
 - `trust.ts`: Cloudflare headers are believed only with `SOFINANCE_TRUST_CLOUDFLARE_HEADERS=true`. Vercel's geo
   header is believed everywhere except on Railway, where a client could send it.
 

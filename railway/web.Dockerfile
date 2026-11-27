@@ -1,10 +1,11 @@
 # SoFinance web app (Next.js) for Railway. Selected per service with RAILWAY_DOCKERFILE_PATH=railway/web.Dockerfile;
 # the repository-root Dockerfile is the separate RWA data service. Setup and env checklist: docs/deploy/railway.md.
 #
-# Railway passes service variables to the build only for names declared with ARG below. Vercel exposes every env var
-# to `next build`, so this list mirrors that: NEXT_PUBLIC_* are inlined into the bundles at build time (a change needs
-# a rebuild), SENTRY_* upload source maps, and the server vars let prerendered/ISR pages read data during the build
-# exactly as on Vercel. ARGs live only in the build stage; the runtime stage gets its env from Railway at start.
+# Railway passes service variables to the build only for names declared with ARG below, and its Dockerfile builder has
+# no secret mounts. So the build gets public values only: NEXT_PUBLIC_* (inlined into the bundles; a change needs a
+# rebuild) and the non-secret Sentry release names. No server secret (DB URLs, CRON_SECRET, RPC URLs, API keys,
+# SENTRY_AUTH_TOKEN) is ever a build ARG: the build is the same keyless build CI runs, and data pages (ISR) fill in
+# from the runtime env on their first revalidation. Server values reach only the runtime stage, from Railway at start.
 # `src/lib/railway-deploy.test.ts` keeps this list in sync with the code and the env checklist.
 
 FROM node:24-bookworm-slim AS build
@@ -24,30 +25,10 @@ ARG NEXT_PUBLIC_REOWN_PROJECT_ID
 ARG NEXT_PUBLIC_SENTRY_DSN
 ARG NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE
 ARG NEXT_PUBLIC_SOLANA_RPC_URL
-# build-time:sentry — source-map upload and release name
-ARG SENTRY_AUTH_TOKEN
+# build-time:sentry — release names only (no auth token, so Railway builds upload no source maps)
 ARG SENTRY_ORG
 ARG SENTRY_PROJECT
 ARG RAILWAY_GIT_COMMIT_SHA
-# build-time:server — same values as runtime, for prerender parity with Vercel builds
-ARG ALCHEMY_RPC_URL
-ARG CRON_SECRET
-ARG DATABASE_URL
-ARG JUPITER_API_KEY
-ARG RHC_UNIV4_FEE_WALLET
-ARG SENTRY_DSN
-ARG SOFINANCE_FEE_WALLET
-ARG SOFINANCE_POSITION_HISTORY_DB_ENABLED
-ARG SOFINANCE_RWA_DATABASE_URL
-ARG SOFINANCE_RWA_DB_CA_PEM
-ARG SOFINANCE_RWA_DB_ENABLED
-ARG SOFINANCE_RWA_DB_EXPECTED_ROLE
-ARG SOFINANCE_RWA_GATEWAY_URL
-ARG SOFINANCE_RWA_NATIVE_CRON_ENABLED
-ARG SOFINANCE_RWA_REFRESH_ENABLED
-ARG SOFINANCE_RWA_STORE_MODE
-ARG SOLANA_RPC_PROVIDERS
-ARG SOLANA_RPC_URL
 RUN pnpm build
 
 FROM node:24-bookworm-slim

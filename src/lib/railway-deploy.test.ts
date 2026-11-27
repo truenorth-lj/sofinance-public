@@ -46,6 +46,11 @@ describe("railway/web.Dockerfile", () => {
     }
   });
 
+  it("passes no server value into the build: only NEXT_PUBLIC_* and the Sentry release names (Railway has no secret mounts)", () => {
+    const allowed = new Set(["SENTRY_ORG", "SENTRY_PROJECT", "RAILWAY_GIT_COMMIT_SHA"]);
+    expect([...buildArgs].filter((name) => !name.startsWith("NEXT_PUBLIC_") && !allowed.has(name))).toEqual([]);
+  });
+
   it("does not pass Railway-only runtime switches into the build", () => {
     for (const name of ["PORT", "RAILWAY_PROJECT_ID", "SOFINANCE_TRUST_CLOUDFLARE_HEADERS", "VERCEL", "VERCEL_ENV", "VERCEL_URL"])
       expect(buildArgs.has(name), name).toBe(false);

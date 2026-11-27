@@ -15,8 +15,8 @@ import { slidingWindowLimiter } from "@/lib/tx-send/rate-limit";
  * Limits of this design (documented on purpose):
  * - Per server instance, not global: each warm instance keeps its own counts, so with N instances an IP can make up to
  *   N times the limit, and a cold start forgets the counts. It is a cheap brake on one client hammering, not a quota.
- * - Keyed by the platform's client IP header (`x-real-ip`, then the first `x-forwarded-for`). Users behind one NAT share
- *   a budget; a request without either header shares the "unknown" budget.
+ * - Keyed by `clientIp()` (`request-origin/client-ip.ts`: trusted `CF-Connecting-IP`, then `x-real-ip`, then the first
+ *   `x-forwarded-for`). Users behind one NAT share a budget; a request without any of them shares the "unknown" budget.
  * - Memory is bounded: at most 5,000 IPs per limiter, oldest dropped first.
  */
 export const DEX_ROUTE_REQUESTS_PER_IP_PER_MINUTE = 60;
