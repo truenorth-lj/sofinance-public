@@ -36,7 +36,7 @@ function shortSwapError() {
   ix.data = Buffer.from(ix.data.subarray(0, 10));
   expect(ix.data.length).toBe(10);
   try {
-    validateCompoundSwapInstruction(ix, { state, accounts, swap, config, observation, tickArrays } satisfies CompoundSwapShape);
+    validateCompoundSwapInstruction(ix, { state, accounts, swap, config, observation, onChainObservation: observation, tickArrays } satisfies CompoundSwapShape);
   } catch (error) {
     return error;
   }

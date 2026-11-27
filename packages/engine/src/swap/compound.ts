@@ -3,7 +3,7 @@ import { ClmmConfigLayout, ClmmInstrument, getPdaTickArrayAddress, PoolUtils, sw
 import { Connection, PublicKey } from "@solana/web3.js";
 import { readRecentBlockTime } from "../block-time";
 import { SLIPPAGE_BPS } from "../ids";
-import { optimizeCompoundSwap, validateCompoundSwapInstruction, type CompoundSwap, type CompoundSwapQuote } from "../compound-swap";
+import { decodeOnChainPoolObservation, optimizeCompoundSwap, validateCompoundSwapInstruction, type CompoundSwap, type CompoundSwapQuote } from "../compound-swap";
 import type { CompoundAccount, CompoundPositionState } from "../compound-types";
 import { netSwapInput, readSwapFeeConfig } from "./fee";
 
@@ -26,8 +26,11 @@ export async function buildCompoundSwapPlan(input: {
     poolInfo.id !== state.poolId || poolInfo.programId !== state.programId ||
     poolInfo.config.id !== computePoolInfo.ammConfig.id.toBase58() ||
     poolKeys.observationId !== computePoolInfo.observationId.toBase58()) throw new Error("Compound swap pool snapshot mismatch");
-  const [epochInfo, slot, configAccount] = await Promise.all([connection.getEpochInfo("confirmed"), connection.getSlot("confirmed"),
-    connection.getAccountInfo(computePoolInfo.ammConfig.id, "confirmed")]);
+  // getPoolInfoFromRpc already fetched this pool (rpcPoolInfo). Re-read and decode
+  // observation_id here so the validator gets a typed on-chain value, not the API snapshot.
+  const [epochInfo, slot, configAccount, poolAccount] = await Promise.all([connection.getEpochInfo("confirmed"), connection.getSlot("confirmed"),
+    connection.getAccountInfo(computePoolInfo.ammConfig.id, "confirmed"),
+    connection.getAccountInfo(new PublicKey(state.poolId), "confirmed").catch(() => null)]);
   if (!configAccount || configAccount.owner.toBase58() !== state.programId) throw new Error("Compound swap config program mismatch");
   const configInfo = ClmmConfigLayout.decode(configAccount.data);
   if (configInfo.tradeFeeRate !== computePoolInfo.ammConfig.tradeFeeRate || configInfo.tickSpacing !== state.tickSpacing) throw new Error("Compound swap config has changed");
@@ -95,6 +98,8 @@ export async function buildCompoundSwapPlan(input: {
   if (built.instructions.length !== 1 || built.signers.length) throw new Error("Compound swap cannot add other signatures or instructions");
   const instruction = built.instructions[0]!;
   validateCompoundSwapInstruction(instruction, { state, accounts, swap, config: computePoolInfo.ammConfig.id.toBase58(),
-    observation: computePoolInfo.observationId.toBase58(), tickArrays: arrays.map((address) => address.toBase58()) });
+    observation: computePoolInfo.observationId.toBase58(),
+    onChainObservation: decodeOnChainPoolObservation(poolAccount, state.programId),
+    tickArrays: arrays.map((address) => address.toBase58()) });
   return { instructions: [instruction], route: null, swap, quotedBalances: planned.balances, sqrtPriceAfterX64: planned.sqrtPriceX64 };
 }

@@ -1,9 +1,9 @@
 import BN from "bn.js";
-import { ClmmInstrument, getPdaExBitmapAccount, getPdaObservationAccount, getPdaTickArrayAddress } from "@raydium-io/raydium-sdk-v2";
+import { ClmmInstrument, getPdaExBitmapAccount, getPdaObservationAccount, getPdaTickArrayAddress, PoolInfoLayout } from "@raydium-io/raydium-sdk-v2";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { expect, it, vi } from "vitest";
-import { COMPOUND_SWAP_GUARD_CODES, COMPOUND_SWAP_GUARD_MESSAGES, CompoundSwapGuardError, optimizeCompoundSwap, validateCompoundSwapInstruction, type CompoundSwap, type CompoundSwapGuardCode, type CompoundSwapShape } from "./compound-swap";
+import { COMPOUND_SWAP_GUARD_CODES, COMPOUND_SWAP_GUARD_MESSAGES, CompoundSwapGuardError, decodeOnChainPoolObservation, optimizeCompoundSwap, validateCompoundSwapInstruction, type CompoundSwap, type CompoundSwapGuardCode, type CompoundSwapShape } from "./compound-swap";
 import { MAX_U64, sizeCompoundLiquidity } from "./compound-math";
 import { computeSwapFee, netSwapInput } from "./swap/fee";
 import type { CompoundAccount, CompoundPositionState } from "./compound-types";
@@ -92,7 +92,7 @@ function fixture() {
   const ix = ClmmInstrument.swapV2Instruction(program, pub(state.wallet), pool, pub(config), pub(accounts[1].address), pub(accounts[0].address),
     pub(state.vaultB), pub(state.vaultA), pub(state.mintB), pub(state.mintA), tickArrays.map(pub), pub(observation), new BN(100), new BN(89), new BN(0), true,
     getPdaExBitmapAccount(program, pool).publicKey);
-  const shape: CompoundSwapShape = { state, accounts, swap, config, observation, tickArrays };
+  const shape: CompoundSwapShape = { state, accounts, swap, config, observation, onChainObservation: observation, tickArrays };
   return { ix, shape, validate: () => validateCompoundSwapInstruction(ix, shape) };
 }
 it("accepts exact SDK same-pool swap with two isolated sources and one wallet signer", () => {
@@ -171,6 +171,8 @@ it("maps each reject path to its own code, and still accepts a valid swap", () =
   record(emptyTicks.validate, "tick_arrays_empty");
   const dupTicks = fixture(); dupTicks.shape.tickArrays = [dupTicks.shape.tickArrays[0]!, dupTicks.shape.tickArrays[0]!];
   record(dupTicks.validate, "tick_arrays_duplicate");
+  const unread = fixture(); unread.shape.onChainObservation = null;
+  record(unread.validate, "observation_unreadable");
   const observation = fixture(); observation.shape.observation = key();
   record(observation.validate, "observation_mismatch");
   const program = fixture(); program.ix.programId = Keypair.generate().publicKey;
@@ -205,7 +207,16 @@ it("rejects a 10-byte swap_v2 as data_length_mismatch without reading past the b
   expect(() => short.ix.data.readBigUInt64LE(16)).toThrow(RangeError);
   expectCode(short.validate, "data_length_mismatch");
 });
-it("rejects the USDC/USDT pool's live observation with observation_mismatch", () => {
+function swapIx(shape: CompoundSwapShape, observation: string) {
+  const program = new PublicKey(shape.state.programId), pool = new PublicKey(shape.state.poolId);
+  return ClmmInstrument.swapV2Instruction(program, new PublicKey(shape.state.wallet), pool, new PublicKey(shape.config),
+    new PublicKey(shape.accounts[1].address), new PublicKey(shape.accounts[0].address),
+    new PublicKey(shape.state.vaultB), new PublicKey(shape.state.vaultA), new PublicKey(shape.swap.inputMint),
+    new PublicKey(shape.swap.outputMint), shape.tickArrays.map((address) => new PublicKey(address)), new PublicKey(observation),
+    new BN(100), new BN(89), new BN(0), true, getPdaExBitmapAccount(program, pool).publicKey);
+}
+
+it("accepts the USDC/USDT pool when the observation matches the on-chain pool account", () => {
   const programId = "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK";
   const poolId = "BZtgQEyS6eXUXicYPHecYQ7PybqodXQMvkjUbP4R8mUU";
   const liveObservation = "3YZE41e4GKm9Uqvx6H4QA1FdyxT15nEjUP8LbvdiDF2t";
@@ -217,24 +228,46 @@ it("rejects the USDC/USDT pool's live observation with observation_mismatch", ()
   shape.state.poolId = poolId;
   shape.swap.poolId = poolId;
   shape.observation = liveObservation;
+  shape.onChainObservation = liveObservation;
+  expect(() => validateCompoundSwapInstruction(swapIx(shape, liveObservation), shape)).not.toThrow();
+  shape.observation = pda;
+  expectCode(() => validateCompoundSwapInstruction(swapIx(shape, pda), shape), "observation_mismatch");
+  const unread = fixture();
+  unread.shape.state.programId = programId;
+  unread.shape.state.poolId = poolId;
+  unread.shape.swap.poolId = poolId;
+  unread.shape.observation = liveObservation;
+  unread.shape.onChainObservation = null;
+  expectCode(() => validateCompoundSwapInstruction(swapIx(unread.shape, liveObservation), unread.shape), "observation_unreadable");
+});
+
+it("still accepts SPCX when the on-chain observation equals the PDA", () => {
+  const programId = "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK";
+  const poolId = "DUzBLHZ5RZdftPuWVijsvjupndogRM1adGJpsR7YTJro";
   const program = new PublicKey(programId), pool = new PublicKey(poolId);
-  const rebuilt = ClmmInstrument.swapV2Instruction(program, new PublicKey(shape.state.wallet), pool, new PublicKey(shape.config),
-    new PublicKey(shape.accounts[1].address), new PublicKey(shape.accounts[0].address),
-    new PublicKey(shape.state.vaultB), new PublicKey(shape.state.vaultA), new PublicKey(shape.swap.inputMint),
-    new PublicKey(shape.swap.outputMint), shape.tickArrays.map((address) => new PublicKey(address)), new PublicKey(liveObservation),
-    new BN(100), new BN(89), new BN(0), true, getPdaExBitmapAccount(program, pool).publicKey);
-  expectCode(() => validateCompoundSwapInstruction(rebuilt, shape), "observation_mismatch");
-  // The same instruction is accepted when the observation is the current PDA — the pool itself is not banned.
-  const accepted = fixture();
-  accepted.shape.state.programId = programId;
-  accepted.shape.state.poolId = poolId;
-  accepted.shape.swap.poolId = poolId;
-  accepted.shape.observation = pda;
-  accepted.shape.tickArrays = [getPdaTickArrayAddress(program, pool, 0).publicKey.toBase58()];
-  const ok = ClmmInstrument.swapV2Instruction(program, new PublicKey(accepted.shape.state.wallet), pool, new PublicKey(accepted.shape.config),
-    new PublicKey(accepted.shape.accounts[1].address), new PublicKey(accepted.shape.accounts[0].address),
-    new PublicKey(accepted.shape.state.vaultB), new PublicKey(accepted.shape.state.vaultA), new PublicKey(accepted.shape.swap.inputMint),
-    new PublicKey(accepted.shape.swap.outputMint), accepted.shape.tickArrays.map((address) => new PublicKey(address)), new PublicKey(pda),
-    new BN(100), new BN(89), new BN(0), true, getPdaExBitmapAccount(program, pool).publicKey);
-  expect(() => validateCompoundSwapInstruction(ok, accepted.shape)).not.toThrow();
+  const pda = getPdaObservationAccount(program, pool).publicKey.toBase58();
+  expect(pda).toBe("64rTpyt5rf9EJp38ja9W7ELWXeYALp7MhZS77i66aSoM");
+  const { shape } = fixture();
+  shape.state.programId = programId;
+  shape.state.poolId = poolId;
+  shape.swap.poolId = poolId;
+  shape.observation = pda;
+  shape.onChainObservation = pda;
+  shape.tickArrays = [getPdaTickArrayAddress(program, pool, 0).publicKey.toBase58()];
+  expect(() => validateCompoundSwapInstruction(swapIx(shape, pda), shape)).not.toThrow();
+});
+
+it("decodes observation_id from a CLMM pool account and fails closed otherwise", () => {
+  const programId = Keypair.generate().publicKey;
+  const observation = new PublicKey("3YZE41e4GKm9Uqvx6H4QA1FdyxT15nEjUP8LbvdiDF2t");
+  expect(decodeOnChainPoolObservation(null, programId.toBase58())).toBeNull();
+  expect(decodeOnChainPoolObservation({ owner: programId, data: Buffer.from([1, 2, 3]) }, programId.toBase58())).toBeNull();
+  expect(decodeOnChainPoolObservation({ owner: Keypair.generate().publicKey, data: Buffer.alloc(10) }, programId.toBase58())).toBeNull();
+  const empty = Buffer.alloc(PoolInfoLayout.span);
+  expect(decodeOnChainPoolObservation({ owner: programId, data: empty }, programId.toBase58())).toBeNull();
+  const decoded = PoolInfoLayout.decode(Buffer.alloc(PoolInfoLayout.span));
+  decoded.observationId = observation;
+  const encoded = Buffer.alloc(PoolInfoLayout.span);
+  PoolInfoLayout.encode(decoded, encoded);
+  expect(decodeOnChainPoolObservation({ owner: programId, data: encoded }, programId.toBase58())).toBe(observation.toBase58());
 });
