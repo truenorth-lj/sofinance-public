@@ -90,7 +90,7 @@ describe("Compound all popup", () => {
   it("a failure pauses with Retry / Skip; a row that may still land offers Skip only", async () => {
     const { render } = harness([met(1), met(2)], {
       "meteora-dlmm:m1": [{ status: "rejected", error: "You rejected the request.", retryable: true }],
-      "meteora-dlmm:m2": [{ status: "failed", error: "This compound is still confirming.", retryable: false }],
+      "meteora-dlmm:m2": [{ status: "failed", error: "This compound is still confirming.", retryable: false, outcomeUnconfirmed: true }],
     });
     await render();
     await click("compound-all-start");
@@ -113,7 +113,7 @@ describe("Compound all popup", () => {
 
   it("a still-confirming or unknown result (Skip only) does not say the position did not compound", async () => {
     const { render } = harness([met(1)], {
-      "meteora-dlmm:m1": [{ status: "failed", error: "This compound is still confirming. Check it in Activity before trying again.", retryable: false }],
+      "meteora-dlmm:m1": [{ status: "failed", error: "This compound is still confirming. Check it in Activity before trying again.", retryable: false, outcomeUnconfirmed: true }],
     });
     await render();
     await click("compound-all-start");
@@ -121,13 +121,13 @@ describe("Compound all popup", () => {
     expect(q("compound-all-failure")!.querySelector("p")!.textContent).toBe("This position's result isn't confirmed yet. Skip it to go on; check Portfolio later.");
     expect(q("compound-all-retry")).toBeNull();
     expect(q("compound-all-skip")).not.toBeNull();
-    // The row status stays Failed (the "Couldn't send" label is reserved for a non-explicit wallet cancel).
-    expect(qa("compound-all-row")[0]!.textContent).toContain("Failed");
+    expect(qa("compound-all-row")[0]!.textContent).toContain("Unconfirmed");
+    expect(qa("compound-all-row")[0]!.textContent).not.toContain("Failed");
   });
 
   it("a non-explicit wallet cancel is labelled Couldn't send, not Rejected in wallet, and the pause is the unconfirmed copy", async () => {
     const error = "Couldn't send the transaction: the wallet disconnected. It has not shown up on Solana; we keep checking in case it went through, and you can retry in about a minute.";
-    const { render } = harness([met(1)], { "meteora-dlmm:m1": [{ status: "failed", error, retryable: false }] });
+    const { render } = harness([met(1)], { "meteora-dlmm:m1": [{ status: "failed", error, retryable: false, outcomeUnconfirmed: true, couldntSend: true }] });
     await render();
     await click("compound-all-start");
     await settle();
@@ -135,6 +135,50 @@ describe("Compound all popup", () => {
     expect(container.textContent).not.toMatch(/Rejected in wallet/);
     expect(q("compound-all-failure")!.querySelector("p")!.textContent).toContain("isn't confirmed yet");
     expect(q("compound-all-retry")).toBeNull();
+  });
+
+  it("the completion summary counts a still-unconfirmed row as Unconfirmed, not Did not complete", async () => {
+    const { render } = harness([met(1), met(2)], {
+      "meteora-dlmm:m1": [{ status: "done", signature: "sig-m1" }],
+      "meteora-dlmm:m2": [{ status: "failed", error: "This compound is still confirming.", retryable: false, outcomeUnconfirmed: true }],
+    });
+    await render();
+    await click("compound-all-start");
+    await settle();
+    expect(qa("compound-all-row")[1]!.textContent).toContain("Unconfirmed");
+    // Stop leaves the unconfirmed row in place (Skip would move it to Skipped).
+    await act(async () => { container.querySelector<HTMLButtonElement>("[data-testid=compound-all-failure] button")!.click(); });
+    await settle();
+    const summary = q("compound-all-summary")!.textContent ?? "";
+    expect(summary).toContain("Unconfirmed1");
+    expect(summary).toContain("Did not complete0");
+    expect(summary).toContain("Compounded1");
+  });
+
+  it("a cleanup confirm timeout is Unconfirmed, still confirming, and offers no Retry cleanup", async () => {
+    const { render } = harness([ray(1)], {}, async () => ({
+      status: "failed" as const, error: "The cleanup is still confirming. Check it in Activity before trying again.", outcomeUnconfirmed: true,
+    }));
+    await render();
+    await click("compound-all-start");
+    await settle();
+    expect(q("compound-all-body")!.dataset.phase).toBe("paused-cleanup-failure");
+    expect(q("compound-all-cleanup-row")!.textContent).toContain("Unconfirmed");
+    expect(q("compound-all-cleanup-row")!.textContent).not.toContain("Failed");
+    expect(q("compound-all-cleanup-offer")!.textContent).toContain("The cleanup is still confirming.");
+    expect(q("compound-all-run-cleanup")).toBeNull();
+    expect(q("compound-all-skip-cleanup")).not.toBeNull();
+    expect(q("compound-all-cleanup-offer")!.querySelector("a")!.getAttribute("href")).toBe("/app/portfolio/recovery");
+  });
+
+  it("an on-chain cleanup failure stays Failed and still offers Retry cleanup", async () => {
+    const { render } = harness([ray(1)], {}, async () => ({ status: "failed" as const, error: "The cleanup did not complete." }));
+    await render();
+    await click("compound-all-start");
+    await settle();
+    expect(q("compound-all-cleanup-row")!.textContent).toContain("Failed");
+    expect(q("compound-all-cleanup-offer")!.textContent).toContain("The cleanup did not complete.");
+    expect(q("compound-all-run-cleanup")!.textContent).toBe("Retry cleanup");
   });
 
   it("the final cleanup row runs after the Raydium rows, and the summary follows", async () => {
@@ -182,7 +226,7 @@ describe("cleanupThroughHost (the selected position's cleanup batch)", () => {
   it("re-reads the records, waits for the controller's admission, then starts its batch", async () => {
     let admitted = false;
     const host = { reloadSaved: vi.fn(), cleanupAdmission: vi.fn(() => admitted),
-      startCleanupBatch: vi.fn(async (_r: unknown, onStage?: (s: "preparing" | "wallet" | "broadcasting") => void) => { onStage?.("wallet"); return { status: "done" as const, signatures: ["c"] }; }) };
+      startCleanupBatch: vi.fn(async (_r: unknown, onStage?: (s: "preparing" | "wallet" | "broadcasting" | "confirming") => void) => { onStage?.("wallet"); return { status: "done" as const, signatures: ["c"] }; }) };
     const stages: string[] = [];
     const run = cleanupThroughHost(host, { intervalMs: 1, waitMs: 1_000 })(receipts, (stage) => stages.push(stage));
     await new Promise((r) => setTimeout(r, 5));

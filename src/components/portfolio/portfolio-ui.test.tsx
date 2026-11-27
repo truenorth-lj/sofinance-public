@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SourceCapabilities } from "@/lib/unified-positions/model";
-import { CompoundAllButton, PortfolioHistoryStatus, PortfolioSummary } from "./portfolio-summary";
+import { CompoundAllButton, PortfolioHistoryStatus, portfolioHistoryStatusCopy, PortfolioSummary } from "./portfolio-summary";
 import { PortfolioPositionList, rowActions, type PortfolioRow } from "./portfolio-rows";
 import type { UnifiedPosition } from "@/lib/unified-positions/model";
 
@@ -215,5 +215,57 @@ describe("position-history outage (cumulative fees only)", () => {
     expect(container.querySelector("[data-testid=portfolio-total-value]")!.textContent).toContain("$0.64");
     expect(container.querySelector("[data-testid=portfolio-unclaimed-fees]")!.textContent).not.toContain("—");
     expect(container.textContent).not.toContain("Some values are unavailable");
+  });
+});
+
+describe("portfolioHistoryStatusCopy", () => {
+  const base = { key: "raydium-clmm:11111111111111111111111111111111", status: "partial" as const,
+    figures: { stock: null, shares: null, valueUsd: 1, unclaimedFeesUsd: 0, cumulativeFeesUsd: null },
+    evaluatedAt: "2026-11-26T13:10:00.000Z", historyComplete: false, historyRefreshResolved: false };
+  it("omits Refresh to retry when the only error is POSITION_HISTORY_TOO_LARGE", () => {
+    const copy = portfolioHistoryStatusCopy([{ ...base, historyStatus: "unavailable", historyError: "POSITION_HISTORY_TOO_LARGE" }]);
+    expect(copy?.text).toBe("Cumulative fees are temporarily unavailable. Value and unclaimed fees are current. ");
+    expect(copy?.text).not.toContain("Refresh to retry");
+  });
+  it("keeps Refresh to retry for a transient store outage, even if another row is too large", () => {
+    const copy = portfolioHistoryStatusCopy([
+      { ...base, historyStatus: "unavailable", historyError: "POSITION_HISTORY_TOO_LARGE" },
+      { ...base, key: "raydium-clmm:22222222222222222222222222222222", historyStatus: "unavailable", historyError: "POSITION_STORE_UNAVAILABLE" },
+    ]);
+    expect(copy?.text).toContain("Refresh to retry");
+  });
+});
+
+describe("retained cumulative fees during a store outage", () => {
+  const item: UnifiedPosition = {
+    key: "raydium-clmm:11111111111111111111111111111111", source: "raydium-clmm", chain: "solana",
+    nativeId: "11111111111111111111111111111111", poolId: "p",
+    tokenA: { id: "a", symbol: "USDC", decimals: 6 }, tokenB: { id: "b", symbol: "USDT", decimals: 6 },
+    range: { mode: "tick", tickLower: -10, tickUpper: 10, currentTick: 0 }, rangeStatus: "in", liquidity: "1", native: {},
+  };
+  it("does not label a retained cumulative fee as Updating during a store outage", async () => {
+    await act(async () => root.render(createElement(PortfolioPositionList, {
+      groups: [{ chain: "solana", label: "Solana", positions: [item], showSourceName: false }],
+      rows: new Map([[item.key, { item, title: "USDC / USDT", subtitle: "", actions: [],
+        figures: { stock: null, shares: null, valueUsd: 0.64, unclaimedFeesUsd: 0.0006, cumulativeFeesUsd: 11.36 },
+        cumulativeFeesUpdating: false, cumulativeFeesUnavailable: false }]]),
+      disabled: false, popup: null, onOpenDetail: () => undefined, onAction: () => undefined, onClosePopup: () => undefined,
+    })));
+    expect(container.querySelector("[data-testid=position-row-cumulative]")!.textContent).toContain("$11.36");
+    expect(container.querySelector("[data-testid=cumulative-fees-updating]")).toBeNull();
+    expect(container.querySelector("[data-testid=cumulative-fees-unavailable]")).toBeNull();
+    await act(async () => root.render(createElement(PortfolioSummary, {
+      totals: { positions: 1, valueUsd: 0.64, unclaimedFeesUsd: 0.0006, cumulativeFeesUsd: 11.36, pending: 0, missing: 0, cumulativePending: 0 },
+      cumulativeFeesUpdating: false, cumulativeFeesUnavailable: false,
+    })));
+    expect(container.querySelector("[data-testid=portfolio-cumulative-fees]")!.textContent).toContain("$11.36");
+    expect(container.querySelector("[data-testid=cumulative-fees-updating]")).toBeNull();
+    await act(async () => root.render(createElement(PortfolioHistoryStatus, { rows: [{
+      key: item.key, status: "partial", figures: { stock: null, shares: null, valueUsd: 0.64, unclaimedFeesUsd: 0.0006, cumulativeFeesUsd: 11.36 },
+      evaluatedAt: "2026-11-26T13:10:00.000Z", historyComplete: false, historyRefreshResolved: false,
+      historyStatus: "unavailable", historyError: "POSITION_STORE_UNAVAILABLE", retained: true,
+    }] })));
+    expect(container.textContent).toContain("temporarily unavailable");
+    expect(container.textContent).not.toContain("Updating fee history");
   });
 });

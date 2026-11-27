@@ -6,7 +6,7 @@ import { Check, CircleAlert, LoaderCircle, Pause } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { COMPOUND_ALL_RECOVERY_PATH, compoundAllApprovals, summarizeCompoundAll, type CompoundAllRow, type CompoundAllState } from "@/lib/compound-all/state";
 import { ActionDialog } from "../portfolio/action-dialog";
-import { approvalsLine, cleanupStatusLabel, COMPOUND_ALL_COPY as COPY, rowResultUnconfirmed, rowStatusLabel, summaryHeading } from "./compound-all-copy";
+import { approvalsLine, cleanupStatusLabel, COMPOUND_ALL_COPY as COPY, rowResultUnconfirmed, rowStatusLabel, summaryHeading, summaryItems } from "./compound-all-copy";
 
 type CompoundAllRowLabel = { title: string; subtitle?: string };
 export type CompoundAllActions = {
@@ -110,21 +110,22 @@ function Row({ row, label, dexName, setup, active, onSelect }: {
 
 function CleanupRow({ state }: { state: CompoundAllState }) {
   const status = state.cleanup.status;
-  const failed = status === "failed";
+  const unconfirmed = status === "failed" && state.cleanup.outcomeUnconfirmed;
+  const failed = status === "failed" && !unconfirmed;
   return <li data-testid="compound-all-cleanup-row" data-status={status} className="flex items-start gap-3 px-4 py-3">
-    <span className="mt-0.5 flex shrink-0"><StatusIcon status={status === "done" ? "done" : failed ? "failed" : status} /></span>
+    <span className="mt-0.5 flex shrink-0"><StatusIcon status={status === "done" ? "done" : failed ? "failed" : unconfirmed ? "confirming" : status} /></span>
     <div className="min-w-0 flex-1">
       <p className="text-sm font-semibold text-cream">{COPY.cleanupRow}</p>
       <p className="text-xs text-smoke">{COPY.cleanupDetail}</p>
-      {failed && state.cleanup.error ? <p role="alert" className="mt-1 text-xs text-cream/80">{state.cleanup.error}</p> : null}
+      {status === "failed" && state.cleanup.error ? <p role="alert" className="mt-1 text-xs text-cream/80">{state.cleanup.error}</p> : null}
     </div>
-    {state.phase !== "setup" ? <span className="shrink-0 text-xs text-smoke">{cleanupStatusLabel(status)}</span> : null}
+    {state.phase !== "setup" ? <span className={cn("shrink-0 text-xs", failed ? "font-semibold text-cream" : "text-smoke")}>{cleanupStatusLabel(status, state.cleanup.outcomeUnconfirmed)}</span> : null}
   </li>;
 }
 
 function Summary({ state }: { state: CompoundAllState }) {
   const summary = summarizeCompoundAll(state);
-  const items: [string, number][] = [["Compounded", summary.done], ["Skipped", summary.skipped], ["Not signed", summary.notSigned], ["Did not complete", summary.failed]];
+  const items = summaryItems(state);
   return <div data-testid="compound-all-summary" className="mt-3">
     <p role="status" className="text-sm font-semibold text-cream">{summaryHeading(state)}</p>
     <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -170,15 +171,18 @@ function Controls({ state, actions, onClose, approvalsTotal }: { state: Compound
         </>, "compound-all-controls")}
       </div>;
     case "cleanup-offered":
-    case "paused-cleanup-failure":
+    case "paused-cleanup-failure": {
+      const unconfirmed = state.phase === "paused-cleanup-failure" && state.cleanup.outcomeUnconfirmed;
       return <div data-testid="compound-all-cleanup-offer" className="mt-5 rounded-2xl border border-white/15 bg-white/[0.04] p-4">
-        <p className="text-sm text-cream/80">{state.phase === "paused-cleanup-failure" ? "The cleanup did not complete." : "Compounds stopped."}{" "}
-          Run the cleanup now, or skip it and use the <Link href={COMPOUND_ALL_RECOVERY_PATH} className="font-semibold text-cream underline underline-offset-2">recovery page</Link> later.</p>
+        <p className="text-sm text-cream/80">{unconfirmed ? "The cleanup is still confirming." : state.phase === "paused-cleanup-failure" ? "The cleanup did not complete." : "Compounds stopped."}{" "}
+          {unconfirmed ? "Skip it and use the " : "Run the cleanup now, or skip it and use the "}
+          <Link href={COMPOUND_ALL_RECOVERY_PATH} className="font-semibold text-cream underline underline-offset-2">recovery page</Link> later.</p>
         {bar(<>
           <button type="button" data-testid="compound-all-skip-cleanup" className={secondary} onClick={actions.skipCleanup}>Skip cleanup</button>
-          <button type="button" data-testid="compound-all-run-cleanup" className={primary} onClick={actions.runCleanup}>{state.phase === "paused-cleanup-failure" ? "Retry cleanup" : "Run cleanup"}</button>
+          {unconfirmed ? null : <button type="button" data-testid="compound-all-run-cleanup" className={primary} onClick={actions.runCleanup}>{state.phase === "paused-cleanup-failure" ? "Retry cleanup" : "Run cleanup"}</button>}
         </>, "compound-all-controls")}
       </div>;
+    }
     case "finished":
     case "cancelled":
       return bar(<button type="button" data-testid="compound-all-close" className={primary} onClick={onClose}>Close</button>, "compound-all-controls");

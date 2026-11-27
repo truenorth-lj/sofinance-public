@@ -10,7 +10,7 @@ import { TX_PREFLIGHT_POLICY, type TxWallet } from "@/lib/tx-pipeline";
 import { compoundAttemptKey, loadCompoundAttempt } from "@sofinance/engine/compound-attempt";
 import type { RowContext } from "@/lib/compound-all/runner";
 import { compoundRaydiumPosition, compoundRegistryPosition, createCompoundAllExecutors, ROW_EARLIER_COMPOUND, ROW_LOCKED, ROW_RECORDS_INVALID,
-  ROW_STILL_CONFIRMING } from "./compound-all-executors";
+  ROW_MAY_BE_ON_CHAIN, ROW_STILL_CONFIRMING } from "./compound-all-executors";
 import { beginPositionOp } from "../../unified-positions/position-op-lock";
 
 const positionMint = testKeypair(80).publicKey.toBase58();
@@ -147,7 +147,10 @@ describe("Raydium row (extracted per-position compound)", () => {
       .toMatchObject({ status: "failed", retryable: true });
     confirmReply = (signature) => ({ signature, status: "pending", chainStatus: "pending", state: null });
     expect(await compoundRaydiumPosition({ wallet: signingWallet(), positionMint, storage: window.localStorage, context: context(), confirm: noWait }))
-      .toEqual({ status: "failed", error: ROW_STILL_CONFIRMING, retryable: false });
+      .toEqual({ status: "failed", error: ROW_STILL_CONFIRMING, retryable: false, outcomeUnconfirmed: true });
+    confirmReply = (signature) => ({ signature, status: "manual-review", chainStatus: "unknown", state: null });
+    expect(await compoundRaydiumPosition({ wallet: signingWallet(), positionMint, storage: window.localStorage, context: context(), confirm: noWait }))
+      .toEqual({ status: "failed", error: ROW_MAY_BE_ON_CHAIN, retryable: false, outcomeUnconfirmed: true });
   });
 
   it("a cancel after prepare stops before the wallet is asked", async () => {
@@ -316,12 +319,27 @@ describe("rowFailureOf", () => {
     expect(cancelled.walletRejected).toBe(false);
     expect(cancelled.message.startsWith(COULDNT_SEND_TITLE)).toBe(true);
     const wrapped = new TxRunError("rejected", cancelled.message, false, cancelled);
-    expect(rowFailureOf(wrapped, false)).toEqual({ status: "failed", error: cancelled.message, retryable: false });
-    expect(rowFailureOf(cancelled, false)).toEqual({ status: "failed", error: cancelled.message, retryable: false });
+    expect(rowFailureOf(wrapped, false)).toEqual({ status: "failed", error: cancelled.message, retryable: false, outcomeUnconfirmed: true, couldntSend: true });
+    expect(rowFailureOf(cancelled, false)).toEqual({ status: "failed", error: cancelled.message, retryable: false, outcomeUnconfirmed: true, couldntSend: true });
     // An explicit "no" is still a retryable rejected row (PM review of #536, (a)).
     const rejected = new TxWalletCancelledError(Object.assign(new Error("User rejected the request."), { code: 4001 }), new Promise(() => {}));
     expect(rejected.walletRejected).toBe(true);
     expect(rowFailureOf(new TxRunError("rejected", rejected.message, false, rejected), false))
       .toMatchObject({ status: "rejected", retryable: true });
+  });
+  it("sets outcomeUnconfirmed from the error type, not from the message text", async () => {
+    const { rowFailureOf } = await import("./compound-all-executors");
+    const { TxRunError, TxVoidUnconfirmedError, TxLandedUnknownError } = await import("@/lib/tx-pipeline");
+    const voided = new TxVoidUnconfirmedError("sig");
+    expect(rowFailureOf(voided, false)).toEqual({ status: "failed", error: voided.message, retryable: false, outcomeUnconfirmed: true });
+    expect(rowFailureOf(new TxRunError("unknown", voided.message, false, voided), false))
+      .toEqual({ status: "failed", error: voided.message, retryable: false, outcomeUnconfirmed: true });
+    const unknown = new TxLandedUnknownError("sig");
+    expect(rowFailureOf(unknown, false)).toMatchObject({ status: "failed", retryable: false, outcomeUnconfirmed: true, couldntSend: true });
+    expect(rowFailureOf(new TxRunError("unknown", unknown.message, false, unknown), false))
+      .toMatchObject({ status: "failed", retryable: false, outcomeUnconfirmed: true, couldntSend: true });
+    // A message that looks unconfirmed, from an ordinary error, must not set the flag.
+    expect(rowFailureOf(new Error("This compound is still confirming."), false))
+      .toEqual({ status: "failed", error: "This compound is still confirming.", retryable: false });
   });
 });

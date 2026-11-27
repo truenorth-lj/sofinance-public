@@ -12,8 +12,8 @@ import {
  */
 export type RowOutcome =
   | { status: "done"; signature: string }
-  | { status: RowFailure; error: string; retryable: boolean; notSigned?: boolean };
-export type CleanupOutcome = { status: "done"; signatures?: readonly string[] } | { status: "failed"; error: string };
+  | { status: RowFailure; error: string; retryable: boolean; notSigned?: boolean; outcomeUnconfirmed?: boolean; couldntSend?: boolean };
+export type CleanupOutcome = { status: "done"; signatures?: readonly string[] } | { status: "failed"; error: string; outcomeUnconfirmed?: boolean };
 
 export type RowContext = {
   /** False once the user cancelled: the row stops before the wallet is asked (a prompt already open is answered first). */
@@ -58,7 +58,8 @@ export function createCompoundAllRunner(inputs: readonly CompoundAllRowInput[], 
       outcome = { status: "failed", error: message(error), retryable: false };
     }
     if (outcome.status === "done") dispatch({ type: "row/done", key, signature: outcome.signature });
-    else dispatch({ type: "row/failed", key, failure: outcome.status, error: outcome.error, retryable: outcome.retryable, notSigned: outcome.notSigned });
+    else dispatch({ type: "row/failed", key, failure: outcome.status, error: outcome.error, retryable: outcome.retryable, notSigned: outcome.notSigned,
+      outcomeUnconfirmed: outcome.outcomeUnconfirmed, couldntSend: outcome.couldntSend });
   }
   const rowOfState = (key: string) => state.rows.find((row) => row.key === key)!;
 
@@ -71,7 +72,7 @@ export function createCompoundAllRunner(inputs: readonly CompoundAllRowInput[], 
       outcome = { status: "failed", error: message(error) };
     }
     if (outcome.status === "done") dispatch({ type: "cleanup/done", signatures: outcome.signatures });
-    else dispatch({ type: "cleanup/failed", error: outcome.error });
+    else dispatch({ type: "cleanup/failed", error: outcome.error, outcomeUnconfirmed: outcome.outcomeUnconfirmed });
   }
 
   async function drive(): Promise<CompoundAllState> {

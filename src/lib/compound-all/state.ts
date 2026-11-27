@@ -41,6 +41,10 @@ export type CompoundAllRow = Readonly<{
   signature?: string; error?: string;
   /** A failed row may be retried (false when the last send may still land). */
   retryable?: boolean;
+  /** The last send may still land: Skip only, and the pause must not say it didn't compound. */
+  outcomeUnconfirmed?: boolean;
+  /** A non-explicit wallet cancel whose send may still land: the row says "Couldn't send", not "Rejected in wallet". */
+  couldntSend?: boolean;
 }>;
 
 export type CleanupStatus = "none" | "pending" | "offered" | RowStage | "done" | "failed" | "skipped";
@@ -49,6 +53,8 @@ export type CompoundAllCleanup = Readonly<{
   /** Signatures of the Raydium compounds confirmed in this run: their harvest accounts are what the cleanup closes. */
   sources: readonly string[];
   error?: string; signatures?: readonly string[];
+  /** Confirm timed out or needs review: the cleanup may still settle; the row says Unconfirmed, not Failed. */
+  outcomeUnconfirmed?: boolean;
 }>;
 
 /**
@@ -78,7 +84,8 @@ export type CompoundAllEvent =
   | { type: "start" }
   | { type: "row/stage"; key: PositionKey; stage: RowStage; signature?: string }
   | { type: "row/done"; key: PositionKey; signature: string }
-  | { type: "row/failed"; key: PositionKey; failure: RowFailure; error: string; retryable: boolean; notSigned?: boolean }
+  | { type: "row/failed"; key: PositionKey; failure: RowFailure; error: string; retryable: boolean; notSigned?: boolean;
+      outcomeUnconfirmed?: boolean; couldntSend?: boolean }
   | { type: "row/retry" }
   | { type: "row/skip" }
   | { type: "checkpoint" }
@@ -89,7 +96,7 @@ export type CompoundAllEvent =
   | { type: "cleanup/skip" }
   | { type: "cleanup/stage"; stage: RowStage }
   | { type: "cleanup/done"; signatures?: readonly string[] }
-  | { type: "cleanup/failed"; error: string };
+  | { type: "cleanup/failed"; error: string; outcomeUnconfirmed?: boolean };
 
 export const COMPOUND_ALL_CHECKPOINT_EVERY = 10;
 export const COMPOUND_ALL_RECOVERY_PATH = "/app/portfolio/recovery";
@@ -175,7 +182,8 @@ export function compoundAllReducer(state: CompoundAllState, event: CompoundAllEv
       if (state.active !== null && state.active !== event.key) return state;
       return { ...patchRow(state, event.key, {
         // A queued row starts a fresh attempt: the previous attempt's error and signature are cleared.
-        ...(row.status === "queued" ? { attempts: row.attempts + 1, error: undefined, retryable: undefined, signature: undefined } : {}),
+        ...(row.status === "queued" ? { attempts: row.attempts + 1, error: undefined, retryable: undefined, signature: undefined,
+          outcomeUnconfirmed: undefined, couldntSend: undefined } : {}),
         status: event.stage, ...(event.signature ? { signature: event.signature } : {}),
       }), active: event.key };
     }
@@ -194,9 +202,11 @@ export function compoundAllReducer(state: CompoundAllState, event: CompoundAllEv
       if (state.phase !== "running" || state.active !== event.key || !row || !IN_FLIGHT.includes(row.status)) return state;
       if (state.cancelRequested) {
         const status: RowStatus = event.notSigned ? "not-signed" : event.failure;
-        return stopRows(patchRow(state, event.key, { status, error: event.error, retryable: false }));
+        return stopRows(patchRow(state, event.key, { status, error: event.error, retryable: false,
+          outcomeUnconfirmed: event.outcomeUnconfirmed, couldntSend: event.couldntSend }));
       }
-      return { ...patchRow(state, event.key, { status: event.failure, error: event.error, retryable: event.retryable }), phase: "paused-failure" };
+      return { ...patchRow(state, event.key, { status: event.failure, error: event.error, retryable: event.retryable,
+        outcomeUnconfirmed: event.outcomeUnconfirmed, couldntSend: event.couldntSend }), phase: "paused-failure" };
     }
     case "row/retry": {
       const row = rowOf(state, state.active);
@@ -229,7 +239,7 @@ export function compoundAllReducer(state: CompoundAllState, event: CompoundAllEv
       return state.cleanup.status === "pending" ? { ...state, rowsComplete: true } : { ...state, rowsComplete: true, phase: ended(state) };
     case "cleanup/run":
       if (state.phase !== "cleanup-offered" && state.phase !== "paused-cleanup-failure") return state;
-      return { ...state, phase: "running", cleanup: Object.freeze({ ...state.cleanup, status: "pending" as const, error: undefined }) };
+      return { ...state, phase: "running", cleanup: Object.freeze({ ...state.cleanup, status: "pending" as const, error: undefined, outcomeUnconfirmed: undefined }) };
     case "cleanup/skip":
       if (state.phase !== "cleanup-offered" && state.phase !== "paused-cleanup-failure") return state;
       return { ...state, phase: ended(state), cleanup: Object.freeze({ ...state.cleanup, status: "skipped" as const }) };
@@ -242,6 +252,6 @@ export function compoundAllReducer(state: CompoundAllState, event: CompoundAllEv
         ...(event.signatures ? { signatures: Object.freeze([...event.signatures]) } : {}) }) };
     case "cleanup/failed":
       if (state.phase !== "running" || !IN_FLIGHT.includes(state.cleanup.status)) return state;
-      return { ...state, phase: "paused-cleanup-failure", cleanup: Object.freeze({ ...state.cleanup, status: "failed" as const, error: event.error }) };
+      return { ...state, phase: "paused-cleanup-failure", cleanup: Object.freeze({ ...state.cleanup, status: "failed" as const, error: event.error, outcomeUnconfirmed: event.outcomeUnconfirmed }) };
   }
 }

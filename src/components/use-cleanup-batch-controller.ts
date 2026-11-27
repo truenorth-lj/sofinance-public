@@ -6,7 +6,8 @@ import { compoundAttemptKey, signedCompoundTransaction, type CompoundReceipt } f
 import type { CleanupBatchPrepared, CleanupBatchConfirmation } from "@/lib/compound-cleanup-batch-types";
 import { ApiRequestError } from "@/lib/public-error";
 import { batchUnresolved, cleanupBatchKey, cleanupBatchProgress, loadCleanupBatch, persistCleanupBatch, pruneCleanedReceipts,
-  validBatchSummary, type CleanupBatchAttempt } from "@/lib/compound-cleanup-batch-attempt";
+  validBatchSummary, type CleanupBatchAttempt, type CleanupBatchTransaction } from "@/lib/compound-cleanup-batch-attempt";
+import { CLEANUP_DID_NOT_COMPLETE, CLEANUP_STILL_CONFIRMING, cleanupBatchSettlement, cleanupOutcomeUnconfirmed } from "@/lib/compound-cleanup-settlement";
 import type { WalletConnection } from "./wallet-connection";
 import { captureWalletReturnedTxFailure } from "@/lib/sentry/capture";
 
@@ -19,9 +20,10 @@ async function post<T>(url: string, body: unknown, timeoutMs = 15_000): Promise<
   if (!response.ok) throw new ApiRequestError(value.error || "Cleanup request failed", value.sent === false ? false : undefined);
   return value;
 }
-export type CleanupBatchStage = "preparing" | "wallet" | "broadcasting";
+export type CleanupBatchStage = "preparing" | "wallet" | "broadcasting" | "confirming";
+export type CleanupConfirmTiming = { intervalMs?: number; maxWaitMs?: number; sleep?: (ms: number) => Promise<void> };
 /** `refused`: nothing was prepared (another operation, an unsettled earlier transaction, or unreadable records). */
-export type CleanupBatchOutcome = { status: "done"; signatures: string[] } | { status: "refused" | "failed"; error: string };
+export type CleanupBatchOutcome = { status: "done"; signatures: string[] } | { status: "refused" | "failed"; error: string; outcomeUnconfirmed?: boolean };
 export const CLEANUP_NOT_READY = "The cleanup can't start yet: another transaction is still being checked or local records need verification.";
 const tabChanged = "Cleanup paused because another tab changed the transaction record. Reload and verify the other tab's transaction before continuing.";
 export function useCleanupBatchController(options: Options) {
@@ -113,11 +115,51 @@ export function useCleanupBatchController(options: Options) {
     return () => { window.clearTimeout(initial); window.clearInterval(timer); window.removeEventListener("focus", run); document.removeEventListener("visibilitychange", run); };
   }, [options.wallet, loaded, pendingSignatures, invalid, reconcile]);
 
+
+  /** Confirm every sent transaction until the batch settles or the wait expires. Does not sign again. */
+  async function settleSignedBatch(wallet: string, initial: CleanupBatchAttempt, timing: CleanupConfirmTiming = {}): Promise<CleanupBatchAttempt> {
+    const sleep = timing.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    const deadline = Date.now() + (timing.maxWaitMs ?? 180_000);
+    let current = initial;
+    for (;;) {
+      if (!alive.current || latest.current.wallet !== wallet) return current;
+      const snapshot = window.localStorage.getItem(cleanupBatchKey(wallet));
+      if (snapshot !== record.current) { setError(tabChanged); setInvalid(true); return current; }
+      const pending = current.transactions.filter((tx) => !tx.unsent && (tx.status === "pending" || tx.status === "manual-review"));
+      if (!pending.length) return current;
+      const results = await Promise.all(pending.map(async (tx) => {
+        try {
+          const result = await post<CleanupBatchConfirmation>("/api/compound-cleanup-confirm",
+            { wallet, summary: tx.summary, signature: tx.signature });
+          if (result.signature !== tx.signature || !["pending", "success", "failed", "expired", "manual-review"].includes(result.status) ||
+            result.chainStatus !== undefined && !["pending", "success", "failed", "expired", "unknown"].includes(result.chainStatus) ||
+            result.status === "success" && result.chainStatus !== "success") throw new Error("Cleanup verification mismatch");
+          return { ...tx, status: result.status, chainStatus: result.chainStatus } as CleanupBatchTransaction;
+        } catch { return tx; }
+      }));
+      if (!alive.current || latest.current.wallet !== wallet) return current;
+      if (window.localStorage.getItem(cleanupBatchKey(wallet)) !== snapshot) { setError(tabChanged); setInvalid(true); return current; }
+      const next = { ...current, transactions: current.transactions.map((tx) => results.find((result) => result.signature === tx.signature) || tx) };
+      if (JSON.stringify(next) !== snapshot) {
+        record.current = persistCleanupBatch(window.localStorage, next); setAttempt(next);
+        latest.current.onReceipts(pruneCleanedReceipts(window.localStorage, next));
+        const newSuccess = next.transactions.some((tx) => tx.status === "success" && current.transactions.find((old) => old.signature === tx.signature)?.status !== "success");
+        if (newSuccess) { setError(""); latest.current.onConfirmed(); }
+      }
+      current = next;
+      if (cleanupBatchSettlement(current) !== "pending") return current;
+      if (Date.now() >= deadline) return current;
+      await sleep(timing.intervalMs ?? 4_000);
+    }
+  }
+
   /**
-   * Prepares, signs (one approval) and broadcasts the cleanup of `receipts`. The result is for compound all's cleanup
-   * row; the Compound screen ignores it and reads the controller's state, as before. `onStage` mirrors `stage`.
+   * Prepares, signs (one approval) and broadcasts the cleanup of `receipts`, then waits for the signed batch to settle
+   * on Solana before the cleanup row is marked done. An on-chain failure (or a confirm that never settles) is a failure
+   * so compound all can send the user to recovery. The Compound screen ignores the return value and reads the
+   * controller's state, as before. Signing, fees and transaction bytes are unchanged. `onStage` mirrors `stage`.
    */
-  async function start(receipts: CompoundReceipt[], hooks: { onStage?: (stage: CleanupBatchStage) => void } = {}): Promise<CleanupBatchOutcome> {
+  async function start(receipts: CompoundReceipt[], hooks: { onStage?: (stage: CleanupBatchStage) => void; confirm?: CleanupConfirmTiming } = {}): Promise<CleanupBatchOutcome> {
     const initial = latest.current, wallet = initial.wallet;
     if (!wallet || loaded !== wallet || invalid || running.current || checking.current || batchUnresolved(attempt) || !receipts.length ||
       !initial.connection.connected || initial.connection.address !== wallet || initial.blocked || !initial.canStart()) return { status: "refused", error: CLEANUP_NOT_READY };
@@ -215,14 +257,21 @@ export function useCleanupBatchController(options: Options) {
       const message = caught instanceof Error ? caught.message : "Cleanup stopped; signed transactions will be checked";
       if (alive.current && latest.current.wallet === wallet) setError(message);
       outcomeError = message;
-    } finally {
-      running.current = false;
-      if (alive.current && latest.current.wallet === wallet) { setStageState(null); void reconcile(); }
     }
-    // Signed and saved: whatever the broadcast said, the signatures are checked from here and never signed again.
-    const sent = (durable as CleanupBatchAttempt | null)?.transactions.filter((tx) => !tx.unsent).map((tx) => tx.signature) ?? [];
-    if (durable && (sent.length || !(durable as CleanupBatchAttempt).transactions.length)) return { status: "done", signatures: sent };
-    return { status: "failed", error: outcomeError || "The cleanup did not complete." };
+    // Confirm signed transactions even if broadcast threw: they may already be on Solana, and must never be signed again.
+    // The cleanup row is done only after the batch settles; an on-chain failure (or a wait that expires) goes to recovery.
+    if (durable && cleanupBatchSettlement(durable) === "pending" && alive.current && latest.current.wallet === wallet) {
+      setStage("confirming");
+      try { durable = await settleSignedBatch(wallet, durable, hooks.confirm); }
+      catch (caught) { if (!outcomeError) outcomeError = caught instanceof Error ? caught.message : CLEANUP_DID_NOT_COMPLETE; }
+    }
+    running.current = false;
+    if (alive.current && latest.current.wallet === wallet) { setStageState(null); void reconcile(); }
+    const sent = durable?.transactions.filter((tx) => !tx.unsent).map((tx) => tx.signature) ?? [];
+    if (durable && cleanupBatchSettlement(durable) === "success") return { status: "done", signatures: sent };
+    const unconfirmed = durable ? cleanupOutcomeUnconfirmed(durable) : false;
+    return { status: "failed", error: outcomeError || (unconfirmed ? CLEANUP_STILL_CONFIRMING : CLEANUP_DID_NOT_COMPLETE),
+      ...(unconfirmed ? { outcomeUnconfirmed: true } : {}) };
   }
   const visible = loaded === options.wallet ? attempt : null;
   const progress = visible ? cleanupBatchProgress(visible) : null;
@@ -231,6 +280,7 @@ export function useCleanupBatchController(options: Options) {
   return { start, reconcile: () => reconcile(true), attempt: visible, invalid, loaded: loaded === options.wallet, stage, busy: stage !== null, unresolved, error,
     progress: progress && { ...progress, compoundSignature: undefined as string | undefined, running: stage !== null || unresolved, message: stage === "wallet" ? "Approve the cleanup batch once in your wallet."
       : stage === "preparing" ? "Preparing and simulating all selected accounts…" : stage === "broadcasting" ? "Sending signed cleanup transactions…"
+      : stage === "confirming" ? "Checking signed cleanup transactions. Temporary connection errors retry automatically; no further signature is needed."
       : needsReview ? "Some cleanup results need verification. Use Requery cleanup results before continuing."
       : unresolved ? "Checking signed cleanup transactions. Temporary connection errors retry automatically; no further signature is needed."
       : progress.completed === progress.total ? "All selected harvest accounts cleaned up. Balances and account rent returned to your wallet."

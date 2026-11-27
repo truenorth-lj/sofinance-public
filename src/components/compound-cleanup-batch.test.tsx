@@ -18,7 +18,7 @@ vi.mock("./wallet-connection", () => ({ useWalletConnection: () => ({ address: w
 let wallet: string | undefined, supported: boolean;
 let controller: ReturnType<typeof useCompoundController>, root: Root, container: HTMLDivElement;
 let fixture: ReturnType<typeof compoundHistoryFixture>, fetchMock: Mock<(url: string, init: RequestInit) => Promise<Response>>;
-let chunkSize: number, result: "pending" | "success" | "manual-review", failures: number, broadcasts: string[];
+let chunkSize: number, result: "pending" | "success" | "manual-review" | "failed" | "expired", failures: number, broadcasts: string[];
 const receipt = (index: number): CompoundReceipt => ({ wallet: fixture.wallet, positionMint: fixture.state.positionMint,
   sourceSignature: bs58.encode(new Uint8Array(64).fill(9 + index)), compoundAccounts: fixture.attempt.summary.compoundAccounts.map((account, leg) => ({ ...account,
     address: testKeypair(30 + index * 2 + leg).publicKey.toBase58() })) as CompoundReceipt["compoundAccounts"] });
@@ -164,7 +164,10 @@ describe("one-approval batch cleanup", () => {
     expect(controller.error).toContain("does not support one-approval batch signing");
   });
   it("waits four seconds between unchanged pending checks rather than restarting an immediate poll", async () => {
-    seed(); result = "pending"; await render(); await act(async () => { await controller.cleanupAll(); }); await flush();
+    seed(); result = "pending"; await render();
+    let work!: Promise<void>;
+    await act(async () => { work = controller.cleanupAll(); });
+    await flush();
     const count = () => fetchMock.mock.calls.filter(([url]) => url === "/api/compound-cleanup-confirm").length;
     expect(count()).toBe(1);
     const saved = window.localStorage.getItem(cleanupBatchKey(fixture.wallet));
@@ -173,16 +176,23 @@ describe("one-approval batch cleanup", () => {
     expect(window.localStorage.getItem(cleanupBatchKey(fixture.wallet))).toBe(saved);
     await act(async () => { await vi.advanceTimersByTimeAsync(4_000); }); expect(count()).toBe(3);
     expect(mocks.sign).toHaveBeenCalledOnce();
+    result = "success";
+    await act(async () => { await vi.advanceTimersByTimeAsync(4_000); await work; });
   });
   it("retries an aborted confirmation, clears the stale error, and updates all counters", async () => {
-    seed(); failures = 1; await render(); await act(async () => { await controller.cleanupAll(); });
+    seed(); failures = 1; await render();
+    let work!: Promise<void>;
+    await act(async () => { work = controller.cleanupAll(); });
+    await flush();
     expect(controller.cleanup?.completed).toBe(0); expect(controller.canCompound).toBe(false);
-    await act(async () => { await vi.advanceTimersByTimeAsync(4_001); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(4_001); await work; });
     expect(controller.cleanup?.completed).toBe(3); expect(controller.receipts).toHaveLength(0); expect(controller.error).toBe("");
     expect(mocks.sign).toHaveBeenCalledOnce();
   });
   it("restores pending signatures after reload and checks them without signing or broadcasting again", async () => {
-    seed(); result = "pending"; await render(); await act(async () => { await controller.cleanupAll(); });
+    seed(); result = "pending"; await render();
+    await act(async () => { void controller.cleanupAll(); });
+    await flush();
     const saved = window.localStorage.getItem(cleanupBatchKey(fixture.wallet));
     await act(async () => root.unmount()); root = createRoot(container); result = "success";
     await render(); await flush();
@@ -283,14 +293,14 @@ describe("live admission after durable batch persistence", () => {
     });
     let outcome: Awaited<ReturnType<typeof batch.start>> | undefined;
     const stages: string[] = [];
-    await act(async () => { outcome = await batch.start([receipt(0), receipt(1), receipt(2)], { onStage: (stage) => stages.push(stage) }); });
+    await act(async () => { outcome = await batch.start([receipt(0), receipt(1), receipt(2)], { onStage: (stage) => stages.push(stage), confirm: { maxWaitMs: 0 } }); });
     expect(mocks.signAll).toHaveBeenCalledOnce();
-    // Compound all's cleanup row: signed and saved is "done" (never signed again), whatever the broadcast said.
-    expect(outcome).toEqual({ status: "done", signatures: JSON.parse(savedSnapshot!).transactions.map((tx: { signature: string }) => tx.signature) });
+    // Signed and saved is never signed again. The row is not done while confirmations are still pending (or failed).
+    expect(outcome).toMatchObject({ status: "failed", outcomeUnconfirmed: true });
     expect(stages.slice(0, 2)).toEqual(["preparing", "wallet"]);
+    expect(stages).toContain("confirming");
     expect(requests).toBe(revoke ? phase === "persist" ? 0 : 1 : 3);
     expect(savedSnapshot).not.toBeNull();
-    expect(storage.getItem(cleanupBatchKey(fixture.wallet))).toBe(savedSnapshot);
     expect(JSON.parse(savedSnapshot!).transactions).toHaveLength(3);
     expect(batch.unresolved).toBe(true);
     if (revoke) expect(batch.error).toContain("authorization changed");
@@ -299,6 +309,33 @@ describe("live admission after durable batch persistence", () => {
     await act(async () => { outcome = await batch.start([receipt(0), receipt(1), receipt(2)]); });
     expect(mocks.signAll).toHaveBeenCalledOnce();
     expect(outcome).toMatchObject({ status: "refused" });
+  });
+});
+
+describe("cleanup row is done only after on-chain settlement", () => {
+  it("marks the cleanup done after every signed transaction confirms", async () => {
+    admission = true; seed(); result = "success";
+    await act(async () => root.render(createElement(BatchAdmissionHarness)));
+    await flush();
+    let outcome: Awaited<ReturnType<typeof batch.start>> | undefined;
+    const stages: string[] = [];
+    await act(async () => { outcome = await batch.start([receipt(0)], { onStage: (stage) => stages.push(stage) }); });
+    expect(outcome?.status).toBe("done");
+    expect(outcome && "signatures" in outcome ? outcome.signatures : []).toHaveLength(1);
+    expect(stages).toEqual(["preparing", "wallet", "broadcasting", "confirming"]);
+    expect(batch.unresolved).toBe(false);
+  });
+  it("fails the cleanup row (recovery) when a signed transaction fails on-chain, and does not sign again", async () => {
+    admission = true; seed(); result = "failed";
+    await act(async () => root.render(createElement(BatchAdmissionHarness)));
+    await flush();
+    let outcome: Awaited<ReturnType<typeof batch.start>> | undefined;
+    await act(async () => { outcome = await batch.start([receipt(0)]); });
+    expect(outcome).toMatchObject({ status: "failed", error: "The cleanup did not complete." });
+    expect(outcome).not.toHaveProperty("outcomeUnconfirmed");
+    expect(mocks.sign).toHaveBeenCalledOnce();
+    expect(JSON.parse(window.localStorage.getItem(cleanupBatchKey(fixture.wallet))!).transactions).toHaveLength(1);
+    expect(batch.unresolved).toBe(false);
   });
 });
 

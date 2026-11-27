@@ -6,7 +6,7 @@ import { dexTxAdapter, type DexDescriptor } from "@/lib/dex/client";
 import { createJupiterRelayStore } from "@/lib/jupiter/browser-relay";
 import { loadCleanupBatch } from "@/lib/compound-cleanup-batch-attempt";
 import { ApiRequestError, resolveCompoundBroadcastFailure } from "@/lib/public-error";
-import { pollSignature, runTx, TX_PREFLIGHT_POLICY, TxCancelCheckPendingError, TxNotLandedError, TxRunError, TxWalletCancelledError, type RunTxOptions, type TxChainStatus, type TxStage, type TxWallet, type WaitVoided } from "@/lib/tx-pipeline";
+import { pollSignature, runTx, TX_PREFLIGHT_POLICY, TxCancelCheckPendingError, TxLandedUnknownError, TxNotLandedError, TxRunError, TxVoidUnconfirmedError, TxWalletCancelledError, type RunTxOptions, type TxChainStatus, type TxStage, type TxWallet, type WaitVoided } from "@/lib/tx-pipeline";
 import { compoundAllFlowFor, type CompoundAllRow, type RowStage } from "@/lib/compound-all/state";
 import type { CleanupOutcome, CompoundAllDeps, RowContext, RowOutcome } from "@/lib/compound-all/runner";
 import type { PositionKey } from "@/lib/unified-positions/model";
@@ -30,11 +30,22 @@ type Storage = NonNullable<RunTxOptions["storage"]>;
 const stageOf = (stage: TxStage): RowStage => stage === "preparing" ? "preparing" : stage === "wallet" ? "awaiting-wallet" : "confirming";
 const text = (error: unknown) => error instanceof Error && error.message ? error.message : "The transaction did not complete.";
 export const ROW_STILL_CONFIRMING = "This compound is still confirming. Check it in Activity before trying again.";
+export const ROW_MAY_BE_ON_CHAIN = "This compound may already be on-chain. Check it in Activity before trying again.";
 export const ROW_LOCKED = "Another transaction on this position is still in progress. Try again when it finishes.";
 const CLEANUP_PENDING = "A cleanup of earlier harvest accounts is still being checked. Try again once it settles.";
 
 const walletCancelled = (error: unknown) => error instanceof TxWalletCancelledError ? error
   : error instanceof TxRunError && error.cause instanceof TxWalletCancelledError ? error.cause : null;
+const unwrap = (error: unknown) => error instanceof TxRunError && error.cause ? error.cause : error;
+/** Flags set from the error's type, not from its message text. */
+function unconfirmedFlags(error: unknown): { outcomeUnconfirmed?: boolean; couldntSend?: boolean } {
+  const inner = unwrap(error);
+  if (inner instanceof TxVoidUnconfirmedError) return { outcomeUnconfirmed: true };
+  if (inner instanceof TxLandedUnknownError) return { outcomeUnconfirmed: true, couldntSend: true };
+  const cancelled = walletCancelled(error);
+  if (cancelled && !cancelled.walletRejected) return { outcomeUnconfirmed: true, couldntSend: true };
+  return {};
+}
 
 /** A pipeline failure as a row outcome: only a send that cannot have landed may be retried (a retry prepares anew). */
 export function rowFailureOf(error: unknown, notSignedYet: boolean): RowOutcome {
@@ -45,7 +56,7 @@ export function rowFailureOf(error: unknown, notSignedYet: boolean): RowOutcome 
   // pipeline keeps checking Solana). Skip only; the row says "Couldn't send", not "Rejected in wallet" (PM review of #536).
   const cancelled = walletCancelled(error);
   if (cancelled && !cancelled.walletRejected) {
-    return { status: "failed", error: error instanceof Error ? error.message : cancelled.message, retryable: false };
+    return { status: "failed", error: error instanceof Error ? error.message : cancelled.message, retryable: false, ...unconfirmedFlags(error) };
   }
   if (error instanceof TxRunError) {
     // The pipeline marks every wallet "no" non-retryable for its toast; in the checklist the user's explicit no is answered with Retry.
@@ -56,17 +67,17 @@ export function rowFailureOf(error: unknown, notSignedYet: boolean): RowOutcome 
     }
     // Every other kind honors the pipeline's own retryable (e.g. new terms to accept: no Retry).
     if (error.kind === "expired") return { status: "expired", error: error.message, retryable: error.retryable };
-    if (error.kind === "not-sent") return { status: "failed", error: error.message, retryable: error.retryable, notSigned: true };
-    if (error.kind === "failed") return { status: "failed", error: error.message, retryable: error.retryable };
-    return { status: "failed", error: error.message, retryable: false };
+    if (error.kind === "not-sent") return { status: "failed", error: error.message, retryable: error.retryable, notSigned: true, ...unconfirmedFlags(error) };
+    if (error.kind === "failed") return { status: "failed", error: error.message, retryable: error.retryable, ...unconfirmedFlags(error) };
+    return { status: "failed", error: error.message, retryable: false, ...unconfirmedFlags(error) };
   }
-  return notSignedYet ? { status: "failed", error: text(error), retryable: true, notSigned: true } : { status: "failed", error: text(error), retryable: false };
+  return notSignedYet ? { status: "failed", error: text(error), retryable: true, notSigned: true } : { status: "failed", error: text(error), retryable: false, ...unconfirmedFlags(error) };
 }
 function chainOutcome(status: TxChainStatus, signature: string): RowOutcome {
   if (status === "confirmed") return { status: "done", signature };
   if (status === "expired") return { status: "expired", error: "The transaction expired before it landed, so nothing changed.", retryable: true };
   if (status === "failed") return { status: "failed", error: "The transaction failed on Solana. Nothing changed except the network fee.", retryable: true };
-  return { status: "failed", error: ROW_STILL_CONFIRMING, retryable: false };
+  return { status: "failed", error: ROW_STILL_CONFIRMING, retryable: false, outcomeUnconfirmed: true };
 }
 
 export type ConfirmTiming = { intervalMs?: number; maxWaitMs?: number; sleep?: (ms: number) => Promise<void> };
@@ -91,7 +102,7 @@ async function confirmRaydium(storage: Storage, attempt: CompoundAttempt, timing
       if (executed) return { status: "done", signature: attempt.signature };
       if (checked.status === "failed") return chainOutcome("failed", attempt.signature);
       if (checked.status === "expired") return chainOutcome("expired", attempt.signature);
-      if (checked.status === "manual-review") return { status: "failed", error: "This compound landed but needs verification. Check it in Activity.", retryable: false };
+      if (checked.status === "manual-review") return { status: "failed", error: ROW_MAY_BE_ON_CHAIN, retryable: false, outcomeUnconfirmed: true };
     }
     if (Date.now() >= deadline) return chainOutcome("pending", attempt.signature);
     await sleep(timing.intervalMs ?? 4_000);
