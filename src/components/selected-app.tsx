@@ -330,9 +330,10 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
     const id = `#${String(item.nativeId).length > 12 ? short(String(item.nativeId)) : String(item.nativeId)}`;
     const pair = item.tokenA.id || item.tokenB.id ? pairOf(item) : "";
     const title = rowFigures?.stock ?? (pair || `Position ${id}`);
-    // Retained last complete value, or a dash while history catches up: both labeled "Updating" on the row.
-    const cumulativeFeesUnavailable = reportedKeys.has(item.key) && Boolean(figures[item.key]?.historyError) && rowFigures?.cumulativeFeesUsd === null;
-    const cumulativeFeesUpdating = !cumulativeFeesUnavailable && reportedKeys.has(item.key) && cumulativeFeesUpdatingOf(figuresState(item));
+    // A store outage is "temporarily unavailable", even if a last complete cumulative fee is still shown: never "Updating".
+    const historyError = Boolean(figures[item.key]?.historyError);
+    const cumulativeFeesUnavailable = reportedKeys.has(item.key) && historyError && rowFigures?.cumulativeFeesUsd === null;
+    const cumulativeFeesUpdating = !historyError && reportedKeys.has(item.key) && cumulativeFeesUpdatingOf(figuresState(item));
     return [item.key, { item, figures: rowFigures, title,
       subtitle: [title !== pair ? pair : null, group.showSourceName ? sourceName(item) : null, title.endsWith(id) ? null : id].filter(Boolean).join(" · "),
       actions: rowActions(capabilitiesOf(item), isClosed(item), { activity: item.source === positionSource.id || registry.owns(item) }), compound: rowCompound(item),
@@ -414,7 +415,7 @@ export function SelectedApp({ initialView = "portfolio", initialMint: initialMin
         </button>
       </div>
 
-      {allPositions.length > 0 && <PortfolioSummary totals={portfolio} cumulativeFeesUpdating={figureKeys.some((key) => figures[key]?.retained === true)}
+      {allPositions.length > 0 && <PortfolioSummary totals={portfolio} cumulativeFeesUpdating={figureKeys.some((key) => !figures[key]?.historyError && figures[key]?.retained === true)}
         cumulativeFeesUnavailable={figureKeys.some((key) => figures[key]?.historyError && figures[key]?.figures.cumulativeFeesUsd === null)}
         compoundAll={{ count: compoundAllInputs.length, busy: !compoundAll.running && popupBusy, onOpen: () => compoundAll.openWith(compoundAllInputs) }} />}
       <CompoundAllDialog open={compoundAll.open} state={compoundAll.state} labelOf={compoundAllLabel}

@@ -90,7 +90,7 @@ describe("Compound all popup", () => {
   it("a failure pauses with Retry / Skip; a row that may still land offers Skip only", async () => {
     const { render } = harness([met(1), met(2)], {
       "meteora-dlmm:m1": [{ status: "rejected", error: "You rejected the request.", retryable: true }],
-      "meteora-dlmm:m2": [{ status: "failed", error: "This compound is still confirming.", retryable: false }],
+      "meteora-dlmm:m2": [{ status: "failed", error: "This compound is still confirming.", retryable: false, outcomeUnconfirmed: true }],
     });
     await render();
     await click("compound-all-start");
@@ -113,7 +113,7 @@ describe("Compound all popup", () => {
 
   it("a still-confirming or unknown result (Skip only) does not say the position did not compound", async () => {
     const { render } = harness([met(1)], {
-      "meteora-dlmm:m1": [{ status: "failed", error: "This compound is still confirming. Check it in Activity before trying again.", retryable: false }],
+      "meteora-dlmm:m1": [{ status: "failed", error: "This compound is still confirming. Check it in Activity before trying again.", retryable: false, outcomeUnconfirmed: true }],
     });
     await render();
     await click("compound-all-start");
@@ -127,7 +127,7 @@ describe("Compound all popup", () => {
 
   it("a non-explicit wallet cancel is labelled Couldn't send, not Rejected in wallet, and the pause is the unconfirmed copy", async () => {
     const error = "Couldn't send the transaction: the wallet disconnected. It has not shown up on Solana; we keep checking in case it went through, and you can retry in about a minute.";
-    const { render } = harness([met(1)], { "meteora-dlmm:m1": [{ status: "failed", error, retryable: false }] });
+    const { render } = harness([met(1)], { "meteora-dlmm:m1": [{ status: "failed", error, retryable: false, outcomeUnconfirmed: true, couldntSend: true }] });
     await render();
     await click("compound-all-start");
     await settle();
@@ -182,7 +182,7 @@ describe("cleanupThroughHost (the selected position's cleanup batch)", () => {
   it("re-reads the records, waits for the controller's admission, then starts its batch", async () => {
     let admitted = false;
     const host = { reloadSaved: vi.fn(), cleanupAdmission: vi.fn(() => admitted),
-      startCleanupBatch: vi.fn(async (_r: unknown, onStage?: (s: "preparing" | "wallet" | "broadcasting") => void) => { onStage?.("wallet"); return { status: "done" as const, signatures: ["c"] }; }) };
+      startCleanupBatch: vi.fn(async (_r: unknown, onStage?: (s: "preparing" | "wallet" | "broadcasting" | "confirming") => void) => { onStage?.("wallet"); return { status: "done" as const, signatures: ["c"] }; }) };
     const stages: string[] = [];
     const run = cleanupThroughHost(host, { intervalMs: 1, waitMs: 1_000 })(receipts, (stage) => stages.push(stage));
     await new Promise((r) => setTimeout(r, 5));

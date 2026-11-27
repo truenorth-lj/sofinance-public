@@ -160,8 +160,9 @@ function PositionRow({ row, disabled, popup, onOpenDetail, onAction, onClosePopu
         <span className="block font-semibold tabular-nums text-cream">{usd(figures?.valueUsd)}</span>
         <span className="block whitespace-nowrap text-xs tabular-nums text-smoke">{formatShares(figures?.shares)} shares</span>
         <span className="block whitespace-nowrap text-xs tabular-nums text-smoke">Unclaimed {usd(figures?.unclaimedFeesUsd)}</span>
-        <span className="block whitespace-nowrap text-xs tabular-nums text-smoke">Cumulative {usd(figures?.cumulativeFeesUsd)}{row.cumulativeFeesUnavailable ? <> <span data-testid="cumulative-fees-unavailable">temporarily unavailable</span></> : row.cumulativeFeesUpdating ? <> <span data-testid="cumulative-fees-updating">Updating</span></> : null}</span>
       </span>
+      {/* Full width on phones so "temporarily unavailable" cannot shrink the title to several lines. */}
+      <span className="col-span-2 text-xs tabular-nums text-smoke lg:hidden">Cumulative {usd(figures?.cumulativeFeesUsd)}{row.cumulativeFeesUnavailable ? <> <span data-testid="cumulative-fees-unavailable">temporarily unavailable</span></> : row.cumulativeFeesUpdating ? <> <span data-testid="cumulative-fees-updating">Updating</span></> : null}</span>
       <span className="hidden tabular-nums text-cream/90 lg:block" data-testid="position-row-shares">{formatShares(figures?.shares)}</span>
       <span className="hidden tabular-nums text-cream/90 lg:block" data-testid="position-row-value">{usd(figures?.valueUsd)}</span>
       <span className="hidden tabular-nums text-cream/90 lg:block" data-testid="position-row-unclaimed">{usd(figures?.unclaimedFeesUsd)}</span>

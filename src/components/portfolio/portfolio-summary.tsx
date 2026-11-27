@@ -8,18 +8,34 @@ import { formatUsd } from "@/lib/format/usd";
 import type { PortfolioTotals } from "@/lib/portfolio/figures";
 import type { PortfolioPosition } from "@/lib/portfolio/model";
 
-export function PortfolioHistoryStatus({ rows }: { rows: readonly PortfolioPosition[] }) {
+/** History too large cannot be fixed by refreshing; other store errors might. */
+export const HISTORY_REFRESH_UNHELPFUL = new Set(["POSITION_HISTORY_TOO_LARGE"]);
+
+/** Status-line words for fee history. `null` when no row reported a history status. */
+export function portfolioHistoryStatusCopy(rows: readonly PortfolioPosition[]): { text: string; checkedAt: string | null } | null {
   const histories = rows.filter((row) => row.historyStatus);
   if (!histories.length) return null;
-  const unavailable = histories.some((row) => row.historyError);
+  const errors = histories.flatMap((row) => row.historyError ? [row.historyError] : []);
+  const retryable = errors.some((code) => !HISTORY_REFRESH_UNHELPFUL.has(code));
   const updating = histories.some((row) => row.historyStatus === "updating");
   const stale = histories.some((row) => row.historyStatus === "stale" || row.historyStatus === "unavailable");
-  const checked = histories.flatMap((row) => row.historyUpdatedAt ? [row.historyUpdatedAt] : []).sort()[0];
+  const checkedAt = histories.flatMap((row) => row.historyUpdatedAt ? [row.historyUpdatedAt] : []).sort()[0] ?? null;
+  const text = errors.length
+    ? retryable
+      ? "Cumulative fees are temporarily unavailable. Value and unclaimed fees are current. Refresh to retry. "
+      : "Cumulative fees are temporarily unavailable. Value and unclaimed fees are current. "
+    : updating ? "Updating fee history… Available values are shown. "
+    : stale ? "Fee history may be out of date. Refresh to retry. "
+    : "";
+  return { text, checkedAt };
+}
+
+export function PortfolioHistoryStatus({ rows }: { rows: readonly PortfolioPosition[] }) {
+  const copy = portfolioHistoryStatusCopy(rows);
+  if (!copy) return null;
   return <p role="status" data-testid="portfolio-history-status" className="mt-2 px-1 text-xs text-smoke">
-    {unavailable ? "Cumulative fees are temporarily unavailable. Value and unclaimed fees are current. Refresh to retry. "
-      : updating ? "Updating fee history… Available values are shown. "
-      : stale ? "Fee history may be out of date. Refresh to retry. " : ""}
-    {checked ? <>Fee history checked <time dateTime={checked}>{formatUtcTime(checked, { seconds: true })}</time>.</> : null}
+    {copy.text}
+    {copy.checkedAt ? <>Fee history checked <time dateTime={copy.checkedAt}>{formatUtcTime(copy.checkedAt, { seconds: true })}</time>.</> : null}
   </p>;
 }
 

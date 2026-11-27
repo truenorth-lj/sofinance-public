@@ -1,4 +1,3 @@
-import { COULDNT_SEND_TITLE, TX_VOID_UNCONFIRMED_MESSAGE } from "@/lib/tx-pipeline";
 import { summarizeCompoundAll, type CleanupStatus, type CompoundAllRow, type CompoundAllState, type RowStatus } from "@/lib/compound-all/state";
 
 /** Compound all's words, in one place (copy rules: no performance or fee claims). */
@@ -33,19 +32,16 @@ const ROW_STATUS: Record<RowStatus, string> = {
   queued: "Waiting", preparing: "Preparing…", "awaiting-wallet": "Approve in your wallet", confirming: "Confirming…",
   done: "Done", skipped: "Skipped", "not-signed": "Not signed", rejected: "Rejected in wallet", expired: "Expired", failed: "Failed",
 };
-export const rowStatusLabel = (row: Pick<CompoundAllRow, "status" | "selected" | "error">) => {
+export const rowStatusLabel = (row: Pick<CompoundAllRow, "status" | "selected" | "couldntSend">) => {
   if (!row.selected) return "Not selected";
   // A non-explicit wallet error (not the user's "no") whose send may still land: never "Rejected in wallet".
-  if (row.status === "failed" && row.error?.startsWith(COULDNT_SEND_TITLE)) return COMPOUND_ALL_COPY.couldntSend;
+  if (row.status === "failed" && row.couldntSend) return COMPOUND_ALL_COPY.couldntSend;
   return ROW_STATUS[row.status];
 };
 
 /** A failed row whose transaction may still land: Skip only, and the pause must not say it didn't compound. */
-export function rowResultUnconfirmed(row: Pick<CompoundAllRow, "status" | "retryable" | "error">) {
-  if (row.status !== "failed" || row.retryable !== false || !row.error) return false;
-  return row.error.startsWith("This compound is still confirming.") || row.error === TX_VOID_UNCONFIRMED_MESSAGE
-    || row.error.startsWith(COULDNT_SEND_TITLE)
-    || /could(?:n't| not) confirm whether (?:the previous request|it) went through/i.test(row.error);
+export function rowResultUnconfirmed(row: Pick<CompoundAllRow, "status" | "retryable" | "outcomeUnconfirmed">) {
+  return row.status === "failed" && row.retryable === false && row.outcomeUnconfirmed === true;
 }
 
 /** "All done." only when every selected row compounded and the cleanup (if any) was sent; otherwise "Finished." (or "Stopped."). */

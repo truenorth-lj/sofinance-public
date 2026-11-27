@@ -41,6 +41,10 @@ export type CompoundAllRow = Readonly<{
   signature?: string; error?: string;
   /** A failed row may be retried (false when the last send may still land). */
   retryable?: boolean;
+  /** The last send may still land: Skip only, and the pause must not say it didn't compound. */
+  outcomeUnconfirmed?: boolean;
+  /** A non-explicit wallet cancel whose send may still land: the row says "Couldn't send", not "Rejected in wallet". */
+  couldntSend?: boolean;
 }>;
 
 export type CleanupStatus = "none" | "pending" | "offered" | RowStage | "done" | "failed" | "skipped";
@@ -78,7 +82,8 @@ export type CompoundAllEvent =
   | { type: "start" }
   | { type: "row/stage"; key: PositionKey; stage: RowStage; signature?: string }
   | { type: "row/done"; key: PositionKey; signature: string }
-  | { type: "row/failed"; key: PositionKey; failure: RowFailure; error: string; retryable: boolean; notSigned?: boolean }
+  | { type: "row/failed"; key: PositionKey; failure: RowFailure; error: string; retryable: boolean; notSigned?: boolean;
+      outcomeUnconfirmed?: boolean; couldntSend?: boolean }
   | { type: "row/retry" }
   | { type: "row/skip" }
   | { type: "checkpoint" }
@@ -175,7 +180,8 @@ export function compoundAllReducer(state: CompoundAllState, event: CompoundAllEv
       if (state.active !== null && state.active !== event.key) return state;
       return { ...patchRow(state, event.key, {
         // A queued row starts a fresh attempt: the previous attempt's error and signature are cleared.
-        ...(row.status === "queued" ? { attempts: row.attempts + 1, error: undefined, retryable: undefined, signature: undefined } : {}),
+        ...(row.status === "queued" ? { attempts: row.attempts + 1, error: undefined, retryable: undefined, signature: undefined,
+          outcomeUnconfirmed: undefined, couldntSend: undefined } : {}),
         status: event.stage, ...(event.signature ? { signature: event.signature } : {}),
       }), active: event.key };
     }
@@ -194,9 +200,11 @@ export function compoundAllReducer(state: CompoundAllState, event: CompoundAllEv
       if (state.phase !== "running" || state.active !== event.key || !row || !IN_FLIGHT.includes(row.status)) return state;
       if (state.cancelRequested) {
         const status: RowStatus = event.notSigned ? "not-signed" : event.failure;
-        return stopRows(patchRow(state, event.key, { status, error: event.error, retryable: false }));
+        return stopRows(patchRow(state, event.key, { status, error: event.error, retryable: false,
+          outcomeUnconfirmed: event.outcomeUnconfirmed, couldntSend: event.couldntSend }));
       }
-      return { ...patchRow(state, event.key, { status: event.failure, error: event.error, retryable: event.retryable }), phase: "paused-failure" };
+      return { ...patchRow(state, event.key, { status: event.failure, error: event.error, retryable: event.retryable,
+        outcomeUnconfirmed: event.outcomeUnconfirmed, couldntSend: event.couldntSend }), phase: "paused-failure" };
     }
     case "row/retry": {
       const row = rowOf(state, state.active);

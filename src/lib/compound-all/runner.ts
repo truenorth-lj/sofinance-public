@@ -12,7 +12,7 @@ import {
  */
 export type RowOutcome =
   | { status: "done"; signature: string }
-  | { status: RowFailure; error: string; retryable: boolean; notSigned?: boolean };
+  | { status: RowFailure; error: string; retryable: boolean; notSigned?: boolean; outcomeUnconfirmed?: boolean; couldntSend?: boolean };
 export type CleanupOutcome = { status: "done"; signatures?: readonly string[] } | { status: "failed"; error: string };
 
 export type RowContext = {
@@ -58,7 +58,8 @@ export function createCompoundAllRunner(inputs: readonly CompoundAllRowInput[], 
       outcome = { status: "failed", error: message(error), retryable: false };
     }
     if (outcome.status === "done") dispatch({ type: "row/done", key, signature: outcome.signature });
-    else dispatch({ type: "row/failed", key, failure: outcome.status, error: outcome.error, retryable: outcome.retryable, notSigned: outcome.notSigned });
+    else dispatch({ type: "row/failed", key, failure: outcome.status, error: outcome.error, retryable: outcome.retryable, notSigned: outcome.notSigned,
+      outcomeUnconfirmed: outcome.outcomeUnconfirmed, couldntSend: outcome.couldntSend });
   }
   const rowOfState = (key: string) => state.rows.find((row) => row.key === key)!;
 
