@@ -100,9 +100,9 @@ ARGs. Changing a **public** build value needs a redeploy (rebuild).
 | `SOLANA_RPC_URL` | server | |
 | `SOLANA_RPC_PROVIDERS` | server | |
 | `ALCHEMY_RPC_URL` | server | Expanded inside `SOLANA_RPC_PROVIDERS` (`$ALCHEMY_RPC_URL`) |
+| `RHC_RPC_URL` | runtime | Dedicated Robinhood Chain RPC slot in `@sofinance/engine` (`rpc-evm/providers.ts`) |
 
-Not needed (on Vercel, but no code reads them): `COINGECKO_API_KEY`, `SOLAMI_DATA_API_KEY`, `SOLAMI_RPC_URL`,
-`RHC_RPC_URL` (read only by the local `scripts/rhc-token-registry.ts`).
+Not needed (on Vercel, but no app code reads them): `COINGECKO_API_KEY`, `SOLAMI_DATA_API_KEY`, `SOLAMI_RPC_URL`.
 
 ### `web`: new on Railway
 
