@@ -7,7 +7,7 @@ import type { CleanupBatchPrepared, CleanupBatchConfirmation } from "@/lib/compo
 import { ApiRequestError } from "@/lib/public-error";
 import { batchUnresolved, cleanupBatchKey, cleanupBatchProgress, loadCleanupBatch, persistCleanupBatch, pruneCleanedReceipts,
   validBatchSummary, type CleanupBatchAttempt, type CleanupBatchTransaction } from "@/lib/compound-cleanup-batch-attempt";
-import { CLEANUP_DID_NOT_COMPLETE, cleanupBatchSettlement } from "@/lib/compound-cleanup-settlement";
+import { CLEANUP_DID_NOT_COMPLETE, CLEANUP_STILL_CONFIRMING, cleanupBatchSettlement, cleanupOutcomeUnconfirmed } from "@/lib/compound-cleanup-settlement";
 import type { WalletConnection } from "./wallet-connection";
 import { captureWalletReturnedTxFailure } from "@/lib/sentry/capture";
 
@@ -23,7 +23,7 @@ async function post<T>(url: string, body: unknown, timeoutMs = 15_000): Promise<
 export type CleanupBatchStage = "preparing" | "wallet" | "broadcasting" | "confirming";
 export type CleanupConfirmTiming = { intervalMs?: number; maxWaitMs?: number; sleep?: (ms: number) => Promise<void> };
 /** `refused`: nothing was prepared (another operation, an unsettled earlier transaction, or unreadable records). */
-export type CleanupBatchOutcome = { status: "done"; signatures: string[] } | { status: "refused" | "failed"; error: string };
+export type CleanupBatchOutcome = { status: "done"; signatures: string[] } | { status: "refused" | "failed"; error: string; outcomeUnconfirmed?: boolean };
 export const CLEANUP_NOT_READY = "The cleanup can't start yet: another transaction is still being checked or local records need verification.";
 const tabChanged = "Cleanup paused because another tab changed the transaction record. Reload and verify the other tab's transaction before continuing.";
 export function useCleanupBatchController(options: Options) {
@@ -269,7 +269,9 @@ export function useCleanupBatchController(options: Options) {
     if (alive.current && latest.current.wallet === wallet) { setStageState(null); void reconcile(); }
     const sent = durable?.transactions.filter((tx) => !tx.unsent).map((tx) => tx.signature) ?? [];
     if (durable && cleanupBatchSettlement(durable) === "success") return { status: "done", signatures: sent };
-    return { status: "failed", error: outcomeError || CLEANUP_DID_NOT_COMPLETE };
+    const unconfirmed = durable ? cleanupOutcomeUnconfirmed(durable) : false;
+    return { status: "failed", error: outcomeError || (unconfirmed ? CLEANUP_STILL_CONFIRMING : CLEANUP_DID_NOT_COMPLETE),
+      ...(unconfirmed ? { outcomeUnconfirmed: true } : {}) };
   }
   const visible = loaded === options.wallet ? attempt : null;
   const progress = visible ? cleanupBatchProgress(visible) : null;

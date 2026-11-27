@@ -30,6 +30,7 @@ type Storage = NonNullable<RunTxOptions["storage"]>;
 const stageOf = (stage: TxStage): RowStage => stage === "preparing" ? "preparing" : stage === "wallet" ? "awaiting-wallet" : "confirming";
 const text = (error: unknown) => error instanceof Error && error.message ? error.message : "The transaction did not complete.";
 export const ROW_STILL_CONFIRMING = "This compound is still confirming. Check it in Activity before trying again.";
+export const ROW_MAY_BE_ON_CHAIN = "This compound may already be on-chain. Check it in Activity before trying again.";
 export const ROW_LOCKED = "Another transaction on this position is still in progress. Try again when it finishes.";
 const CLEANUP_PENDING = "A cleanup of earlier harvest accounts is still being checked. Try again once it settles.";
 
@@ -101,7 +102,7 @@ async function confirmRaydium(storage: Storage, attempt: CompoundAttempt, timing
       if (executed) return { status: "done", signature: attempt.signature };
       if (checked.status === "failed") return chainOutcome("failed", attempt.signature);
       if (checked.status === "expired") return chainOutcome("expired", attempt.signature);
-      if (checked.status === "manual-review") return { status: "failed", error: "This compound landed but needs verification. Check it in Activity.", retryable: false };
+      if (checked.status === "manual-review") return { status: "failed", error: ROW_MAY_BE_ON_CHAIN, retryable: false, outcomeUnconfirmed: true };
     }
     if (Date.now() >= deadline) return chainOutcome("pending", attempt.signature);
     await sleep(timing.intervalMs ?? 4_000);

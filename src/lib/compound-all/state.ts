@@ -53,6 +53,8 @@ export type CompoundAllCleanup = Readonly<{
   /** Signatures of the Raydium compounds confirmed in this run: their harvest accounts are what the cleanup closes. */
   sources: readonly string[];
   error?: string; signatures?: readonly string[];
+  /** Confirm timed out or needs review: the cleanup may still settle; the row says Unconfirmed, not Failed. */
+  outcomeUnconfirmed?: boolean;
 }>;
 
 /**
@@ -94,7 +96,7 @@ export type CompoundAllEvent =
   | { type: "cleanup/skip" }
   | { type: "cleanup/stage"; stage: RowStage }
   | { type: "cleanup/done"; signatures?: readonly string[] }
-  | { type: "cleanup/failed"; error: string };
+  | { type: "cleanup/failed"; error: string; outcomeUnconfirmed?: boolean };
 
 export const COMPOUND_ALL_CHECKPOINT_EVERY = 10;
 export const COMPOUND_ALL_RECOVERY_PATH = "/app/portfolio/recovery";
@@ -237,7 +239,7 @@ export function compoundAllReducer(state: CompoundAllState, event: CompoundAllEv
       return state.cleanup.status === "pending" ? { ...state, rowsComplete: true } : { ...state, rowsComplete: true, phase: ended(state) };
     case "cleanup/run":
       if (state.phase !== "cleanup-offered" && state.phase !== "paused-cleanup-failure") return state;
-      return { ...state, phase: "running", cleanup: Object.freeze({ ...state.cleanup, status: "pending" as const, error: undefined }) };
+      return { ...state, phase: "running", cleanup: Object.freeze({ ...state.cleanup, status: "pending" as const, error: undefined, outcomeUnconfirmed: undefined }) };
     case "cleanup/skip":
       if (state.phase !== "cleanup-offered" && state.phase !== "paused-cleanup-failure") return state;
       return { ...state, phase: ended(state), cleanup: Object.freeze({ ...state.cleanup, status: "skipped" as const }) };
@@ -250,6 +252,6 @@ export function compoundAllReducer(state: CompoundAllState, event: CompoundAllEv
         ...(event.signatures ? { signatures: Object.freeze([...event.signatures]) } : {}) }) };
     case "cleanup/failed":
       if (state.phase !== "running" || !IN_FLIGHT.includes(state.cleanup.status)) return state;
-      return { ...state, phase: "paused-cleanup-failure", cleanup: Object.freeze({ ...state.cleanup, status: "failed" as const, error: event.error }) };
+      return { ...state, phase: "paused-cleanup-failure", cleanup: Object.freeze({ ...state.cleanup, status: "failed" as const, error: event.error, outcomeUnconfirmed: event.outcomeUnconfirmed }) };
   }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanupBatchSettlement } from "./compound-cleanup-settlement";
+import { cleanupBatchSettlement, cleanupOutcomeUnconfirmed } from "./compound-cleanup-settlement";
 import type { CleanupBatchAttempt, CleanupBatchTransaction } from "./compound-cleanup-batch-attempt";
 
 const tx = (over: Partial<CleanupBatchTransaction> = {}): CleanupBatchTransaction => ({
@@ -28,5 +28,17 @@ describe("cleanupBatchSettlement", () => {
   it("ignores unsent transactions when judging a mixed batch, and fails when nothing was sent", () => {
     expect(cleanupBatchSettlement(batch([tx({ status: "success" }), tx({ signature: "b", status: "failed", unsent: true })]))).toBe("success");
     expect(cleanupBatchSettlement(batch([tx({ status: "failed", unsent: true })]))).toBe("failed");
+  });
+});
+
+describe("cleanupOutcomeUnconfirmed", () => {
+  it("is true only while confirm is still pending or needs review, not after an on-chain failure or expiry", () => {
+    expect(cleanupOutcomeUnconfirmed(batch([tx({ status: "pending" })]))).toBe(true);
+    expect(cleanupOutcomeUnconfirmed(batch([tx({ status: "manual-review" })]))).toBe(true);
+    expect(cleanupOutcomeUnconfirmed(batch([tx({ status: "failed" })]))).toBe(false);
+    expect(cleanupOutcomeUnconfirmed(batch([tx({ status: "expired" })]))).toBe(false);
+    expect(cleanupOutcomeUnconfirmed(batch([tx({ status: "success" })]))).toBe(false);
+    expect(cleanupOutcomeUnconfirmed(batch([tx({ status: "failed", unsent: true })]))).toBe(false);
+    expect(cleanupOutcomeUnconfirmed(batch([tx({ status: "manual-review" }), tx({ signature: "b", status: "failed" })]))).toBe(false);
   });
 });

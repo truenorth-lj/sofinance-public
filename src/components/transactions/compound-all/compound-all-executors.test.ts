@@ -10,7 +10,7 @@ import { TX_PREFLIGHT_POLICY, type TxWallet } from "@/lib/tx-pipeline";
 import { compoundAttemptKey, loadCompoundAttempt } from "@sofinance/engine/compound-attempt";
 import type { RowContext } from "@/lib/compound-all/runner";
 import { compoundRaydiumPosition, compoundRegistryPosition, createCompoundAllExecutors, ROW_EARLIER_COMPOUND, ROW_LOCKED, ROW_RECORDS_INVALID,
-  ROW_STILL_CONFIRMING } from "./compound-all-executors";
+  ROW_MAY_BE_ON_CHAIN, ROW_STILL_CONFIRMING } from "./compound-all-executors";
 import { beginPositionOp } from "../../unified-positions/position-op-lock";
 
 const positionMint = testKeypair(80).publicKey.toBase58();
@@ -148,6 +148,9 @@ describe("Raydium row (extracted per-position compound)", () => {
     confirmReply = (signature) => ({ signature, status: "pending", chainStatus: "pending", state: null });
     expect(await compoundRaydiumPosition({ wallet: signingWallet(), positionMint, storage: window.localStorage, context: context(), confirm: noWait }))
       .toEqual({ status: "failed", error: ROW_STILL_CONFIRMING, retryable: false, outcomeUnconfirmed: true });
+    confirmReply = (signature) => ({ signature, status: "manual-review", chainStatus: "unknown", state: null });
+    expect(await compoundRaydiumPosition({ wallet: signingWallet(), positionMint, storage: window.localStorage, context: context(), confirm: noWait }))
+      .toEqual({ status: "failed", error: ROW_MAY_BE_ON_CHAIN, retryable: false, outcomeUnconfirmed: true });
   });
 
   it("a cancel after prepare stops before the wallet is asked", async () => {

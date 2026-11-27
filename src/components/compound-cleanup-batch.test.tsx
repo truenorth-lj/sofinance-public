@@ -296,7 +296,7 @@ describe("live admission after durable batch persistence", () => {
     await act(async () => { outcome = await batch.start([receipt(0), receipt(1), receipt(2)], { onStage: (stage) => stages.push(stage), confirm: { maxWaitMs: 0 } }); });
     expect(mocks.signAll).toHaveBeenCalledOnce();
     // Signed and saved is never signed again. The row is not done while confirmations are still pending (or failed).
-    expect(outcome).toMatchObject({ status: "failed" });
+    expect(outcome).toMatchObject({ status: "failed", outcomeUnconfirmed: true });
     expect(stages.slice(0, 2)).toEqual(["preparing", "wallet"]);
     expect(stages).toContain("confirming");
     expect(requests).toBe(revoke ? phase === "persist" ? 0 : 1 : 3);
@@ -332,6 +332,7 @@ describe("cleanup row is done only after on-chain settlement", () => {
     let outcome: Awaited<ReturnType<typeof batch.start>> | undefined;
     await act(async () => { outcome = await batch.start([receipt(0)]); });
     expect(outcome).toMatchObject({ status: "failed", error: "The cleanup did not complete." });
+    expect(outcome).not.toHaveProperty("outcomeUnconfirmed");
     expect(mocks.sign).toHaveBeenCalledOnce();
     expect(JSON.parse(window.localStorage.getItem(cleanupBatchKey(fixture.wallet))!).transactions).toHaveLength(1);
     expect(batch.unresolved).toBe(false);
