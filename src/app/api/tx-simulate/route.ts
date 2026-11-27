@@ -3,7 +3,8 @@ import { json } from "@/lib/api/route";
 import { apiError } from "@/lib/api-response";
 import { parsePermittedTx } from "@/lib/tx-simulate/permitted-input.server";
 import { simulateBeforeWallet } from "@/lib/tx-simulate/simulate.server";
-import { clientIp, txSimulateCheckRateLimited, txSimulateRateLimited } from "@/lib/tx-send/rate-limit";
+import { clientIp } from "@/lib/request-origin/client-ip";
+import { txSimulateCheckRateLimited, txSimulateRateLimited } from "@/lib/tx-send/rate-limit";
 
 
 /**

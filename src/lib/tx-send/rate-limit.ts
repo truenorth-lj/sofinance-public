@@ -14,9 +14,6 @@ export const TX_LANDED_REQUESTS_PER_IP_PER_MINUTE = 25;
 export const TX_LANDED_REQUESTS_PER_CHECK_PER_MINUTE = 15;
 export const TX_LANDED_REQUESTS_PER_WALLET_PER_MINUTE = 30;
 
-export const clientIp = (request: Request) => request.headers.get("x-real-ip")?.trim()
-  || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-
 /** In-memory sliding-minute limiter keyed by any string (IP, permit, wallet). Per instance; see each user's limits note. */
 export function slidingWindowLimiter(limit: number) {
   const hits = new Map<string, number[]>();

@@ -76,7 +76,7 @@ Copy `.env.example` → `.env.local`. Comments in that file are the source of tr
 | `JUPITER_API_KEY` | Jupiter HTTP API key and legacy signing fallback if the dedicated signing secret is unset |
 | `SOFINANCE_SIGNING_SECRET` | Server-only HMAC key for transaction permits, sign links, and MCP tokens |
 | `NEXT_PUBLIC_REOWN_PROJECT_ID` | Wallet connect in the web UI ([Reown dashboard](https://dashboard.reown.com/)) |
-| `NEXT_PUBLIC_APP_URL` | Absolute MCP and sign-link URLs (local: `http://localhost:3000`; production auto-detects `VERCEL_URL`) |
+| `NEXT_PUBLIC_APP_URL` | Absolute MCP and sign-link URLs (local: `http://localhost:3000`; Vercel production auto-detects `VERCEL_URL`; **required at build time on Railway**, see [Railway deploy](docs/deploy/railway.md)) |
 
 **RPC** — `SOLANA_RPC_URL` (optional, recommended). If unset, server RPC uses public mainnet.
 
@@ -123,7 +123,7 @@ docker build -t sofinance-rwa-service .
 docker run --env-file .env.local -p 3000:3000 sofinance-rwa-service
 ```
 
-The web UI and MCP HTTP endpoint are the Next.js app (`pnpm dev` / `pnpm build && pnpm start`, or Vercel).
+The web UI and MCP HTTP endpoint are the Next.js app (`pnpm dev` / `pnpm build && pnpm start`, Vercel, or Railway: [docs/deploy/railway.md](docs/deploy/railway.md)).
 
 ### Error monitoring (Sentry)
 
@@ -138,7 +138,7 @@ Optional `@sentry/nextjs` client, server, and edge setup. The production/preview
 | `SENTRY_ORG` | Sentry org slug (`sofinance`). |
 | `SENTRY_PROJECT` | Sentry project slug (`sofinance-public`). |
 
-Session Replay is off. `sendDefaultPii` is false. Events scrub wallet addresses, signatures, RPC URLs, API keys, `x-vercel-*` / IP / `Authorization` / `Cookie` headers, and drop `user.ip_address`. API captures are 5xx and Jupiter/RPC upstream only (not validation 4xx or user-rejected). The `route` tag comes from the request path / Next transaction, not a bundled stack.
+Session Replay is off. `sendDefaultPii` is false. Events scrub wallet addresses, signatures, RPC URLs, API keys, `x-vercel-*` / IP (incl. `CF-Connecting-IP`) / `Authorization` / `Cookie` headers, and drop `user.ip_address`. API captures are 5xx and Jupiter/RPC upstream only (not validation 4xx or user-rejected). The `route` tag comes from the request path / Next transaction, not a bundled stack.
 
 ### Point an MCP client at your instance
 

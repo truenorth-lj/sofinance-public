@@ -5,7 +5,8 @@ import { apiError } from "@/lib/api-response";
 import { checkVoidedTx } from "@/lib/tx-simulate/expiry.server";
 import { parsePermittedTx } from "@/lib/tx-simulate/permitted-input.server";
 import { publicConnection } from "@/lib/tx-simulate/simulate.server";
-import { clientIp, txExpiryCheckRateLimited, txExpiryRateLimited } from "@/lib/tx-send/rate-limit";
+import { clientIp } from "@/lib/request-origin/client-ip";
+import { txExpiryCheckRateLimited, txExpiryRateLimited } from "@/lib/tx-send/rate-limit";
 
 const isSignature = (value: unknown): value is string => {
   if (typeof value !== "string" || value.length > 90) return false;

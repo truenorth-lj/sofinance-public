@@ -11,12 +11,6 @@ const WINDOW_MS = 60_000;
 export const REQUESTS_PER_IP_PER_MINUTE = 20;
 const hits = new Map<string, number[]>();
 
-/** Same IP parsing as GET /api/rhc-univ4-positions. */
-export function rhcScanClientIp(request: Request): string {
-  return request.headers.get("x-real-ip")?.trim()
-    || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-}
-
 /** Per-IP request limit (sliding minute, per instance). */
 export function rhcScanRateLimited(ip: string, now = Date.now()): boolean {
   const recent = (hits.get(ip) ?? []).filter((t) => now - t < WINDOW_MS);
