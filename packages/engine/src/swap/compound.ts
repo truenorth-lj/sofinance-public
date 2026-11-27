@@ -31,6 +31,7 @@ export async function buildCompoundSwapPlan(input: {
   const [epochInfo, slot, configAccount, poolAccount] = await Promise.all([connection.getEpochInfo("confirmed"), connection.getSlot("confirmed"),
     connection.getAccountInfo(computePoolInfo.ammConfig.id, "confirmed"),
     connection.getAccountInfo(new PublicKey(state.poolId), "confirmed").catch(() => null)]);
+  const onChainObservation = decodeOnChainPoolObservation(poolAccount, state.programId, state);
   if (!configAccount || configAccount.owner.toBase58() !== state.programId) throw new Error("Compound swap config program mismatch");
   const configInfo = ClmmConfigLayout.decode(configAccount.data);
   if (configInfo.tradeFeeRate !== computePoolInfo.ammConfig.tradeFeeRate || configInfo.tickSpacing !== state.tickSpacing) throw new Error("Compound swap config has changed");
@@ -99,7 +100,7 @@ export async function buildCompoundSwapPlan(input: {
   const instruction = built.instructions[0]!;
   validateCompoundSwapInstruction(instruction, { state, accounts, swap, config: computePoolInfo.ammConfig.id.toBase58(),
     observation: computePoolInfo.observationId.toBase58(),
-    onChainObservation: decodeOnChainPoolObservation(poolAccount, state.programId),
+    onChainObservation,
     tickArrays: arrays.map((address) => address.toBase58()) });
   return { instructions: [instruction], route: null, swap, quotedBalances: planned.balances, sqrtPriceAfterX64: planned.sqrtPriceX64 };
 }

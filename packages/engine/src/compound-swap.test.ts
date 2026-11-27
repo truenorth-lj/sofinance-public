@@ -173,6 +173,8 @@ it("maps each reject path to its own code, and still accepts a valid swap", () =
   record(dupTicks.validate, "tick_arrays_duplicate");
   const unread = fixture(); unread.shape.onChainObservation = null;
   record(unread.validate, "observation_unreadable");
+  const unreadUndefined = fixture(); unreadUndefined.shape.onChainObservation = undefined;
+  record(unreadUndefined.validate, "observation_unreadable");
   const observation = fixture(); observation.shape.observation = key();
   record(observation.validate, "observation_mismatch");
   const program = fixture(); program.ix.programId = Keypair.generate().publicKey;
@@ -257,17 +259,38 @@ it("still accepts SPCX when the on-chain observation equals the PDA", () => {
   expect(() => validateCompoundSwapInstruction(swapIx(shape, pda), shape)).not.toThrow();
 });
 
+function encodePoolState(fields: {
+  observationId: PublicKey; mintA?: PublicKey; mintB?: PublicKey; vaultA?: PublicKey; vaultB?: PublicKey;
+}, discriminator: Buffer = Buffer.from("f7ede3f5d7c3de46", "hex")) {
+  const decoded = PoolInfoLayout.decode(Buffer.alloc(PoolInfoLayout.span));
+  decoded.observationId = fields.observationId;
+  if (fields.mintA) decoded.mintA = fields.mintA;
+  if (fields.mintB) decoded.mintB = fields.mintB;
+  if (fields.vaultA) decoded.vaultA = fields.vaultA;
+  if (fields.vaultB) decoded.vaultB = fields.vaultB;
+  const encoded = Buffer.alloc(PoolInfoLayout.span);
+  PoolInfoLayout.encode(decoded, encoded);
+  encoded.set(discriminator, 0);
+  return encoded;
+}
+
 it("decodes observation_id from a CLMM pool account and fails closed otherwise", () => {
   const programId = Keypair.generate().publicKey;
   const observation = new PublicKey("3YZE41e4GKm9Uqvx6H4QA1FdyxT15nEjUP8LbvdiDF2t");
+  const mintA = Keypair.generate().publicKey, mintB = Keypair.generate().publicKey;
+  const vaultA = Keypair.generate().publicKey, vaultB = Keypair.generate().publicKey;
+  const expected = { mintA: mintA.toBase58(), mintB: mintB.toBase58(), vaultA: vaultA.toBase58(), vaultB: vaultB.toBase58() };
   expect(decodeOnChainPoolObservation(null, programId.toBase58())).toBeNull();
+  expect(decodeOnChainPoolObservation(undefined, programId.toBase58())).toBeNull();
   expect(decodeOnChainPoolObservation({ owner: programId, data: Buffer.from([1, 2, 3]) }, programId.toBase58())).toBeNull();
   expect(decodeOnChainPoolObservation({ owner: Keypair.generate().publicKey, data: Buffer.alloc(10) }, programId.toBase58())).toBeNull();
   const empty = Buffer.alloc(PoolInfoLayout.span);
   expect(decodeOnChainPoolObservation({ owner: programId, data: empty }, programId.toBase58())).toBeNull();
-  const decoded = PoolInfoLayout.decode(Buffer.alloc(PoolInfoLayout.span));
-  decoded.observationId = observation;
-  const encoded = Buffer.alloc(PoolInfoLayout.span);
-  PoolInfoLayout.encode(decoded, encoded);
-  expect(decodeOnChainPoolObservation({ owner: programId, data: encoded }, programId.toBase58())).toBe(observation.toBase58());
+  const valid = encodePoolState({ observationId: observation, mintA, mintB, vaultA, vaultB });
+  expect(decodeOnChainPoolObservation({ owner: programId, data: valid }, programId.toBase58(), expected)).toBe(observation.toBase58());
+  const wrongDisc = encodePoolState({ observationId: observation, mintA, mintB, vaultA, vaultB }, Buffer.alloc(8, 1));
+  expect(wrongDisc.subarray(0, 8).equals(Buffer.from("f7ede3f5d7c3de46", "hex"))).toBe(false);
+  expect(decodeOnChainPoolObservation({ owner: programId, data: wrongDisc }, programId.toBase58(), expected)).toBeNull();
+  const wrongMint = encodePoolState({ observationId: observation, mintA: Keypair.generate().publicKey, mintB, vaultA, vaultB });
+  expect(decodeOnChainPoolObservation({ owner: programId, data: wrongMint }, programId.toBase58(), expected)).toBeNull();
 });

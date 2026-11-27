@@ -76,20 +76,39 @@ export function optimizeCompoundSwap(input: SwapContext) {
 export type CompoundSwapShape = {
   state: CompoundPositionState; accounts: [CompoundAccount, CompoundAccount];
   swap: CompoundSwap; config: string; observation: string; tickArrays: string[];
-  /** observation_id decoded from the on-chain CLMM pool account, or null if that read or decode failed. */
-  onChainObservation: string | null;
+  /** observation_id decoded from the on-chain CLMM pool account, or null/undefined if that read or decode failed. */
+  onChainObservation: string | null | undefined;
 };
 
-/** Decode observation_id from a fetched CLMM pool account. Null if missing, wrong owner, or undecodable. */
+/** 8-byte Anchor discriminator for Raydium CLMM PoolState (`account:PoolState`). */
+export const POOL_STATE_DISCRIMINATOR = Buffer.from("f7ede3f5d7c3de46", "hex");
+
+export type OnChainPoolObservationExpected = {
+  mintA: string; mintB: string; vaultA: string; vaultB: string;
+};
+
+/** Decode observation_id from a fetched CLMM pool account. Null if missing, undefined, wrong
+ * owner, wrong PoolState discriminator, mint/vault mismatch, or undecodable. */
 export function decodeOnChainPoolObservation(
-  account: { owner: PublicKey; data: Uint8Array } | null, programId: string,
+  account: { owner: PublicKey; data: Uint8Array } | null | undefined, programId: string,
+  expected?: OnChainPoolObservationExpected,
 ): string | null {
-  if (!account || account.owner.toBase58() !== programId) return null;
+  if (account === null || account === undefined || account.owner.toBase58() !== programId) return null;
+  const data = Buffer.from(account.data);
+  if (data.length < POOL_STATE_DISCRIMINATOR.length || !data.subarray(0, 8).equals(POOL_STATE_DISCRIMINATOR)) return null;
   try {
-    const observationId = PoolInfoLayout.decode(Buffer.from(account.data)).observationId;
+    const decoded = PoolInfoLayout.decode(data);
+    const observationId = decoded.observationId;
     if (!(observationId instanceof PublicKey)) return null;
     const encoded = observationId.toBase58();
-    return encoded === PublicKey.default.toBase58() ? null : encoded;
+    if (encoded === PublicKey.default.toBase58()) return null;
+    if (expected) {
+      if (!(decoded.mintA instanceof PublicKey) || !(decoded.mintB instanceof PublicKey) ||
+        !(decoded.vaultA instanceof PublicKey) || !(decoded.vaultB instanceof PublicKey)) return null;
+      if (decoded.mintA.toBase58() !== expected.mintA || decoded.mintB.toBase58() !== expected.mintB ||
+        decoded.vaultA.toBase58() !== expected.vaultA || decoded.vaultB.toBase58() !== expected.vaultB) return null;
+    }
+    return encoded;
   } catch {
     return null;
   }
@@ -174,7 +193,7 @@ export function validateCompoundSwapInstruction(ix: TransactionInstruction, shap
     [() => accounts[0].address === accounts[1].address, "isolated_accounts_equal"],
     [() => tickArrays.length === 0, "tick_arrays_empty"],
     [() => new Set(tickArrays).size !== tickArrays.length, "tick_arrays_duplicate"],
-    [() => onChainObservation === null, "observation_unreadable"],
+    [() => onChainObservation === null || onChainObservation === undefined, "observation_unreadable"],
     [() => observation !== onChainObservation, "observation_mismatch"],
     [() => ix.programId.toBase58() !== state.programId, "program_mismatch"],
     [() => ix.data.length !== 41, "data_length_mismatch"],
