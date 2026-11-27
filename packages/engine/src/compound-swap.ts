@@ -78,8 +78,60 @@ export type CompoundSwapShape = {
   swap: CompoundSwap; config: string; observation: string; tickArrays: string[];
 };
 
+/** Stable codes for each check in validateCompoundSwapInstruction. Order matches the original short-circuit. */
+export const COMPOUND_SWAP_GUARD_CODES = [
+  "pool_mismatch", "input_mint_mismatch", "output_mint_mismatch", "input_amount_invalid",
+  "min_output_invalid", "quoted_output_invalid", "account_mint_mismatch", "isolated_account_is_ata",
+  "isolated_accounts_equal", "tick_arrays_empty", "tick_arrays_duplicate", "observation_mismatch",
+  "program_mismatch", "data_length_mismatch", "discriminator_mismatch", "input_amount_data_mismatch",
+  "min_output_data_mismatch", "price_limit_nonzero", "not_base_input", "key_count_mismatch",
+  "account_pubkey_mismatch", "account_signer_mismatch", "account_writable_mismatch",
+] as const;
+export type CompoundSwapGuardCode = typeof COMPOUND_SWAP_GUARD_CODES[number];
+
+/** Fixed public sentences. No accounts, RPC URLs, or other secrets. */
+export const COMPOUND_SWAP_GUARD_MESSAGES = {
+  pool_mismatch: "Compound swap pool mismatch",
+  input_mint_mismatch: "Compound swap input mint mismatch",
+  output_mint_mismatch: "Compound swap output mint mismatch",
+  input_amount_invalid: "Compound swap input amount invalid",
+  min_output_invalid: "Compound swap minOutput invalid",
+  quoted_output_invalid: "Compound swap quoted output invalid",
+  account_mint_mismatch: "Compound swap account mint mismatch",
+  isolated_account_is_ata: "Compound swap isolated account is a wallet ATA",
+  isolated_accounts_equal: "Compound swap isolated accounts are the same",
+  tick_arrays_empty: "Compound swap tick arrays empty",
+  tick_arrays_duplicate: "Compound swap tick arrays duplicate",
+  observation_mismatch: "Compound swap observation mismatch",
+  program_mismatch: "Compound swap program mismatch",
+  data_length_mismatch: "Compound swap data length mismatch",
+  discriminator_mismatch: "Compound swap discriminator mismatch",
+  input_amount_data_mismatch: "Compound swap input amount data mismatch",
+  min_output_data_mismatch: "Compound swap minOutput data mismatch",
+  price_limit_nonzero: "Compound swap price limit is not zero",
+  not_base_input: "Compound swap is not base-input",
+  key_count_mismatch: "Compound swap key count mismatch",
+  account_pubkey_mismatch: "Compound swap account pubkey mismatch",
+  account_signer_mismatch: "Compound swap account signer mismatch",
+  account_writable_mismatch: "Compound swap account writable mismatch",
+} as const satisfies Record<CompoundSwapGuardCode, string>;
+
+export class CompoundSwapGuardError extends Error {
+  readonly code: CompoundSwapGuardCode;
+  constructor(code: CompoundSwapGuardCode) {
+    super(COMPOUND_SWAP_GUARD_MESSAGES[code]);
+    this.name = "CompoundSwapGuardError";
+    this.code = code;
+  }
+}
+
+function fail(code: CompoundSwapGuardCode): never {
+  throw new CompoundSwapGuardError(code);
+}
+
 /** Validate every account and privilege independently of the SDK's builder.
- * The caller supplies tick arrays whose ownership/pool/PDA were read on chain. */
+ * The caller supplies tick arrays whose ownership/pool/PDA were read on chain.
+ * Accept/reject is unchanged; each check now has its own code and message. */
 export function validateCompoundSwapInstruction(ix: TransactionInstruction, shape: CompoundSwapShape) {
   const { state, accounts, swap, config, observation, tickArrays } = shape;
   const inputA = swap.inputMint === state.mintA;
@@ -90,19 +142,33 @@ export function validateCompoundSwapInstruction(ix: TransactionInstruction, shap
     TOKEN_PROGRAM_ID.toBase58(), TOKEN_2022_PROGRAM_ID.toBase58(), MEMO_PROGRAM_ID.toBase58(),
     swap.inputMint, swap.outputMint,
     getPdaExBitmapAccount(new PublicKey(state.programId), new PublicKey(state.poolId)).publicKey.toBase58(), ...tickArrays];
-  if (swap.poolId !== state.poolId || ![state.mintA, state.mintB].includes(swap.inputMint) ||
-    swap.outputMint !== (inputA ? state.mintB : state.mintA) || inputAmount <= 0n || inputAmount > MAX_U64 ||
-    minOutput <= 0n || minOutput > quotedOutput || quotedOutput > MAX_U64 ||
-    accounts[0].mint !== state.mintA || accounts[1].mint !== state.mintB ||
-    accounts.some((account) => [state.ataA, state.ataB].includes(account.address)) ||
-    accounts[0].address === accounts[1].address || tickArrays.length === 0 || new Set(tickArrays).size !== tickArrays.length ||
-    observation !== getPdaObservationAccount(new PublicKey(state.programId), new PublicKey(state.poolId)).publicKey.toBase58() ||
-    ix.programId.toBase58() !== state.programId || ix.data.length !== 41 ||
-    !ix.data.subarray(0, 8).equals(createHash("sha256").update("global:swap_v2").digest().subarray(0, 8)) ||
-    ix.data.readBigUInt64LE(8) !== inputAmount || ix.data.readBigUInt64LE(16) !== minOutput ||
-    ix.data.subarray(24, 40).some((byte) => byte !== 0) || ix.data[40] !== 1 || ix.keys.length !== expected.length) throw new Error("Compound swap instruction, mint, or limit mismatch");
+  const checks: readonly [failed: boolean, code: CompoundSwapGuardCode][] = [
+    [swap.poolId !== state.poolId, "pool_mismatch"],
+    [![state.mintA, state.mintB].includes(swap.inputMint), "input_mint_mismatch"],
+    [swap.outputMint !== (inputA ? state.mintB : state.mintA), "output_mint_mismatch"],
+    [inputAmount <= 0n || inputAmount > MAX_U64, "input_amount_invalid"],
+    [minOutput <= 0n || minOutput > quotedOutput, "min_output_invalid"],
+    [quotedOutput > MAX_U64, "quoted_output_invalid"],
+    [accounts[0].mint !== state.mintA || accounts[1].mint !== state.mintB, "account_mint_mismatch"],
+    [accounts.some((account) => [state.ataA, state.ataB].includes(account.address)), "isolated_account_is_ata"],
+    [accounts[0].address === accounts[1].address, "isolated_accounts_equal"],
+    [tickArrays.length === 0, "tick_arrays_empty"],
+    [new Set(tickArrays).size !== tickArrays.length, "tick_arrays_duplicate"],
+    [observation !== getPdaObservationAccount(new PublicKey(state.programId), new PublicKey(state.poolId)).publicKey.toBase58(), "observation_mismatch"],
+    [ix.programId.toBase58() !== state.programId, "program_mismatch"],
+    [ix.data.length !== 41, "data_length_mismatch"],
+    [!ix.data.subarray(0, 8).equals(createHash("sha256").update("global:swap_v2").digest().subarray(0, 8)), "discriminator_mismatch"],
+    [ix.data.readBigUInt64LE(8) !== inputAmount, "input_amount_data_mismatch"],
+    [ix.data.readBigUInt64LE(16) !== minOutput, "min_output_data_mismatch"],
+    [ix.data.subarray(24, 40).some((byte) => byte !== 0), "price_limit_nonzero"],
+    [ix.data[40] !== 1, "not_base_input"],
+    [ix.keys.length !== expected.length, "key_count_mismatch"],
+  ];
+  for (const [failed, code] of checks) if (failed) fail(code);
   const writable = new Set([2, 3, 4, 5, 6, 7, ...expected.slice(13).map((_, index) => index + 13)]);
   ix.keys.forEach((key, index) => {
-    if (key.pubkey.toBase58() !== expected[index] || key.isSigner !== (index === 0) || key.isWritable !== writable.has(index)) throw new Error("Compound swap account or permission mismatch");
+    if (key.pubkey.toBase58() !== expected[index]) fail("account_pubkey_mismatch");
+    if (key.isSigner !== (index === 0)) fail("account_signer_mismatch");
+    if (key.isWritable !== writable.has(index)) fail("account_writable_mismatch");
   });
 }

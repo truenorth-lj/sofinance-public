@@ -212,3 +212,19 @@ describe("compound insufficient SOL", () => {
     expect(publicErrorCode(new Error("Compound SOL expenditure or remaining balance exceeds limit"))).toBeUndefined();
   });
 });
+
+it("names the compound swap observation check on the prepare 400", async () => {
+  const error = Object.assign(new Error("Compound swap observation mismatch"), {
+    name: "CompoundSwapGuardError",
+    code: "observation_mismatch",
+  });
+  expect(publicErrorCode(error)).toBe("observation_mismatch");
+  expect(sanitizePublicError(error, "Compound transaction preparation failed")).toBe("Compound swap observation mismatch");
+  const response = apiError(error, "Compound transaction preparation failed");
+  const body = await response.json() as { error: string; code?: string };
+  expect(response.status).toBe(400);
+  expect(body.error).toBe("Compound swap observation mismatch");
+  expect(body.code).toBe("observation_mismatch");
+  expect(JSON.stringify(body)).not.toMatch(/https?:\/\/|rpc\.|api[_-]?key/i);
+});
+
