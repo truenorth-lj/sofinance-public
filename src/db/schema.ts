@@ -232,7 +232,8 @@ export const positionHistoryState = pgTable("position_history_state", {
   leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true, mode: "string" }),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`CURRENT_TIMESTAMP`).notNull(),
 }, () => [
-  check("position_history_state_identity_check", sql`network = 'mainnet-beta' AND program_id = 'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK' AND position_mint ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$'`),
+  // Raydium CLMM and Meteora DLMM (0006). The column default stays Raydium; Meteora writers set program_id.
+  check("position_history_state_identity_check", sql`network = 'mainnet-beta' AND program_id IN ('CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK', 'LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo') AND position_mint ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$'`),
   check("position_history_state_context_check", sql`jsonb_typeof(context) = 'object' AND context->>'positionMint' = position_mint`),
   check("position_history_state_cursor_check", sql`(head_signature IS NULL OR head_signature ~ '^[1-9A-HJ-NP-Za-km-z]{64,88}$') AND (backfill_before IS NULL OR backfill_before ~ '^[1-9A-HJ-NP-Za-km-z]{64,88}$') AND (delta_before IS NULL OR delta_before ~ '^[1-9A-HJ-NP-Za-km-z]{64,88}$') AND (delta_head IS NULL OR delta_head ~ '^[1-9A-HJ-NP-Za-km-z]{64,88}$')`),
   check("position_history_state_versions_check", sql`parser_version > 0 AND revision BETWEEN 0 AND 9007199254740991 AND lease_epoch BETWEEN 0 AND 9007199254740991`),

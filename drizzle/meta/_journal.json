@@ -43,6 +43,13 @@
       "when": 1794301967902,
       "tag": "0005_stock-entry-prices",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795503688014,
+      "tag": "0006_position-history-multi-program",
+      "breakpoints": true
     }
   ]
 }
