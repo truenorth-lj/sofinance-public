@@ -133,3 +133,19 @@ RWA_DB_TEST_URL='<test connection>' pnpm exec vitest run --maxWorkers=4 \
   src/lib/position-history-postgres-store.integration.test.ts \
   src/lib/stock-entry-price-postgres-store.integration.test.ts
 ```
+
+## Railway fallback target
+
+Production can point at a Railway Postgres (PG18, database `sofinance`, role `sofinance_owner`)
+reached through its public TCP proxy (`*.proxy.rlwy.net`). Railway's server certificate is
+self-signed, so two settings are required together:
+
+- `SOFINANCE_RWA_DATABASE_URL`: the Railway proxy URL. It takes precedence over `DATABASE_URL`,
+  which stays untouched; deleting this variable (and redeploying) switches back.
+- `SOFINANCE_RWA_DB_CA_PEM`: the Railway `root-ca` certificate (public, not a credential). The
+  Railway endpoint is then verified against this CA only (no system roots), and the leaf must be
+  the Railway Postgres certificate (SAN `localhost`). Without it the Railway host is refused on
+  Vercel. Neon endpoints keep system-root CA and hostname verification.
+
+The certificate rotates only when the Railway service regenerates it (820-day validity); update
+`SOFINANCE_RWA_DB_CA_PEM` if the root changes.
