@@ -51,8 +51,22 @@ it.each(["exception", "null", "missing metadata"])("keeps retrying after known-f
   const f = await fixture();
   if (kind === "exception") mocks.transaction.mockRejectedValue(new Error("Fetch is aborted"));
   else mocks.transaction.mockResolvedValue(kind === "null" ? null : { ...f.transaction, meta: null });
-  expect(await (await POST(f.request())).json()).toEqual({ signature, status: "pending", chainStatus: "pending" });
+  // `onChain` is only reported when the RPC answered: the signature was finalized here, so it is on Solana.
+  expect(await (await POST(f.request())).json()).toEqual({ signature, status: "pending", chainStatus: "pending", ...(kind === "exception" ? {} : { onChain: true }) });
   expect(mocks.sources).not.toHaveBeenCalled();
+});
+it("tells the client a signature Solana has not seen is not on chain, so it may be sent again inside its window", async () => {
+  const f = await fixture(); mocks.statuses.mockResolvedValue({ value: [null] }); mocks.transaction.mockResolvedValue(null); mocks.height.mockResolvedValue(99);
+  expect(await (await POST(f.request())).json()).toEqual({ signature, status: "pending", chainStatus: "pending", onChain: false });
+  expect(mocks.sources).not.toHaveBeenCalled();
+});
+it("marks a seen but unfinalized signature as on chain and never asks for a re-send", async () => {
+  const f = await fixture(); mocks.statuses.mockResolvedValue({ value: [{ confirmationStatus: "confirmed", err: null }] });
+  expect(await (await POST(f.request())).json()).toEqual({ signature, status: "pending", chainStatus: "pending", onChain: true });
+});
+it("omits onChain when the RPC could not answer", async () => {
+  const f = await fixture(); mocks.statuses.mockRejectedValue(new Error("Fetch is aborted"));
+  expect(await (await POST(f.request())).json()).not.toHaveProperty("onChain");
 });
 it("keeps retrying transient status lookup failures", async () => {
   const f = await fixture(); mocks.statuses.mockRejectedValue(new Error("Fetch is aborted"));
@@ -77,7 +91,7 @@ it("does not infer success from disappeared accounts when receipt is unavailable
 });
 it("expires only a missing signature beyond finalized validity with all sources still present", async () => {
   const f = await fixture(); mocks.statuses.mockResolvedValue({ value: [null] }); mocks.transaction.mockResolvedValue(null);
-  expect(await (await POST(f.request())).json()).toMatchObject({ status: "expired", chainStatus: "expired" });
+  expect(await (await POST(f.request())).json()).toMatchObject({ status: "expired", chainStatus: "expired", onChain: false });
   mocks.height.mockResolvedValue(100);
   expect(await (await POST(f.request())).json()).toMatchObject({ status: "pending", chainStatus: "pending" });
 });

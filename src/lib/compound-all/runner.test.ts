@@ -41,6 +41,15 @@ function harness(inputs: CompoundAllRowInput[], options: { checkpointEvery?: num
 const statuses = (state: CompoundAllState) => state.rows.map((row) => row.status);
 
 describe("compound-all runner", () => {
+  it("carries the cleanup failure reason code into the state", async () => {
+    const h = harness([ray(1)], { cleanup: async () => ({ status: "failed" as const, error: "expired", reason: "expired-unlanded" as const }) });
+    void h.runner.start(); await flush();
+    await h.done("r1"); await flush();
+    // The run pauses on the failed cleanup (Retry or Skip) rather than finishing.
+    expect(h.runner.state.phase).toBe("paused-cleanup-failure");
+    expect(h.runner.state.cleanup).toMatchObject({ status: "failed", error: "expired", reason: "expired-unlanded" });
+  });
+
   it("runs selected rows strictly one at a time, preparing each only after the previous one confirmed, then the cleanup row", async () => {
     const h = harness([ray(1), met(1), met(2, true), ray(2)]);
     expect(h.runner.approvals()).toEqual({ rows: 3, cleanup: 1, total: 4 });

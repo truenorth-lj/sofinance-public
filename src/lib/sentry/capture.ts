@@ -182,6 +182,34 @@ export function captureQuoteSettleFailure(error: unknown, extras: QuoteSettleFai
   }
 }
 
+export type CleanupFailureExtras = { stage: string; transactions: number; sources: number; elapsedMs: number; rebroadcasts: number; detail?: string };
+
+/**
+ * The compound cleanup batch ended without closing the harvest accounts (expired unlanded, failed, refused before send,
+ * needs review, or stopped before signing). Reason code and counts only: no wallet, signature or account address.
+ * `detail` is a server/client message already shown to the user, capped.
+ */
+export function captureCleanupFailure(reason: string, extras: CleanupFailureExtras): void {
+  try {
+    if (!isSentryEnabled()) return;
+    Sentry.withScope((scope) => {
+      scope.setLevel("error");
+      scope.setTag("flow", "compound-cleanup");
+      scope.setTag("cleanup_reason", reason);
+      scope.setTag("cleanup_stage", extras.stage);
+      scope.setExtra("transactions", extras.transactions);
+      scope.setExtra("sources", extras.sources);
+      scope.setExtra("elapsed_ms", extras.elapsedMs);
+      scope.setExtra("rebroadcasts", extras.rebroadcasts);
+      if (extras.detail) scope.setExtra("detail", extras.detail.slice(0, 300));
+      // One issue per reason, whatever the message text.
+      Sentry.captureException(new Error(`Compound cleanup did not complete: ${reason}`));
+    });
+  } catch {
+    // Monitoring must never fail the flow.
+  }
+}
+
 /**
  * Robinhood Chain registry discovery found something to review (a non-allowlisted pool, a beacon change).
  * Info level: nothing is broken and nothing is shown to users. Addresses and pool ids only.

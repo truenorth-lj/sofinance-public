@@ -1,3 +1,4 @@
+import type { CleanupFailureReason } from "@/lib/cleanup-outcome";
 import {
   compoundAllApprovals, compoundAllReducer, createCompoundAllState, nextQueuedRow, summarizeCompoundAll,
   type CompoundAllEvent, type CompoundAllRow, type CompoundAllRowInput, type CompoundAllState, type RowFailure, type RowStage,
@@ -13,7 +14,7 @@ import {
 export type RowOutcome =
   | { status: "done"; signature: string }
   | { status: RowFailure; error: string; retryable: boolean; notSigned?: boolean; outcomeUnconfirmed?: boolean; couldntSend?: boolean };
-export type CleanupOutcome = { status: "done"; signatures?: readonly string[] } | { status: "failed"; error: string; outcomeUnconfirmed?: boolean };
+export type CleanupOutcome = { status: "done"; signatures?: readonly string[] } | { status: "failed"; error: string; outcomeUnconfirmed?: boolean; reason?: CleanupFailureReason };
 
 export type RowContext = {
   /** False once the user cancelled: the row stops before the wallet is asked (a prompt already open is answered first). */
@@ -72,7 +73,7 @@ export function createCompoundAllRunner(inputs: readonly CompoundAllRowInput[], 
       outcome = { status: "failed", error: message(error) };
     }
     if (outcome.status === "done") dispatch({ type: "cleanup/done", signatures: outcome.signatures });
-    else dispatch({ type: "cleanup/failed", error: outcome.error, outcomeUnconfirmed: outcome.outcomeUnconfirmed });
+    else dispatch({ type: "cleanup/failed", error: outcome.error, outcomeUnconfirmed: outcome.outcomeUnconfirmed, reason: outcome.reason });
   }
 
   async function drive(): Promise<CompoundAllState> {

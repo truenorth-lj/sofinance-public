@@ -32,7 +32,8 @@ export function cleanupThroughHost(host: CompoundAllCleanupHost, timing: { waitM
       await new Promise((resolve) => setTimeout(resolve, timing.intervalMs ?? 500));
     }
     const outcome = await host.startCleanupBatch(receipts, (stage) => onStage(stageOf(stage)));
-    return outcome.status === "done" ? { status: "done", signatures: outcome.signatures } : { status: "failed", error: outcome.error, outcomeUnconfirmed: outcome.status === "failed" ? outcome.outcomeUnconfirmed : undefined };
+    return outcome.status === "done" ? { status: "done", signatures: outcome.signatures } : { status: "failed", error: outcome.error, reason: outcome.reason,
+      outcomeUnconfirmed: outcome.status === "failed" ? outcome.outcomeUnconfirmed : undefined };
   };
 }
 

@@ -9,10 +9,12 @@ import { useCleanupBatchController } from "./use-cleanup-batch-controller";
 import { useWalletConnection } from "./wallet-connection";
 import { compoundAttemptKey, compoundReceiptsKey, persistCompoundAttempt, persistCompoundReceipt, type CompoundAttempt, type CompoundReceipt } from "@sofinance/engine/compound-attempt";
 import { cleanupBatchKey } from "@/lib/compound-cleanup-batch-attempt";
+import { CLEANUP_CHAIN_FAILED, CLEANUP_EXPIRED } from "@/lib/cleanup-outcome";
 import { compoundHistoryFixture } from "@/lib/test-support/compound-history-fixture";
 import { testKeypair } from "@/lib/test-support/send-fixtures";
 import type { CompoundAccount } from "@sofinance/engine/compound-types";
-const mocks = vi.hoisted(() => ({ sign: vi.fn(), signAll: vi.fn() }));
+const mocks = vi.hoisted(() => ({ sign: vi.fn(), signAll: vi.fn(), capture: vi.fn() }));
+vi.mock("@/lib/sentry/capture", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/sentry/capture")>()), captureCleanupFailure: mocks.capture }));
 vi.mock("./wallet-connection", () => ({ useWalletConnection: () => ({ address: wallet, connected: !!wallet,
   signTransaction: mocks.sign, signAllTransactions: supported ? mocks.signAll : undefined }) }));
 let wallet: string | undefined, supported: boolean;
@@ -43,7 +45,7 @@ function prepared(accounts: CompoundAccount[]) {
 beforeEach(() => {
   vi.useFakeTimers(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); window.localStorage.clear();
   fixture = compoundHistoryFixture(); wallet = fixture.wallet; supported = true; chunkSize = 64; result = "success"; failures = 0; broadcasts = [];
-  mocks.sign.mockReset(); mocks.signAll.mockReset();
+  mocks.sign.mockReset(); mocks.signAll.mockReset(); mocks.capture.mockReset();
   mocks.sign.mockImplementation(async (tx: VersionedTransaction) => { tx.sign([testKeypair(1)]); return tx; });
   mocks.signAll.mockImplementation(async (txs: VersionedTransaction[]) => txs.map(tx => { tx.sign([testKeypair(1)]); return tx; }));
   fetchMock = vi.fn(async (url: string, init: RequestInit) => {
@@ -331,7 +333,8 @@ describe("cleanup row is done only after on-chain settlement", () => {
     await flush();
     let outcome: Awaited<ReturnType<typeof batch.start>> | undefined;
     await act(async () => { outcome = await batch.start([receipt(0)]); });
-    expect(outcome).toMatchObject({ status: "failed", error: "The cleanup did not complete." });
+    // A landed failure now says so (it used to be the generic "The cleanup did not complete.").
+    expect(outcome).toMatchObject({ status: "failed", reason: "chain-failed", error: CLEANUP_CHAIN_FAILED });
     expect(outcome).not.toHaveProperty("outcomeUnconfirmed");
     expect(mocks.sign).toHaveBeenCalledOnce();
     expect(JSON.parse(window.localStorage.getItem(cleanupBatchKey(fixture.wallet))!).transactions).toHaveLength(1);
@@ -363,5 +366,77 @@ describe("compound all shares this controller (SD-20)", () => {
     await act(async () => { outcome = await controller.startCleanupBatch(controller.receipts); });
     expect(outcome).toMatchObject({ status: "done" });
     expect(broadcasts).toHaveLength(1);
+  });
+});
+
+describe("a cleanup that is signed but never lands on Solana (LJ 11/28)", () => {
+  const sleep = async (ms: number) => { await vi.advanceTimersByTimeAsync(ms); };
+  async function startWith(confirmAnswers: (poll: number, body: { signature: string }) => Response | Promise<Response>, broadcastAnswer?: () => Response | Promise<Response>) {
+    admission = true; seed(1);
+    await act(async () => root.render(createElement(BatchAdmissionHarness)));
+    await flush();
+    const handler = fetchMock.getMockImplementation()!;
+    let polls = 0;
+    fetchMock.mockImplementation((url, init) => {
+      if (url === "/api/compound-cleanup-confirm") return Promise.resolve(confirmAnswers(++polls, JSON.parse(String(init.body))));
+      if (url === "/api/compound-cleanup-broadcast" && broadcastAnswer) return Promise.resolve(broadcastAnswer());
+      return handler(url, init);
+    });
+    let outcome: Awaited<ReturnType<typeof batch.start>> | undefined;
+    await act(async () => { outcome = await batch.start([receipt(0)], { confirm: { intervalMs: 4_000, maxWaitMs: 170_000, sleep } }); });
+    return { outcome: outcome!, polls: () => polls };
+  }
+  const notSeen = (body: { signature: string }) => Response.json({ signature: body.signature, status: "pending", chainStatus: "pending", onChain: false });
+  const expired = (body: { signature: string }) => Response.json({ signature: body.signature, status: "expired", chainStatus: "expired", onChain: false });
+
+  it("sends the same signed bytes again while Solana has not seen them, never asks the wallet twice, then names the expiry", async () => {
+    const { outcome } = await startWith((poll, body) => poll < 6 ? notSeen(body) : expired(body));
+    expect(outcome).toMatchObject({ status: "failed", reason: "expired-unlanded", error: CLEANUP_EXPIRED });
+    expect(outcome).not.toHaveProperty("outcomeUnconfirmed");
+    expect(mocks.sign).toHaveBeenCalledOnce();
+    // The first send plus a re-send every 6 seconds (polls at 8s and 16s), always the same signature.
+    expect(broadcasts.length).toBe(3);
+    expect(new Set(broadcasts).size).toBe(1);
+    expect(JSON.parse(window.localStorage.getItem(cleanupBatchKey(fixture.wallet))!).transactions[0].status).toBe("expired");
+    expect(mocks.capture).toHaveBeenCalledOnce();
+    expect(mocks.capture).toHaveBeenCalledWith("expired-unlanded", expect.objectContaining({ stage: "confirming", transactions: 1, rebroadcasts: 2 }));
+    expect(JSON.stringify(mocks.capture.mock.calls)).not.toContain(fixture.wallet);
+  });
+  it("does not send again once Solana has seen the transaction", async () => {
+    const { outcome } = await startWith((poll, body) => poll < 3 ? notSeen(body)
+      : poll < 8 ? Response.json({ signature: body.signature, status: "pending", chainStatus: "pending", onChain: true })
+      : Response.json({ signature: body.signature, status: "success", chainStatus: "success", onChain: true }));
+    expect(outcome.status).toBe("done");
+    expect(broadcasts.length).toBe(1);
+    expect(mocks.capture).not.toHaveBeenCalled();
+  });
+  it("shows the server's refusal when it sent nothing, instead of the generic text", async () => {
+    const { outcome, polls } = await startWith((_poll, body) => notSeen(body),
+      () => Response.json({ error: "Cleanup transaction simulation failed", sent: false }, { status: 400 }));
+    expect(outcome).toMatchObject({ status: "failed", reason: "rejected-before-send" });
+    expect((outcome as { error: string }).error).toContain("Cleanup transaction simulation failed");
+    expect(polls()).toBe(0);
+    expect(mocks.sign).toHaveBeenCalledOnce();
+    expect(mocks.capture).toHaveBeenCalledWith("rejected-before-send", expect.objectContaining({ detail: expect.stringContaining("simulation failed") }));
+  });
+  it("records a send that errored with an unknown outcome and keeps polling the original signature", async () => {
+    const { outcome } = await startWith((poll, body) => poll < 3 ? notSeen(body) : expired(body), () => { throw new TypeError("Failed to fetch"); });
+    expect(outcome).toMatchObject({ status: "failed", reason: "expired-unlanded", detail: expect.stringContaining("Failed to fetch") });
+    expect(mocks.sign).toHaveBeenCalledOnce();
+  });
+  it("reports a landed failure with its own message", async () => {
+    const { outcome } = await startWith((_poll, body) => Response.json({ signature: body.signature, status: "failed", chainStatus: "failed", onChain: true }));
+    expect(outcome).toMatchObject({ reason: "chain-failed", error: CLEANUP_CHAIN_FAILED });
+    expect(mocks.capture).toHaveBeenCalledWith("chain-failed", expect.any(Object));
+  });
+  it("does not report a wallet decline to Sentry", async () => {
+    admission = true; seed(1);
+    await act(async () => root.render(createElement(BatchAdmissionHarness)));
+    await flush();
+    mocks.sign.mockRejectedValue(new Error("User rejected the request."));
+    let outcome: Awaited<ReturnType<typeof batch.start>> | undefined;
+    await act(async () => { outcome = await batch.start([receipt(0)]); });
+    expect(outcome).toMatchObject({ status: "failed", reason: "stopped", error: "User rejected the request." });
+    expect(mocks.capture).not.toHaveBeenCalled();
   });
 });

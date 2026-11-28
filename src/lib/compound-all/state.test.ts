@@ -129,6 +129,14 @@ describe("transitions", () => {
     const state = apply(started([ray(1), ray(2)]), ...sent("raydium-clmm:ray1"));
     expect(compoundAllReducer(state, { type: "cleanup/stage", stage: "preparing" })).toBe(state);
   });
+  it("keeps the cleanup failure reason code until Retry or done clears it", () => {
+    const failed = apply(started([ray(1)]), ...sent("raydium-clmm:ray1", "r1"), { type: "rows/complete" }, { type: "cleanup/stage", stage: "preparing" },
+      { type: "cleanup/failed", error: "expired", reason: "expired-unlanded" });
+    expect(failed.cleanup.reason).toBe("expired-unlanded");
+    expect(apply(failed, { type: "cleanup/run" }).cleanup.reason).toBeUndefined();
+    const retried = apply(failed, { type: "cleanup/run" }, { type: "cleanup/stage", stage: "preparing" }, { type: "cleanup/done", signatures: ["c1"] });
+    expect(retried.cleanup).toMatchObject({ status: "done", reason: undefined });
+  });
   it("a failed cleanup pauses with Retry (cleanup/run) or Skip, and cancel keeps it offered", () => {
     let state = apply(started([ray(1)]), ...sent("raydium-clmm:ray1", "r1"), { type: "rows/complete" }, { type: "cleanup/stage", stage: "preparing" },
       { type: "cleanup/failed", error: "wallet closed" });

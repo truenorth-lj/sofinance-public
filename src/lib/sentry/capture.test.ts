@@ -26,6 +26,7 @@ import { AmountTooSmallError } from "../selected-amount-error";
 import { SelectedNoRouteError } from "../selected-no-route";
 import {
   captureApiRouteError,
+  captureCleanupFailure,
   captureQuoteSettleFailure,
   captureWalletReturnedTxFailure,
   isRpcBehindError,
@@ -249,5 +250,30 @@ describe("refresh failure classification", () => {
     expect(setTag).toHaveBeenCalledWith("store_code", "LEASE_LOST");
     expect(setTag).toHaveBeenCalledWith("job", "rwa-apr-refresh");
     expect(setTag).toHaveBeenCalledWith("error_name", "Error");
+  });
+});
+
+describe("captureCleanupFailure", () => {
+  const extras = { stage: "confirming", transactions: 1, sources: 4, elapsedMs: 91_000, rebroadcasts: 2, detail: "unknown: Failed to fetch" };
+  it("is a no-op when both DSN env vars are unset", () => {
+    vi.stubEnv("NEXT_PUBLIC_SENTRY_DSN", ""); vi.stubEnv("SENTRY_DSN", "");
+    captureCleanupFailure("expired-unlanded", extras);
+    expect(captureException).not.toHaveBeenCalled();
+  });
+  it("tags the flow, reason and stage, groups by reason, and carries counts but no wallet or signature", () => {
+    vi.stubEnv("SENTRY_DSN", "https://key@o1.ingest.us.sentry.io/1");
+    captureCleanupFailure("expired-unlanded", extras);
+    expect(setTag).toHaveBeenCalledWith("flow", "compound-cleanup");
+    expect(setTag).toHaveBeenCalledWith("cleanup_reason", "expired-unlanded");
+    expect(setTag).toHaveBeenCalledWith("cleanup_stage", "confirming");
+    expect(setExtra).toHaveBeenCalledWith("rebroadcasts", 2);
+    expect(setExtra).toHaveBeenCalledWith("elapsed_ms", 91_000);
+    expect(setExtra.mock.calls.map((call) => call[0]).sort()).toEqual(["detail", "elapsed_ms", "rebroadcasts", "sources", "transactions"]);
+    expect((captureException.mock.calls[0]![0] as Error).message).toBe("Compound cleanup did not complete: expired-unlanded");
+  });
+  it("never throws into the flow", () => {
+    vi.stubEnv("SENTRY_DSN", "https://key@o1.ingest.us.sentry.io/1");
+    captureException.mockImplementationOnce(() => { throw new Error("sentry down"); });
+    expect(() => captureCleanupFailure("chain-failed", extras)).not.toThrow();
   });
 });

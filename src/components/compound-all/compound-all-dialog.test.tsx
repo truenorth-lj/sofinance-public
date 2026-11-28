@@ -181,6 +181,19 @@ describe("Compound all popup", () => {
     expect(q("compound-all-run-cleanup")!.textContent).toBe("Retry cleanup");
   });
 
+  it("shows why the cleanup failed in the row, with its reason code, instead of only the generic panel line (LJ 11/28)", async () => {
+    const reason = "The cleanup transaction was signed but never landed on Solana before it expired, so nothing was closed. Your balances and rent are still in the harvest accounts.";
+    const { render } = harness([ray(1)], {}, async () => ({ status: "failed" as const, error: reason, reason: "expired-unlanded" as const }));
+    await render();
+    await click("compound-all-start");
+    await settle();
+    const alert = q("compound-all-cleanup-row")!.querySelector("[role=alert]")!;
+    expect(alert.textContent).toContain("never landed on Solana");
+    expect(alert.getAttribute("data-reason")).toBe("expired-unlanded");
+    expect(q("compound-all-cleanup-reason")!.textContent).toBe("(code: expired-unlanded)");
+    expect(q("compound-all-run-cleanup")!.textContent).toBe("Retry cleanup");
+  });
+
   it("the final cleanup row runs after the Raydium rows, and the summary follows", async () => {
     const cleanup = vi.fn(async () => ({ status: "done" as const, signatures: ["c1"] }));
     const { render } = harness([ray(1), met(1)], {}, cleanup);
