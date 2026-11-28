@@ -11,8 +11,8 @@ import { SOLANA_TX_SIZE_LIMIT, isSingleWalletSignedTransaction } from "@sofinanc
 import { walletPriorityFeeAllowance } from "@sofinance/engine/wallet-priority-fee";
 import { confirmedRecovery } from "./compound-receipt";
 import { estimateFeeForMessage } from "./rpc-fee-estimate";
-import { CLEANUP_BUDGET_SIZE_PROBE, cleanupBudgetInstructions, cleanupComputeUnitLimit, cleanupComputeUnitPrice, recentPrioritizationSamples,
-  type CleanupComputeBudget } from "./cleanup-priority-fee";
+import { CLEANUP_BUDGET_SIZE_PROBE, cleanupBudgetInstructions, cleanupComputeUnitLimit, cleanupComputeUnitPrice, feeIncludingComputeBudget,
+  recentPrioritizationSamples, uncoveredComputeBudgetLamports, type CleanupComputeBudget } from "./cleanup-priority-fee";
 import nacl from "tweetnacl";
 import { z } from "zod";
 import { withContextSlotRetry } from "@sofinance/engine/rpc/context-slot";
@@ -175,7 +175,9 @@ async function simulateCleanupBatchSnapshot(input: CleanupSimulationInput) {
     throw new Error("Cleanup wallet owner mismatch");
   }
   const expectedWallet = BigInt(walletBefore.lamports) + returned - newRent - BigInt(summary.feeLamports);
-  const extraPriority = walletPriorityFeeAllowance(input.prepared, transaction);
+  // Wallet-raised priority (vs the prepared message) plus any of the message's own priority that a base-only
+  // getFeeForMessage omitted, so prepare cannot fail when the RPC reports only the signature fee.
+  const extraPriority = walletPriorityFeeAllowance(input.prepared, transaction) + uncoveredComputeBudgetLamports(summary.feeLamports, transaction);
   const actualWallet = BigInt(walletAfter.lamports);
   if (actualWallet > expectedWallet || actualWallet < expectedWallet - extraPriority) {
     if (result.context.slot > snapshot.context.slot) throw new CleanupSnapshotChanged("Cleanup wallet balance changed between snapshot and simulation");
@@ -204,9 +206,9 @@ export async function buildCleanupBatch(connection: Connection, wallet: string, 
   for (const group of groups) {
     const units = cleanupComputeUnitLimit(await probeUnits(connection, transactionFor(wallet, group, simulationBlockhash.blockhash, null)), group.length);
     const transaction = transactionFor(wallet, group, simulationBlockhash.blockhash, { units, microLamports: cleanupComputeUnitPrice(priceSamples, units) });
-    const fee = await estimateFeeForMessage(connection, transaction.message, "confirmed", {
+    const fee = feeIncludingComputeBudget(await estimateFeeForMessage(connection, transaction.message, "confirmed", {
       emptyError: "Unable to estimate cleanup fee",
-    });
+    }), transaction);
     if (fee > 10_000_000) throw new Error("Unable to estimate cleanup fee");
     const summary: CompoundRecoverySummary = { operation: "recovery", simulated: true, wallet, compoundAccounts: group,
       feeLamports: fee, sizeBytes: transaction.serialize().length, ...stampPreparedBlockhash(simulationBlockhash) };

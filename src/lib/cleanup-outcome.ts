@@ -16,6 +16,8 @@ export type CleanupFailureReason =
   | "needs-review"
   /** Still being confirmed when the wait ended; it may yet land. */
   | "still-confirming"
+  /** Some chunks confirmed and others were never sent; remaining harvest accounts are still open. */
+  | "partial-unsent"
   /** Stopped before or around signing: wallet declined, records or wallet changed, preparation refused. */
   | "stopped"
   /** Nothing explains it. Should not happen. */
@@ -32,15 +34,16 @@ export type CleanupBatchOutcome =
 export const CLEANUP_EXPIRED = "The cleanup transaction was signed but never landed on Solana before it expired, so nothing was closed. Your balances and rent are still in the harvest accounts.";
 export const CLEANUP_CHAIN_FAILED = "The cleanup transaction failed on Solana, so nothing was closed. Your balances and rent are still in the harvest accounts.";
 export const CLEANUP_NEEDS_REVIEW = "The cleanup landed but its result needs verification. Check it in Activity before trying again.";
+export const CLEANUP_PARTIAL_UNSENT = "Some cleanup transactions confirmed, but others were not sent, so some harvest accounts are still open. Retry the cleanup or use the recovery page.";
 export const cleanupRejectedMessage = (reason: string) =>
   `The cleanup was not sent${reason ? `: ${reason.replace(/[.\s]+$/, "")}` : ""}. Nothing was closed; retry the cleanup or use the recovery page.`;
 
 /** Codes that are worth a Sentry event: a result the user could not have caused or fixed. Declines and still-confirming are not. */
-export const REPORTABLE_CLEANUP_REASONS: readonly CleanupFailureReason[] = ["expired-unlanded", "chain-failed", "rejected-before-send", "needs-review"];
+export const REPORTABLE_CLEANUP_REASONS: readonly CleanupFailureReason[] = ["expired-unlanded", "chain-failed", "rejected-before-send", "needs-review", "partial-unsent"];
 
 export type CleanupOutcomeInput = {
   durable: CleanupBatchAttempt | null;
-  /** The message of an exception that stopped the flow (wallet, fence, preparation); wins over the settled state for the row text. */
+  /** Exception text (wallet, fence, preparation). Used only when nothing sent has a definite or still-pending result. */
   thrown?: string;
   issues?: readonly CleanupBroadcastIssue[];
 };
@@ -58,16 +61,25 @@ export function cleanupOutcome({ durable, thrown = "", issues = [] }: CleanupOut
   const unconfirmed = durable ? cleanupOutcomeUnconfirmed(durable) : false;
   const flag = unconfirmed ? { outcomeUnconfirmed: true as const } : {};
   const withDetail = detail ? { detail } : {};
-  if (thrown) return { status: "failed", error: thrown, reason: "stopped", ...flag, ...withDetail };
-  if (!durable) return { status: "failed", error: CLEANUP_DID_NOT_COMPLETE, reason: "unknown", ...withDetail };
+  if (!durable) {
+    if (thrown) return { status: "failed", error: thrown, reason: "stopped", ...flag, ...withDetail };
+    return { status: "failed", error: CLEANUP_DID_NOT_COMPLETE, reason: "unknown", ...withDetail };
+  }
   const sent = durable.transactions.filter((tx) => !tx.unsent);
+  // A sent transaction that may still land (or needs review) beats unsent/expired/failed: no Retry until every
+  // sent chunk has settled. Otherwise a pending + unsent batch would show Failed + Retry (the #540 hole).
+  if (sent.some((tx) => tx.status === "pending")) return { status: "failed", error: CLEANUP_STILL_CONFIRMING, reason: "still-confirming", outcomeUnconfirmed: true, ...withDetail };
+  if (sent.some((tx) => tx.status === "manual-review")) return { status: "failed", error: CLEANUP_NEEDS_REVIEW, reason: "needs-review", outcomeUnconfirmed: true, ...withDetail };
+  // A definite on-chain result beats a later thrown stop (confirm timeout, tab change after expiry).
   if (sent.some((tx) => tx.status === "expired")) return { status: "failed", error: CLEANUP_EXPIRED, reason: "expired-unlanded", ...withDetail };
-  if (sent.some((tx) => tx.status === "failed")) return { status: "failed", error: CLEANUP_CHAIN_FAILED, reason: "chain-failed", ...withDetail };
+  if (sent.some((tx) => tx.status === "failed" && !tx.unsent)) return { status: "failed", error: CLEANUP_CHAIN_FAILED, reason: "chain-failed", ...withDetail };
   if (durable.transactions.some((tx) => tx.unsent)) {
     const rejected = issues.find((issue) => issue.kind === "rejected");
-    return { status: "failed", error: cleanupRejectedMessage(rejected?.message ?? ""), reason: "rejected-before-send", ...withDetail };
+    const partial = sent.some((tx) => tx.status === "success");
+    return { status: "failed", error: partial ? CLEANUP_PARTIAL_UNSENT : cleanupRejectedMessage(rejected?.message ?? ""),
+      reason: partial ? "partial-unsent" : "rejected-before-send", ...withDetail };
   }
-  if (sent.some((tx) => tx.status === "manual-review")) return { status: "failed", error: CLEANUP_NEEDS_REVIEW, reason: "needs-review", ...flag, ...withDetail };
+  if (thrown) return { status: "failed", error: thrown, reason: "stopped", ...flag, ...withDetail };
   if (unconfirmed) return { status: "failed", error: CLEANUP_STILL_CONFIRMING, reason: "still-confirming", ...flag, ...withDetail };
   return { status: "failed", error: CLEANUP_DID_NOT_COMPLETE, reason: "unknown", ...withDetail };
 }

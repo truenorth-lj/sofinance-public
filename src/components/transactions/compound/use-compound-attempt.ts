@@ -9,6 +9,7 @@ import { post } from "./compound-client";
 
 export type CompoundConfirmation = { status: AtomicStatus; signature: string; state: CompoundPositionState | null;
   chainStatus?: CompoundChainStatus;
+  onChain?: boolean;
   receipt?: { harvestedA: string; harvestedB: string; investedA: string; investedB: string;
     remainingA: string; remainingB: string; rewards: { mint: string; amount: string; compounded: boolean }[] };
   transactionError?: unknown };

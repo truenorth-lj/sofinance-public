@@ -13,6 +13,7 @@ import type { CompoundChainStatus, CompoundSummary } from "@sofinance/engine/com
 import { useWalletConnection } from "./wallet-connection";
 import { CLEANUP_NOT_READY, useCleanupBatchController, type CleanupBatchOutcome, type CleanupBatchStage } from "./use-cleanup-batch-controller";
 import { loadCleanupBatch, cleanupBatchKey } from "@/lib/compound-cleanup-batch-attempt";
+import { createRebroadcaster, isAlreadyProcessedSendError } from "@/lib/cleanup-rebroadcast";
 import { useCompoundPositionSnapshot } from "./transactions/compound/use-compound-position-snapshot";
 import {
   compoundControllerReducer, emptyCompoundScan, initialCompoundControllerState,
@@ -280,9 +281,12 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       if (window.localStorage.getItem(cleanupBatchKey(wallet)) !== cleanupBatchRecord) throw new Error("Cleanup transaction changed in another tab; verify original signatures before continuing.");
       verifyRecoveryAttempt();
       dispatch({ type: "stage/set", stage: "wallet" });
+      let resendRelayed: (() => Promise<string>) | undefined;
+      const rebroadcaster = createRebroadcaster();
       const created = await sendRaydiumPrepared(target, loaded, {
         storage: window.localStorage,
         signer: { signTransaction: connectionRef.current.signTransaction, signAndSendTransaction: connectionRef.current.signAndSendTransaction },
+        ...(receipt ? { onRelayed: (resend) => { resendRelayed = resend; } } : {}),
         onStage: (pipelineStage) => { if (pipelineStage === "checking" && current()) dispatch({ type: "stage/set", stage: "checking" }); },
         isCurrent: () => current() && !externalBlockedRef.current && (() => {
           try { verifyRecoveryAttempt(); } catch (error) {
@@ -308,6 +312,7 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
       });
       if (receipt) recoveryWait.current = { signature: created.signature, controller: new AbortController() };
       if (receipt) {
+        if (resendRelayed) rebroadcaster.markSent(created.signature);
         const waiting = recoveryWait.current!;
         const timeout = window.setTimeout(() => waiting.controller.abort(), recoveryConfirmationMs);
         let stop!: () => void;
@@ -323,6 +328,18 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
             if (!checked) { await abortableDelay(4_000, waiting.controller.signal); continue; }
             if (checked.status === "success" && (checked.chainStatus === undefined || checked.chainStatus === "success")) return "success";
             if (checked.status !== "pending") return "stopped";
+            // Sign-only wallet: we relayed once. Send the same signed bytes again while confirm is still pending
+            // and the prepared window is open. A wallet that signs AND sends already rebroadcasts itself.
+            if (resendRelayed) {
+              // Only when confirm says Solana has not seen the signature. A seen (not-yet-finalized) tx is not resent.
+              void rebroadcaster.tick({
+                signature: created.signature, onChain: checked.onChain, expiresAt: created.summary.expiresAt,
+                send: async () => {
+                  try { await resendRelayed!(); }
+                  catch (error) { if (!isAlreadyProcessedSendError(error)) throw error; }
+                },
+              });
+            }
             await abortableDelay(4_000, waiting.controller.signal);
           }
           return "stopped";

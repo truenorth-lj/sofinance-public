@@ -25,9 +25,10 @@ describe("cleanupBatchSettlement", () => {
     expect(cleanupBatchSettlement(batch([tx({ status: "manual-review" })]))).toBe("failed");
     expect(cleanupBatchSettlement(batch([tx({ status: "success" }), tx({ signature: "b", status: "failed" })]))).toBe("failed");
   });
-  it("ignores unsent transactions when judging a mixed batch, and fails when nothing was sent", () => {
-    expect(cleanupBatchSettlement(batch([tx({ status: "success" }), tx({ signature: "b", status: "failed", unsent: true })]))).toBe("success");
+  it("fails when nothing was sent, and also when some chunks confirmed but others were never sent", () => {
     expect(cleanupBatchSettlement(batch([tx({ status: "failed", unsent: true })]))).toBe("failed");
+    expect(cleanupBatchSettlement(batch([tx({ status: "success" }), tx({ signature: "b", status: "failed", unsent: true })]))).toBe("failed");
+    expect(cleanupBatchSettlement(batch([tx({ status: "pending" }), tx({ signature: "b", status: "failed", unsent: true })]))).toBe("pending");
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createRebroadcaster } from "./cleanup-rebroadcast";
+import { createRebroadcaster, isAlreadyProcessedSendError, withRelayedResend } from "./cleanup-rebroadcast";
 
 function clock(start = 1_000_000) { let at = start; return { now: () => at, advance: (ms: number) => { at += ms; }, at: () => at }; }
 
@@ -59,5 +59,27 @@ describe("createRebroadcaster", () => {
     r.markSent("a"); time.advance(3_000); r.markSent("b"); time.advance(3_000);
     expect(await r.tick({ signature: "a", onChain: false, expiresAt: time.at() + 60_000, send })).toBe("sent");
     expect(await r.tick({ signature: "b", onChain: false, expiresAt: time.at() + 60_000, send })).toBe("skipped");
+  });
+});
+
+
+describe("isAlreadyProcessedSendError", () => {
+  it("recognises a second send of a signature Solana already has", () => {
+    expect(isAlreadyProcessedSendError(new Error("This transaction has already been processed"))).toBe(true);
+    expect(isAlreadyProcessedSendError(new Error("Transaction was already processed"))).toBe(true);
+    expect(isAlreadyProcessedSendError(new Error("rate limited"))).toBe(false);
+  });
+});
+
+describe("withRelayedResend", () => {
+  it("hands the caller a function that sends the same signed bytes again", async () => {
+    const send = vi.fn(async (signed: { n: number }, context: { k: string }) => { void context; return `sig-${signed.n}`; });
+    let resend: (() => Promise<string>) | undefined;
+    const wrapped = withRelayedResend(send, (fn) => { resend = fn; });
+    await expect(wrapped({ n: 7 }, { k: "ctx" })).resolves.toBe("sig-7");
+    expect(send).toHaveBeenCalledTimes(1);
+    await expect(resend!()).resolves.toBe("sig-7");
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls[1]).toEqual([{ n: 7 }, { k: "ctx" }]);
   });
 });

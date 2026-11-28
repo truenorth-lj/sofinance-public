@@ -3,6 +3,7 @@ import { expect, it } from "vitest";
 import {
   WALLET_PRIORITY_FEE_CEILING_LAMPORTS,
   computeBudgetPriorityLamports,
+  computeBudgetPriorityLamportsCharged,
   walletPriorityFeeAllowance,
 } from "./wallet-priority-fee";
 import { BLOCKHASH, testKeypair } from "./test-support/send-fixtures";
@@ -49,4 +50,13 @@ it("allows extra under the 0.01 SOL ceiling and rejects above it", () => {
   ]);
   expect(computeBudgetPriorityLamports(over)).toBeGreaterThan(WALLET_PRIORITY_FEE_CEILING_LAMPORTS);
   expect(() => walletPriorityFeeAllowance(prepared, over)).toThrow("Wallet priority fee exceeds 0.01 SOL");
+});
+
+it("charges floor(units * microLamports / 1e6), which can be one lamport below the ceil used for the wallet cap", () => {
+  const message = tx([
+    ComputeBudgetProgram.setComputeUnitLimit({ units: 130_001 }),
+    ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 5_000 }),
+  ]);
+  expect(computeBudgetPriorityLamportsCharged(message)).toBe(650n);
+  expect(computeBudgetPriorityLamports(message)).toBe(651n);
 });

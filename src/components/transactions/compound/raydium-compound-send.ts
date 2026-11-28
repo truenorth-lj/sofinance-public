@@ -2,11 +2,12 @@
 import "@/lib/engine-host";
 
 import { VersionedTransaction } from "@solana/web3.js";
-import { sendAndTrack, type RunTxOptions, type TxWallet, type WaitVoided } from "@/lib/tx-pipeline";
+import { relaySignedTransaction, sendAndTrack, type RunTxOptions, type TxWallet, type WaitVoided } from "@/lib/tx-pipeline";
 import type { CompoundAttempt, CompoundPrepared, CompoundReceipt, RecoveryPrepared } from "@sofinance/engine/compound-attempt";
 import type { CompoundSummary } from "@sofinance/engine/compound-types";
 import type { CompoundRecoverySummary } from "@sofinance/engine/compound-recovery-types";
 import { post } from "./compound-client";
+import { withRelayedResend } from "@/lib/cleanup-rebroadcast";
 
 /**
  * The Raydium compound (and harvest-account recovery) send, per position: nothing here reads the selected position.
@@ -48,6 +49,11 @@ export type RaydiumSendOptions = {
   onStage?: RunTxOptions["onStage"];
   /** Compound all: void an unsigned prompt like the preflight flows (absent for the row's Compound, unchanged). */
   voidPrompt?: RunTxOptions["voidPrompt"]; waitVoided?: WaitVoided; signal?: AbortSignal;
+  /**
+   * Recovery: when we (not the wallet) relayed the signed bytes, the caller can send the same signature again
+   * until it expires. A wallet that signs AND sends already rebroadcasts itself; this is not called then.
+   */
+  onRelayed?: (resend: () => Promise<string>) => void;
 };
 
 /** Wallet send through the shared pipeline; returns the attempt to save (not saved here). */
@@ -57,10 +63,12 @@ export async function sendRaydiumPrepared(target: RaydiumSendTarget, loaded: Ray
   const positionMint = target.kind === "recovery" ? target.receipt.positionMint : target.positionMint;
   // Shared pipeline send stage: the wallet sends (or signs and we relay once). The
   // compound record is saved right after send, keyed by the returned signature.
+  const sendRaw = options.onRelayed ? withRelayedResend(relaySignedTransaction, options.onRelayed) : undefined;
   const { signature } = await sendAndTrack({
     flow: "compound", successTitle: receipt ? "Cleanup confirmed" : "Compound confirmed", storage: options.storage,
     wallet: { address: target.wallet, signTransaction: options.signer.signTransaction,
       signAndSendTransaction: options.signer.signAndSendTransaction },
+    ...(sendRaw ? { sendRaw } : {}),
     // Only the compound itself goes into the position's history refresh marker (via the confirmation toast). A cleanup
     // tx never touches the position account, so the history sync can never acknowledge its signature.
     prepared: { transaction: unsigned, lastValidBlockHeight: summary.lastValidBlockHeight, ...(receipt ? {} : { positionMint }),

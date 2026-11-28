@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { AccountLayout, MintLayout, NATIVE_MINT, TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { Keypair, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type AccountInfo, type Connection } from "@solana/web3.js";
+import { ComputeBudgetProgram, Keypair, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type AccountInfo, type Connection } from "@solana/web3.js";
 import type { CompoundAccount } from "./compound-types";
 import type { CompoundRecoverySummary } from "./compound-recovery-types";
-import { readRecoveryAccounts, simulateAndVerifyRecovery } from "./compound-recovery";
+import { buildAndSimulateCompoundRecovery, readRecoveryAccounts, simulateAndVerifyRecovery } from "./compound-recovery";
+import { computeBudgetPriorityLamportsCharged } from "./wallet-priority-fee";
+import { SIGNATURE_BASE_FEE_LAMPORTS } from "./tx-priority-fee";
 
 const rent = 2_039_280;
 function tokenInfo(owner: PublicKey, amount: bigint): AccountInfo<Buffer> {
@@ -85,5 +87,42 @@ describe("owner-controlled leftover recovery", () => {
     await expect(simulateAndVerifyRecovery({ connection, transaction, summary: modified, sigVerify: false })).rejects.toThrow(/balance.*identity/i);
     source.data = tokenInfo(Keypair.generate().publicKey, 20_000_000n).data;
     await expect(readRecoveryAccounts(connection, owner.toBase58(), [descriptor])).rejects.toThrow("owner");
+  });
+});
+
+
+describe("buildAndSimulateCompoundRecovery priority fee", () => {
+  async function ready(amount = 20_000_000n) {
+    const f = await fixture(amount);
+    const feeOf = (tx: VersionedTransaction) => SIGNATURE_BASE_FEE_LAMPORTS + Number(computeBudgetPriorityLamportsCharged(tx));
+    const simulateTransaction = vi.fn(async (transaction: VersionedTransaction, config?: { accounts?: { addresses: string[] } }) => {
+      if (!config?.accounts) return { value: { err: null, unitsConsumed: 8_000, accounts: [] } };
+      return { value: { err: null, unitsConsumed: 8_000, accounts: config.accounts.addresses.map((key) => {
+        if (key === f.descriptor.address) return null;
+        const info = key === f.owner.toBase58()
+          ? { owner: SystemProgram.programId, lamports: 100_000_000 + rent - feeOf(transaction), data: Buffer.alloc(0), executable: false, rentEpoch: 0 }
+          : tokenInfo(f.owner, 4_000_000n + amount);
+        return { ...info, owner: info.owner.toBase58(), data: [info.data.toString("base64"), "base64"] };
+      }) } };
+    });
+    const connection = {
+      getMultipleAccountsInfo: f.connection.getMultipleAccountsInfo,
+      simulateTransaction,
+      getBalance: vi.fn(async () => 100_000_000),
+      getLatestBlockhash: vi.fn(async () => ({ blockhash: Keypair.generate().publicKey.toBase58(), lastValidBlockHeight: 100 })),
+      getFeeForMessage: vi.fn(async () => ({ value: 5000 })),
+    } as unknown as Connection;
+    return { ...f, connection, simulateTransaction };
+  }
+  it("carries a compute budget, adds a base-only estimate's priority into feeLamports, and stays under the packet limit", async () => {
+    const f = await ready();
+    const { transaction, summary } = await buildAndSimulateCompoundRecovery(f.owner.toBase58(), [f.descriptor], f.connection);
+    const ixs = TransactionMessage.decompile(transaction.message).instructions;
+    expect(ixs.filter((ix) => ix.programId.equals(ComputeBudgetProgram.programId))).toHaveLength(2);
+    expect(ixs[0]!.programId.equals(ComputeBudgetProgram.programId)).toBe(true);
+    const priority = Number(computeBudgetPriorityLamportsCharged(transaction));
+    expect(priority).toBeGreaterThan(0);
+    expect(summary.feeLamports).toBe(SIGNATURE_BASE_FEE_LAMPORTS + priority);
+    expect(transaction.serialize().length).toBeLessThanOrEqual(1232);
   });
 });

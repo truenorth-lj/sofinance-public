@@ -44,3 +44,21 @@ export function createRebroadcaster(options: { intervalMs?: number; maxAttempts?
   };
 }
 export type CleanupRebroadcaster = ReturnType<typeof createRebroadcaster>;
+
+/** RPC/wallet error for a second send of a signature Solana already has. Safe to treat as "it is on chain". */
+export function isAlreadyProcessedSendError(error: unknown): boolean {
+  const text = error instanceof Error ? error.message : String(error);
+  return /already (processed|been processed|exists|in.+ledger)|duplicate signature|already finalized/i.test(text);
+}
+
+/** Wrap a one-shot relay so the caller can send the same signed bytes again (same signature, no new approval). */
+export function withRelayedResend<T, C>(
+  send: (signed: T, context: C) => Promise<string>,
+  onRelayed: (resend: () => Promise<string>) => void,
+): (signed: T, context: C) => Promise<string> {
+  return async (signed, context) => {
+    const signature = await send(signed, context);
+    onRelayed(() => send(signed, context));
+    return signature;
+  };
+}
