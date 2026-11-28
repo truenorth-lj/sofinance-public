@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { ComputeBudgetProgram } from "@solana/web3.js";
-import { CLEANUP_PRIORITY_FLOOR_MICROLAMPORTS, CLEANUP_PRIORITY_MAX_LAMPORTS, CLEANUP_UNITS_MAX, CLEANUP_UNITS_MIN, cleanupBudgetInstructions,
-  cleanupComputeUnitLimit, cleanupComputeUnitPrice, recentPrioritizationSamples } from "./cleanup-priority-fee";
+import { ComputeBudgetProgram, Keypair, SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
+import { computeBudgetPriorityLamports } from "@sofinance/engine/wallet-priority-fee";
+import { CLEANUP_PRIORITY_FLOOR_MICROLAMPORTS, CLEANUP_PRIORITY_MAX_LAMPORTS, CLEANUP_UNITS_MAX, CLEANUP_UNITS_MIN, SIGNATURE_BASE_FEE_LAMPORTS,
+  cleanupBudgetInstructions, cleanupComputeUnitLimit, cleanupComputeUnitPrice, feeIncludingComputeBudget, recentPrioritizationSamples,
+  uncoveredComputeBudgetLamports, withZeroComputeUnitPrice } from "./cleanup-priority-fee";
 
 describe("cleanupComputeUnitLimit", () => {
   it("adds headroom to the measured units and clamps", () => {
@@ -42,5 +44,45 @@ describe("cleanupBudgetInstructions", () => {
     const [limit, price] = cleanupBudgetInstructions({ units: 130_000, microLamports: 5_000 });
     expect(limit!.programId.equals(ComputeBudgetProgram.programId) && limit!.data[0]).toBe(2);
     expect(price!.data[0]).toBe(3);
+  });
+});
+
+
+function budgeted(units: number, microLamports: number) {
+  const payer = Keypair.generate().publicKey;
+  return new VersionedTransaction(new TransactionMessage({
+    payerKey: payer, recentBlockhash: Keypair.generate().publicKey.toBase58(),
+    instructions: [...cleanupBudgetInstructions({ units, microLamports }),
+      SystemProgram.transfer({ fromPubkey: payer, toPubkey: Keypair.generate().publicKey, lamports: 1 })],
+  }).compileToV0Message());
+}
+
+describe("feeIncludingComputeBudget", () => {
+  const tx = () => budgeted(130_000, 5_000);
+  it("adds the message's own priority when the estimate is only the signature base fee", () => {
+    const transaction = tx();
+    const priority = Number(computeBudgetPriorityLamports(transaction));
+    expect(priority).toBe(650);
+    expect(feeIncludingComputeBudget(SIGNATURE_BASE_FEE_LAMPORTS, transaction)).toBe(SIGNATURE_BASE_FEE_LAMPORTS + 650);
+    expect(uncoveredComputeBudgetLamports(SIGNATURE_BASE_FEE_LAMPORTS, transaction)).toBe(650n);
+  });
+  it("does not double-count when getFeeForMessage already included the priority (live RPC: 5000 → 5650)", () => {
+    const transaction = tx();
+    expect(feeIncludingComputeBudget(SIGNATURE_BASE_FEE_LAMPORTS + 650, transaction)).toBe(SIGNATURE_BASE_FEE_LAMPORTS + 650);
+    expect(uncoveredComputeBudgetLamports(SIGNATURE_BASE_FEE_LAMPORTS + 650, transaction)).toBe(0n);
+  });
+  it("leaves a message with no compute-unit price alone", () => {
+    const payer = Keypair.generate().publicKey;
+    const bare = new VersionedTransaction(new TransactionMessage({
+      payerKey: payer, recentBlockhash: Keypair.generate().publicKey.toBase58(),
+      instructions: [SystemProgram.transfer({ fromPubkey: payer, toPubkey: Keypair.generate().publicKey, lamports: 1 })],
+    }).compileToV0Message());
+    expect(feeIncludingComputeBudget(5000, bare)).toBe(5000);
+    expect(uncoveredComputeBudgetLamports(5000, bare)).toBe(0n);
+  });
+  it("zeroing the compute-unit price drops the implied priority to 0, for a comparative estimate", () => {
+    const transaction = tx();
+    expect(Number(computeBudgetPriorityLamports(withZeroComputeUnitPrice(transaction)))).toBe(0);
+    expect(Number(computeBudgetPriorityLamports(transaction))).toBe(650);
   });
 });

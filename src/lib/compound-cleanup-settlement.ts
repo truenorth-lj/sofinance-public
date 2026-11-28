@@ -13,8 +13,12 @@ export const CLEANUP_STILL_CONFIRMING = "The cleanup is still confirming. Check 
  */
 export function cleanupBatchSettlement(attempt: CleanupBatchAttempt): "success" | "failed" | "pending" {
   const sent = attempt.transactions.filter((tx) => !tx.unsent);
-  if (!sent.length) return attempt.transactions.length === 0 ? "success" : "failed";
+  // Empty `transactions` means every account was already closed. A mix of confirmed and `unsent` chunks is
+  // not success: the unsent accounts are still open.
+  if (!attempt.transactions.length) return "success";
+  if (!sent.length) return "failed";
   if (sent.some((tx) => tx.status === "failed" || tx.status === "expired" || tx.status === "manual-review")) return "failed";
+  if (attempt.transactions.some((tx) => tx.unsent) && sent.every((tx) => tx.status === "success")) return "failed";
   if (sent.every((tx) => tx.status === "success")) return "success";
   return "pending";
 }

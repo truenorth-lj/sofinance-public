@@ -168,7 +168,9 @@ export function useCleanupBatchController(options: Options) {
    * Prepares, signs (one approval) and broadcasts the cleanup of `receipts`, then waits for the signed batch to settle
    * on Solana before the cleanup row is marked done. An on-chain failure (or a confirm that never settles) is a failure
    * so compound all can send the user to recovery. The Compound screen ignores the return value and reads the
-   * controller's state, as before. Signing, fees and transaction bytes are unchanged. `onStage` mirrors `stage`.
+   * controller's state, as before. The prepared transaction carries a compute-unit limit and a floored priority fee
+   * (so a server-broadcast cleanup is not dropped under load); while Solana has not seen the signature, the same
+   * signed bytes are sent again until they expire. `onStage` mirrors `stage`.
    */
   async function start(receipts: CompoundReceipt[], hooks: { onStage?: (stage: CleanupBatchStage) => void; confirm?: CleanupConfirmTiming } = {}): Promise<CleanupBatchOutcome> {
     const initial = latest.current, wallet = initial.wallet;

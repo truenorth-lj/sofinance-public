@@ -205,11 +205,19 @@ describe("wallet-wide leftover fees cleanup", () => {
     confirmationStatus = "pending"; await render(); let work!: Promise<void>;
     await act(async () => { work = controller.recover(controller.receipts[0]!); });
     await act(async () => { await vi.advanceTimersByTimeAsync(89_999); });
-    expect(controller.cleanup?.running).toBe(true); expect(broadcastCount).toBe(1);
+    // Sign-only wallet: the same signed bytes are sent again while confirm stays pending and the window is open.
+    expect(controller.cleanup?.running).toBe(true); expect(broadcastCount).toBeGreaterThan(1);
+    expect(new Set(broadcastSignatures).size).toBe(1);
+    expect(mocks.sign).toHaveBeenCalledOnce();
+    const sent = broadcastCount;
     await act(async () => { await vi.advanceTimersByTimeAsync(1); await work; });
     expect(controller.cleanup?.running).toBe(false); expect(controller.receipts).toHaveLength(2);
     expect(JSON.parse(window.localStorage.getItem(compoundAttemptKey(fixture.wallet))!).signature).toBe(broadcastSignatures[0]);
-    await act(async () => { await controller.recover(controller.receipts[0]!); }); expect(broadcastCount).toBe(1);
+    // The retained signature is still unresolved, so a later click does not sign or send a new transaction.
+    await act(async () => { await controller.recover(controller.receipts[0]!); });
+    expect(mocks.sign).toHaveBeenCalledOnce();
+    expect(broadcastCount).toBe(sent);
+    expect(new Set(broadcastSignatures).size).toBe(1);
   });
   it("does not prune a stale receipt unless closed-account proof matches its exact addresses", async () => {
     persistCompoundReceipt(window.localStorage, receipt());

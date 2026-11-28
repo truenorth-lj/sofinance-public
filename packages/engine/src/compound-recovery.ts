@@ -10,6 +10,7 @@ import { defaultRpcConnection, rpcConnection } from "./rpc";
 import { estimateFeeForMessage, RECOVERY_FEE_ESTIMATE_MESSAGE } from "./rpc/fee-estimate";
 import { restampVersionedTransaction, stampPreparedBlockhash } from "./fresh-blockhash";
 import { exceedsTxSizeLimit } from "./transaction-limits";
+import { CLEANUP_BUDGET_SIZE_PROBE, cleanupBudgetInstructions, feeIncludingComputeBudget, harvestPriorityBudget } from "./tx-priority-fee";
 
 function tokenBalance(info: AccountInfo<Buffer> | null, address: PublicKey, program: PublicKey, wallet: PublicKey, mint: PublicKey) {
   if (!info) return 0n;
@@ -118,8 +119,7 @@ export async function simulateAndVerifyRecovery(input: {
   return { unitsConsumed: result.value.unitsConsumed };
 }
 
-export async function buildAndSimulateCompoundRecovery(walletAddress: string, descriptors: unknown) {
-  const connection = rpcConnection();
+export async function buildAndSimulateCompoundRecovery(walletAddress: string, descriptors: unknown, connection: Connection = rpcConnection()) {
   const wallet = new PublicKey(walletAddress);
   const accounts = await readRecoveryAccounts(connection, walletAddress, descriptors);
   const instructions = accounts.flatMap((account) => {
@@ -131,14 +131,19 @@ export async function buildAndSimulateCompoundRecovery(walletAddress: string, de
       createCloseAccountInstruction(source, wallet, wallet, [], program)];
   });
   const simulation = await connection.getLatestBlockhash("confirmed");
-  const simulated = new VersionedTransaction(new TransactionMessage({ payerKey: wallet,
-    recentBlockhash: simulation.blockhash, instructions }).compileToV0Message());
+  const compile = (ixs: typeof instructions) => new VersionedTransaction(new TransactionMessage({ payerKey: wallet,
+    recentBlockhash: simulation.blockhash, instructions: ixs }).compileToV0Message());
+  // Pack against the probe budget so the two ComputeBudget instructions are counted in the size check.
+  const packed = compile([...cleanupBudgetInstructions(CLEANUP_BUDGET_SIZE_PROBE), ...instructions]);
   let sizeBytes: number;
-  try { sizeBytes = simulated.serialize().length; } catch { throw new Error("Recovery transaction exceeds size limit"); }
+  try { sizeBytes = packed.serialize().length; } catch { throw new Error("Recovery transaction exceeds size limit"); }
   if (exceedsTxSizeLimit(sizeBytes)) throw new Error("Recovery transaction exceeds size limit");
-  const fee = await estimateFeeForMessage(connection, simulated.message, "confirmed", {
+  const budget = await harvestPriorityBudget(connection, compile(instructions), accounts.length);
+  const simulated = compile([...cleanupBudgetInstructions(budget), ...instructions]);
+  sizeBytes = simulated.serialize().length;
+  const fee = feeIncludingComputeBudget(await estimateFeeForMessage(connection, simulated.message, "confirmed", {
     fallback: defaultRpcConnection, emptyError: RECOVERY_FEE_ESTIMATE_MESSAGE,
-  });
+  }), simulated);
   const summary: CompoundRecoverySummary = { operation: "recovery", simulated: true, wallet: walletAddress,
     compoundAccounts: accounts, feeLamports: fee, sizeBytes, ...stampPreparedBlockhash(simulation) };
   const verified = await simulateAndVerifyRecovery({ connection, transaction: simulated, summary, sigVerify: false });

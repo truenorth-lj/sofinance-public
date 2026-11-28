@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { AccountLayout, MintLayout, TOKEN_PROGRAM_ID, NATIVE_MINT, getAssociatedTokenAddressSync } from "@solana/spl-token";
+import { computeBudgetPriorityLamports } from "@sofinance/engine/wallet-priority-fee";
+import { SIGNATURE_BASE_FEE_LAMPORTS } from "./cleanup-priority-fee";
 import { ComputeBudgetProgram, Keypair, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type AccountInfo, type Connection } from "@solana/web3.js";
 import type { CompoundAccount } from "@sofinance/engine/compound-types";
 vi.mock("server-only", () => ({}));
@@ -40,10 +42,11 @@ async function fixture(count = 6, amount = 100n, existingDestination = true, nat
     // The signature-less probe that measures compute units asks for no account readback.
     if (!config.accounts) return { context: { slot: 10 }, value: { err: null, unitsConsumed: probeUnits, accounts: [] } };
     const count = config.accounts.addresses.filter(address => sources.has(address)).length;
+    const fee = SIGNATURE_BASE_FEE_LAMPORTS + Number(computeBudgetPriorityLamports(_transaction));
     return { context: { slot: 10 }, value: { err: null, unitsConsumed: 12000, accounts: config.accounts.addresses.map(address => {
       if (sources.has(address)) return null;
       const simulated = address === destination ? token(signer.publicKey, mint, (existingDestination ? 5n : 0n) + BigInt(count) * amount, native) :
-        { owner: SystemProgram.programId, data: Buffer.alloc(0), lamports: balance + count * rent - 5000 - (!existingDestination && amount > 0n ? rent : 0), executable: false, rentEpoch: 0 };
+        { owner: SystemProgram.programId, data: Buffer.alloc(0), lamports: balance + count * rent - fee - (!existingDestination && amount > 0n ? rent : 0), executable: false, rentEpoch: 0 };
       return { ...simulated, owner: simulated.owner.toBase58(), data: [simulated.data.toString("base64"), "base64"] };
     }) } };
   });
@@ -168,7 +171,10 @@ describe("cleanup compute budget", () => {
     // The summary's fee comes from the estimate of this very message, so the verified wallet delta already includes the priority fee.
     const estimated = (f.connection.getFeeForMessage as unknown as { mock: { calls: [typeof transaction.message][] } }).mock.calls[0]![0];
     expect(estimated.compiledInstructions).toEqual(transaction.message.compiledInstructions);
-    expect(summary.feeLamports).toBe(5000);
+    const priority = Number(computeBudgetPriorityLamports(transaction));
+    expect(priority).toBeGreaterThan(0);
+    // getFeeForMessage in this fixture returns only the base fee; the builder must add the message's own priority.
+    expect(summary.feeLamports).toBe(SIGNATURE_BASE_FEE_LAMPORTS + priority);
     expect(summary.sizeBytes).toBe(transaction.serialize().length);
   });
   it("follows a busy network but never exceeds the priority-fee ceiling", async () => {
@@ -199,5 +205,30 @@ describe("cleanup compute budget", () => {
       instructions: TransactionMessage.decompile(transaction.message).instructions.map(ix => ix.programId.equals(ComputeBudgetProgram.programId) && ix.data[0] === 3
         ? ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1_000_000 }) : ix) }).compileToV0Message());
     await expect(simulateAndVerifyCleanupBatch({ connection: f.connection, transaction: raised, prepared: transaction, summary, sigVerify: false })).resolves.toBeDefined();
+  });
+
+  it("still prepares when getFeeForMessage returns only the base fee, and does not double-count when it includes priority", async () => {
+    const f = await fixture(3, 100n, false);
+    const built = await buildCleanupBatch(f.connection, f.wallet, f.descriptors);
+    const transaction = built.transactions[0]!.transaction;
+    const priority = Number(computeBudgetPriorityLamports(transaction));
+    expect(built.transactions[0]!.summary.feeLamports).toBe(SIGNATURE_BASE_FEE_LAMPORTS + priority);
+
+    const inclusive = vi.fn(async (message: VersionedTransaction["message"]) => {
+      const tx = new VersionedTransaction(message);
+      return { value: SIGNATURE_BASE_FEE_LAMPORTS + Number(computeBudgetPriorityLamports(tx)) };
+    });
+    (f.connection as unknown as { getFeeForMessage: unknown }).getFeeForMessage = inclusive;
+    const again = await buildCleanupBatch(f.connection, f.wallet, f.descriptors);
+    const againTx = again.transactions[0]!.transaction;
+    const againPriority = Number(computeBudgetPriorityLamports(againTx));
+    expect(again.transactions[0]!.summary.feeLamports).toBe(SIGNATURE_BASE_FEE_LAMPORTS + againPriority);
+    expect(inclusive).toHaveBeenCalled();
+  });
+  it("verifies a prepared transaction even if feeLamports is still the base fee and simulation deducts the priority", async () => {
+    const f = await fixture(3, 100n, false);
+    const { transaction, summary } = (await buildCleanupBatch(f.connection, f.wallet, f.descriptors)).transactions[0]!;
+    const baseOnly = { ...summary, feeLamports: SIGNATURE_BASE_FEE_LAMPORTS };
+    await expect(simulateAndVerifyCleanupBatch({ connection: f.connection, transaction, summary: baseOnly, sigVerify: false })).resolves.toBeDefined();
   });
 });
