@@ -112,7 +112,7 @@ ${ROBINHOOD_CHAIN_POOLS.map((pool) => `- ${pool}`).join("\n")}
 
 ## Guides
 
-- [Pricing](${url(GUIDE_ROUTES.fees)}): zero performance fee; 0.10% only when we swap for you; withdrawing as the two pool tokens costs 0
+- [Pricing](${url(GUIDE_ROUTES.fees)}): zero performance fee; withdrawing as the two pool tokens costs 0
 - [What is a same-stock LP pool?](${url(GUIDE_ROUTES.whatIsSameStock)})
 - [How to open an LP position (Raydium, Meteora, Robinhood Chain)](${url(GUIDE_ROUTES.howToOpen)})
 - [Impermanent loss on same-stock pools](${url(GUIDE_ROUTES.impermanentLoss)})

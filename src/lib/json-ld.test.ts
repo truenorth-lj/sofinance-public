@@ -17,7 +17,7 @@ describe("homeJsonLd", () => {
       "@type": "Offer",
       price: "0",
       priceCurrency: "USD",
-      description: "Zero performance fee. 0.10% only when SoFinance swaps. Self-custodial.",
+      description: "Zero performance fee. Self-custodial.",
     });
   });
 

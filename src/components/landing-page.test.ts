@@ -51,7 +51,7 @@ describe("landing page copy and routes", () => {
     expect(market).toContain("TOP_POOLS_ANCHOR_ID");
     expect(market).toContain("Self-custodial: we never hold your keys");
     expect(market).toContain("DOCS_ROUTES.security");
-    expect(market).toContain("Zero performance fee. 0.10% only when we swap.");
+    expect(market).toContain("Zero performance fee");
     expect(market).toContain("GUIDE_ROUTES.fees");
     expect(market).toContain("Solana + Robinhood Chain");
     expect(market).toContain("DOCS_ROUTES.home");
