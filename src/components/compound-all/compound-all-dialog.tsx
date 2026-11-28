@@ -117,7 +117,8 @@ function CleanupRow({ state }: { state: CompoundAllState }) {
     <div className="min-w-0 flex-1">
       <p className="text-sm font-semibold text-cream">{COPY.cleanupRow}</p>
       <p className="text-xs text-smoke">{COPY.cleanupDetail}</p>
-      {status === "failed" && state.cleanup.error ? <p role="alert" className="mt-1 text-xs text-cream/80">{state.cleanup.error}</p> : null}
+      {status === "failed" && state.cleanup.error ? <p role="alert" data-reason={state.cleanup.reason} className="mt-1 text-xs text-cream/80">{state.cleanup.error}
+        {state.cleanup.reason ? <span data-testid="compound-all-cleanup-reason" className="ml-1 text-smoke">(code: {state.cleanup.reason})</span> : null}</p> : null}
     </div>
     {state.phase !== "setup" ? <span className={cn("shrink-0 text-xs", failed ? "font-semibold text-cream" : "text-smoke")}>{cleanupStatusLabel(status, state.cleanup.outcomeUnconfirmed)}</span> : null}
   </li>;

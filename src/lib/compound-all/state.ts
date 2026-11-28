@@ -1,5 +1,6 @@
 import type { DexDescriptor, DexId } from "@/lib/dex/types";
 import type { PositionKey } from "@/lib/unified-positions/model";
+import type { CleanupFailureReason } from "@/lib/cleanup-outcome";
 
 /**
  * Compound all (LJ 11/26, PM-approved plan): one checklist of every position's compound, signed strictly one after the
@@ -53,6 +54,8 @@ export type CompoundAllCleanup = Readonly<{
   /** Signatures of the Raydium compounds confirmed in this run: their harvest accounts are what the cleanup closes. */
   sources: readonly string[];
   error?: string; signatures?: readonly string[];
+  /** Why the cleanup failed (shown next to the message so it can be quoted to support). */
+  reason?: CleanupFailureReason;
   /** Confirm timed out or needs review: the cleanup may still settle; the row says Unconfirmed, not Failed. */
   outcomeUnconfirmed?: boolean;
 }>;
@@ -96,7 +99,7 @@ export type CompoundAllEvent =
   | { type: "cleanup/skip" }
   | { type: "cleanup/stage"; stage: RowStage }
   | { type: "cleanup/done"; signatures?: readonly string[] }
-  | { type: "cleanup/failed"; error: string; outcomeUnconfirmed?: boolean };
+  | { type: "cleanup/failed"; error: string; outcomeUnconfirmed?: boolean; reason?: CleanupFailureReason };
 
 export const COMPOUND_ALL_CHECKPOINT_EVERY = 10;
 export const COMPOUND_ALL_RECOVERY_PATH = "/app/portfolio/recovery";
@@ -239,7 +242,7 @@ export function compoundAllReducer(state: CompoundAllState, event: CompoundAllEv
       return state.cleanup.status === "pending" ? { ...state, rowsComplete: true } : { ...state, rowsComplete: true, phase: ended(state) };
     case "cleanup/run":
       if (state.phase !== "cleanup-offered" && state.phase !== "paused-cleanup-failure") return state;
-      return { ...state, phase: "running", cleanup: Object.freeze({ ...state.cleanup, status: "pending" as const, error: undefined, outcomeUnconfirmed: undefined }) };
+      return { ...state, phase: "running", cleanup: Object.freeze({ ...state.cleanup, status: "pending" as const, error: undefined, outcomeUnconfirmed: undefined, reason: undefined }) };
     case "cleanup/skip":
       if (state.phase !== "cleanup-offered" && state.phase !== "paused-cleanup-failure") return state;
       return { ...state, phase: ended(state), cleanup: Object.freeze({ ...state.cleanup, status: "skipped" as const }) };
@@ -248,10 +251,10 @@ export function compoundAllReducer(state: CompoundAllState, event: CompoundAllEv
       return { ...state, cleanup: Object.freeze({ ...state.cleanup, status: event.stage }) };
     case "cleanup/done":
       if (state.phase !== "running" || !IN_FLIGHT.includes(state.cleanup.status)) return state;
-      return { ...state, phase: ended(state), cleanup: Object.freeze({ ...state.cleanup, status: "done" as const, error: undefined,
+      return { ...state, phase: ended(state), cleanup: Object.freeze({ ...state.cleanup, status: "done" as const, error: undefined, reason: undefined,
         ...(event.signatures ? { signatures: Object.freeze([...event.signatures]) } : {}) }) };
     case "cleanup/failed":
       if (state.phase !== "running" || !IN_FLIGHT.includes(state.cleanup.status)) return state;
-      return { ...state, phase: "paused-cleanup-failure", cleanup: Object.freeze({ ...state.cleanup, status: "failed" as const, error: event.error, outcomeUnconfirmed: event.outcomeUnconfirmed }) };
+      return { ...state, phase: "paused-cleanup-failure", cleanup: Object.freeze({ ...state.cleanup, status: "failed" as const, error: event.error, outcomeUnconfirmed: event.outcomeUnconfirmed, reason: event.reason }) };
   }
 }

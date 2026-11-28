@@ -11,6 +11,8 @@ import { SOLANA_TX_SIZE_LIMIT, isSingleWalletSignedTransaction } from "@sofinanc
 import { walletPriorityFeeAllowance } from "@sofinance/engine/wallet-priority-fee";
 import { confirmedRecovery } from "./compound-receipt";
 import { estimateFeeForMessage } from "./rpc-fee-estimate";
+import { CLEANUP_BUDGET_SIZE_PROBE, cleanupBudgetInstructions, cleanupComputeUnitLimit, cleanupComputeUnitPrice, recentPrioritizationSamples,
+  type CleanupComputeBudget } from "./cleanup-priority-fee";
 import nacl from "tweetnacl";
 import { z } from "zod";
 import { withContextSlotRetry } from "@sofinance/engine/rpc/context-slot";
@@ -84,9 +86,17 @@ function instructionsFor(wallet: PublicKey, accounts: CompoundRecoveryAccount[])
     return instructions;
   });
 }
-function transactionFor(wallet: string, accounts: CompoundRecoveryAccount[], blockhash: string) {
+/** `budget: null` is the bare cleanup (used once to measure its compute units); the sent transaction always carries a budget. */
+function transactionFor(wallet: string, accounts: CompoundRecoveryAccount[], blockhash: string, budget: CleanupComputeBudget | null) {
   return new VersionedTransaction(new TransactionMessage({ payerKey: new PublicKey(wallet), recentBlockhash: blockhash,
-    instructions: instructionsFor(new PublicKey(wallet), accounts) }).compileToV0Message());
+    instructions: [...(budget ? cleanupBudgetInstructions(budget) : []), ...instructionsFor(new PublicKey(wallet), accounts)] }).compileToV0Message());
+}
+/** Compute units the bare cleanup uses, from one signature-less simulation. Unknown is fine: the caller falls back to an allowance. */
+async function probeUnits(connection: Connection, transaction: VersionedTransaction): Promise<number | undefined> {
+  try {
+    const result = await connection.simulateTransaction(transaction, { sigVerify: false, commitment: "confirmed" });
+    return result.value.err ? undefined : result.value.unitsConsumed;
+  } catch { return undefined; }
 }
 function fits(transaction: VersionedTransaction) {
   try { return transaction.serialize().length <= SOLANA_TX_SIZE_LIMIT; } catch { return false; }
@@ -181,17 +191,19 @@ export async function buildCleanupBatch(connection: Connection, wallet: string, 
   const groups: CompoundRecoveryAccount[][] = [];
   let current: CompoundRecoveryAccount[] = [];
   for (const account of accounts) {
-    if (!fits(transactionFor(wallet, [...current, account], simulationBlockhash.blockhash))) {
+    if (!fits(transactionFor(wallet, [...current, account], simulationBlockhash.blockhash, CLEANUP_BUDGET_SIZE_PROBE))) {
       if (!current.length) throw new Error("Cleanup source exceeds transaction packet limit");
       groups.push(current); current = [];
     }
     current.push(account);
-    if (!fits(transactionFor(wallet, current, simulationBlockhash.blockhash))) throw new Error("Cleanup source exceeds transaction packet limit");
+    if (!fits(transactionFor(wallet, current, simulationBlockhash.blockhash, CLEANUP_BUDGET_SIZE_PROBE))) throw new Error("Cleanup source exceeds transaction packet limit");
   }
   if (current.length) groups.push(current);
   const transactions: { summary: CompoundRecoverySummary; transaction: VersionedTransaction }[] = [];
+  const priceSamples = await recentPrioritizationSamples(connection);
   for (const group of groups) {
-    const transaction = transactionFor(wallet, group, simulationBlockhash.blockhash);
+    const units = cleanupComputeUnitLimit(await probeUnits(connection, transactionFor(wallet, group, simulationBlockhash.blockhash, null)), group.length);
+    const transaction = transactionFor(wallet, group, simulationBlockhash.blockhash, { units, microLamports: cleanupComputeUnitPrice(priceSamples, units) });
     const fee = await estimateFeeForMessage(connection, transaction.message, "confirmed", {
       emptyError: "Unable to estimate cleanup fee",
     });

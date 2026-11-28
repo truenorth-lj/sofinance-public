@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { AccountLayout, MintLayout, TOKEN_PROGRAM_ID, NATIVE_MINT, getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { Keypair, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type AccountInfo, type Connection } from "@solana/web3.js";
+import { ComputeBudgetProgram, Keypair, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type AccountInfo, type Connection } from "@solana/web3.js";
 import type { CompoundAccount } from "@sofinance/engine/compound-types";
 vi.mock("server-only", () => ({}));
 import { buildCleanupBatch, issueCleanupBatchPermit, parseCleanupBatchSummary, simulateAndVerifyCleanupBatch,
@@ -20,7 +20,9 @@ function mintInfo(): AccountInfo<Buffer> {
     isInitialized: true, freezeAuthorityOption: 0, freezeAuthority: PublicKey.default }, data);
   return { owner: TOKEN_PROGRAM_ID, data, lamports: 1, executable: false, rentEpoch: 0 };
 }
+let probeUnits: number | undefined = 12000;
 async function fixture(count = 6, amount = 100n, existingDestination = true, native = false) {
+  probeUnits = 12000;
   const signer = Keypair.generate(), wallet = signer.publicKey.toBase58(), mint = native ? NATIVE_MINT : Keypair.generate().publicKey;
   const destination = getAssociatedTokenAddressSync(mint, signer.publicKey).toBase58();
   const descriptors: CompoundAccount[] = [];
@@ -34,7 +36,9 @@ async function fixture(count = 6, amount = 100n, existingDestination = true, nat
     (existingDestination ? token(signer.publicKey, mint, 5n, native) : null) : address === wallet ?
       { owner: SystemProgram.programId, data: Buffer.alloc(0), lamports: balance, executable: false, rentEpoch: 0 } : null);
   const getMultipleAccountsInfo = vi.fn(async (keys: PublicKey[]) => keys.map(key => info(key.toBase58())));
-  const simulateTransaction = vi.fn(async (_transaction: VersionedTransaction, config: { accounts: { addresses: string[] } }) => {
+  const simulateTransaction = vi.fn(async (_transaction: VersionedTransaction, config: { accounts?: { addresses: string[] } }) => {
+    // The signature-less probe that measures compute units asks for no account readback.
+    if (!config.accounts) return { context: { slot: 10 }, value: { err: null, unitsConsumed: probeUnits, accounts: [] } };
     const count = config.accounts.addresses.filter(address => sources.has(address)).length;
     return { context: { slot: 10 }, value: { err: null, unitsConsumed: 12000, accounts: config.accounts.addresses.map(address => {
       if (sources.has(address)) return null;
@@ -60,7 +64,8 @@ describe("batched cleanup builder", () => {
     const instructions = TransactionMessage.decompile(transaction.message).instructions;
     expect(instructions.filter(ix => ix.data.length === 1 && ix.data[0] === 1)).toHaveLength(1);
     expect(instructions.filter(ix => ix.programId.equals(TOKEN_PROGRAM_ID) && ix.data[0] === 9)).toHaveLength(12);
-    expect(f.simulateTransaction.mock.calls[0]![1]).toMatchObject({ minContextSlot: 10 });
+    // The first simulation is the signature-less compute-unit probe; the verification simulation pins the snapshot slot.
+    expect(f.simulateTransaction.mock.calls.some(call => (call[1] as { minContextSlot?: number }).minContextSlot === 10)).toBe(true);
   });
   it("splits large inventories by real serialized packet size", async () => {
     const f = await fixture(64);
@@ -73,7 +78,10 @@ describe("batched cleanup builder", () => {
   it("does not allocate a recipient when closing empty sources", async () => {
     const f = await fixture(4, 0n, false);
     const prepared = await buildCleanupBatch(f.connection, f.wallet, f.descriptors);
-    expect(TransactionMessage.decompile(prepared.transactions[0]!.transaction.message).instructions).toHaveLength(4);
+    // 4 closeAccount + the two ComputeBudget instructions (limit, price) every cleanup now carries.
+    const instructions = TransactionMessage.decompile(prepared.transactions[0]!.transaction.message).instructions;
+    expect(instructions).toHaveLength(6);
+    expect(instructions.filter(ix => ix.programId.equals(ComputeBudgetProgram.programId))).toHaveLength(2);
   });
   it("skips only finalized-absent sources and rejects duplicates, unbounded inventories and foreign derivations", async () => {
     const f = await fixture(3);
@@ -141,5 +149,55 @@ describe("batched cleanup builder", () => {
     const summary = structuredClone(transactions[0]!.summary);
     summary.compoundAccounts[0]!.destination = Keypair.generate().publicKey.toBase58();
     await expect(parseCleanupBatchSummary(summary, f.wallet)).rejects.toThrow("recipient");
+  });
+});
+
+describe("cleanup compute budget", () => {
+  const budgetOf = (transaction: VersionedTransaction) => {
+    const ixs = TransactionMessage.decompile(transaction.message).instructions.filter(ix => ix.programId.equals(ComputeBudgetProgram.programId));
+    const limit = ixs.find(ix => ix.data[0] === 2)!, price = ixs.find(ix => ix.data[0] === 3)!;
+    return { units: limit.data.readUInt32LE(1), microLamports: Number(price.data.readBigUInt64LE(1)), first: TransactionMessage.decompile(transaction.message).instructions.slice(0, 2).every(ix => ix.programId.equals(ComputeBudgetProgram.programId)) };
+  };
+  it("prices the cleanup above zero and sizes the limit from the measured units, budget first", async () => {
+    const f = await fixture(4, 100n, false);
+    const { transaction, summary } = (await buildCleanupBatch(f.connection, f.wallet, f.descriptors)).transactions[0]!;
+    const budget = budgetOf(transaction);
+    expect(budget.first).toBe(true);
+    expect(budget.units).toBe(Math.ceil(12000 * 1.3));
+    expect(budget.microLamports).toBeGreaterThanOrEqual(5_000);
+    // The summary's fee comes from the estimate of this very message, so the verified wallet delta already includes the priority fee.
+    const estimated = (f.connection.getFeeForMessage as unknown as { mock: { calls: [typeof transaction.message][] } }).mock.calls[0]![0];
+    expect(estimated.compiledInstructions).toEqual(transaction.message.compiledInstructions);
+    expect(summary.feeLamports).toBe(5000);
+    expect(summary.sizeBytes).toBe(transaction.serialize().length);
+  });
+  it("follows a busy network but never exceeds the priority-fee ceiling", async () => {
+    const f = await fixture(4, 100n, false);
+    (f.connection as unknown as { getRecentPrioritizationFees: unknown }).getRecentPrioritizationFees = vi.fn(async () =>
+      Array.from({ length: 150 }, () => ({ slot: 1, prioritizationFee: 50_000_000 })));
+    const budget = budgetOf((await buildCleanupBatch(f.connection, f.wallet, f.descriptors)).transactions[0]!.transaction);
+    expect(Math.ceil(budget.units * budget.microLamports / 1_000_000)).toBeLessThanOrEqual(50_000);
+    expect(budget.microLamports).toBeGreaterThan(5_000);
+  });
+  it("falls back to a per-account allowance when the probe gives no units, and still builds", async () => {
+    const f = await fixture(3, 100n, false);
+    probeUnits = undefined;
+    const budget = budgetOf((await buildCleanupBatch(f.connection, f.wallet, f.descriptors)).transactions[0]!.transaction);
+    expect(budget.units).toBe(50_000 + 60_000 * 3);
+  });
+  it("splits by real size with the budget instructions counted", async () => {
+    const f = await fixture(40);
+    const prepared = await buildCleanupBatch(f.connection, f.wallet, f.descriptors);
+    expect(prepared.transactions.every(item => item.transaction.serialize().length <= 1232)).toBe(true);
+    expect(prepared.transactions.every(item => budgetOf(item.transaction).first)).toBe(true);
+    expect(prepared.transactions.reduce((sum, item) => sum + item.summary.compoundAccounts.length, 0)).toBe(40);
+  });
+  it("accepts a wallet that raises the priority fee but still rejects one that changes the cleanup balance", async () => {
+    const f = await fixture(3, 100n, false);
+    const { transaction, summary } = (await buildCleanupBatch(f.connection, f.wallet, f.descriptors)).transactions[0]!;
+    const raised = new VersionedTransaction(new TransactionMessage({ payerKey: new PublicKey(f.wallet), recentBlockhash: summary.blockhash,
+      instructions: TransactionMessage.decompile(transaction.message).instructions.map(ix => ix.programId.equals(ComputeBudgetProgram.programId) && ix.data[0] === 3
+        ? ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1_000_000 }) : ix) }).compileToV0Message());
+    await expect(simulateAndVerifyCleanupBatch({ connection: f.connection, transaction: raised, prepared: transaction, summary, sigVerify: false })).resolves.toBeDefined();
   });
 });
