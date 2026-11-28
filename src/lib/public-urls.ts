@@ -126,6 +126,8 @@ export const LLMS_TXT_ROUTE = "/llms.txt";
 /** Legal pages (public site, English). */
 export const LEGAL_ROUTES = {
   terms: "/terms",
+  /** Draft (PR-7): not linked from the footer or listed in the sitemap until LJ approves it. */
+  privacy: "/privacy",
 } as const;
 
 /** Public, indexable per-pool pages (SSR facts; the app still opens via ?openPool=). */
