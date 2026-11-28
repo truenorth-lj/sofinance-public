@@ -384,7 +384,7 @@ describe("homepage pools: single top-5 block", () => {
     const trust = [...container.querySelectorAll("[data-testid=hero-trust] a")].map((a) => [a.textContent, a.getAttribute("href")]);
     expect(trust).toEqual([
       ["Self-custodial: we never hold your keys", "/docs/security"],
-      ["Zero performance fee. 0.10% only when we swap.", "/fees"],
+      ["Zero performance fee", "/fees"],
       ["Solana + Robinhood Chain", "/docs"],
     ]);
     expect(container.querySelector("[data-testid=hero-trust]")!.textContent).toMatch(/·/);

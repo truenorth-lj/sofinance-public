@@ -104,7 +104,7 @@ describe("homepage server render", () => {
     expect(html).toContain('href="/docs/security"');
     expect(html).toContain("Self-custodial: we never hold your keys");
     expect(html).toContain('href="/fees"');
-    expect(html).toContain("Zero performance fee. 0.10% only when we swap.");
+    expect(html).toContain("Zero performance fee");
     expect(html).toMatch(/href="\/docs"/);
     expect(html).toContain("Solana + Robinhood Chain");
     expect(sectionOrder(html)).toEqual(["landing-hero", "top-pools", "stock-card-gainers", "stock-card-stocks"]);

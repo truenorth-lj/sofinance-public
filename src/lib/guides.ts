@@ -61,11 +61,11 @@ const FEES: GuidePage = {
   kind: "pricing",
   path: GUIDE_ROUTES.fees,
   label: "Pricing",
-  metaTitle: "Pricing: zero performance fee, 0.10% only when we swap",
+  metaTitle: "Pricing: zero performance fee",
   metaDescription:
     "SoFinance takes zero performance fee. We charge 0.10% only when a swap is made for you; withdrawing as the two pool tokens costs 0. Network fees are paid by you.",
   heroLabel: "Pricing",
-  title: "Zero performance fee. 0.10% only when we swap.",
+  title: "Zero performance fee",
   intro:
     "SoFinance takes no cut of the trading fees your position collects. The only SoFinance fee is 0.10% on the part of a transaction we swap for you, shown in the preview before you sign.",
   qas: [

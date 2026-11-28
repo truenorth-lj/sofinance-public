@@ -17,7 +17,7 @@ export const HERO_SEE_POOLS = "See pools";
 export const HERO_HOW_IT_WORKS = "How it works";
 export const HERO_TRUST = [
   { text: "Self-custodial: we never hold your keys", href: DOCS_ROUTES.security },
-  { text: "Zero performance fee. 0.10% only when we swap.", href: GUIDE_ROUTES.fees },
+  { text: "Zero performance fee", href: GUIDE_ROUTES.fees },
   { text: "Solana + Robinhood Chain", href: DOCS_ROUTES.home },
 ] as const;
 
