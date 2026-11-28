@@ -13,12 +13,13 @@ export const confirmRaydiumCompound: ConfirmCompound = async ({ wallet, attempt 
     const observed = (await connection.getSignatureStatuses([attempt.signature], { searchTransactionHistory: true })).value[0];
     const base = { signature: attempt.signature, state: null };
     const respond = (value: Pick<CompoundConfirmationResult, "status"> &
-      Partial<Pick<CompoundConfirmationResult, "state" | "receipt" | "transactionError">>, chainStatus: CompoundChainStatus): CompoundConfirmationResult => {
+      Partial<Pick<CompoundConfirmationResult, "state" | "receipt" | "transactionError">>, chainStatus: CompoundChainStatus,
+      onChain?: boolean): CompoundConfirmationResult => {
       if (chainStatus === "success") {
         invalidatePositionHistoryCache(attempt.positionMint);
         resetRpcCache();
       }
-      return { ...base, ...value, chainStatus };
+      return { ...base, ...value, chainStatus, ...(onChain === undefined ? {} : { onChain }) };
     };
     // Some providers cannot find older signatures even with searchTransactionHistory.
     // A finalized historical transaction is stronger evidence than today's account balances.
@@ -26,35 +27,35 @@ export const confirmRaydiumCompound: ConfirmCompound = async ({ wallet, attempt 
     if (!observed) {
       transaction = await connection.getParsedTransaction(attempt.signature, { commitment: "finalized", maxSupportedTransactionVersion: 0 });
       if (transaction && transaction.transaction.signatures[0] !== attempt.signature) {
-        return respond({ status: "manual-review" }, "unknown");
+        return respond({ status: "manual-review" }, "unknown", true);
       }
     }
     if (!observed && !transaction?.meta) {
       const height = await connection.getBlockHeight("finalized");
-      if (height <= attempt.summary.lastValidBlockHeight) return respond({ status: "pending" }, "pending");
+      if (height <= attempt.summary.lastValidBlockHeight) return respond({ status: "pending" }, "pending", false);
       // Account creation/closure is additional evidence, not a substitute for
       // the signature. A changed account without transaction evidence needs review.
       const accounts = await connection.getMultipleAccountsInfo(attempt.summary.compoundAccounts.map((account) => new PublicKey(account.address)), "confirmed");
       const unchanged = attempt.kind === "compound" ? accounts.every((account) => account === null) : accounts.every((account) => account !== null);
-      return respond({ status: unchanged ? "expired" : "manual-review" }, unchanged ? "expired" : "unknown");
+      return respond({ status: unchanged ? "expired" : "manual-review" }, unchanged ? "expired" : "unknown", false);
     }
-    if (observed && observed.confirmationStatus !== "finalized") return respond({ status: "pending" }, "pending");
-    if (observed?.err) return respond({ status: "failed", transactionError: observed.err }, "failed");
+    if (observed && observed.confirmationStatus !== "finalized") return respond({ status: "pending" }, "pending", true);
+    if (observed?.err) return respond({ status: "failed", transactionError: observed.err }, "failed", true);
     if (!transaction) {
       try { transaction = await connection.getParsedTransaction(attempt.signature, { commitment: "finalized", maxSupportedTransactionVersion: 0 }); }
       // Finality is known, but history providers can lag or time out. Keep
       // checking the original signature until its receipt can be verified.
-      catch { return respond({ status: "pending" }, "success"); }
+      catch { return respond({ status: "pending" }, "success", true); }
     }
     if (transaction && transaction.transaction.signatures[0] !== attempt.signature) {
-      return respond({ status: "manual-review" }, "success");
+      return respond({ status: "manual-review" }, "success", true);
     }
-    if (!transaction?.meta) return respond({ status: "pending" }, "success");
-    if (transaction.meta.err) return respond({ status: "failed", transactionError: transaction.meta.err }, "failed");
+    if (!transaction?.meta) return respond({ status: "pending" }, "success", true);
+    if (transaction.meta.err) return respond({ status: "failed", transactionError: transaction.meta.err }, "failed", true);
     if (attempt.kind === "recovery") {
       let verified = false;
       try { verified = confirmedRecovery(transaction, wallet, attempt.summary); } catch { /* Execution is already finalized. */ }
-      return respond({ status: verified ? "success" : "manual-review" }, "success");
+      return respond({ status: verified ? "success" : "manual-review" }, "success", true);
     }
     let receipt: ReturnType<typeof confirmedCompoundReceipt> = null;
     try { receipt = confirmedCompoundReceipt(transaction, wallet, attempt.summary); } catch { /* Preserve finalized execution certainty when ledger parsing fails. */ }
@@ -64,5 +65,5 @@ export const confirmRaydiumCompound: ConfirmCompound = async ({ wallet, attempt 
       // compound. Its ledger comes from this transaction's metadata.
       try { state = await readCompoundPositionState(wallet, attempt.positionMint, connection); } catch { /* Keep the historical receipt. */ }
     }
-    return respond({ state, receipt, status: receipt ? "success" : "manual-review" }, "success");
+    return respond({ state, receipt, status: receipt ? "success" : "manual-review" }, "success", true);
 };

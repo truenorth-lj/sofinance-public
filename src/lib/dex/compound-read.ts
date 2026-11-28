@@ -10,6 +10,11 @@ export type CompoundConfirmationResult = {
   signature: string; state: CompoundPositionState | null;
   status: "pending" | "success" | "failed" | "expired" | "manual-review";
   chainStatus: CompoundChainStatus;
+  /**
+   * Whether the confirming RPC has seen the signature. `false` means it is not on Solana (yet), so a sign-only
+   * recovery relay may send the same signed bytes again. Omitted when the RPC could not answer.
+   */
+  onChain?: boolean;
   receipt?: ReturnType<typeof confirmedCompoundReceipt>;
   transactionError?: unknown;
 };

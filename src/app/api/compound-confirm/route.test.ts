@@ -77,7 +77,7 @@ describe("POST /api/compound-confirm", () => {
     });
     it("is pending until the FINALIZED height passes lastValidBlockHeight", async () => {
       connection.getBlockHeight.mockResolvedValue(150);
-      expect((await call()).json).toEqual({ signature, state: null, status: "pending", chainStatus: "pending" });
+      expect((await call()).json).toEqual({ signature, state: null, status: "pending", chainStatus: "pending", onChain: false });
       expect(connection.getBlockHeight).toHaveBeenCalledWith("finalized");
     });
     it("compound: expired when every isolated harvest account is still absent", async () => {
@@ -119,7 +119,7 @@ describe("POST /api/compound-confirm", () => {
 
   it("QUIRK: 'confirmed' is NOT enough here, only 'finalized' proceeds (selected-status accepts confirmed)", async () => {
     connection.getSignatureStatuses.mockResolvedValue({ value: [{ confirmationStatus: "confirmed", err: null }] });
-    expect((await call()).json).toEqual({ signature, state: null, status: "pending", chainStatus: "pending" });
+    expect((await call()).json).toEqual({ signature, state: null, status: "pending", chainStatus: "pending", onChain: true });
     expect(connection.getParsedTransaction).not.toHaveBeenCalled();
   });
 
@@ -152,12 +152,12 @@ describe("POST /api/compound-confirm", () => {
   it("compound: success with receipt and fresh state", async () => {
     const { response, json } = await call();
     expect(response.status).toBe(200);
-    expect(json).toEqual({ signature, state: { liquidity: "1" }, receipt: { receipt: true }, status: "success", chainStatus: "success" });
+    expect(json).toEqual({ signature, state: { liquidity: "1" }, receipt: { receipt: true }, status: "success", chainStatus: "success", onChain: true });
   });
 
   it("compound: a state-read failure keeps the receipt (state null) and still succeeds", async () => {
     vi.mocked(readCompoundPositionState).mockRejectedValue(new Error("position gone"));
-    expect((await call()).json).toEqual({ signature, state: null, receipt: { receipt: true }, status: "success", chainStatus: "success" });
+    expect((await call()).json).toEqual({ signature, state: null, receipt: { receipt: true }, status: "success", chainStatus: "success", onChain: true });
   });
 
   it("compound: no receipt => manual-review and state is NOT read", async () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ComputeBudgetProgram, Keypair, SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
-import { computeBudgetPriorityLamports } from "@sofinance/engine/wallet-priority-fee";
+import { computeBudgetPriorityLamports, computeBudgetPriorityLamportsCharged } from "@sofinance/engine/wallet-priority-fee";
 import { CLEANUP_PRIORITY_FLOOR_MICROLAMPORTS, CLEANUP_PRIORITY_MAX_LAMPORTS, CLEANUP_UNITS_MAX, CLEANUP_UNITS_MIN, SIGNATURE_BASE_FEE_LAMPORTS,
   cleanupBudgetInstructions, cleanupComputeUnitLimit, cleanupComputeUnitPrice, feeIncludingComputeBudget, recentPrioritizationSamples,
   uncoveredComputeBudgetLamports, withZeroComputeUnitPrice } from "./cleanup-priority-fee";
@@ -84,5 +84,16 @@ describe("feeIncludingComputeBudget", () => {
     const transaction = tx();
     expect(Number(computeBudgetPriorityLamports(withZeroComputeUnitPrice(transaction)))).toBe(0);
     expect(Number(computeBudgetPriorityLamports(transaction))).toBe(650);
+  });
+  it("does not double-count a non-divisible inclusive floor estimate (units 130,001 × 5,000 → RPC 5,650)", () => {
+    const transaction = budgeted(130_001, 5_000);
+    // Runtime/getFeeForMessage: floor(130001 * 5000 / 1e6) = 650, so inclusive fee is 5650.
+    // Ceil would be 651; treating 5650 as base-only would add 651 and produce 6301.
+    expect(Number(computeBudgetPriorityLamportsCharged(transaction))).toBe(650);
+    expect(Number(computeBudgetPriorityLamports(transaction))).toBe(651);
+    expect(feeIncludingComputeBudget(5_650, transaction)).toBe(5_650);
+    expect(uncoveredComputeBudgetLamports(5_650, transaction)).toBe(0n);
+    expect(feeIncludingComputeBudget(SIGNATURE_BASE_FEE_LAMPORTS, transaction)).toBe(SIGNATURE_BASE_FEE_LAMPORTS + 650);
+    expect(uncoveredComputeBudgetLamports(SIGNATURE_BASE_FEE_LAMPORTS, transaction)).toBe(650n);
   });
 });

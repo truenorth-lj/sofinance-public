@@ -28,8 +28,7 @@ function readU64(data: Uint8Array, offset: number) {
   return value;
 }
 
-/** Priority fee implied by this message's ComputeBudget ixs (0 if no CU price). */
-export function computeBudgetPriorityLamports(transaction: VersionedTransaction): bigint {
+function computeBudgetUnitsAndPrice(transaction: VersionedTransaction): { units: bigint; microLamports: bigint } | null {
   let units: bigint | null = null;
   let microLamports: bigint | null = null;
   for (const ix of transaction.message.compiledInstructions) {
@@ -39,8 +38,22 @@ export function computeBudgetPriorityLamports(transaction: VersionedTransaction)
     if (data[0] === SET_COMPUTE_UNIT_LIMIT && data.length >= 5) units = readU32(data, 1);
     if (data[0] === SET_COMPUTE_UNIT_PRICE && data.length >= 9) microLamports = readU64(data, 1);
   }
-  if (!microLamports) return 0n;
-  return ((units ?? DEFAULT_COMPUTE_UNIT_LIMIT) * microLamports + 999_999n) / 1_000_000n;
+  if (!microLamports) return null;
+  return { units: units ?? DEFAULT_COMPUTE_UNIT_LIMIT, microLamports };
+}
+
+/** Priority fee implied by this message's ComputeBudget ixs (0 if no CU price). Rounds up; used as a ceiling on wallet-raised fees. */
+export function computeBudgetPriorityLamports(transaction: VersionedTransaction): bigint {
+  const budget = computeBudgetUnitsAndPrice(transaction);
+  if (!budget) return 0n;
+  return (budget.units * budget.microLamports + 999_999n) / 1_000_000n;
+}
+
+/** What the runtime charges for this message's ComputeBudget ixs: `floor(units * microLamports / 1e6)`. */
+export function computeBudgetPriorityLamportsCharged(transaction: VersionedTransaction): bigint {
+  const budget = computeBudgetUnitsAndPrice(transaction);
+  if (!budget) return 0n;
+  return (budget.units * budget.microLamports) / 1_000_000n;
 }
 
 /**

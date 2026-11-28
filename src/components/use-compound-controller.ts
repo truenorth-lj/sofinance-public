@@ -331,8 +331,9 @@ export function useCompoundController({ wallet, positionMint, externalBlocked, o
             // Sign-only wallet: we relayed once. Send the same signed bytes again while confirm is still pending
             // and the prepared window is open. A wallet that signs AND sends already rebroadcasts itself.
             if (resendRelayed) {
+              // Only when confirm says Solana has not seen the signature. A seen (not-yet-finalized) tx is not resent.
               void rebroadcaster.tick({
-                signature: created.signature, onChain: false, expiresAt: created.summary.expiresAt,
+                signature: created.signature, onChain: checked.onChain, expiresAt: created.summary.expiresAt,
                 send: async () => {
                   try { await resendRelayed!(); }
                   catch (error) { if (!isAlreadyProcessedSendError(error)) throw error; }

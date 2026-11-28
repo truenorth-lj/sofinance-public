@@ -4,7 +4,7 @@ import { ComputeBudgetProgram, Keypair, PublicKey, SystemProgram, TransactionMes
 import type { CompoundAccount } from "./compound-types";
 import type { CompoundRecoverySummary } from "./compound-recovery-types";
 import { buildAndSimulateCompoundRecovery, readRecoveryAccounts, simulateAndVerifyRecovery } from "./compound-recovery";
-import { computeBudgetPriorityLamports } from "./wallet-priority-fee";
+import { computeBudgetPriorityLamportsCharged } from "./wallet-priority-fee";
 import { SIGNATURE_BASE_FEE_LAMPORTS } from "./tx-priority-fee";
 
 const rent = 2_039_280;
@@ -94,7 +94,7 @@ describe("owner-controlled leftover recovery", () => {
 describe("buildAndSimulateCompoundRecovery priority fee", () => {
   async function ready(amount = 20_000_000n) {
     const f = await fixture(amount);
-    const feeOf = (tx: VersionedTransaction) => SIGNATURE_BASE_FEE_LAMPORTS + Number(computeBudgetPriorityLamports(tx));
+    const feeOf = (tx: VersionedTransaction) => SIGNATURE_BASE_FEE_LAMPORTS + Number(computeBudgetPriorityLamportsCharged(tx));
     const simulateTransaction = vi.fn(async (transaction: VersionedTransaction, config?: { accounts?: { addresses: string[] } }) => {
       if (!config?.accounts) return { value: { err: null, unitsConsumed: 8_000, accounts: [] } };
       return { value: { err: null, unitsConsumed: 8_000, accounts: config.accounts.addresses.map((key) => {
@@ -120,7 +120,7 @@ describe("buildAndSimulateCompoundRecovery priority fee", () => {
     const ixs = TransactionMessage.decompile(transaction.message).instructions;
     expect(ixs.filter((ix) => ix.programId.equals(ComputeBudgetProgram.programId))).toHaveLength(2);
     expect(ixs[0]!.programId.equals(ComputeBudgetProgram.programId)).toBe(true);
-    const priority = Number(computeBudgetPriorityLamports(transaction));
+    const priority = Number(computeBudgetPriorityLamportsCharged(transaction));
     expect(priority).toBeGreaterThan(0);
     expect(summary.feeLamports).toBe(SIGNATURE_BASE_FEE_LAMPORTS + priority);
     expect(transaction.serialize().length).toBeLessThanOrEqual(1232);

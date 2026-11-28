@@ -48,22 +48,38 @@ describe("cleanupOutcome: the reason code and row text for a cleanup batch", () 
     expect(cleanupOutcome({ durable: batch(tx({ status: "failed" })), thrown: "Cleanup stopped" }))
       .toMatchObject({ reason: "chain-failed", error: CLEANUP_CHAIN_FAILED });
   });
-  it("keeps the unconfirmed flag when a stop leaves a signature still pending", () => {
-    expect(cleanupOutcome({ durable: batch(tx({ status: "pending" })), thrown: "Cleanup stopped" })).toMatchObject({ reason: "stopped", outcomeUnconfirmed: true });
+  it("keeps a still-pending sent transaction unconfirmed, even if a stop was thrown", () => {
+    expect(cleanupOutcome({ durable: batch(tx({ status: "pending" })), thrown: "Cleanup stopped" })).toMatchObject({ reason: "still-confirming", outcomeUnconfirmed: true });
   });
-  it("names a partial batch: some chunks confirmed, others never sent", () => {
-    expect(cleanupOutcome({ durable: batch(tx({ status: "success" }), tx({ signature: "sig-b", status: "failed", unsent: true })),
-      issues: [{ signature: "sig-b", kind: "rejected", message: "Cleanup transaction simulation failed" }] }))
-      .toMatchObject({ status: "failed", reason: "partial-unsent", error: CLEANUP_PARTIAL_UNSENT });
+  it("stays unconfirmed (no Retry) while a sent chunk is still pending or needs review, even if others were unsent", () => {
+    const pendingAndUnsent = cleanupOutcome({
+      durable: batch(tx({ status: "pending" }), tx({ signature: "sig-b", status: "failed", unsent: true })),
+    });
+    expect(pendingAndUnsent).toMatchObject({ status: "failed", reason: "still-confirming", error: CLEANUP_STILL_CONFIRMING, outcomeUnconfirmed: true });
+    const successPendingUnsent = cleanupOutcome({
+      durable: batch(tx({ status: "success" }), tx({ signature: "sig-b", status: "pending" }), tx({ signature: "sig-c", status: "failed", unsent: true })),
+    });
+    expect(successPendingUnsent).toMatchObject({ reason: "still-confirming", outcomeUnconfirmed: true });
+    const reviewAndUnsent = cleanupOutcome({
+      durable: batch(tx({ status: "manual-review" }), tx({ signature: "sig-b", status: "failed", unsent: true })),
+    });
+    expect(reviewAndUnsent).toMatchObject({ status: "failed", reason: "needs-review", error: CLEANUP_NEEDS_REVIEW, outcomeUnconfirmed: true });
+  });
+  it("gives partial-unsent only after every sent chunk has settled", () => {
+    const outcome = cleanupOutcome({ durable: batch(tx({ status: "success" }), tx({ signature: "sig-b", status: "failed", unsent: true })),
+      issues: [{ signature: "sig-b", kind: "rejected", message: "Cleanup transaction simulation failed" }] });
+    expect(outcome).toMatchObject({ status: "failed", reason: "partial-unsent", error: CLEANUP_PARTIAL_UNSENT });
+    expect(outcome).not.toHaveProperty("outcomeUnconfirmed");
   });
   it("says still confirming for a pending batch, and needs review for a result that did not match", () => {
     expect(cleanupOutcome({ durable: batch(tx({ status: "pending" })) })).toEqual({ status: "failed", error: CLEANUP_STILL_CONFIRMING, reason: "still-confirming", outcomeUnconfirmed: true });
     expect(cleanupOutcome({ durable: batch(tx({ status: "manual-review" })) })).toEqual({ status: "failed", error: CLEANUP_NEEDS_REVIEW, reason: "needs-review", outcomeUnconfirmed: true });
   });
-  it("prefers the definite on-chain result over a softer one in a mixed batch", () => {
+  it("prefers the definite on-chain result over a softer one in a mixed batch, but stays unconfirmed while any sent tx is still pending", () => {
     expect(cleanupOutcome({ durable: batch(tx({ status: "success" }), tx({ signature: "b", status: "expired" })) })).toMatchObject({ reason: "expired-unlanded" });
     expect(cleanupOutcome({ durable: batch(tx({ status: "expired" }), tx({ signature: "b", status: "failed" })) })).toMatchObject({ reason: "expired-unlanded" });
-    expect(cleanupOutcome({ durable: batch(tx({ status: "failed" }), tx({ signature: "b", status: "pending", unsent: false })) })).toMatchObject({ reason: "chain-failed" });
+    expect(cleanupOutcome({ durable: batch(tx({ status: "failed" }), tx({ signature: "b", status: "pending", unsent: false })) }))
+      .toMatchObject({ reason: "still-confirming", outcomeUnconfirmed: true });
   });
   it("records the unknown send outcomes that came before an expiry, for support", () => {
     const outcome = cleanupOutcome({ durable: batch(tx({ status: "expired" })),

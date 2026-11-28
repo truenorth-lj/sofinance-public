@@ -43,7 +43,7 @@ export const REPORTABLE_CLEANUP_REASONS: readonly CleanupFailureReason[] = ["exp
 
 export type CleanupOutcomeInput = {
   durable: CleanupBatchAttempt | null;
-  /** The message of an exception that stopped the flow (wallet, fence, preparation); wins over the settled state for the row text. */
+  /** Exception text (wallet, fence, preparation). Used only when nothing sent has a definite or still-pending result. */
   thrown?: string;
   issues?: readonly CleanupBroadcastIssue[];
 };
@@ -66,6 +66,10 @@ export function cleanupOutcome({ durable, thrown = "", issues = [] }: CleanupOut
     return { status: "failed", error: CLEANUP_DID_NOT_COMPLETE, reason: "unknown", ...withDetail };
   }
   const sent = durable.transactions.filter((tx) => !tx.unsent);
+  // A sent transaction that may still land (or needs review) beats unsent/expired/failed: no Retry until every
+  // sent chunk has settled. Otherwise a pending + unsent batch would show Failed + Retry (the #540 hole).
+  if (sent.some((tx) => tx.status === "pending")) return { status: "failed", error: CLEANUP_STILL_CONFIRMING, reason: "still-confirming", outcomeUnconfirmed: true, ...withDetail };
+  if (sent.some((tx) => tx.status === "manual-review")) return { status: "failed", error: CLEANUP_NEEDS_REVIEW, reason: "needs-review", outcomeUnconfirmed: true, ...withDetail };
   // A definite on-chain result beats a later thrown stop (confirm timeout, tab change after expiry).
   if (sent.some((tx) => tx.status === "expired")) return { status: "failed", error: CLEANUP_EXPIRED, reason: "expired-unlanded", ...withDetail };
   if (sent.some((tx) => tx.status === "failed" && !tx.unsent)) return { status: "failed", error: CLEANUP_CHAIN_FAILED, reason: "chain-failed", ...withDetail };
@@ -76,7 +80,6 @@ export function cleanupOutcome({ durable, thrown = "", issues = [] }: CleanupOut
       reason: partial ? "partial-unsent" : "rejected-before-send", ...withDetail };
   }
   if (thrown) return { status: "failed", error: thrown, reason: "stopped", ...flag, ...withDetail };
-  if (sent.some((tx) => tx.status === "manual-review")) return { status: "failed", error: CLEANUP_NEEDS_REVIEW, reason: "needs-review", ...flag, ...withDetail };
   if (unconfirmed) return { status: "failed", error: CLEANUP_STILL_CONFIRMING, reason: "still-confirming", ...flag, ...withDetail };
   return { status: "failed", error: CLEANUP_DID_NOT_COMPLETE, reason: "unknown", ...withDetail };
 }

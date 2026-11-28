@@ -24,6 +24,7 @@ let controller: ReturnType<typeof useCompoundController>;
 let container: HTMLDivElement, root: Root;
 let fixture: ReturnType<typeof compoundHistoryFixture>;
 let fetchMock: ReturnType<typeof vi.fn>;
+let confirmationOnChain: boolean | undefined;
 let confirmationStatus: "success" | "pending" | "manual-review" | "failed";
 let broadcastCount: number;
 let broadcastSignatures: string[];
@@ -52,7 +53,7 @@ function prepared(item: CompoundReceipt) {
 beforeEach(() => {
   vi.useFakeTimers(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); window.localStorage.clear();
   fixture = compoundHistoryFixture(); wallet = fixture.wallet; positionMint = undefined; broadcastCount = 0; broadcastSignatures = [];
-  confirmationStatus = "success";
+  confirmationStatus = "success"; confirmationOnChain = undefined;
   mocks.confirmed.mockReset();
   mocks.sign.mockReset(); mocks.sign.mockImplementation(async (tx: VersionedTransaction) => { tx.sign([testKeypair(1)]); return tx; });
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
@@ -68,7 +69,8 @@ beforeEach(() => {
       return Response.json({ signature });
     }
     if (url === "/api/compound-confirm") return Response.json({ signature: body.attempt.signature, status: confirmationStatus,
-      chainStatus: confirmationStatus === "manual-review" ? "unknown" : confirmationStatus, state: null });
+      chainStatus: confirmationStatus === "manual-review" ? "unknown" : confirmationStatus, state: null,
+      ...(confirmationOnChain === undefined ? {} : { onChain: confirmationOnChain }) });
     if (url === "/api/compound-recover-discover") return Response.json({ wallet, receipts: [receipt()], nextCursor: null,
       scanned: 2, totalCandidates: 2, incomplete: false, errors: 0 });
     throw new Error(`Unexpected request ${url}`);
@@ -116,7 +118,7 @@ describe("wallet-wide leftover fees cleanup", () => {
         return Reflect.get(target, property);
       },
     }));
-    confirmationStatus = "success";
+    confirmationStatus = "success"; confirmationOnChain = undefined;
     await act(async () => { await controller.retryReconcile(); });
     expect(faultWrites).toBe(1);
     expect(controller.attemptStatus).toBe("pending");
@@ -202,7 +204,7 @@ describe("wallet-wide leftover fees cleanup", () => {
   });
   it("stops pending confirmation only after its bounded wait and retains the signed attempt", async () => {
     persistCompoundReceipt(window.localStorage, receipt()); persistCompoundReceipt(window.localStorage, receipt(1));
-    confirmationStatus = "pending"; await render(); let work!: Promise<void>;
+    confirmationStatus = "pending"; confirmationOnChain = false; await render(); let work!: Promise<void>;
     await act(async () => { work = controller.recover(controller.receipts[0]!); });
     await act(async () => { await vi.advanceTimersByTimeAsync(89_999); });
     // Sign-only wallet: the same signed bytes are sent again while confirm stays pending and the window is open.
@@ -218,6 +220,19 @@ describe("wallet-wide leftover fees cleanup", () => {
     expect(mocks.sign).toHaveBeenCalledOnce();
     expect(broadcastCount).toBe(sent);
     expect(new Set(broadcastSignatures).size).toBe(1);
+  });
+  it("stops sending the same signed bytes again once confirm has seen the signature", async () => {
+    persistCompoundReceipt(window.localStorage, receipt());
+    confirmationStatus = "pending"; confirmationOnChain = false; await render();
+    await act(async () => { void controller.recover(controller.receipts[0]!); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(12_000); });
+    expect(broadcastCount).toBeGreaterThan(1);
+    const sent = broadcastCount;
+    confirmationOnChain = true;
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(broadcastCount).toBe(sent);
+    expect(new Set(broadcastSignatures).size).toBe(1);
+    expect(mocks.sign).toHaveBeenCalledOnce();
   });
   it("does not prune a stale receipt unless closed-account proof matches its exact addresses", async () => {
     persistCompoundReceipt(window.localStorage, receipt());
@@ -391,7 +406,7 @@ describe("automatic cleanup after a new compound", () => {
     const burst = () => document.querySelector<HTMLElement>('[data-testid="compound-token-burst"]');
     const popup = () => container.querySelector<HTMLDialogElement>('dialog[data-testid="compound-popup"]')!;
     const done = () => popup().querySelector<HTMLButtonElement>('[data-testid="compound-submit-done"]');
-    confirmationStatus = "success";
+    confirmationStatus = "success"; confirmationOnChain = undefined;
     enableCompound(); await render();
     await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="position-row-action"][data-tool="compound"]')!.click());
     await act(async () => { controller.compound(); });
@@ -561,7 +576,7 @@ describe("automatic cleanup after a new compound", () => {
     await act(async () => { controller.compound(); });
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     expect(mocks.sign).toHaveBeenCalledOnce(); expect(broadcastCount).toBe(0);
-    confirmationStatus = "success";
+    confirmationStatus = "success"; confirmationOnChain = undefined;
     await act(async () => { await vi.advanceTimersByTimeAsync(4_001); });
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     expect(mocks.sign).toHaveBeenCalledTimes(2); expect(broadcastCount).toBe(1);
@@ -610,7 +625,7 @@ describe("the position row's Compound button and its popup (the only Compound en
   }
   const prepareCalls = () => fetchMock.mock.calls.filter(([url]) => url === "/api/compound-prepare").length;
   it("opening shows static facts only; Confirm drives the compound and the row shows its stage, without a Protocol fee line", async () => {
-    prepareOk(); confirmationStatus = "success";
+    prepareOk(); confirmationStatus = "success"; confirmationOnChain = undefined;
     let approve!: (tx: VersionedTransaction) => void; let unsigned!: VersionedTransaction;
     mocks.sign.mockImplementation((tx: VersionedTransaction) => { unsigned = tx; return new Promise(done => { approve = done; }); });
     await render();

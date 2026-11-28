@@ -1,5 +1,5 @@
 import { ComputeBudgetProgram, TransactionMessage, VersionedTransaction, type Connection, type TransactionInstruction } from "@solana/web3.js";
-import { computeBudgetPriorityLamports } from "./wallet-priority-fee";
+import { computeBudgetPriorityLamportsCharged } from "./wallet-priority-fee";
 
 /**
  * Priority fee for harvest-account close transactions (the compound-all cleanup batch and the recovery-page close).
@@ -70,13 +70,16 @@ export async function harvestPriorityBudget(
 
 /**
  * If `getFeeForMessage` returned only the signature base fee, add the message's own ComputeBudget priority so
- * `feeLamports` matches what simulation will debit. If the estimate already includes it (e.g. 5,000 + 650 = 5,650),
- * leave it alone — never double-count.
+ * `feeLamports` matches what the runtime will debit (`floor(units * price / 1e6)`).
+ *
+ * These harvest-close transactions have one signature, so anything above the 5,000-lamport base fee is already an
+ * inclusive estimate. Using ceil here would mis-detect a live floor result (units 130,001 × 5,000 → RPC 5,650) as
+ * base-only and double-count (6,301), which then fails the tight wallet-delta check on prepare.
  */
 export function feeIncludingComputeBudget(estimated: number, transaction: VersionedTransaction): number {
-  const priority = Number(computeBudgetPriorityLamports(transaction));
+  const priority = Number(computeBudgetPriorityLamportsCharged(transaction));
   if (!Number.isSafeInteger(estimated) || estimated < 0 || priority <= 0) return estimated;
-  if (estimated >= SIGNATURE_BASE_FEE_LAMPORTS + priority) return estimated;
+  if (estimated > SIGNATURE_BASE_FEE_LAMPORTS) return estimated;
   return estimated + priority;
 }
 
@@ -85,9 +88,9 @@ export function feeIncludingComputeBudget(estimated: number, transaction: Versio
  * estimate cannot make prepare fail with "wallet rent or fee mismatch". Zero when the estimate already includes it.
  */
 export function uncoveredComputeBudgetLamports(feeLamports: number, transaction: VersionedTransaction): bigint {
-  const priority = computeBudgetPriorityLamports(transaction);
+  const priority = computeBudgetPriorityLamportsCharged(transaction);
   if (priority <= 0n || !Number.isSafeInteger(feeLamports) || feeLamports < 0) return 0n;
-  return BigInt(feeLamports) >= BigInt(SIGNATURE_BASE_FEE_LAMPORTS) + priority ? 0n : priority;
+  return feeLamports > SIGNATURE_BASE_FEE_LAMPORTS ? 0n : priority;
 }
 
 /** A copy of `transaction` whose SetComputeUnitPrice is 0, for comparing a full estimate to a base-only one. */

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { AccountLayout, MintLayout, TOKEN_PROGRAM_ID, NATIVE_MINT, getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { computeBudgetPriorityLamports } from "@sofinance/engine/wallet-priority-fee";
+import { computeBudgetPriorityLamportsCharged } from "@sofinance/engine/wallet-priority-fee";
 import { SIGNATURE_BASE_FEE_LAMPORTS } from "./cleanup-priority-fee";
 import { ComputeBudgetProgram, Keypair, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type AccountInfo, type Connection } from "@solana/web3.js";
 import type { CompoundAccount } from "@sofinance/engine/compound-types";
@@ -42,7 +42,7 @@ async function fixture(count = 6, amount = 100n, existingDestination = true, nat
     // The signature-less probe that measures compute units asks for no account readback.
     if (!config.accounts) return { context: { slot: 10 }, value: { err: null, unitsConsumed: probeUnits, accounts: [] } };
     const count = config.accounts.addresses.filter(address => sources.has(address)).length;
-    const fee = SIGNATURE_BASE_FEE_LAMPORTS + Number(computeBudgetPriorityLamports(_transaction));
+    const fee = SIGNATURE_BASE_FEE_LAMPORTS + Number(computeBudgetPriorityLamportsCharged(_transaction));
     return { context: { slot: 10 }, value: { err: null, unitsConsumed: 12000, accounts: config.accounts.addresses.map(address => {
       if (sources.has(address)) return null;
       const simulated = address === destination ? token(signer.publicKey, mint, (existingDestination ? 5n : 0n) + BigInt(count) * amount, native) :
@@ -171,7 +171,7 @@ describe("cleanup compute budget", () => {
     // The summary's fee comes from the estimate of this very message, so the verified wallet delta already includes the priority fee.
     const estimated = (f.connection.getFeeForMessage as unknown as { mock: { calls: [typeof transaction.message][] } }).mock.calls[0]![0];
     expect(estimated.compiledInstructions).toEqual(transaction.message.compiledInstructions);
-    const priority = Number(computeBudgetPriorityLamports(transaction));
+    const priority = Number(computeBudgetPriorityLamportsCharged(transaction));
     expect(priority).toBeGreaterThan(0);
     // getFeeForMessage in this fixture returns only the base fee; the builder must add the message's own priority.
     expect(summary.feeLamports).toBe(SIGNATURE_BASE_FEE_LAMPORTS + priority);
@@ -211,17 +211,18 @@ describe("cleanup compute budget", () => {
     const f = await fixture(3, 100n, false);
     const built = await buildCleanupBatch(f.connection, f.wallet, f.descriptors);
     const transaction = built.transactions[0]!.transaction;
-    const priority = Number(computeBudgetPriorityLamports(transaction));
+    const priority = Number(computeBudgetPriorityLamportsCharged(transaction));
     expect(built.transactions[0]!.summary.feeLamports).toBe(SIGNATURE_BASE_FEE_LAMPORTS + priority);
 
+    // Mimic getFeeForMessage: signature base + floor(units * price / 1e6). Do not reuse the ceil helper.
     const inclusive = vi.fn(async (message: VersionedTransaction["message"]) => {
       const tx = new VersionedTransaction(message);
-      return { value: SIGNATURE_BASE_FEE_LAMPORTS + Number(computeBudgetPriorityLamports(tx)) };
+      return { value: SIGNATURE_BASE_FEE_LAMPORTS + Number(computeBudgetPriorityLamportsCharged(tx)) };
     });
     (f.connection as unknown as { getFeeForMessage: unknown }).getFeeForMessage = inclusive;
     const again = await buildCleanupBatch(f.connection, f.wallet, f.descriptors);
     const againTx = again.transactions[0]!.transaction;
-    const againPriority = Number(computeBudgetPriorityLamports(againTx));
+    const againPriority = Number(computeBudgetPriorityLamportsCharged(againTx));
     expect(again.transactions[0]!.summary.feeLamports).toBe(SIGNATURE_BASE_FEE_LAMPORTS + againPriority);
     expect(inclusive).toHaveBeenCalled();
   });
